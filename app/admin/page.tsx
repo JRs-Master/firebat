@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react';
 import { useRouter } from 'next/navigation';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Mic, Plus, Square, ListChecks, Share2, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { CodeComp } from '@/app/components/CodeBlock';
 import { CDN_LIBRARIES, IFRAME_CSP_META } from '../../lib/cdn-libraries';
@@ -2355,6 +2355,67 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   } = useChat(aiModel, refreshSidebar, hubChatContext);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
+  // ── 녹음 버튼 — 미디어 반입 통로의 채팅 표면 ──────────────────────────────────
+  // 마이크 → MediaRecorder → data URL → /api/media/upload (이미지와 같은 문). 업로드가 끝나면
+  // 그 미디어 URL 을 입력창에 끼워 넣는다 — 전송은 사용자 몫이라, 흥얼거림→악보 요청이든 코치
+  // 녹음이든 음성 메모든 사용자가 문장으로 정한다. STT 자동 변환은 다음 조각(모듈 경로 필요).
+  const [recording, setRecording] = useState(false);
+  // Failure is the only thing worth a message here — success shows itself as the URL
+  // landing in the input. Auto-clears; the input area is no place for a lingering banner.
+  const [recordError, setRecordError] = useState('');
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
+  const stopRecording = useCallback(() => {
+    recorderRef.current?.stop();
+  }, []);
+  const startRecording = useCallback(async () => {
+    if (recording) { stopRecording(); return; }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setRecordError(t('chat_input.mic_denied'));
+      setTimeout(() => setRecordError(''), 5000);
+      return;
+    }
+    const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+      : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    recordChunksRef.current = [];
+    rec.ondataavailable = (e) => { if (e.data.size > 0) recordChunksRef.current.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach(tr => tr.stop());
+      setRecording(false);
+      const blob = new Blob(recordChunksRef.current, { type: rec.mimeType || 'audio/webm' });
+      recordChunksRef.current = [];
+      if (blob.size < 1024) return; // 잘못 눌러 바로 멈춘 빈 녹음은 올리지 않는다
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(blob);
+      }).catch(() => '');
+      if (!dataUrl) { setRecordError(t('chat_input.record_failed')); setTimeout(() => setRecordError(''), 5000); return; }
+      try {
+        const res = await fetch('/api/media/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl, filenameHint: 'voice-recording' }),
+        });
+        const j = await res.json();
+        if (!j?.success || !j?.data?.url) throw new Error(j?.error || 'upload failed');
+        // URL 을 입력창에 붙인다 — 어떤 일을 시킬지는 사용자가 문장으로 정한다.
+        setInput(prev => (prev ? prev + '\n' : '') + j.data.url + ' ');
+      } catch {
+        setRecordError(t('chat_input.record_failed'));
+        setTimeout(() => setRecordError(''), 5000);
+      }
+    };
+    rec.start();
+    recorderRef.current = rec;
+    setRecording(true);
+  }, [recording, stopRecording]);
+
 
   const handleImageSelect = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -2771,10 +2832,30 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                               <ImagePlus size={16} className="text-slate-400" />
                               {t('chat_input.attach_image')}
                             </button>
+                            <button
+                              onClick={() => { void startRecording(); setShowPlusMenu(false); }}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                              <Mic size={16} className="text-slate-400" />
+                              {t('chat_input.record_audio')}
+                            </button>
                           </div>
                         </>
                       )}
                     </div>
+                    {recordError && (
+                      <span className="text-[12px] text-red-500 px-1.5">{recordError}</span>
+                    )}
+                    {recording && (
+                      <button
+                        onClick={stopRecording}
+                        aria-label={t('chat_input.record_stop')}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors text-[12px] font-semibold"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        {t('chat_input.record_stop')}
+                      </button>
+                    )}
                     {/* 플랜모드 3단계 토글 — OFF / AUTO / ALWAYS 순환. 이미지 모드일 땐 의미 없음 (비활성) */}
                     {(() => {
                       const planTooltip = inputMode === 'image'

@@ -547,7 +547,12 @@
     "send": "전송",
     "attach_fail_title": "첨부 실패",
     "attach_fail_upload": "첨부 이미지 업로드 실패: {detail}",
-    "attach_fail_network": "첨부 이미지 업로드 실패 (네트워크): {detail}"
+    "attach_fail_network": "첨부 이미지 업로드 실패 (네트워크): {detail}",
+    "record_audio": "음성 녹음",
+    "record_stop": "녹음 중지",
+    "record_saved": "녹음이 미디어에 저장됐습니다. 무엇을 할지 함께 적어 보내십시오.",
+    "record_failed": "녹음 저장에 실패했습니다.",
+    "mic_denied": "마이크 권한이 없습니다. 브라우저 설정에서 허용해 주십시오."
   },
   "file_tree": {
     "open_in_browser": "브라우저에서 열기"

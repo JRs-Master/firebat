@@ -547,7 +547,12 @@
     "send": "Send",
     "attach_fail_title": "Attachment failed",
     "attach_fail_upload": "Attached image upload failed: {detail}",
-    "attach_fail_network": "Attached image upload failed (network): {detail}"
+    "attach_fail_network": "Attached image upload failed (network): {detail}",
+    "record_audio": "Record audio",
+    "record_stop": "Stop recording",
+    "record_saved": "Recording saved to media. Say what to do with it and send.",
+    "record_failed": "Failed to save the recording.",
+    "mic_denied": "Microphone permission denied. Allow it in the browser settings."
   },
   "file_tree": {
     "open_in_browser": "Open in browser"
