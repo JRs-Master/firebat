@@ -276,6 +276,25 @@ def _block_lines(b):
     return []
 
 
+# Layout constants (inches / points). python-pptx cannot measure rendered text, so heights are
+# ESTIMATED with per-column wrap counts — Korean at these sizes runs ~5.5 chars/inch — and the
+# estimate errs tall: a slightly airy slide beats text painted over a table (2026-08-10 첫 실물
+# 실측 — 셀이 줄바꿈되자 다음 텍스트박스가 표 위에 앉았다).
+PPTX_MARGIN_IN = 0.6
+PPTX_CHARS_PER_IN = 5.5
+PPTX_BODY_PT = 14
+PPTX_TABLE_PT = 12
+
+
+def _wrap_lines(text, width_in, chars_per_in=PPTX_CHARS_PER_IN):
+    """Visual line count of `text` in a box `width_in` wide — wrap-aware, never below 1."""
+    cpl = max(8, int(width_in * chars_per_in))
+    total = 0
+    for logical in str(text).split("\n"):
+        total += max(1, -(-len(logical) // cpl))
+    return total
+
+
 def make_pptx_file(blocks, title, master_path, out_path):
     from pptx import Presentation
     from pptx.util import Inches, Pt
@@ -283,6 +302,8 @@ def make_pptx_file(blocks, title, master_path, out_path):
     prs = Presentation(master_path) if master_path else Presentation()
     blank = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[-1]
     sw, sh = prs.slide_width, prs.slide_height
+    sw_in = sw / 914400
+    sh_in = sh / 914400
 
     if title:
         layout = prs.slide_layouts[0]
@@ -293,25 +314,45 @@ def make_pptx_file(blocks, title, master_path, out_path):
                 ph.text = str(title)
                 placed = True
                 break
+        # Unfilled placeholders render as dashed "click to add" boxes (the subtitle ghost on
+        # the first live deck) — remove every placeholder we did not fill.
+        for ph in list(slide.placeholders):
+            if placed and ph.placeholder_format.idx == 0:
+                continue
+            el = ph._element
+            el.getparent().remove(el)
         if not placed:
             tb = slide.shapes.add_textbox(Inches(0.8), Inches(2.5), sw - Inches(1.6), Inches(1.5))
             tb.text_frame.text = str(title)
             tb.text_frame.paragraphs[0].font.size = Pt(40)
 
-    slide_count = 1 if title else 0
+    state = {"count": 1 if title else 0, "slide": None, "y": 0.0}
+
+    def new_slide():
+        state["slide"] = prs.slides.add_slide(blank)
+        state["count"] += 1
+        state["y"] = 0.4
+
+    def ensure_room(height_in):
+        # Content that will not fit CONTINUES on a fresh slide — the old behavior silently
+        # dropped the rest of the chunk once the cursor passed the bottom.
+        if state["slide"] is None or state["y"] + height_in > sh_in - 0.4:
+            new_slide()
+
     for chunk in _split_slides(blocks):
-        slide = prs.slides.add_slide(blank)
-        slide_count += 1
-        y = Inches(0.4)
+        state["slide"] = None  # each chunk starts its own slide
         for b in chunk:
             t, p = str(b.get("type") or ""), b.get("props") or {}
             if t == "header":
-                tb = slide.shapes.add_textbox(Inches(0.6), y, sw - Inches(1.2), Inches(0.8))
+                ensure_room(0.9)
+                slide, y = state["slide"], state["y"]
+                tb = slide.shapes.add_textbox(Inches(PPTX_MARGIN_IN), Inches(y),
+                                              sw - Inches(PPTX_MARGIN_IN * 2), Inches(0.8))
                 tf = tb.text_frame
                 tf.text = str(p.get("text") or "")
                 tf.paragraphs[0].font.size = Pt(28 if int(p.get("level") or 2) == 1 else 20)
                 tf.paragraphs[0].font.bold = True
-                y += Inches(0.9)
+                state["y"] = y + 0.9
             elif t == "table":
                 headers = [str(h) for h in (p.get("headers") or [])]
                 rows = p.get("rows") or []
@@ -321,43 +362,66 @@ def make_pptx_file(blocks, title, master_path, out_path):
                 if not headers:
                     continue
                 n_rows, n_cols = len(rows) + 1, len(headers)
-                height = Inches(0.35) * n_rows
+                col_w_in = (sw_in - PPTX_MARGIN_IN * 2) / n_cols
+                # Wrap-aware height: each row is as tall as its most-wrapped cell.
+                def row_h(cells):
+                    lines = max(_wrap_lines("" if c is None else c, col_w_in) for c in cells)
+                    return 0.14 + 0.21 * lines
+                height_in = row_h(headers) + sum(
+                    row_h([row[c] if c < len(row) else "" for c in range(n_cols)])
+                    for row in rows)
+                ensure_room(height_in + 0.2)
+                slide, y = state["slide"], state["y"]
                 shape = slide.shapes.add_table(
-                    n_rows, n_cols, Inches(0.6), y, sw - Inches(1.2), height)
+                    n_rows, n_cols, Inches(PPTX_MARGIN_IN), Inches(y),
+                    sw - Inches(PPTX_MARGIN_IN * 2), Inches(height_in))
                 table = shape.table
+                def set_cell(cell, text, bold):
+                    cell.text = text
+                    for para in cell.text_frame.paragraphs:
+                        para.font.size = Pt(PPTX_TABLE_PT)
+                        para.font.bold = bold
                 for c, h in enumerate(headers):
-                    table.cell(0, c).text = str(h)
+                    set_cell(table.cell(0, c), str(h), True)
                 for r, row in enumerate(rows):
                     for c in range(n_cols):
                         val = row[c] if c < len(row) else ""
-                        table.cell(r + 1, c).text = "" if val is None else str(val)
-                y += height + Inches(0.2)
+                        set_cell(table.cell(r + 1, c), "" if val is None else str(val), False)
+                state["y"] = y + height_in + 0.25
             elif t == "image":
                 src = str(p.get("src") or "")
                 img_path, _ = resolve_path(src)
                 if img_path:
+                    ensure_room(2.7)
+                    slide, y = state["slide"], state["y"]
                     try:
-                        slide.shapes.add_picture(img_path, Inches(0.6), y, height=Inches(2.5))
-                        y += Inches(2.7)
+                        slide.shapes.add_picture(img_path, Inches(PPTX_MARGIN_IN), Inches(y),
+                                                 height=Inches(2.5))
+                        state["y"] = y + 2.7
                     except Exception:  # noqa: BLE001 — a bad image loses itself, not the deck
                         pass
             else:
                 lines = _block_lines(b)
                 if not lines:
                     continue
-                tb = slide.shapes.add_textbox(Inches(0.7), y, sw - Inches(1.4),
-                                              Inches(0.3) * len(lines) + Inches(0.1))
+                body_w_in = sw_in - 1.4
+                visual = sum(_wrap_lines(l, body_w_in) for l in lines)
+                height_in = 0.1 + 0.26 * visual
+                ensure_room(height_in + 0.15)
+                slide, y = state["slide"], state["y"]
+                tb = slide.shapes.add_textbox(Inches(0.7), Inches(y),
+                                              sw - Inches(1.4), Inches(height_in))
                 tf = tb.text_frame
                 tf.word_wrap = True
                 for i, line in enumerate(lines):
                     para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                     para.text = line
-                    para.font.size = Pt(14)
-                y += Inches(0.3) * len(lines) + Inches(0.2)
-            if y > sh - Inches(0.6):
-                break  # overflow: stop placing rather than paint off-canvas
+                    para.font.size = Pt(PPTX_BODY_PT)
+                state["y"] = y + height_in + 0.15
+        if state["slide"] is None:
+            new_slide()  # an empty chunk (e.g. lone divider) still turns the page
     prs.save(out_path)
-    return slide_count
+    return state["count"]
 
 
 def action_make_pptx(inp):
@@ -680,6 +744,21 @@ def action_selftest():
         ck("pptx: text survives the round trip", "본문 한 줄" in got["text"])
         ck("pptx: the table is a real table", got["tables"]
            and got["tables"][0]["headers"] == ["이름", "값"])
+        # The first live deck's two defects, pinned: the empty subtitle placeholder ghost on
+        # the title slide, and overflow silently dropping content instead of turning the page.
+        from pptx import Presentation as _P
+        ck("pptx: title slide keeps only the filled title (no placeholder ghost)",
+           len(_P(p).slides[0].shapes) == 1)
+        p_spill = f"{OUT_DIR}/selftest-spill.pptx"
+        tmp.append(p_spill)
+        many = ([{"type": "header", "props": {"text": "긴 장", "level": 1}}]
+                + [{"type": "text", "props": {"content": "내용 줄 " * 40}} for _ in range(20)])
+        n_spill = make_pptx_file(many, None, None, p_spill)
+        ck("pptx: overflowing content continues on new slides", n_spill >= 2)
+        got_spill = read_pptx(p_spill)
+        ck("pptx: nothing is dropped by overflow",
+           sum(s["text"].count("내용 줄") for s in [{"text": got_spill["text"]}]) >= 1
+           and got_spill["meta"]["slides"] == n_spill)
     except Exception as e:  # noqa: BLE001
         ck(f"pptx round trip crashed: {e}", False)
 
