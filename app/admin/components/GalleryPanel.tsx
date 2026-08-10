@@ -73,6 +73,15 @@ const EXT_BADGE: Record<string, string> = {
 };
 const EXT_BADGE_DEFAULT = 'text-slate-700 bg-slate-100 border-slate-300';
 
+/** Card label: the badge already names the format, so a trailing ".pptx" / "-pptx" (media
+ *  slugs turn dots into dashes) is noise on the second line — strip it when it matches the
+ *  item's ext. Never strips down to an empty label. */
+function cardLabel(name: string, ext: string): string {
+  if (!ext) return name;
+  const stripped = name.replace(new RegExp(`[._-]${ext}$`, 'i'), '');
+  return stripped || name;
+}
+
 // Browsers leave file.type empty for extensions the OS never registered (hwpx above all) —
 // the picker fills the claim from the extension so the server gate has something to verify.
 const EXT_MIME: Record<string, string> = {
@@ -412,13 +421,16 @@ export function GalleryPanel({
                     /* non-image — no pixels to show, so the card says what the file IS:
                        a format-colored badge + the FILENAME (ext alone told nobody which
                        deck was which — 2026-08-10 사용자). */
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1.5 bg-white text-slate-500">
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black tracking-wider uppercase ${EXT_BADGE[item.ext] ?? EXT_BADGE_DEFAULT}`}>
-                        <KindIcon size={10} strokeWidth={2.2} />
-                        {item.ext}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-2 bg-white">
+                      <span className={`shrink-0 w-12 h-12 rounded-xl border flex flex-col items-center justify-center ${EXT_BADGE[item.ext] ?? EXT_BADGE_DEFAULT}`}>
+                        <KindIcon size={18} strokeWidth={2} />
+                        <span className="text-[8px] font-black tracking-wide leading-none mt-0.5 uppercase">{item.ext}</span>
                       </span>
-                      <span className="text-[10px] leading-tight text-slate-600 text-center break-all line-clamp-3 px-0.5">
-                        {item.filenameHint || item.slug}
+                      <span
+                        title={item.filenameHint || item.slug}
+                        className="text-[10.5px] leading-snug font-medium text-slate-600 text-center break-words line-clamp-2 px-0.5"
+                      >
+                        {cardLabel(item.filenameHint || item.slug, item.ext)}
                       </span>
                     </div>
                   ) : (
