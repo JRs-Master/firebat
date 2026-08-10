@@ -1,0 +1,153 @@
+{
+  "name": "news",
+  "type": "module",
+  "scope": "system",
+  "version": "0.1.0",
+  "runtime": "python",
+  "providerType": "compute",
+  "capability": "news-impact",
+  "description": "뉴스 영향 측정 — naver_search 뉴스 결과와 일봉을 받아, 뉴스가 뜬 날 주가가 얼마나 움직였는지(D+1·D+5 수익률)를 잽니다. 대조군(전체 평일 평균)과 벤치마크(지수) 대비 초과수익을 함께 내서, '오르게 한 뉴스인지'가 감이 아니라 측정이 되게 합니다. 유사 제목은 묶고 날짜별 보도량 타임라인도 냅니다. 수집은 naver_search, 해석은 대화 몫.",
+  "aliases": [
+    "뉴스분석",
+    "뉴스영향",
+    "보도분석",
+    "news"
+  ],
+  "tags": [
+    "뉴스",
+    "이벤트",
+    "수익률",
+    "타임라인",
+    "군집",
+    "재료",
+    "호재",
+    "악재",
+    "event-study"
+  ],
+  "cacheInputs": [
+    "items",
+    "bars",
+    "benchmarkBars"
+  ],
+  "actionCatalog": {
+    "actions": [
+      {
+        "id": "impact",
+        "name": "뉴스일 주가 반응 측정 (D+1·D+5, 대조군 동반)",
+        "description": "News items (naver_search shape) + daily bars in -> per-news-day forward returns from the pre-news close, clustered by similar titles, with the all-days average as the control and optional benchmark-relative excess returns. After-close news (>= 15:30 KST) counts on the next trading day. This measures reaction; it does not claim causation, and says so when several stories share a day.",
+        "params": {
+          "items": "naver_search news items (or itemsCacheKey)",
+          "bars": "daily OHLCV rows of the stock (or barsCacheKey)",
+          "benchmarkBars": "optional index bars for excess return (or benchmarkBarsCacheKey)",
+          "horizons": "trading-day horizons, default [1, 5]"
+        }
+      },
+      {
+        "id": "timeline",
+        "name": "보도량 타임라인·유사기사 묶기 (봉 불필요)",
+        "description": "News items in -> daily counts, clusters of near-duplicate titles, sources. No bars needed.",
+        "params": {
+          "items": "naver_search news items (or itemsCacheKey)"
+        }
+      },
+      {
+        "id": "selftest",
+        "name": "셀프테스트",
+        "description": "Offline checks with synthetic news and bars with known answers.",
+        "params": {}
+      }
+    ]
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "impact",
+          "timeline",
+          "selftest"
+        ],
+        "description": "impact = news + daily bars -> measured reaction with a control. timeline = counts + clusters only. selftest = offline checks."
+      },
+      "items": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "News rows as naver_search returns them: {title, link, description, pubDate}. Other shapes work if they carry a title and an RFC-2822 or ISO date field."
+      },
+      "itemsCacheKey": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "The `_cacheKey` from the naver_search news call — hands the items over without re-inlining."
+      },
+      "bars": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "Daily OHLCV rows of the stock, any broker dialect — a date-like field (date/time/stck_bsop_date/...) and a close-like field (close/clpr/stck_clpr/trade_price/...) are found by name."
+      },
+      "barsCacheKey": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "The `_cacheKey` from the candle call."
+      },
+      "benchmarkBars": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "Optional index daily bars (e.g. KOSPI) — enables benchmark-relative excess returns. Without it, raw returns are labeled as raw."
+      },
+      "benchmarkBarsCacheKey": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "The `_cacheKey` from the index candle call."
+      },
+      "horizons": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "number"
+        },
+        "description": "Forward horizons in trading days. Default [1, 5]."
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean"
+      },
+      "action": {
+        "type": "string"
+      },
+      "data": {
+        "type": "object"
+      }
+    }
+  }
+}
