@@ -26,7 +26,7 @@
           "tool": "sysmod_upbit",
           "inputData": {
             "action": "get_candles",
-            "bars": 300
+            "bars": 420
           },
           "inputMap": {
             "symbol": "$prev.symbol",
