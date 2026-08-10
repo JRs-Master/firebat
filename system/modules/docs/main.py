@@ -28,6 +28,7 @@ MIME = {
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": "application/pdf",
 }
 
 
@@ -456,6 +457,117 @@ def make_docx_file(blocks, title, out_path):
     d.save(out_path)
 
 
+def _pdf_korean_font():
+    """A Korean-capable font for reportlab: a host TTF when one exists (embedded, best
+    fidelity), else Adobe's CID KR font (no file needed — the viewer supplies the glyphs)."""
+    from reportlab.pdfbase import pdfmetrics
+    for path in (
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf",
+        "C:/Windows/Fonts/malgun.ttf",
+    ):
+        if os.path.isfile(path):
+            from reportlab.pdfbase.ttfonts import TTFont
+            try:
+                pdfmetrics.registerFont(TTFont("KoreanBody", path))
+                return "KoreanBody"
+            except Exception:  # noqa: BLE001 — a broken font file falls through to CID
+                continue
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    pdfmetrics.registerFont(UnicodeCIDFont("HYGothic-Medium"))
+    return "HYGothic-Medium"
+
+
+def make_pdf_file(blocks, title, out_path):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (Image as RLImage, ListFlowable, ListItem, PageBreak,
+                                    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle)
+
+    font = _pdf_korean_font()
+    styles = {
+        "title": ParagraphStyle("t", fontName=font, fontSize=22, leading=28, spaceAfter=10),
+        1: ParagraphStyle("h1", fontName=font, fontSize=17, leading=22, spaceBefore=10, spaceAfter=6),
+        2: ParagraphStyle("h2", fontName=font, fontSize=14, leading=18, spaceBefore=8, spaceAfter=4),
+        3: ParagraphStyle("h3", fontName=font, fontSize=12, leading=16, spaceBefore=6, spaceAfter=3),
+        "body": ParagraphStyle("b", fontName=font, fontSize=10, leading=15, spaceAfter=3),
+    }
+
+    def esc(s):
+        return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+    story = []
+    if title:
+        story.append(Paragraph(esc(title), styles["title"]))
+    for b in blocks:
+        t, p = str(b.get("type") or ""), b.get("props") or {}
+        if t == "header":
+            lvl = min(3, max(1, int(p.get("level") or 2)))
+            story.append(Paragraph(esc(p.get("text") or ""), styles[lvl]))
+        elif t == "list":
+            items = [ListItem(Paragraph(esc(i), styles["body"])) for i in (p.get("items") or [])]
+            if items:
+                story.append(ListFlowable(
+                    items, bulletType="1" if p.get("ordered") else "bullet",
+                    bulletFontName=font))
+        elif t == "table":
+            headers = [str(h) for h in (p.get("headers") or [])]
+            rows = p.get("rows") or []
+            if not headers:
+                continue
+            data = [[Paragraph(esc(h), styles["body"]) for h in headers]]
+            for row in rows:
+                data.append([Paragraph(esc("" if (row[c] if c < len(row) else "") is None
+                                            else (row[c] if c < len(row) else "")),
+                                       styles["body"]) for c in range(len(headers))])
+            tbl = Table(data, repeatRows=1)
+            tbl.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#94a3b8")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            story.append(tbl)
+            story.append(Spacer(1, 4 * mm))
+        elif t == "image":
+            img_path, _ = resolve_path(str(p.get("src") or ""))
+            if img_path:
+                try:
+                    story.append(RLImage(img_path, height=60 * mm, kind="proportional"))
+                    story.append(Spacer(1, 3 * mm))
+                except Exception:  # noqa: BLE001 — a bad image loses itself, not the document
+                    pass
+        elif t == "divider":
+            story.append(PageBreak())
+        else:
+            for line in _block_lines(b):
+                story.append(Paragraph(esc(line), styles["body"]))
+    if not story:
+        story.append(Paragraph(" ", styles["body"]))
+    SimpleDocTemplate(out_path, pagesize=A4,
+                      topMargin=18 * mm, bottomMargin=18 * mm,
+                      leftMargin=18 * mm, rightMargin=18 * mm).build(story)
+    return font
+
+
+def action_make_pdf(inp):
+    blocks = inp.get("blocks") or []
+    title = str(inp.get("title") or "").strip()
+    if not blocks and not title:
+        return {"success": False, "action": "make_pdf",
+                "error": "blocks (or at least a title) required"}
+    out_path, stem = out_file(title or "document", "pdf", {"t": title, "b": blocks})
+    try:
+        font = make_pdf_file(blocks, title, out_path)
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "action": "make_pdf", "error": f"pdf build failed: {e}"}
+    return {"success": True, "action": "make_pdf", "data": {
+        "blocks": len(blocks), "font": font,
+        "_mediaImport": media_import_decl(out_path, "pdf", stem),
+    }}
+
+
 def action_make_docx(inp):
     blocks = inp.get("blocks") or []
     title = str(inp.get("title") or "").strip()
@@ -594,6 +706,22 @@ def action_selftest():
     except Exception as e:  # noqa: BLE001
         ck(f"pdf read crashed: {e}", False)
 
+    # pdf make round-trip — ASCII asserted (CID-encoded Korean does not reliably re-extract
+    # through pypdf; the Korean path is verified by the build not raising with 한글 in it).
+    p = f"{OUT_DIR}/selftest-made.pdf"
+    tmp.append(p)
+    try:
+        make_pdf_file([{"type": "header", "props": {"text": "Quarterly Report 분기", "level": 1}},
+                       {"type": "text", "props": {"content": "revenue grew 12 percent"}},
+                       {"type": "table", "props": {"headers": ["item", "값"],
+                                                   "rows": [["revenue", 100]]}}],
+                      "Firebat PDF", p)
+        got = read_pdf(p)
+        ck("pdf make: text survives the round trip", "revenue grew 12 percent" in got["text"])
+        ck("pdf make: the file opens as a real pdf", got["meta"]["pages"] >= 1)
+    except Exception as e:  # noqa: BLE001
+        ck(f"pdf make round trip crashed: {e}", False)
+
     for p in tmp:
         try:
             os.remove(p)
@@ -617,7 +745,8 @@ def main():
     inp = envelope.get("data") or envelope
     action = str(inp.get("action") or "").strip()
     handlers = {"read": action_read, "make_pptx": action_make_pptx,
-                "make_xlsx": action_make_xlsx, "make_docx": action_make_docx}
+                "make_xlsx": action_make_xlsx, "make_docx": action_make_docx,
+                "make_pdf": action_make_pdf}
     if action == "selftest":
         out = action_selftest()
     elif action in handlers:
@@ -625,7 +754,7 @@ def main():
     else:
         out = {"success": False, "action": action,
                "error": f"unknown action {action!r} — one of: read, make_pptx, make_xlsx, "
-                        "make_docx, selftest"}
+                        "make_docx, make_pdf, selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False, default=str)).encode("utf-8"))
