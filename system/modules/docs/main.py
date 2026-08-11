@@ -1117,7 +1117,8 @@ XLSX_BARKPI_ROWS = 2         # 1 content row + 1 gap row
 XLSX_BARKPI_COLORS = ("E0475B", "EAB308", "2563EB", "22C55E")
 # A chart is a drawing pinned over a pre-painted white cell box — the "chart card". Excel gives a
 # chart no page of its own, so without the box underneath it floats on the canvas with no edge.
-XLSX_CHARTCARD_ROWS = 18     # card height in grid rows (row 0 = the unit-badge header)
+XLSX_CHARTCARD_ROWS = 18     # card height in grid rows (row 0 = the card header)
+XLSX_CARD_HEADER_H = 18      # the header row, once it carries a title and not just the unit chip
 XLSX_CHART_INSET_CM = 0.3    # so the drawing stops short of the card's right hairline
 XLSX_RING_ROWS = 13          # a doughnut leaves the bottom of its card to the center block
 XLSX_DOUGHNUT_HOLE = 60
@@ -1542,7 +1543,12 @@ def _write_kpi_bars(ws, kpis, top_row, width=XLSX_BARKPI_COLS):
 
         bcell = ws.cell(row=r, column=c_bar)
         bcell.value = num if num is not None else 0
-        bcell.number_format = "#,##0.##"
+        # "#,##0.##" keeps the decimal separator when there are no decimals, so 34 rendered as
+        # "34." inside the bar (2026-08-12 사용자 실측). Excel has no single code that drops a
+        # bare point, so the code is chosen from the value: whole numbers plain, the rest to two
+        # places at most. The number sits left, on the filled end of the bar.
+        whole = num is None or float(num).is_integer()
+        bcell.number_format = "#,##0" if whole else "#,##0.##"
         bcell.alignment = left
         rng = f"{get_column_letter(c_bar)}{r}:{get_column_letter(c_bar)}{r}"
         ws.conditional_formatting.add(rng, DataBarRule(
@@ -1581,11 +1587,41 @@ def _style_chart_title(chart, pt=11):
             para.pPr.defRPr.b = True
 
 
+def _show_axes(chart):
+    """Make every cartesian axis of `chart` — its sub-charts' axes included — actually visible.
+
+    openpyxl never writes <c:delete>, and an omitted c:delete carries the schema default of TRUE,
+    so Excel deletes the axis and every tick label with it: a chart captioned "단위: 백만원" then
+    shows no number at all (2026-08-12 사용자 실측). Saying delete=0 out loud is the whole fix.
+    The tick mark and the label position are said in the same breath because an axis nobody
+    positioned is an axis Excel positions on its own.
+
+    A combo's secondary value axis lives on the LINE sub-chart, not on the container, so the walk
+    goes through `_charts` — setting the container's two axes would leave the 매출 scale hidden.
+    """
+    seen, axes = set(), []
+    for owner in [chart] + list(getattr(chart, "_charts", None) or []):
+        for ax in (getattr(owner, "x_axis", None), getattr(owner, "y_axis", None)):
+            if ax is not None and id(ax) not in seen:
+                seen.add(id(ax))
+                axes.append(ax)
+    for ax in axes:
+        ax.delete = False
+        ax.tickLblPos = "nextTo"
+        ax.majorTickMark = "out"
+        ax.minorTickMark = "none"
+        if getattr(ax, "tagname", "") == "valAx":
+            # Thousands separators on every value axis — a dashboard is read, not decoded.
+            ax.number_format = "#,##0"
+    return axes
+
+
 def _combo_chart(ws, vcols, labcol, max_row):
     """valueCols[0] as bars, valueCols[1] as a line on its own axis. Two quantities that share a
     time axis but not a unit (수량 vs 매출) belong on one chart with two scales — one scale would
     flatten the smaller series into the floor."""
     from openpyxl.chart import BarChart, LineChart, Reference
+    from openpyxl.chart.label import DataLabelList
     from openpyxl.chart.shapes import GraphicalProperties
     from openpyxl.drawing.line import LineProperties
 
@@ -1612,6 +1648,12 @@ def _combo_chart(ws, vcols, labcol, max_row):
     line.y_axis.majorGridlines = None
     bar.y_axis.crosses = "max"
     bar += line
+    # dLbls set on the BarChart group labels the bars only — the LineChart group keeps its own
+    # (empty) dLbls, so the line stays bare. That split is the point: v4 banned labels on the
+    # whole combo because the line dropped its numbers into the bars, which threw away the bar
+    # values the reference dashboard shows above each column.
+    if max_row - 1 <= XLSX_DLBL_MAX_POINTS:
+        bar.dLbls = DataLabelList(showVal=True, dLblPos="outEnd")
     return bar
 
 
@@ -1642,14 +1684,37 @@ def _write_doughnut_center(ws, spec, c0, row, cols):
         ws.row_dimensions[row + 1].height = 26
 
 
+def _card_title_cell(ws, row, c0, cols, text):
+    """A chart title written as a CELL on the card's header row instead of inside the drawing.
+
+    Excel centers a chart's own title over the plot. In a one-third-width card the ring IS the
+    plot, so the title landed on the doughnut (2026-08-12 사용자 실측). Handing the title to the
+    card fixes it at the source and speaks the KPI label strip's typography — bold, navy, on the
+    card's own top row — so the two archetypes read as one page.
+    """
+    from openpyxl.styles import Alignment, Font
+
+    text = str(text or "").strip()
+    if not text or cols < 1:
+        return
+    if cols > 1:
+        ws.merge_cells(start_row=row, start_column=c0, end_row=row, end_column=c0 + cols - 1)
+    cell = ws.cell(row=row, column=c0)
+    cell.value = text
+    cell.font = Font(size=10, bold=True, color=XLSX_BAND)
+    cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[row].height = XLSX_CARD_HEADER_H
+
+
 def _unit_badge(ws, row, c0, cols, unit):
     """A chart's unit ("단위: 백만원") as a small amber chip in the card's header row, hard right.
-    Absent unit = no chip, no gap: the header row is the card's own padding either way."""
+    Absent unit = no chip, no gap: the header row is the card's own padding either way. Returns
+    the number of columns the chip took, so a card header can fill exactly what is left."""
     from openpyxl.styles import Alignment, Font, PatternFill
 
     text = str(unit or "").strip()
     if not text:
-        return
+        return 0
     span = 2 if cols >= 4 else 1
     b0 = c0 + cols - span
     ws.merge_cells(start_row=row, start_column=b0, end_row=row, end_column=b0 + span - 1)
@@ -1660,6 +1725,7 @@ def _unit_badge(ws, row, c0, cols, unit):
     cell.value = text
     cell.font = Font(size=8, bold=True, color=XLSX_UNIT_BADGE_FG)
     cell.alignment = Alignment(horizontal="center", vertical="center")
+    return span
 
 
 def _build_chart(wb, spec, sheet_map, notes):
@@ -1716,12 +1782,13 @@ def _build_chart(wb, spec, sheet_map, notes):
         if labcol:
             chart.set_categories(
                 Reference(ws, min_col=labcol, min_row=2, max_row=ws.max_row))
-    if title:
+    # A round chart keeps NO internal title: its card writes the title as a header cell instead
+    # (see _card_title_cell). Everything cartesian has a plot wide enough to sit under one.
+    if title and ctype not in _ROUND_CHARTS:
         chart.title = title
         _style_chart_title(chart)
     if ctype not in _ROUND_CHARTS:
-        # Thousands separators on the value axis — a dashboard is read, not decoded.
-        chart.y_axis.number_format = "#,##0"
+        _show_axes(chart)
     if len(vcols) < 2 and ctype not in _ROUND_CHARTS:
         chart.legend = None  # a one-series legend is noise
         # One series = one color. Excel's default palette exists to tell series apart; with
@@ -1738,9 +1805,9 @@ def _build_chart(wb, spec, sheet_map, notes):
         # Under the plot it takes rows the drawing already reserved.
         chart.legend.position = "b"
         chart.legend.overlay = False
-    # Value labels only where they have somewhere to go: above the bars of a bar-only chart, and
-    # only while the bars are still wide enough to hold a number. A combo's line would drop its
-    # labels straight into the bars, so combos get none at all.
+    # Value labels only where they have somewhere to go: above the bars, and only while the bars
+    # are still wide enough to hold a number. A combo labels its bars inside _combo_chart, on the
+    # bar group alone — its line stays bare, because a line's labels land in the bars.
     if ctype == "bar" and ws.max_row - 1 <= XLSX_DLBL_MAX_POINTS:
         chart.dLbls = DataLabelList(showVal=True, dLblPos="outEnd")
     # The chart's own page: white area, no frame line — so the drawing reads as part of the white
@@ -1788,10 +1855,17 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes, width)
         c0 = 1
         for (chart, ctype, _i, spec), cols in band:
             _card_box(ws_dash, row, c0, XLSX_CHARTCARD_ROWS, cols)
-            _unit_badge(ws_dash, row, c0, cols, spec.get("unit"))
+            badge = _unit_badge(ws_dash, row, c0, cols, spec.get("unit"))
             ring = ctype in _ROUND_CHARTS
-            # -2: the badge row on top and one padding row above the card's bottom hairline.
+            if ring:
+                # The ring gave its title away; the card's header row takes it, minus whatever
+                # the unit chip already claimed on the right.
+                _card_title_cell(ws_dash, row, c0, cols - badge, spec.get("title"))
+            # -2: the header row on top and one padding row above the card's bottom hairline.
             rows = XLSX_RING_ROWS if ring else XLSX_CHARTCARD_ROWS - 2
+            # The drawing is sized from the measured grid, never from a guess: the card is
+            # `cols` columns of XLSX_COL_CM minus the inset, so the chart cannot reach the
+            # neighbour's hairline however narrow the card gets.
             chart.width = _cm_cols(cols)
             chart.height = rows * XLSX_ROW_CM
             ws_dash.add_chart(chart, f"{get_column_letter(c0)}{row + 1}")
@@ -2499,8 +2573,41 @@ def action_selftest():
         ck("xlsx v4: a chart's unit becomes an amber badge at its card's top-right",
            ws_v3.cell(row=band0, column=wide_cols - 1).value == "단위: 백만원"
            and _fill_of(ws_v3, f"{_gcl(wide_cols - 1)}{band0}").endswith(XLSX_UNIT_BADGE_BG))
-        ck("xlsx v4: value labels ride the bars of a bar-only chart, never a combo's line",
-           "<dLbls>" in dash_bar_xml and "<dLbls>" not in combo_xml[0])
+        ck("xlsx v4: value labels ride the bars of a bar-only chart",
+           "<dLbls>" in dash_bar_xml)
+
+        # 2026-08-12 v5: three measured flaws from the v4 sample — axes with no numbers on them,
+        # a combo that threw its bar values away with the line's, and a ring wearing its title.
+        ring_cols = max(3, round(XLSX_DASH_COLS / 3))
+        exts = [(int(cx), int(cy)) for cx, cy in
+                re.findall(r'<ext cx="(\d+)" cy="(\d+)"/>', draw_v3)]
+        combo_bars, combo_line = combo_xml[0].split("<lineChart", 1)
+        ck("xlsx v5: every cartesian axis says delete=0, the combo's secondary axis included",
+           combo_xml[0].count('<delete val="0"/>') == 3
+           and combo_xml[0].count('<tickLblPos val="nextTo"/>') == 3
+           and dash_bar_xml.count('<delete val="0"/>') == 2)
+        ck("xlsx v5: both of the combo's value axes carry a thousands format",
+           combo_xml[0].count('<numFmt formatCode="#,##0" sourceLinked="0"/>') == 2)
+        ck("xlsx v5: a combo labels its bars and leaves its line bare",
+           "<dLbls>" in combo_bars and '<dLblPos val="outEnd"/>' in combo_bars
+           and "<dLbls>" not in combo_line)
+        ck("xlsx v5: a ring carries no internal title — its card's header cell does",
+           "<title>" not in dough_xml[0]
+           and ws_v3.cell(row=band0, column=wide_cols + 1).value == "첫구매 비중")
+        # 1cm = 360000 EMU. The ring is a drawing, not a cell, so "inside the card" is arithmetic:
+        # it may not be wider than its own column span nor taller than the rows reserved for it.
+        ck("xlsx v5: the ring never outgrows its card box",
+           len(exts) == 2
+           and exts[1][0] <= round(ring_cols * XLSX_COL_CM * 360000)
+           and exts[1][1] <= round(XLSX_RING_ROWS * XLSX_ROW_CM * 360000))
+        bar_kpi_row = XLSX_KPI_TOP + XLSX_KPI_ROWS + XLSX_CHARTCARD_ROWS + 1
+        bar_col = 1 + XLSX_BARKPI_VALUE_COLS + XLSX_BARKPI_LABEL_COLS
+        int_cell = ws_v3.cell(row=bar_kpi_row, column=bar_col)
+        dec_cell = ws_v3.cell(row=bar_kpi_row + XLSX_BARKPI_ROWS, column=bar_col)
+        ck("xlsx v5: the in-bar value drops the dangling decimal point, keeps real decimals",
+           (int_cell.value, int_cell.number_format) == (34, "#,##0")
+           and (dec_cell.value, dec_cell.number_format) == (4.11, "#,##0.##")
+           and int_cell.alignment.horizontal == "left")
 
         # Ledger genre: a document with live monthly / running subtotals.
         p_lg = f"{OUT_DIR}/selftest-ledger.xlsx"
