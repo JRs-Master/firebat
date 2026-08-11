@@ -101,7 +101,7 @@
           "object",
           "null"
         ],
-        "description": "KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4 — OR pass estimatesCacheKey with the _cacheKey from that call (preferred: no retyping). Never rebuild rows by hand; a hand-made array is refused, not normalized. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed."
+        "description": "KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4 — OR pass estimatesCacheKey with the _cacheKey from that call (preferred: no retyping). The output2/output3 rows are UNLABELED — never try to decode row meanings yourself (the labels here are live-measured), and never rebuild rows by hand; a hand-made array is refused, not normalized. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed."
       }
     }
   },

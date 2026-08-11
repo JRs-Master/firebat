@@ -1262,7 +1262,7 @@
  {
   "id": "국내주식-187",
   "name": "국내주식 종목추정실적",
-  "description": "국내주식 종목추정실적",
+  "description": "국내주식 종목추정실적 (증권사 컨센서스 — 매출·영업이익·순이익·EPS 전망). 응답의 output2/output3 행에는 라벨이 없습니다 — 직접 해독하지 마세요(실측: 행 순서 추측으로 라운드 소진). 응답 그대로(또는 _cacheKey 를 estimatesCacheKey 로) fa ratios 의 estimates 에 넘기면 실측 라벨로 정규화됩니다.",
   "domain": "[국내주식] 종목정보",
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/estimate-perform",
