@@ -1093,6 +1093,30 @@ XLSX_CARD_LABEL_BG = "F2F5FA"
 XLSX_WHITE = "FFFFFF"
 XLSX_TITLE_ROW_H = 26
 XLSX_CHART_W_CM, XLSX_CHART_H_CM = 16.0, 8.5
+# Card v3: the accent moved from a left spine to a thick bottom underline that cycles per card,
+# so a row of cards reads as a row (the reference dashboards' language) instead of four clones.
+XLSX_CARD_UNDERLINES = ("2563EB", "E0475B", "EAB308", "22C55E")
+# Progress-bar KPIs (a ratio told twice: as a number and as a filled length).
+XLSX_BARKPI_VALUE_COLS = 2   # merged width of the big colored number
+XLSX_BARKPI_LABEL_COLS = 2   # merged width of the caption beside it
+XLSX_BARKPI_BAR_COLS = 6     # merged width of the cell the data bar fills
+XLSX_BARKPI_COLS = XLSX_BARKPI_VALUE_COLS + XLSX_BARKPI_LABEL_COLS + XLSX_BARKPI_BAR_COLS
+XLSX_BARKPI_ROWS = 2         # 1 content row + 1 gap row
+XLSX_BARKPI_COLORS = ("E0475B", "EAB308", "2563EB", "22C55E")
+# A doughnut is narrower than a full chart slot because the ratio it is about lives in cells
+# to its right — Excel cannot paint text in the hole.
+XLSX_DOUGHNUT_W_CM = 10.5
+XLSX_DOUGHNUT_HOLE = 60
+XLSX_CENTER_OFFSET = 5       # columns from the chart anchor to the center block
+XLSX_CENTER_COLS = 3         # merged width of the center block
+XLSX_COMBO_BAR = "9EB9DA"    # muted blue bars so the accent line stays the foreground
+# Ledger (총계정원장) genre: a document, not a heatmap.
+XLSX_LEDGER_HEAD_BG = "D9D9D9"
+XLSX_LEDGER_MONTH_BG = "F2F5FA"
+XLSX_LEDGER_TOTAL_BG = "E4EBF5"
+XLSX_LEDGER_LINE = "808080"
+XLSX_LEDGER_MONTH_LABEL = "[월 계]"
+XLSX_LEDGER_TOTAL_LABEL = "[누 계]"
 # Korean market convention: up = red, down = blue (the inverse of the US convention).
 XLSX_UP, XLSX_DOWN, XLSX_FLAT = "C00000", "1F5FBF", "808080"
 # Ratio-ish columns diverge around zero, so a 3-color scale reads them; absolute magnitudes
@@ -1100,7 +1124,11 @@ XLSX_UP, XLSX_DOWN, XLSX_FLAT = "C00000", "1F5FBF", "808080"
 _RATIO_HEADER_RE = re.compile(r"(%|율|증감|등락|change|delta|yoy)", re.I)
 _CHART_BLOCK_TYPES = ("chart", "bar_chart", "line_chart", "pie_chart",
                       "donut_chart", "doughnut_chart", "column_chart", "area_chart")
-_CHART_TYPE_ALIASES = {"doughnut": "pie", "donut": "pie", "column": "bar", "area": "line"}
+_CHART_TYPE_ALIASES = {"donut": "doughnut", "column": "bar", "area": "line"}
+_CHART_TYPES = ("bar", "line", "pie", "doughnut", "combo")
+_ROUND_CHARTS = ("pie", "doughnut")   # no value axis, own color per slice
+# "2026-01-05" / "2026.01" / a real date cell -> the month a ledger row belongs to.
+_YM_RE = re.compile(r"(\d{4})\s*[-/.년]?\s*(\d{1,2})")
 
 
 def _sheet_title(raw, index, used):
@@ -1113,6 +1141,45 @@ def _sheet_title(raw, index, used):
         n += 1
     used.add(name)
     return name
+
+
+def _coerce_row(row):
+    """"1,234" must land as the number 1234, not text — text numbers kill SUM and charts on the
+    receiving end (2026-08-11 사용자 실측). A leading "=" stays a string here and openpyxl
+    writes it as a live formula."""
+    cells = []
+    for v in row:
+        num = parse_number(v)
+        cells.append(num if num is not None else ("" if v is None else str(v)))
+    return cells
+
+
+def _number_columns(body, ncols):
+    """{0-based column: number format} for the columns that really hold numbers. A column that
+    is mostly text is not a number column, however many digits happen to sit in it."""
+    out = {}
+    for ci in range(ncols):
+        vals = [r[ci] for r in body if ci < len(r)]
+        filled = [v for v in vals if v not in ("", None)]
+        nums = [v for v in filled if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        if not nums or len(nums) * 2 <= len(filled):
+            continue
+        ints = [v for v in nums if float(v).is_integer()]
+        out[ci] = "#,##0" if len(ints) * 2 > len(nums) else "#,##0.00"
+    return out
+
+
+def _fit_column_widths(ws, headers, body, ncols):
+    """Width from the widest thing the column will actually show, formatted as it will show."""
+    from openpyxl.utils import get_column_letter
+
+    for ci in range(ncols):
+        texts = ([headers[ci]] if ci < len(headers) else []) + [
+            (f"{r[ci]:,}" if isinstance(r[ci], (int, float)) and not isinstance(r[ci], bool)
+             else str(r[ci]))
+            for r in body if ci < len(r)]
+        ws.column_dimensions[get_column_letter(ci + 1)].width = min(
+            40, max(10, max([len(t) for t in texts] + [0]) + 2))
 
 
 def _write_data_sheet(ws, sh):
@@ -1129,32 +1196,16 @@ def _write_data_sheet(ws, sh):
         ws.freeze_panes = "A2"
     body = []
     for row in sh.get("rows") or []:
-        # "1,234" must land as the number 1234, not text — text numbers kill SUM and
-        # charts on the receiving end (2026-08-11 사용자 실측). A leading "=" stays a
-        # string here and openpyxl writes it as a live formula.
-        cells = []
-        for v in row:
-            num = parse_number(v)
-            cells.append(num if num is not None else ("" if v is None else str(v)))
+        cells = _coerce_row(row)
         ws.append(cells)
         body.append(cells)
 
     ncols = max([len(headers)] + [len(r) for r in body] + [0])
     first_row = 2 if headers else 1
     last_row = first_row + len(body) - 1
-    for ci in range(ncols):
+    _fit_column_widths(ws, headers, body, ncols)
+    for ci, fmt in _number_columns(body, ncols).items():
         col = get_column_letter(ci + 1)
-        vals = [r[ci] for r in body if ci < len(r)]
-        texts = ([headers[ci]] if ci < len(headers) else []) + [
-            (f"{v:,}" if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v))
-            for v in vals]
-        ws.column_dimensions[col].width = min(40, max(10, max([len(t) for t in texts] + [0]) + 2))
-        filled = [v for v in vals if v not in ("", None)]
-        nums = [v for v in filled if isinstance(v, (int, float)) and not isinstance(v, bool)]
-        if not nums or len(nums) * 2 <= len(filled):
-            continue  # a column that is mostly text is not a number column
-        ints = [v for v in nums if float(v).is_integer()]
-        fmt = "#,##0" if len(ints) * 2 > len(nums) else "#,##0.00"
         for r in range(first_row, last_row + 1):
             ws.cell(row=r, column=ci + 1).number_format = fmt
         if last_row < first_row:
@@ -1173,6 +1224,124 @@ def _write_data_sheet(ws, sh):
                 start_type="min", end_type="max", color=XLSX_BAR_COLOR, showValue=True))
 
 
+# ── xlsx: the ledger (총계정원장) sheet style ──────────────────────────────────────────────────
+def _ym_key(v):
+    """The YYYY-MM a ledger row belongs to, or None when the cell is not date-ish."""
+    if hasattr(v, "year") and hasattr(v, "month"):
+        return f"{int(v.year):04d}-{int(v.month):02d}"
+    m = _YM_RE.match(str(v if v is not None else "").strip())
+    return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}" if m else None
+
+
+def _ledger_subtotal_rows(ws, row, spans, numfmt, ncols, box):
+    """Write the [월 계] / [누 계] band under a finished month. Both are LIVE formulas: editing
+    a data row has to move them, which a precomputed number would not do.
+
+    월 계 sums exactly the month's own data rows. 누 계 starts at the very first data row and
+    ends at this month's last one — but as a *list* of the data spans, because the subtotal
+    bands already written sit inside that stretch and one contiguous SUM would count them again.
+    """
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    center = Alignment(horizontal="center", vertical="center")
+    right = Alignment(horizontal="right", vertical="center")
+    bands = ((XLSX_LEDGER_MONTH_LABEL, XLSX_LEDGER_MONTH_BG, spans[-1:]),
+             (XLSX_LEDGER_TOTAL_LABEL, XLSX_LEDGER_TOTAL_BG, spans))
+    for label, bg, use in bands:
+        fill = PatternFill("solid", fgColor=bg)
+        for ci in range(ncols):
+            cell = ws.cell(row=row, column=ci + 1)
+            cell.border = box
+            cell.fill = fill
+            cell.font = Font(bold=True)
+            if ci in numfmt:
+                col = get_column_letter(ci + 1)
+                cell.value = "=SUM({})".format(
+                    ",".join(f"{col}{a}:{col}{b}" for a, b in use))
+                cell.number_format = numfmt[ci]
+                cell.alignment = right
+            elif ci == 0:
+                cell.value = label
+                cell.alignment = center
+        row += 1
+    return row
+
+
+def _write_ledger_sheet(ws, sh):
+    """A bookkeeping document: centered title, period line, fully ruled table, live monthly and
+    running subtotals. Deliberately NOT a data sheet — no data bars, no color scale. A ledger is
+    something you print and sign, and a heatmap in it reads as a mistake."""
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    headers = [str(h) for h in (sh.get("headers") or [])]
+    body = [_coerce_row(row) for row in (sh.get("rows") or [])]
+    ncols = max([len(headers)] + [len(r) for r in body] + [1])
+    ws.sheet_view.showGridLines = False
+
+    center = Alignment(horizontal="center", vertical="center")
+    right = Alignment(horizontal="right", vertical="center")
+    left = Alignment(horizontal="left", vertical="center")
+    line = Side(style="thin", color=XLSX_LEDGER_LINE)
+    box = Border(left=line, right=line, top=line, bottom=line)
+
+    row = 1
+    doc_title = str(sh.get("docTitle") or "").strip()
+    period = str(sh.get("period") or "").strip()
+    for text, size, color, height in ((doc_title, 16, XLSX_BAND, 30),
+                                      (period, 10, "64748B", 18)):
+        if not text:
+            continue
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=ncols)
+        head = ws.cell(row=row, column=1)
+        head.value = text
+        head.font = Font(size=size, bold=size >= 14, color=color)
+        head.alignment = center
+        ws.row_dimensions[row].height = height
+        row += 1
+    if row > 1:
+        row += 1   # one breathing row between the masthead and the ruled table
+
+    header_row = row
+    if headers:
+        fill = PatternFill("solid", fgColor=XLSX_LEDGER_HEAD_BG)
+        for ci in range(ncols):
+            cell = ws.cell(row=header_row, column=ci + 1)
+            cell.value = headers[ci] if ci < len(headers) else ""
+            cell.font = Font(bold=True)
+            cell.fill = fill
+            cell.alignment = center
+            cell.border = box
+        ws.freeze_panes = ws.cell(row=header_row + 1, column=1).coordinate
+        row += 1
+
+    numfmt = _number_columns(body, ncols)
+    keycol = _resolve_column(headers, sh.get("subtotalBy")) if sh.get("subtotalBy") not in (
+        None, "") else None
+    spans, span_start, cur_key = [], row, None
+    for cells in body:
+        key = _ym_key(cells[keycol - 1]) if keycol and keycol - 1 < len(cells) else None
+        if keycol and cur_key is not None and key != cur_key:
+            spans.append((span_start, row - 1))
+            row = _ledger_subtotal_rows(ws, row, spans, numfmt, ncols, box)
+            span_start = row
+        cur_key = key
+        for ci in range(ncols):
+            cell = ws.cell(row=row, column=ci + 1)
+            cell.value = cells[ci] if ci < len(cells) else ""
+            cell.border = box
+            if ci in numfmt:
+                cell.number_format = numfmt[ci]
+                cell.alignment = right
+            else:
+                cell.alignment = center if ci == 0 else left
+        row += 1
+    if keycol and body:
+        spans.append((span_start, row - 1))
+        row = _ledger_subtotal_rows(ws, row, spans, numfmt, ncols, box)
+    _fit_column_widths(ws, headers, body, ncols)
+
+
 def _kpi_delta(delta, delta_type=None):
     """(text, color) for the delta line — sign decides, deltaType only rescues non-numbers."""
     if delta in (None, ""):
@@ -1189,22 +1358,31 @@ def _kpi_delta(delta, delta_type=None):
     return "—", XLSX_FLAT
 
 
-def _write_kpi_cards(ws, kpis, top_row):
+def _split_kpis(kpis):
+    """(cards, progress bars) — style: "bar" picks the second archetype."""
+    cards, bars = [], []
+    for k in kpis:
+        (bars if str(k.get("style") or "").strip().lower() == "bar" else cards).append(k)
+    return cards, bars
+
+
+def _write_kpi_card_grid(ws, kpis, top_row):
     """Cards left to right, four per row. Returns the first free row below them."""
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     center = Alignment(horizontal="center", vertical="center")
-    # A card is a box, not three loose cells: hairline on all four edges, an accent spine on the
-    # left, a very light label strip on top. Interior verticals stay out — the merges already
-    # read as one field and extra rules make a school-project grid.
+    # A card is a box, not three loose cells: hairline on all four edges, a thick colored
+    # underline at the bottom, a very light label strip on top. Interior verticals stay out —
+    # the merges already read as one field and extra rules make a school-project grid.
     hair = Side(style="thin", color=XLSX_CARD_LINE)
-    spine = Side(style="thick", color=XLSX_ACCENT)
     label_fill = PatternFill("solid", fgColor=XLSX_CARD_LABEL_BG)
     body_fill = PatternFill("solid", fgColor=XLSX_WHITE)
     for i, k in enumerate(kpis):
         c0 = 1 + (i % XLSX_KPI_PER_ROW) * XLSX_KPI_COLS
         r0 = top_row + (i // XLSX_KPI_PER_ROW) * XLSX_KPI_ROWS
+        underline = Side(style="thick",
+                         color=XLSX_CARD_UNDERLINES[i % len(XLSX_CARD_UNDERLINES)])
         for span in range(XLSX_KPI_COLS):
             ws.column_dimensions[get_column_letter(c0 + span)].width = 13
         for dr in range(3):
@@ -1216,10 +1394,10 @@ def _write_kpi_cards(ws, kpis, top_row):
             for dc in range(XLSX_KPI_COLS):
                 cell = ws.cell(row=r0 + dr, column=c0 + dc)
                 cell.border = Border(
-                    left=spine if dc == 0 else None,
+                    left=hair if dc == 0 else None,
                     right=hair if dc == XLSX_KPI_COLS - 1 else None,
                     top=hair if dr == 0 else None,
-                    bottom=hair if dr == 2 else None)
+                    bottom=underline if dr == 2 else None)
                 cell.fill = label_fill if dr == 0 else body_fill
         ws.row_dimensions[r0].height = 16
         ws.row_dimensions[r0 + 1].height = 30
@@ -1231,19 +1409,24 @@ def _write_kpi_cards(ws, kpis, top_row):
 
         unit = str(k.get("unit") or "").replace('"', "")
         fmt = f'#,##0"{unit}"' if unit else "#,##0"
+        icon = str(k.get("icon") or "").strip()
         val = ws.cell(row=r0 + 1, column=c0)
         raw = k.get("value")
         s = "" if raw is None else str(raw).strip()
+        num = parse_number(raw)
         if s.startswith("="):
-            val.value = s          # the caller's live formula, kept live
+            # A formula cannot carry a prefix and stay a formula, so an icon is dropped here
+            # rather than silently turning the caller's live total into text.
+            val.value = s
+            val.number_format = fmt
+        elif num is not None and not icon:
+            val.value = num
             val.number_format = fmt
         else:
-            num = parse_number(raw)
-            if num is not None:
-                val.value = num
-                val.number_format = fmt
-            else:
-                val.value = f"{s}{unit}" if unit else s
+            # An icon trades the cell's numeric-ness away: "💰 334조원" is a label, not a value
+            # you can SUM or chart. That is the deal, and it is the caller's to make.
+            body = f"{num:,}{unit}" if num is not None else (f"{s}{unit}" if unit else s)
+            val.value = f"{icon} {body}".strip()
         val.font = Font(size=20, bold=True, color=XLSX_BAND)
         val.alignment = center
 
@@ -1255,6 +1438,60 @@ def _write_kpi_cards(ws, kpis, top_row):
             dcell.alignment = center
     rows_used = -(-len(kpis) // XLSX_KPI_PER_ROW)
     return top_row + rows_used * XLSX_KPI_ROWS
+
+
+def _write_kpi_bars(ws, kpis, top_row):
+    """A ratio told twice on one line: the number, its caption, and a data bar whose length is
+    the number against `max`. The bar is a real conditional format on a real cell, so the length
+    follows the value when someone edits it."""
+    from openpyxl.formatting.rule import DataBarRule
+    from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import get_column_letter
+
+    left = Alignment(horizontal="left", vertical="center")
+    right = Alignment(horizontal="right", vertical="center")
+    c_val = 1
+    c_lab = c_val + XLSX_BARKPI_VALUE_COLS
+    c_bar = c_lab + XLSX_BARKPI_LABEL_COLS
+    for i, k in enumerate(kpis):
+        r = top_row + i * XLSX_BARKPI_ROWS
+        ws.row_dimensions[r].height = 24
+        color = XLSX_BARKPI_COLORS[i % len(XLSX_BARKPI_COLORS)]
+        num = parse_number(k.get("value"))
+        top = parse_number(k.get("max"))
+        top = float(top) if top not in (None, 0) else 100.0
+
+        for c0, span in ((c_val, XLSX_BARKPI_VALUE_COLS), (c_lab, XLSX_BARKPI_LABEL_COLS),
+                         (c_bar, XLSX_BARKPI_BAR_COLS)):
+            ws.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c0 + span - 1)
+        unit = str(k.get("unit") or "")
+        shown = k.get("value") if num is None else (f"{num:,.2f}".rstrip("0").rstrip("."))
+        vcell = ws.cell(row=r, column=c_val)
+        vcell.value = f"{shown}{unit}"
+        vcell.font = Font(size=16, bold=True, color=color)
+        vcell.alignment = right
+
+        lcell = ws.cell(row=r, column=c_lab)
+        lcell.value = str(k.get("label") or "")
+        lcell.font = Font(size=10, color="64748B")
+        lcell.alignment = left
+
+        bcell = ws.cell(row=r, column=c_bar)
+        bcell.value = num if num is not None else 0
+        bcell.number_format = "#,##0.##"
+        bcell.alignment = left
+        rng = f"{get_column_letter(c_bar)}{r}:{get_column_letter(c_bar)}{r}"
+        ws.conditional_formatting.add(rng, DataBarRule(
+            start_type="num", start_value=0, end_type="num", end_value=top,
+            color=color, showValue=True))
+    return top_row + len(kpis) * XLSX_BARKPI_ROWS
+
+
+def _write_kpi_cards(ws, kpis, top_row):
+    """Both KPI archetypes, cards then bars. Returns the first free row below them."""
+    cards, bars = _split_kpis(kpis)
+    row = _write_kpi_card_grid(ws, cards, top_row) if cards else top_row
+    return _write_kpi_bars(ws, bars, row + (1 if cards and bars else 0)) if bars else row
 
 
 def _resolve_column(headers, ref):
@@ -1287,14 +1524,78 @@ def _style_chart_title(chart, pt=11):
             para.pPr.defRPr.b = True
 
 
+def _combo_chart(ws, vcols, labcol, max_row):
+    """valueCols[0] as bars, valueCols[1] as a line on its own axis. Two quantities that share a
+    time axis but not a unit (수량 vs 매출) belong on one chart with two scales — one scale would
+    flatten the smaller series into the floor."""
+    from openpyxl.chart import BarChart, LineChart, Reference
+    from openpyxl.chart.shapes import GraphicalProperties
+    from openpyxl.drawing.line import LineProperties
+
+    bar = BarChart()
+    bar.add_data(Reference(ws, min_col=vcols[0], min_row=1, max_row=max_row),
+                 titles_from_data=True)
+    line = LineChart()
+    line.add_data(Reference(ws, min_col=vcols[1], min_row=1, max_row=max_row),
+                  titles_from_data=True)
+    if labcol:
+        cats = Reference(ws, min_col=labcol, min_row=2, max_row=max_row)
+        bar.set_categories(cats)
+        line.set_categories(cats)
+    for s in bar.series:
+        s.graphicalProperties = GraphicalProperties(solidFill=XLSX_COMBO_BAR)
+    for s in line.series:
+        s.graphicalProperties = GraphicalProperties(
+            ln=LineProperties(solidFill=XLSX_ACCENT, w=22000))
+        s.smooth = False   # invented curvature between real points is a lie
+    # The secondary axis is an axId the line owns; the primary then crosses at max so the two
+    # axes sit on opposite sides instead of on top of each other.
+    line.y_axis.axId = 200
+    line.y_axis.number_format = "#,##0"
+    line.y_axis.majorGridlines = None
+    bar.y_axis.crosses = "max"
+    bar += line
+    return bar
+
+
+def _write_doughnut_center(ws, spec, anchor_col, anchor_row):
+    """Excel cannot paint text inside the hole of a doughnut, so the ratio the ring is about
+    lives in merged cells beside it — same reading order, and real cells you can point at."""
+    from openpyxl.styles import Alignment, Font
+
+    label = str(spec.get("centerLabel") or "").strip()
+    value = str(spec.get("centerValue") or "").strip()
+    if not label and not value:
+        return
+    center = Alignment(horizontal="center", vertical="center")
+    c0 = anchor_col + XLSX_CENTER_OFFSET
+    r_lab, r_val = anchor_row + 5, anchor_row + 6
+    if label:
+        ws.merge_cells(start_row=r_lab, start_column=c0,
+                       end_row=r_lab, end_column=c0 + XLSX_CENTER_COLS - 1)
+        cell = ws.cell(row=r_lab, column=c0)
+        cell.value = label
+        cell.font = Font(size=9, color="64748B")
+        cell.alignment = center
+    if value:
+        ws.merge_cells(start_row=r_val, start_column=c0,
+                       end_row=r_val + 1, end_column=c0 + XLSX_CENTER_COLS - 1)
+        cell = ws.cell(row=r_val, column=c0)
+        cell.value = value
+        cell.font = Font(size=24, bold=True, color=XLSX_BAND)
+        cell.alignment = center
+        ws.row_dimensions[r_val].height = 26
+
+
 def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
     """Native charts anchored below the KPI band, two per row. Data comes from cells."""
-    from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+    from openpyxl.chart import BarChart, DoughnutChart, LineChart, PieChart, Reference
     from openpyxl.chart.shapes import GraphicalProperties
     from openpyxl.drawing.line import LineProperties
     from openpyxl.utils import get_column_letter
 
-    kinds = {"line": LineChart, "bar": BarChart, "pie": PieChart}
+    kinds = {"line": LineChart, "bar": BarChart, "pie": PieChart,
+             "doughnut": lambda: DoughnutChart(holeSize=XLSX_DOUGHNUT_HOLE)}
     placed = 0
     for spec in charts:
         title = str(spec.get("title") or "").strip()
@@ -1327,20 +1628,28 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
 
         ctype = str(spec.get("type") or "bar").strip().lower()
         ctype = _CHART_TYPE_ALIASES.get(ctype, ctype)
-        chart = kinds.get(ctype, BarChart)()
-        for col in vcols:
-            chart.add_data(Reference(ws, min_col=col, min_row=1, max_row=ws.max_row),
-                           titles_from_data=True)
-        if labcol:
-            chart.set_categories(Reference(ws, min_col=labcol, min_row=2, max_row=ws.max_row))
+        if ctype == "combo" and len(vcols) < 2:
+            notes.append(f"chart '{who}': combo needs two value columns — drawn as bars")
+            ctype = "bar"
+        if ctype == "combo":
+            chart = _combo_chart(ws, vcols, labcol, ws.max_row)
+        else:
+            chart = kinds.get(ctype, BarChart)()
+            for col in vcols:
+                chart.add_data(Reference(ws, min_col=col, min_row=1, max_row=ws.max_row),
+                               titles_from_data=True)
+            if labcol:
+                chart.set_categories(
+                    Reference(ws, min_col=labcol, min_row=2, max_row=ws.max_row))
         if title:
             chart.title = title
             _style_chart_title(chart)
-        chart.width, chart.height = XLSX_CHART_W_CM, XLSX_CHART_H_CM
-        if ctype != "pie":
+        chart.width = XLSX_DOUGHNUT_W_CM if ctype == "doughnut" else XLSX_CHART_W_CM
+        chart.height = XLSX_CHART_H_CM
+        if ctype not in _ROUND_CHARTS:
             # Thousands separators on the value axis — a dashboard is read, not decoded.
             chart.y_axis.number_format = "#,##0"
-        if len(vcols) < 2 and ctype != "pie":
+        if len(vcols) < 2 and ctype not in _ROUND_CHARTS:
             chart.legend = None  # a one-series legend is noise
             # One series = one color. Excel's default palette exists to tell series apart; with
             # nothing to tell apart it just adds a hue the design did not choose.
@@ -1351,9 +1660,11 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
                     s.smooth = False   # invented curvature between real points is a lie
                 else:
                     s.graphicalProperties = GraphicalProperties(solidFill=XLSX_ACCENT)
-        anchor_col = get_column_letter(1 + (placed % XLSX_CHART_PER_ROW) * XLSX_CHART_COLS)
+        anchor_ci = 1 + (placed % XLSX_CHART_PER_ROW) * XLSX_CHART_COLS
         anchor_row = top_row + (placed // XLSX_CHART_PER_ROW) * XLSX_CHART_ROWS
-        ws_dash.add_chart(chart, f"{anchor_col}{anchor_row}")
+        ws_dash.add_chart(chart, f"{get_column_letter(anchor_ci)}{anchor_row}")
+        if ctype == "doughnut":
+            _write_doughnut_center(ws_dash, spec, anchor_ci, anchor_row)
         placed += 1
     return placed
 
@@ -1361,8 +1672,12 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
 def _dash_band_width(kpis, charts):
     """Columns the title band spans. The KPI row is the only band made of *cells*, so it decides
     the width; charts are floating drawings whose column span says nothing about their size."""
-    if kpis:
-        return min(len(kpis), XLSX_KPI_PER_ROW) * XLSX_KPI_COLS
+    cards, bars = _split_kpis(kpis)
+    width = min(len(cards), XLSX_KPI_PER_ROW) * XLSX_KPI_COLS if cards else 0
+    if bars:
+        width = max(width, XLSX_BARKPI_COLS)
+    if width:
+        return width
     if charts:
         return min(len(charts), XLSX_CHART_PER_ROW) * XLSX_CHART_COLS - 1
     return 1
@@ -1408,7 +1723,11 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
     for i, sh in enumerate(sheets):
         raw = str(sh.get("name") or "")
         name = _sheet_title(raw or f"Sheet{i + 1}", i, used)
-        _write_data_sheet(wb.create_sheet(title=name), sh)
+        ws_new = wb.create_sheet(title=name)
+        if str(sh.get("style") or "").strip().lower() == "ledger":
+            _write_ledger_sheet(ws_new, sh)
+        else:
+            _write_data_sheet(ws_new, sh)
         for key in (raw, raw.strip().lower(), name, name.strip().lower()):
             if key:
                 sheet_map.setdefault(key, name)
@@ -1435,7 +1754,7 @@ def _chart_block(b, index, taken):
     if not ctype and t.endswith("_chart"):
         ctype = t[: -len("_chart")]
     ctype = _CHART_TYPE_ALIASES.get(ctype, ctype)
-    if ctype not in ("bar", "line", "pie"):
+    if ctype not in _CHART_TYPES:
         ctype = "bar"
 
     labels = [str(x) for x in (p.get("labels") or [])]
@@ -1474,7 +1793,8 @@ def _chart_block(b, index, taken):
             for ri, lab in enumerate(labels)]
     sheet = {"name": sheet_name, "headers": ["항목"] + names, "rows": rows}
     spec = {"type": ctype, "title": title, "sheet": sheet_name,
-            "labelCol": 0, "valueCols": names}
+            "labelCol": 0, "valueCols": names,
+            "centerLabel": p.get("centerLabel"), "centerValue": p.get("centerValue")}
     return sheet, spec
 
 
@@ -1495,7 +1815,8 @@ def _blocks_to_xlsx(blocks):
         elif t == "metric":
             kpis.append({"label": p.get("label"), "value": p.get("value"),
                          "unit": p.get("unit"), "delta": p.get("delta"),
-                         "deltaType": p.get("deltaType")})
+                         "deltaType": p.get("deltaType"), "icon": p.get("icon"),
+                         "style": p.get("style"), "max": p.get("max")})
         elif t in _CHART_BLOCK_TYPES:
             made = _chart_block(b, len(charts) + 1, taken)
             if made:
@@ -1947,10 +2268,14 @@ def action_selftest():
         ck("xlsx dashboard: the Dashboard sheet drops the gridlines",
            ws_dr.sheet_view.showGridLines is False and wb_d["Data"].sheet_view.showGridLines
            is not False)
-        a3 = ws_dr["A3"]
-        ck("xlsx dashboard: KPI cards get a border box, an accent spine and a label fill",
-           a3.border.top.style == "thin" and a3.border.left.style == "thick"
+        a3, a5 = ws_dr["A3"], ws_dr["A5"]
+        # Card v3: the accent is a thick bottom underline now, not a left spine.
+        ck("xlsx dashboard: KPI cards get a border box, a colored underline and a label fill",
+           a3.border.top.style == "thin" and a5.border.bottom.style == "thick"
+           and str(a5.border.bottom.color.rgb or "").endswith(XLSX_CARD_UNDERLINES[0])
            and str(a3.fill.fgColor.rgb or "").endswith(XLSX_CARD_LABEL_BG))
+        ck("xlsx dashboard: the card underline cycles color per card",
+           str(ws_dr["D5"].border.bottom.color.rgb or "").endswith(XLSX_CARD_UNDERLINES[1]))
         ck("xlsx dashboard: the title lands in a navy band across the KPI width",
            str(ws_dr["A1"].fill.fgColor.rgb or "").endswith(XLSX_BAND)
            and any(str(r) == "A1:I1" for r in ws_dr.merged_cells.ranges))
@@ -1967,6 +2292,76 @@ def action_selftest():
         ck("xlsx dashboard: a 증감률(%) column takes a color scale, not bars",
            any(r.type == "colorScale" for r in rules_cf)
            and not any(r.type == "dataBar" for r in rules_cf))
+
+        # 2026-08-12 premium-dashboard archetypes: combo, doughnut + center block, bar KPIs.
+        p_v3 = f"{OUT_DIR}/selftest-v3.xlsx"
+        tmp.append(p_v3)
+        make_xlsx_file(
+            [{"name": "월별", "headers": ["월", "수량", "매출"],
+              "rows": [[f"{m}월", 100 + m * 5, 1000 + m * 90] for m in range(1, 13)]},
+             {"name": "유입", "headers": ["구분", "비중"],
+              "rows": [["첫구매", 83.1], ["재구매", 16.9]]}],
+            p_v3, title="커머스 대시보드",
+            kpis=[{"label": "총 매출", "value": 334, "unit": "조원", "icon": "💰", "delta": 12},
+                  {"label": "주문 수", "value": 1200, "delta": -30},
+                  {"label": "검색유입 매출 비율", "value": 34, "unit": "%", "style": "bar"},
+                  {"label": "고객 만족도 (5점 만점)", "value": 4.11, "max": 5, "style": "bar"}],
+            charts=[{"type": "combo", "title": "월별 수량·매출", "sheet": "월별",
+                     "labelCol": "월", "valueCols": ["수량", "매출"]},
+                    {"type": "doughnut", "title": "첫구매 비중", "sheet": "유입",
+                     "labelCol": "구분", "valueCols": ["비중"],
+                     "centerLabel": "첫구매 비율", "centerValue": "83.1%"}])
+        ws_v3 = _lw(p_v3)["Dashboard"]
+        with zipfile.ZipFile(p_v3) as z:
+            charts_xml = [z.read(n).decode("utf-8") for n in z.namelist()
+                          if n.startswith("xl/charts/chart")]
+        # openpyxl writes the chart part with the chart namespace as the DEFAULT one, so the
+        # elements carry no c: prefix — match the bare tag names.
+        combo_xml = [x for x in charts_xml if "<barChart" in x]
+        ck("xlsx v3: combo draws bars and a line, the line on a secondary axis",
+           len(combo_xml) == 1 and "<lineChart" in combo_xml[0]
+           and combo_xml[0].count("<valAx") >= 2
+           and '<axId val="200"/>' in combo_xml[0])
+        ck("xlsx v3: a doughnut is a real ring, not a pie",
+           any("<doughnutChart" in x for x in charts_xml))
+        v3_cells = [c.value for row in ws_v3.iter_rows() for c in row]
+        ck("xlsx v3: the doughnut's center block carries label and value beside the ring",
+           "83.1%" in v3_cells and "첫구매 비율" in v3_cells)
+        ck("xlsx v3: a bar-style KPI puts a data bar on the Dashboard itself",
+           any(r.type == "dataBar" for cf in ws_v3.conditional_formatting for r in cf.rules))
+        ck("xlsx v3: an icon KPI trades numeric-ness for the emoji",
+           any(isinstance(v, str) and v.startswith("💰") and "334조원" in v for v in v3_cells))
+
+        # Ledger genre: a document with live monthly / running subtotals.
+        p_lg = f"{OUT_DIR}/selftest-ledger.xlsx"
+        tmp.append(p_lg)
+        make_xlsx_file([{
+            "name": "원장", "style": "ledger", "docTitle": "총 계 정 원 장",
+            "period": "2026.01.01 ~ 2026.02.28", "subtotalBy": "일자",
+            "headers": ["일자", "구분", "적요", "입금", "출금"],
+            "rows": [["2026-01-05", "매출", "1월 판매", 1000, 0],
+                     ["2026-01-20", "비용", "임차료", 0, 300],
+                     ["2026-02-03", "매출", "2월 판매", 2000, 0],
+                     ["2026-02-17", "비용", "광고", 0, 500]]}], p_lg)
+        ws_lg = _lw(p_lg)["원장"]
+        ck("xlsx ledger: the doc title is a centered merged masthead",
+           ws_lg["A1"].value == "총 계 정 원 장"
+           and any(str(r) == "A1:E1" for r in ws_lg.merged_cells.ranges)
+           and ws_lg["A1"].alignment.horizontal == "center"
+           and ws_lg["A2"].value.startswith("2026.01.01"))
+        m_rows = [c.row for c in ws_lg["A"] if c.value == XLSX_LEDGER_MONTH_LABEL]
+        t_rows = [c.row for c in ws_lg["A"] if c.value == XLSX_LEDGER_TOTAL_LABEL]
+        ck("xlsx ledger: [월 계] is a live SUM over exactly that month's rows",
+           len(m_rows) == 2 and ws_lg.cell(row=m_rows[0], column=4).value == "=SUM(D5:D6)")
+        # The running total starts at the first data row and skips the subtotal bands it passes
+        # — one contiguous range would count them a second time.
+        ck("xlsx ledger: the last [누 계] runs from the first data row",
+           len(t_rows) == 2
+           and ws_lg.cell(row=t_rows[-1], column=4).value == "=SUM(D5:D6,D9:D10)")
+        ck("xlsx ledger: a ledger is a document, no data bars or color scales",
+           not [r for cf in ws_lg.conditional_formatting for r in cf.rules])
+        ck("xlsx ledger: the ledger sheet drops the gridlines",
+           ws_lg.sheet_view.showGridLines is False)
 
         res_b = action_make_xlsx({"title": "실적 대시보드", "blocks": [
             {"type": "metric", "props": {"label": "매출", "value": 1200,

@@ -60,12 +60,12 @@
       {
         "id": "make_xlsx",
         "name": "XLSX 만들기 (표 → 시트 · 대시보드)",
-        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns). Dashboard genre: pass kpis and/or charts — or render blocks where metric blocks become KPI cards and chart blocks become native Excel charts — and a \"Dashboard\" sheet is placed first, KPI cards four per row (up=red / down=blue delta) above native line/bar/pie charts that reference the data sheets' cells (chart blocks get their own data sheet). Any cell string starting with \"=\" stays a live formula, so pass formulas for totals and averages instead of precomputed numbers. A chart whose sheet or columns cannot be resolved is skipped and reported in data.notes. The file lands in the media store.",
+        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns). Dashboard genre: pass kpis and/or charts — or render blocks where metric blocks become KPI cards and chart blocks become native Excel charts — and a \"Dashboard\" sheet is placed first, KPI cards four per row (thick colored underline cycling blue/red/amber/green, optional emoji icon, up=red / down=blue delta) above native line/bar/pie/doughnut/combo charts that reference the data sheets' cells (chart blocks get their own data sheet). A kpi with style:\"bar\" instead becomes a progress-bar row (value + label + a live data bar against max). Ledger genre: a sheet with style:\"ledger\" is rendered as a document (centered docTitle, period line, fully ruled table, gray header) and subtotalBy inserts live [월 계]/[누 계] SUM bands per month. Any cell string starting with \"=\" stays a live formula, so pass formulas for totals and averages instead of precomputed numbers. A chart whose sheet or columns cannot be resolved is skipped and reported in data.notes. The file lands in the media store.",
         "params": {
-          "sheets": "[{name, headers?, rows}] — a long row set goes as {name, headers, rowsCacheKey: \"<the producing call's _cacheKey>\"} instead of rows: the server expands the FULL cached rows, so a 120-day candle sheet carries 120 real rows and not the 5-row inline preview",
+          "sheets": "[{name, headers?, rows, style?, docTitle?, period?, subtotalBy?}] — a long row set goes as {name, headers, rowsCacheKey: \"<the producing call's _cacheKey>\"} instead of rows: the server expands the FULL cached rows, so a 120-day candle sheet carries 120 real rows and not the 5-row inline preview. style:\"ledger\" = 총계정원장 document styling with live monthly subtotals",
           "blocks": "render-block array (table → sheet, metric → KPI card, chart → native chart)",
-          "kpis": "[{label, value (number or \"=FORMULA\"), delta?, unit?}] — KPI cards on the Dashboard sheet",
-          "charts": "[{type: line|bar|pie, title, sheet, labelCol, valueCols[]}] — native charts pointing at a data sheet's columns (header name or 0-based index)",
+          "kpis": "[{label, value (number or \"=FORMULA\"), delta?, unit?, icon?, style?, max?}] — KPI cards on the Dashboard sheet; style:\"bar\" turns one into a progress-bar row",
+          "charts": "[{type: line|bar|pie|doughnut|combo, title, sheet, labelCol, valueCols[], centerLabel?, centerValue?}] — native charts pointing at a data sheet's columns (header name or 0-based index); combo = valueCols[0] bars + valueCols[1] line on a secondary axis",
           "title": "dashboard/file title (row 1 of the Dashboard sheet + filename)"
         }
       },
@@ -162,7 +162,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula. NEVER retype a long row set: a tool result you saw only as a truncated preview carries a `_cacheKey`, so send that sheet as {name, headers, rowsCacheKey: \"<that _cacheKey>\"} and the server expands the FULL cached rows into it — a 120-day candle sheet then holds 120 real rows instead of the 5 preview rows. Inline rows win if both are given."
+        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula. NEVER retype a long row set: a tool result you saw only as a truncated preview carries a `_cacheKey`, so send that sheet as {name, headers, rowsCacheKey: \"<that _cacheKey>\"} and the server expands the FULL cached rows into it — a 120-day candle sheet then holds 120 real rows instead of the 5 preview rows. Inline rows win if both are given. Add style:\"ledger\" (+ docTitle, period, subtotalBy) to render that sheet as a 총계정원장-style document instead: gridlines off, centered docTitle over a centered period line, every cell thin-ruled, gray bold header, numbers right-aligned — and subtotalBy (a date column's header name or 0-based index) groups consecutive rows by YYYY-MM and inserts a live [월 계] band (=SUM over that month) plus a [누 계] band (=SUM from the first data row) after each month. A ledger sheet gets no data bars or color scales — it is a document, not a heatmap."
       },
       "kpis": {
         "type": [
@@ -172,7 +172,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_xlsx: KPI cards on the Dashboard sheet — [{label, value, delta?, unit?}]. value may be a number or a live formula string (\"=SUM(Data!B2:B100)\"); delta colors itself (positive = red ▲, negative = blue ▼, zero = gray). Wins over metric blocks."
+        "description": "For make_xlsx: KPI cards on the Dashboard sheet — [{label, value, delta?, unit?, icon?, style?, max?}]. value may be a number or a live formula string (\"=SUM(Data!B2:B100)\"); delta colors itself (positive = red ▲, negative = blue ▼, zero = gray); each card takes a thick underline cycling blue/red/amber/green. icon = one emoji shown before the value (\"💰\" → \"💰 334조원\") — it makes that cell text, so skip it when the number must stay SUM-able, and it is ignored on a \"=FORMULA\" value. style:\"bar\" renders the kpi instead as a progress-bar row under the cards: the big colored number, the label, and a live data bar scaled to max (default 100) — the \"34% 검색유입 매출 비율\" / \"4.11 고객 만족도\" shape. Wins over metric blocks."
       },
       "charts": {
         "type": [
@@ -182,7 +182,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_xlsx: native Excel charts on the Dashboard sheet — [{type: line|bar|pie, title, sheet, labelCol, valueCols[]}]. sheet = the data sheet name; labelCol/valueCols = header names or 0-based indices in that sheet. Data is read from cells, so the chart stays editable. Unresolvable charts are skipped and listed in data.notes. Wins over chart blocks."
+        "description": "For make_xlsx: native Excel charts on the Dashboard sheet — [{type: line|bar|pie|doughnut|combo, title, sheet, labelCol, valueCols[], centerLabel?, centerValue?}]. sheet = the data sheet name; labelCol/valueCols = header names or 0-based indices in that sheet. Data is read from cells, so the chart stays editable. type \"combo\" = valueCols[0] as muted bars + valueCols[1] as an accent line on a SECONDARY axis (two quantities, two units, one time axis — e.g. 수량 bars with 매출 line); it needs two value columns or it falls back to bars with a note. type \"doughnut\" = a ring; Excel cannot paint text in the hole, so centerLabel (small gray) over centerValue (large navy, e.g. \"83.1%\") is written into merged cells beside the ring. Unresolvable charts are skipped and listed in data.notes. Wins over chart blocks."
       },
       "masterMediaPath": {
         "type": [
