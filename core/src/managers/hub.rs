@@ -356,6 +356,19 @@ impl HubManager {
         self.port.ensure_conversation(instance_id, session_id).await
     }
 
+    /// Does this conversation belong to the visitor's owner scope? Wire-supplied ids are
+    /// untrusted — a hub caller may only write into its own `hub:<inst>:<sid>` conversations.
+    pub fn conversation_belongs(
+        &self,
+        instance_id: &str,
+        session_id: &str,
+        conversation_id: &str,
+    ) -> bool {
+        let Some(conv) = &self.conv else { return false };
+        let owner = format!("hub:{instance_id}:{session_id}");
+        conv.get(&owner, conversation_id).is_some()
+    }
+
     /// Always create a new conversation — invoked when the sidebar "New chat" is clicked in multi-conv mode.
     pub async fn create_conversation(
         &self,

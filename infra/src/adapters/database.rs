@@ -463,7 +463,8 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         // deleted_at IS NULL — 휴지통 (soft-deleted) 제외, 활성 대화만.
         let Ok(mut stmt) = conn.prepare(
             "SELECT id, title, created_at, updated_at FROM conversations
-             WHERE owner = ?1 AND deleted_at IS NULL ORDER BY updated_at DESC",
+             WHERE owner = ?1 AND deleted_at IS NULL
+             ORDER BY updated_at DESC, created_at DESC, id DESC",
         ) else { return vec![] };
         let rows = stmt
             .query_map(params![owner], |row| {

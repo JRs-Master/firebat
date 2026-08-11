@@ -955,7 +955,7 @@ impl ModuleManager {
         let Some(obj) = result.data.as_object_mut() else { return };
         let Some(decl) = obj.remove("_mediaImport") else { return };
 
-        let mut fail = |obj: &mut serde_json::Map<String, serde_json::Value>, msg: String| {
+        let fail = |obj: &mut serde_json::Map<String, serde_json::Value>, msg: String| {
             tracing::warn!(module = module_name, error = %msg, "[ModuleManager] media export failed");
             obj.insert("mediaExportError".to_string(), serde_json::Value::String(msg));
         };

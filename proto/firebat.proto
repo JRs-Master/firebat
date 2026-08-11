@@ -3149,6 +3149,10 @@ message HubSendMessageStreamRequest {
   // 빈 string = 미동봉(백엔드 uuid fallback). 정렬되면 background-resume reconcile 이 stuck 케이스도 매칭.
   string user_msg_id = 10;
   string ai_msg_id = 11;
+  // 프론트가 보고 있는 대화 id — 서버가 자기 판단(ensure)으로 다른 대화에 쓰는 분열 차단
+  // (2026-08-11 실측: 동시각 쌍둥이 대화 + updated_at 동률 임의 선택 → 새로고침 = 질문 리셋).
+  // 빈 string = 미동봉(구형 위젯) → ensure_conversation 폴백. 소유 검증은 서버가 한다.
+  string conversation_id = 12;
 }
 // streaming 응답 이벤트 — AiStreamEventPb 와 동일 shape (sub-event 메시지 재사용). top-level 만 분리.
 message HubStreamEventPb {

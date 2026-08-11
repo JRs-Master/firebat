@@ -622,12 +622,23 @@ impl HubService for HubServiceImpl {
             .await
             .map_err(TonicStatus::permission_denied)?;
 
-        // 2. 대화 ensure. (영속은 process_with_tools 단일 경로가 처리 — append_user_message 제거.)
-        let conversation_id = self
-            .manager
-            .ensure_conversation(&instance.id, &args.session_id)
-            .await
-            .map_err(TonicStatus::internal)?;
+        // 2. 대화 결정 — 프론트가 보고 있는 대화 id 가 오면 소유 검증 후 그대로 쓴다. 서버가
+        // ensure 로 "알아서" 고르면 동시각 쌍둥이 대화에서 프론트와 다른 쪽을 집을 수 있고,
+        // 그 갈라짐이 "새로고침하면 질문이 리셋" 사고였다(2026-08-11 실측). 빈 값 = 구형
+        // 위젯 → ensure 폴백.
+        let conversation_id = if !args.conversation_id.is_empty()
+            && self.manager.conversation_belongs(
+                &instance.id,
+                &args.session_id,
+                &args.conversation_id,
+            ) {
+            args.conversation_id.clone()
+        } else {
+            self.manager
+                .ensure_conversation(&instance.id, &args.session_id)
+                .await
+                .map_err(TonicStatus::internal)?
+        };
         // 클라이언트 발급 메시지 id — 프론트 로컬 메시지와 conversation rows 정렬(admin systemId 패턴). 빈 string = uuid fallback.
         // 영속 단일 경로(process_with_tools)에 ai_opts 로 주입돼 user/system 을 이 id 로 저장.
         let user_msg_id = if args.user_msg_id.is_empty() { None } else { Some(args.user_msg_id.clone()) };

@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return jsonResponse(400, { error: 'X-Session-Id 헤더가 필요합니다.' });
   }
 
-  let body: { message?: string; planMode?: string; planExecuteId?: string; planReviseId?: string; userMsgId?: string; aiMsgId?: string } = {};
+  let body: { message?: string; planMode?: string; planExecuteId?: string; planReviseId?: string; userMsgId?: string; aiMsgId?: string; conversationId?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -69,8 +69,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   // 클라 발급 메시지 id — 프론트 로컬 메시지와 hub_messages 정렬(admin systemId 패턴). 빈 값 = uuid fallback.
   const userMsgId = typeof body.userMsgId === 'string' ? body.userMsgId : '';
   const aiMsgId = typeof body.aiMsgId === 'string' ? body.aiMsgId : '';
+  // 프론트가 보고 있는 대화 — 서버 ensure 의 자체 선택과 갈라지는 분열 차단(빈 값 = 구형 위젯 폴백).
+  const conversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
 
-  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, userMsgId, aiMsgId, abortSignal: req.signal });
+  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, userMsgId, aiMsgId, conversationId, abortSignal: req.signal });
 }
 
 function streamResponse(args: {
@@ -85,9 +87,10 @@ function streamResponse(args: {
   planReviseId: string;
   userMsgId: string;
   aiMsgId: string;
+  conversationId: string;
   abortSignal: AbortSignal;
 }) {
-  const { slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, userMsgId, aiMsgId, abortSignal } = args;
+  const { slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, userMsgId, aiMsgId, conversationId, abortSignal } = args;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -131,6 +134,7 @@ function streamResponse(args: {
           planReviseId,
           userMsgId,
           aiMsgId,
+          conversationId,
         } as any);
 
         // 공유 relay — chunk/step/result/error 루프 + canonical data 기반 result 이벤트 (admin 과 동일 헬퍼).

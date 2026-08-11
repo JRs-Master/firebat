@@ -272,13 +272,17 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
           };
         },
-        // hub wire shape — conv is session-derived (no conversationId in body); model/history backend-managed.
+        // hub wire shape — model/history backend-managed. conversationId rides along like admin:
+        // without it the server "ensures" its own pick, and with same-millisecond twin
+        // conversations that pick diverged from what the visitor was looking at → reload
+        // showed the empty twin ("질문 리셋", 2026-08-11 실측).
         chatBody(p: ChatBodyParams): Record<string, unknown> {
           return {
             message: p.userPrompt,
             planMode: p.planMode,
             aiMsgId: p.systemId,
             userMsgId: p.userMsgId,
+            ...(p.conversationId ? { conversationId: p.conversationId } : {}),
             ...(p.planExecuteId ? { planExecuteId: p.planExecuteId } : {}),
             ...(p.planReviseId ? { planReviseId: p.planReviseId } : {}),
           };
