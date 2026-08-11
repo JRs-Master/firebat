@@ -105,6 +105,7 @@ const FILE_CARD_EXTS: Record<string, string> = {
   docx: 'text-blue-700 bg-blue-50 border-blue-200',
   pdf: 'text-red-700 bg-red-50 border-red-200',
   hwpx: 'text-sky-700 bg-sky-50 border-sky-200',
+  hwp: 'text-sky-700 bg-sky-50 border-sky-200',
   mid: 'text-indigo-700 bg-indigo-50 border-indigo-200',
 };
 const AUDIO_PLAYER_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'flac']);

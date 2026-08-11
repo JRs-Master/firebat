@@ -69,6 +69,7 @@ const EXT_BADGE: Record<string, string> = {
   docx: 'text-blue-700 bg-blue-50 border-blue-200',
   pdf: 'text-red-700 bg-red-50 border-red-200',
   hwpx: 'text-sky-700 bg-sky-50 border-sky-200',
+  hwp: 'text-sky-700 bg-sky-50 border-sky-200',
   mid: 'text-indigo-700 bg-indigo-50 border-indigo-200',
 };
 const EXT_BADGE_DEFAULT = 'text-slate-700 bg-slate-100 border-slate-300';
@@ -90,9 +91,10 @@ const EXT_MIME: Record<string, string> = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   hwpx: 'application/vnd.hancom.hwpx',
+  hwp: 'application/x-hwp',
   mid: 'audio/midi', midi: 'audio/midi',
 };
-const UPLOAD_ACCEPT = 'image/*,audio/*,.mid,.midi,.pdf,.docx,.xlsx,.pptx,.hwpx';
+const UPLOAD_ACCEPT = 'image/*,audio/*,.mid,.midi,.pdf,.docx,.xlsx,.pptx,.hwpx,.hwp';
 const UPLOAD_MAX_MB = 25;
 
 const KINDS: Array<MediaKind | 'all'> = ['all', 'image', 'audio', 'document', 'other'];
