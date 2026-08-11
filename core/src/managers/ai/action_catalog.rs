@@ -188,6 +188,38 @@ impl ModuleActionSource {
                     "paramNames": param_names,
                     "requiresApproval": approval,
                 });
+                // The structured `required` states the call contract — the explicit-catalog
+                // twin of the derived-schema gap fixed the same day (2026-08-11: fa, an
+                // explicit catalog, was called without `action` right after ta's derived
+                // required was fixed — its schema response carried no required at all).
+                // A per-action `required` declared in actions.json overrides this below.
+                {
+                    let has_selector = config
+                        .get("input")
+                        .and_then(|i| i.get("properties"))
+                        .and_then(|p| p.get("action"))
+                        .is_some();
+                    let mut req: Vec<String> = Vec::new();
+                    if has_selector {
+                        req.push("action".to_string());
+                    }
+                    if let Some(list) = config
+                        .get("input")
+                        .and_then(|i| i.get("required"))
+                        .and_then(|r| r.as_array())
+                    {
+                        req.extend(
+                            list.iter()
+                                .filter_map(|x| x.as_str())
+                                .filter(|s| *s != "action")
+                                .filter(|s| param_names.iter().any(|p| p == s))
+                                .map(String::from),
+                        );
+                    }
+                    if !req.is_empty() {
+                        extra["required"] = serde_json::json!(req);
+                    }
+                }
                 // See the note in `derive_entries_from_input` — discovery names the screen actions.
                 if let Some(ui_decl) = config.get("uiOnly") {
                     if crate::utils::pending_tools::is_ui_only_value(ui_decl, &id) {
