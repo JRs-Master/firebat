@@ -1077,10 +1077,17 @@ def action_make_pptx(inp):
 XLSX_KPI_PER_ROW = 4
 XLSX_KPI_COLS = 3           # merged card width in columns
 XLSX_KPI_ROWS = 4           # 3 content rows (label / value / delta) + 1 gap row
-XLSX_KPI_TOP = 3            # row 1 = title, row 2 = breathing room
-XLSX_CHART_PER_ROW = 2
-XLSX_CHART_COLS = 9         # ~8 columns wide + 1 gap
-XLSX_CHART_ROWS = 16        # ~15 rows tall + 1 gap
+XLSX_KPI_TOP = 3            # row 1 = title, row 2 = the single spacer row
+# The Dashboard is ONE fixed grid: every column the same width, every band spanning all of it.
+# Geometry that has to be guessed cannot be laid out — a chart is a floating drawing sized in
+# centimetres, so the only way to make it land inside a cell box is to know what a column is worth.
+XLSX_DASH_COLS = XLSX_KPI_PER_ROW * XLSX_KPI_COLS   # 12 columns = 4 card slots
+XLSX_DASH_COL_W = 9.0       # every Dashboard column, in Excel's character units
+# Excel's character width converts as px = width * 7 + 5, so a width-9 column is 68px = 1.80cm at
+# 96dpi. Measured, not rounded up: an over-estimate here makes every chart overflow its own card
+# into the neighbour's, which is exactly the overlap this pass exists to remove.
+XLSX_COL_CM = 1.80          # what one width-9 column measures on screen
+XLSX_ROW_CM = 0.529         # what one default row (15pt = 20px) measures on screen
 XLSX_BAR_COLOR = "638EC6"   # one restrained blue — data bars are a reading aid, not decoration
 XLSX_SCALE_LOW, XLSX_SCALE_MID, XLSX_SCALE_HIGH = "5B9BD5", "FFFFFF", "E46C6C"
 # The dashboard wears the pptx genre's clothes: the same navy the section band uses (SLATE_D)
@@ -1092,24 +1099,30 @@ XLSX_CARD_LINE = "D9D9D9"   # card hairline
 XLSX_CARD_LABEL_BG = "F2F5FA"
 XLSX_WHITE = "FFFFFF"
 XLSX_TITLE_ROW_H = 26
-XLSX_CHART_W_CM, XLSX_CHART_H_CM = 16.0, 8.5
+# v4: the page itself is painted. Cards are WHITE boxes on a light slate canvas — that contrast
+# is what made the reference dashboard read as "a designed page" and ours read as "empty".
+# White-on-white has no edges, so every band was floating in a void however tightly it was packed.
+XLSX_CANVAS = "F1F5F9"      # slate-100, the page the cards sit on
+XLSX_UNIT_BADGE_BG = "FEF3C7"   # amber-100 — the "단위: 백만원" chip
+XLSX_UNIT_BADGE_FG = "B45309"   # amber-700
 # Card v3: the accent moved from a left spine to a thick bottom underline that cycles per card,
 # so a row of cards reads as a row (the reference dashboards' language) instead of four clones.
 XLSX_CARD_UNDERLINES = ("2563EB", "E0475B", "EAB308", "22C55E")
 # Progress-bar KPIs (a ratio told twice: as a number and as a filled length).
 XLSX_BARKPI_VALUE_COLS = 2   # merged width of the big colored number
-XLSX_BARKPI_LABEL_COLS = 2   # merged width of the caption beside it
-XLSX_BARKPI_BAR_COLS = 6     # merged width of the cell the data bar fills
+XLSX_BARKPI_LABEL_COLS = 3   # merged width of the caption beside it
+XLSX_BARKPI_BAR_COLS = 5     # minimum width of the cell the data bar fills (it takes the rest)
 XLSX_BARKPI_COLS = XLSX_BARKPI_VALUE_COLS + XLSX_BARKPI_LABEL_COLS + XLSX_BARKPI_BAR_COLS
 XLSX_BARKPI_ROWS = 2         # 1 content row + 1 gap row
 XLSX_BARKPI_COLORS = ("E0475B", "EAB308", "2563EB", "22C55E")
-# A doughnut is narrower than a full chart slot because the ratio it is about lives in cells
-# to its right — Excel cannot paint text in the hole.
-XLSX_DOUGHNUT_W_CM = 10.5
+# A chart is a drawing pinned over a pre-painted white cell box — the "chart card". Excel gives a
+# chart no page of its own, so without the box underneath it floats on the canvas with no edge.
+XLSX_CHARTCARD_ROWS = 18     # card height in grid rows (row 0 = the unit-badge header)
+XLSX_CHART_INSET_CM = 0.3    # so the drawing stops short of the card's right hairline
+XLSX_RING_ROWS = 13          # a doughnut leaves the bottom of its card to the center block
 XLSX_DOUGHNUT_HOLE = 60
-XLSX_CENTER_OFFSET = 5       # columns from the chart anchor to the center block
-XLSX_CENTER_COLS = 3         # merged width of the center block
 XLSX_COMBO_BAR = "9EB9DA"    # muted blue bars so the accent line stays the foreground
+XLSX_DLBL_MAX_POINTS = 24    # value labels above bars stop being readable past this many bars
 # Ledger (총계정원장) genre: a document, not a heatmap.
 XLSX_LEDGER_HEAD_BG = "D9D9D9"
 XLSX_LEDGER_MONTH_BG = "F2F5FA"
@@ -1366,10 +1379,57 @@ def _split_kpis(kpis):
     return cards, bars
 
 
-def _write_kpi_card_grid(ws, kpis, top_row):
-    """Cards left to right, four per row. Returns the first free row below them."""
-    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+def _dash_grid(ws, width):
+    """Every Dashboard column the same width, BEFORE anything is laid out. Cards are cell boxes
+    and charts are centimetre-sized drawings; only a fixed grid lets the two land on each other."""
     from openpyxl.utils import get_column_letter
+
+    for c in range(1, width + 2):   # +1: the canvas runs one column past the last band
+        ws.column_dimensions[get_column_letter(c)].width = XLSX_DASH_COL_W
+
+
+def _cm_cols(cols):
+    """Grid columns -> centimetres, minus the inset that keeps a drawing inside its card."""
+    return max(1.0, cols * XLSX_COL_CM - XLSX_CHART_INSET_CM)
+
+
+def _card_box(ws, r0, c0, rows, cols, fill=XLSX_WHITE):
+    """Paint a white card with a hairline frame. Called BEFORE the content is written, because
+    a fill is a cell property and a later value does not disturb it."""
+    from openpyxl.styles import Border, PatternFill, Side
+
+    hair = Side(style="thin", color=XLSX_CARD_LINE)
+    body = PatternFill("solid", fgColor=fill)
+    for dr in range(rows):
+        for dc in range(cols):
+            cell = ws.cell(row=r0 + dr, column=c0 + dc)
+            cell.fill = body
+            cell.border = Border(
+                left=hair if dc == 0 else None,
+                right=hair if dc == cols - 1 else None,
+                top=hair if dr == 0 else None,
+                bottom=hair if dr == rows - 1 else None)
+
+
+def _paint_canvas(ws, last_row, width):
+    """Light slate over the whole used region, skipping every cell a card already claimed. Run
+    last: the cards decide where the page shows through, and an unfilled cell is by definition
+    not part of one."""
+    from openpyxl.styles import PatternFill
+
+    page = PatternFill("solid", fgColor=XLSX_CANVAS)
+    for r in range(1, last_row + 3):        # +2 rows of page under the final band
+        for c in range(1, width + 2):       # +1 column past the band's right edge
+            cell = ws.cell(row=r, column=c)
+            if cell.fill is None or cell.fill.patternType is None:
+                cell.fill = page
+
+
+def _write_kpi_card_grid(ws, kpis, top_row, width=XLSX_DASH_COLS):
+    """Cards left to right, at most four per row, STRETCHED so the row fills the band. Three cards
+    on a twelve-column grid are three four-column cards, not three three-column cards and a hole:
+    dead canvas at the end of a band is the thing that reads as "empty". Returns the row below."""
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     center = Alignment(horizontal="center", vertical="center")
     # A card is a box, not three loose cells: hairline on all four edges, a thick colored
@@ -1378,24 +1438,24 @@ def _write_kpi_card_grid(ws, kpis, top_row):
     hair = Side(style="thin", color=XLSX_CARD_LINE)
     label_fill = PatternFill("solid", fgColor=XLSX_CARD_LABEL_BG)
     body_fill = PatternFill("solid", fgColor=XLSX_WHITE)
+    per_row = min(len(kpis), XLSX_KPI_PER_ROW)
+    span_cols = max(1, width // per_row)
     for i, k in enumerate(kpis):
-        c0 = 1 + (i % XLSX_KPI_PER_ROW) * XLSX_KPI_COLS
-        r0 = top_row + (i // XLSX_KPI_PER_ROW) * XLSX_KPI_ROWS
+        c0 = 1 + (i % per_row) * span_cols
+        r0 = top_row + (i // per_row) * XLSX_KPI_ROWS
         underline = Side(style="thick",
                          color=XLSX_CARD_UNDERLINES[i % len(XLSX_CARD_UNDERLINES)])
-        for span in range(XLSX_KPI_COLS):
-            ws.column_dimensions[get_column_letter(c0 + span)].width = 13
         for dr in range(3):
             ws.merge_cells(start_row=r0 + dr, start_column=c0,
-                           end_row=r0 + dr, end_column=c0 + XLSX_KPI_COLS - 1)
+                           end_row=r0 + dr, end_column=c0 + span_cols - 1)
         # Styled after the merge, on every constituent cell — Excel composes a merged range's
         # frame from the cells underneath it, so styling only the anchor leaves three open sides.
         for dr in range(3):
-            for dc in range(XLSX_KPI_COLS):
+            for dc in range(span_cols):
                 cell = ws.cell(row=r0 + dr, column=c0 + dc)
                 cell.border = Border(
                     left=hair if dc == 0 else None,
-                    right=hair if dc == XLSX_KPI_COLS - 1 else None,
+                    right=hair if dc == span_cols - 1 else None,
                     top=hair if dr == 0 else None,
                     bottom=underline if dr == 2 else None)
                 cell.fill = label_fill if dr == 0 else body_fill
@@ -1436,14 +1496,15 @@ def _write_kpi_card_grid(ws, kpis, top_row):
             dcell.value = text
             dcell.font = Font(size=10, bold=True, color=color)
             dcell.alignment = center
-    rows_used = -(-len(kpis) // XLSX_KPI_PER_ROW)
+    rows_used = -(-len(kpis) // per_row)
     return top_row + rows_used * XLSX_KPI_ROWS
 
 
-def _write_kpi_bars(ws, kpis, top_row):
+def _write_kpi_bars(ws, kpis, top_row, width=XLSX_BARKPI_COLS):
     """A ratio told twice on one line: the number, its caption, and a data bar whose length is
     the number against `max`. The bar is a real conditional format on a real cell, so the length
-    follows the value when someone edits it."""
+    follows the value when someone edits it. Each row is its own white card spanning the band —
+    the bar takes whatever the value and the caption leave."""
     from openpyxl.formatting.rule import DataBarRule
     from openpyxl.styles import Alignment, Font
     from openpyxl.utils import get_column_letter
@@ -1453,6 +1514,8 @@ def _write_kpi_bars(ws, kpis, top_row):
     c_val = 1
     c_lab = c_val + XLSX_BARKPI_VALUE_COLS
     c_bar = c_lab + XLSX_BARKPI_LABEL_COLS
+    bar_cols = max(XLSX_BARKPI_BAR_COLS,
+                   width - XLSX_BARKPI_VALUE_COLS - XLSX_BARKPI_LABEL_COLS)
     for i, k in enumerate(kpis):
         r = top_row + i * XLSX_BARKPI_ROWS
         ws.row_dimensions[r].height = 24
@@ -1461,8 +1524,9 @@ def _write_kpi_bars(ws, kpis, top_row):
         top = parse_number(k.get("max"))
         top = float(top) if top not in (None, 0) else 100.0
 
+        _card_box(ws, r, c_val, 1, c_bar + bar_cols - c_val)
         for c0, span in ((c_val, XLSX_BARKPI_VALUE_COLS), (c_lab, XLSX_BARKPI_LABEL_COLS),
-                         (c_bar, XLSX_BARKPI_BAR_COLS)):
+                         (c_bar, bar_cols)):
             ws.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c0 + span - 1)
         unit = str(k.get("unit") or "")
         shown = k.get("value") if num is None else (f"{num:,.2f}".rstrip("0").rstrip("."))
@@ -1485,13 +1549,6 @@ def _write_kpi_bars(ws, kpis, top_row):
             start_type="num", start_value=0, end_type="num", end_value=top,
             color=color, showValue=True))
     return top_row + len(kpis) * XLSX_BARKPI_ROWS
-
-
-def _write_kpi_cards(ws, kpis, top_row):
-    """Both KPI archetypes, cards then bars. Returns the first free row below them."""
-    cards, bars = _split_kpis(kpis)
-    row = _write_kpi_card_grid(ws, cards, top_row) if cards else top_row
-    return _write_kpi_bars(ws, bars, row + (1 if cards and bars else 0)) if bars else row
 
 
 def _resolve_column(headers, ref):
@@ -1558,9 +1615,10 @@ def _combo_chart(ws, vcols, labcol, max_row):
     return bar
 
 
-def _write_doughnut_center(ws, spec, anchor_col, anchor_row):
+def _write_doughnut_center(ws, spec, c0, row, cols):
     """Excel cannot paint text inside the hole of a doughnut, so the ratio the ring is about
-    lives in merged cells beside it — same reading order, and real cells you can point at."""
+    lives in merged cells UNDER the ring, inside the same card. v3 put it BESIDE the ring, which
+    meant the block sat on whatever card came next once the bands were packed side by side."""
     from openpyxl.styles import Alignment, Font
 
     label = str(spec.get("centerLabel") or "").strip()
@@ -1568,126 +1626,186 @@ def _write_doughnut_center(ws, spec, anchor_col, anchor_row):
     if not label and not value:
         return
     center = Alignment(horizontal="center", vertical="center")
-    c0 = anchor_col + XLSX_CENTER_OFFSET
-    r_lab, r_val = anchor_row + 5, anchor_row + 6
     if label:
-        ws.merge_cells(start_row=r_lab, start_column=c0,
-                       end_row=r_lab, end_column=c0 + XLSX_CENTER_COLS - 1)
-        cell = ws.cell(row=r_lab, column=c0)
+        ws.merge_cells(start_row=row, start_column=c0, end_row=row, end_column=c0 + cols - 1)
+        cell = ws.cell(row=row, column=c0)
         cell.value = label
         cell.font = Font(size=9, color="64748B")
         cell.alignment = center
     if value:
-        ws.merge_cells(start_row=r_val, start_column=c0,
-                       end_row=r_val + 1, end_column=c0 + XLSX_CENTER_COLS - 1)
-        cell = ws.cell(row=r_val, column=c0)
+        ws.merge_cells(start_row=row + 1, start_column=c0,
+                       end_row=row + 2, end_column=c0 + cols - 1)
+        cell = ws.cell(row=row + 1, column=c0)
         cell.value = value
         cell.font = Font(size=24, bold=True, color=XLSX_BAND)
         cell.alignment = center
-        ws.row_dimensions[r_val].height = 26
+        ws.row_dimensions[row + 1].height = 26
 
 
-def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
-    """Native charts anchored below the KPI band, two per row. Data comes from cells."""
+def _unit_badge(ws, row, c0, cols, unit):
+    """A chart's unit ("단위: 백만원") as a small amber chip in the card's header row, hard right.
+    Absent unit = no chip, no gap: the header row is the card's own padding either way."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    text = str(unit or "").strip()
+    if not text:
+        return
+    span = 2 if cols >= 4 else 1
+    b0 = c0 + cols - span
+    ws.merge_cells(start_row=row, start_column=b0, end_row=row, end_column=b0 + span - 1)
+    fill = PatternFill("solid", fgColor=XLSX_UNIT_BADGE_BG)
+    for dc in range(span):
+        ws.cell(row=row, column=b0 + dc).fill = fill
+    cell = ws.cell(row=row, column=b0)
+    cell.value = text
+    cell.font = Font(size=8, bold=True, color=XLSX_UNIT_BADGE_FG)
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+
+def _build_chart(wb, spec, sheet_map, notes):
+    """Resolve one chart spec against the data sheets -> (chart, ctype), or None with a note.
+    Sizing and placement are NOT decided here: a chart's slot depends on what else is on the
+    page, so the caller lays out first and only then hands each chart its centimetres."""
     from openpyxl.chart import BarChart, DoughnutChart, LineChart, PieChart, Reference
+    from openpyxl.chart.label import DataLabelList
     from openpyxl.chart.shapes import GraphicalProperties
     from openpyxl.drawing.line import LineProperties
-    from openpyxl.utils import get_column_letter
 
     kinds = {"line": LineChart, "bar": BarChart, "pie": PieChart,
              "doughnut": lambda: DoughnutChart(holeSize=XLSX_DOUGHNUT_HOLE)}
-    placed = 0
-    for spec in charts:
-        title = str(spec.get("title") or "").strip()
-        ref_name = str(spec.get("sheet") or "").strip()
-        who = title or ref_name or "(untitled)"
-        target = sheet_map.get(ref_name) or sheet_map.get(ref_name.lower())
-        if not target:
-            notes.append(f"chart '{who}' skipped: data sheet {ref_name!r} not found")
-            continue
-        ws = wb[target]
-        if ws.max_row < 2:
-            notes.append(f"chart '{who}' skipped: sheet '{target}' has no data rows")
-            continue
-        headers = [c.value for c in ws[1]]
-        want = spec.get("valueCols")
-        want = want if isinstance(want, list) else ([want] if want not in (None, "") else [])
-        vcols, bad = [], []
-        for ref in want:
-            col = _resolve_column(headers, ref)
-            (vcols if col else bad).append(col if col else ref)
-        if bad:
-            notes.append(f"chart '{who}': columns not found in '{target}': {bad}")
-        if not vcols:
-            notes.append(f"chart '{who}' skipped: no value column resolved in '{target}'")
-            continue
-        lab_ref = spec.get("labelCol")
-        labcol = _resolve_column(headers, 0 if lab_ref in (None, "") else lab_ref)
-        if labcol is None:
-            notes.append(f"chart '{who}': label column {lab_ref!r} not found — using row numbers")
+    title = str(spec.get("title") or "").strip()
+    ref_name = str(spec.get("sheet") or "").strip()
+    who = title or ref_name or "(untitled)"
+    target = sheet_map.get(ref_name) or sheet_map.get(ref_name.lower())
+    if not target:
+        notes.append(f"chart '{who}' skipped: data sheet {ref_name!r} not found")
+        return None
+    ws = wb[target]
+    if ws.max_row < 2:
+        notes.append(f"chart '{who}' skipped: sheet '{target}' has no data rows")
+        return None
+    headers = [c.value for c in ws[1]]
+    want = spec.get("valueCols")
+    want = want if isinstance(want, list) else ([want] if want not in (None, "") else [])
+    vcols, bad = [], []
+    for ref in want:
+        col = _resolve_column(headers, ref)
+        (vcols if col else bad).append(col if col else ref)
+    if bad:
+        notes.append(f"chart '{who}': columns not found in '{target}': {bad}")
+    if not vcols:
+        notes.append(f"chart '{who}' skipped: no value column resolved in '{target}'")
+        return None
+    lab_ref = spec.get("labelCol")
+    labcol = _resolve_column(headers, 0 if lab_ref in (None, "") else lab_ref)
+    if labcol is None:
+        notes.append(f"chart '{who}': label column {lab_ref!r} not found — using row numbers")
 
-        ctype = str(spec.get("type") or "bar").strip().lower()
-        ctype = _CHART_TYPE_ALIASES.get(ctype, ctype)
-        if ctype == "combo" and len(vcols) < 2:
-            notes.append(f"chart '{who}': combo needs two value columns — drawn as bars")
-            ctype = "bar"
-        if ctype == "combo":
-            chart = _combo_chart(ws, vcols, labcol, ws.max_row)
+    ctype = str(spec.get("type") or "bar").strip().lower()
+    ctype = _CHART_TYPE_ALIASES.get(ctype, ctype)
+    if ctype == "combo" and len(vcols) < 2:
+        notes.append(f"chart '{who}': combo needs two value columns — drawn as bars")
+        ctype = "bar"
+    if ctype == "combo":
+        chart = _combo_chart(ws, vcols, labcol, ws.max_row)
+    else:
+        chart = kinds.get(ctype, BarChart)()
+        for col in vcols:
+            chart.add_data(Reference(ws, min_col=col, min_row=1, max_row=ws.max_row),
+                           titles_from_data=True)
+        if labcol:
+            chart.set_categories(
+                Reference(ws, min_col=labcol, min_row=2, max_row=ws.max_row))
+    if title:
+        chart.title = title
+        _style_chart_title(chart)
+    if ctype not in _ROUND_CHARTS:
+        # Thousands separators on the value axis — a dashboard is read, not decoded.
+        chart.y_axis.number_format = "#,##0"
+    if len(vcols) < 2 and ctype not in _ROUND_CHARTS:
+        chart.legend = None  # a one-series legend is noise
+        # One series = one color. Excel's default palette exists to tell series apart; with
+        # nothing to tell apart it just adds a hue the design did not choose.
+        for s in chart.series:
+            if ctype == "line":
+                s.graphicalProperties = GraphicalProperties(
+                    ln=LineProperties(solidFill=XLSX_ACCENT, w=22000))
+                s.smooth = False   # invented curvature between real points is a lie
+            else:
+                s.graphicalProperties = GraphicalProperties(solidFill=XLSX_ACCENT)
+    if chart.legend is not None:
+        # A legend on the right eats the plot and lands ON the data (2026-08-12 사용자 실측).
+        # Under the plot it takes rows the drawing already reserved.
+        chart.legend.position = "b"
+        chart.legend.overlay = False
+    # Value labels only where they have somewhere to go: above the bars of a bar-only chart, and
+    # only while the bars are still wide enough to hold a number. A combo's line would drop its
+    # labels straight into the bars, so combos get none at all.
+    if ctype == "bar" and ws.max_row - 1 <= XLSX_DLBL_MAX_POINTS:
+        chart.dLbls = DataLabelList(showVal=True, dLblPos="outEnd")
+    # The chart's own page: white area, no frame line — so the drawing reads as part of the white
+    # card painted under it instead of a gray rectangle floating on the canvas.
+    area = GraphicalProperties(solidFill=XLSX_WHITE)
+    area.ln = LineProperties(noFill=True)
+    chart.graphical_properties = area
+    return chart, ctype
+
+
+def _chart_bands(prepared, width):
+    """Plan the chart bands: [[(entry, cols), ...], ...].
+
+    A wide chart and a round one share a band — wide ~2/3, ring ~1/3 — which is the reference
+    layout and also the only arrangement where the ring's caption block has room under it.
+    Whatever is left over pairs up two to a band, and a single leftover spans the whole width."""
+    wide = [e for e in prepared if e[1] not in _ROUND_CHARTS]
+    ring = [e for e in prepared if e[1] in _ROUND_CHARTS]
+    bands = []
+    while wide and ring:
+        narrow = max(3, round(width / 3))
+        bands.append([(wide.pop(0), width - narrow), (ring.pop(0), narrow)])
+    rest = sorted(wide + ring, key=lambda e: e[2])   # back into the caller's order
+    while rest:
+        take, rest = rest[:2], rest[2:]
+        if len(take) == 1:
+            bands.append([(take[0], width)])
         else:
-            chart = kinds.get(ctype, BarChart)()
-            for col in vcols:
-                chart.add_data(Reference(ws, min_col=col, min_row=1, max_row=ws.max_row),
-                               titles_from_data=True)
-            if labcol:
-                chart.set_categories(
-                    Reference(ws, min_col=labcol, min_row=2, max_row=ws.max_row))
-        if title:
-            chart.title = title
-            _style_chart_title(chart)
-        chart.width = XLSX_DOUGHNUT_W_CM if ctype == "doughnut" else XLSX_CHART_W_CM
-        chart.height = XLSX_CHART_H_CM
-        if ctype not in _ROUND_CHARTS:
-            # Thousands separators on the value axis — a dashboard is read, not decoded.
-            chart.y_axis.number_format = "#,##0"
-        if len(vcols) < 2 and ctype not in _ROUND_CHARTS:
-            chart.legend = None  # a one-series legend is noise
-            # One series = one color. Excel's default palette exists to tell series apart; with
-            # nothing to tell apart it just adds a hue the design did not choose.
-            for s in chart.series:
-                if ctype == "line":
-                    s.graphicalProperties = GraphicalProperties(
-                        ln=LineProperties(solidFill=XLSX_ACCENT, w=22000))
-                    s.smooth = False   # invented curvature between real points is a lie
-                else:
-                    s.graphicalProperties = GraphicalProperties(solidFill=XLSX_ACCENT)
-        anchor_ci = 1 + (placed % XLSX_CHART_PER_ROW) * XLSX_CHART_COLS
-        anchor_row = top_row + (placed // XLSX_CHART_PER_ROW) * XLSX_CHART_ROWS
-        ws_dash.add_chart(chart, f"{get_column_letter(anchor_ci)}{anchor_row}")
-        if ctype == "doughnut":
-            _write_doughnut_center(ws_dash, spec, anchor_ci, anchor_row)
-        placed += 1
-    return placed
+            half = width // 2
+            bands.append([(take[0], half), (take[1], width - half)])
+    return bands
 
 
-def _dash_band_width(kpis, charts):
-    """Columns the title band spans. The KPI row is the only band made of *cells*, so it decides
-    the width; charts are floating drawings whose column span says nothing about their size."""
-    cards, bars = _split_kpis(kpis)
-    width = min(len(cards), XLSX_KPI_PER_ROW) * XLSX_KPI_COLS if cards else 0
-    if bars:
-        width = max(width, XLSX_BARKPI_COLS)
-    if width:
-        return width
-    if charts:
-        return min(len(charts), XLSX_CHART_PER_ROW) * XLSX_CHART_COLS - 1
-    return 1
+def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes, width):
+    """Chart cards below the KPI band. Returns (charts placed, first free row below)."""
+    from openpyxl.utils import get_column_letter
+
+    prepared = []
+    for i, spec in enumerate(charts):
+        made = _build_chart(wb, spec, sheet_map, notes)
+        if made:
+            prepared.append((made[0], made[1], i, spec))
+    row = top_row
+    for band in _chart_bands(prepared, width):
+        c0 = 1
+        for (chart, ctype, _i, spec), cols in band:
+            _card_box(ws_dash, row, c0, XLSX_CHARTCARD_ROWS, cols)
+            _unit_badge(ws_dash, row, c0, cols, spec.get("unit"))
+            ring = ctype in _ROUND_CHARTS
+            # -2: the badge row on top and one padding row above the card's bottom hairline.
+            rows = XLSX_RING_ROWS if ring else XLSX_CHARTCARD_ROWS - 2
+            chart.width = _cm_cols(cols)
+            chart.height = rows * XLSX_ROW_CM
+            ws_dash.add_chart(chart, f"{get_column_letter(c0)}{row + 1}")
+            if ring:
+                _write_doughnut_center(ws_dash, spec, c0, row + 1 + rows, cols)
+            c0 += cols
+        row += XLSX_CHARTCARD_ROWS + 1   # exactly one spacer row between bands
+    return len(prepared), row
 
 
-def _write_dash_title(ws, title, kpis, charts):
+def _write_dash_title(ws, title, width):
     """Row 1 = the navy band, same spine as the pptx section band."""
     from openpyxl.styles import Alignment, Font, PatternFill
 
-    width = _dash_band_width(kpis, charts)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=width)
     fill = PatternFill("solid", fgColor=XLSX_BAND)
     for c in range(1, width + 1):
@@ -1734,11 +1852,23 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
 
     placed = 0
     if ws_dash is not None:
+        # One fixed grid, then the bands in reading order: title -> KPI cards -> charts ->
+        # progress bars, one spacer row apiece. Every band already ends with its own gap row, so
+        # nothing adds a second one — two blank rows is what made v3 read as a mostly empty page.
+        width = XLSX_DASH_COLS
+        _dash_grid(ws_dash, width)
         if title:
-            _write_dash_title(ws_dash, title, kpis, charts)
-        row = _write_kpi_cards(ws_dash, kpis, XLSX_KPI_TOP) if kpis else XLSX_KPI_TOP
+            _write_dash_title(ws_dash, title, width)
+        cards, bars = _split_kpis(kpis)
+        row = XLSX_KPI_TOP
+        if cards:
+            row = _write_kpi_card_grid(ws_dash, cards, row, width)
         if charts:
-            placed = _add_dashboard_charts(wb, ws_dash, charts, sheet_map, row + 1, notes)
+            placed, row = _add_dashboard_charts(
+                wb, ws_dash, charts, sheet_map, row, notes, width)
+        if bars:
+            row = _write_kpi_bars(ws_dash, bars, row, width)
+        _paint_canvas(ws_dash, row, width)
 
     wb.save(out_path)
     return {"sheets": len(sheets), "dashboard": ws_dash is not None,
@@ -1794,6 +1924,8 @@ def _chart_block(b, index, taken):
     sheet = {"name": sheet_name, "headers": ["항목"] + names, "rows": rows}
     spec = {"type": ctype, "title": title, "sheet": sheet_name,
             "labelCol": 0, "valueCols": names,
+            # Whichever unit-ish prop the block carries becomes the card's badge; none = no badge.
+            "unit": p.get("unit") or p.get("unitLabel") or p.get("yUnit"),
             "centerLabel": p.get("centerLabel"), "centerValue": p.get("centerValue")}
     return sheet, spec
 
@@ -2253,6 +2385,8 @@ def action_selftest():
             parts = z.namelist()
             dash_rels = (z.read("xl/worksheets/_rels/sheet1.xml.rels").decode("utf-8")
                          if "xl/worksheets/_rels/sheet1.xml.rels" in parts else "")
+            dash_bar_xml = "".join(z.read(n).decode("utf-8") for n in parts
+                                   if n.startswith("xl/charts/chart"))
         ck("xlsx dashboard: exactly one native chart is written",
            len([n for n in parts if n.startswith("xl/charts/chart")]) == 1 and res_d["charts"] == 1)
         ck("xlsx dashboard: the chart is anchored on the Dashboard sheet", "drawing" in dash_rels)
@@ -2274,11 +2408,12 @@ def action_selftest():
            a3.border.top.style == "thin" and a5.border.bottom.style == "thick"
            and str(a5.border.bottom.color.rgb or "").endswith(XLSX_CARD_UNDERLINES[0])
            and str(a3.fill.fgColor.rgb or "").endswith(XLSX_CARD_LABEL_BG))
+        # v4: three cards stretch to fill the 12-column grid — 4 columns each, so card 2 is at E.
         ck("xlsx dashboard: the card underline cycles color per card",
-           str(ws_dr["D5"].border.bottom.color.rgb or "").endswith(XLSX_CARD_UNDERLINES[1]))
-        ck("xlsx dashboard: the title lands in a navy band across the KPI width",
+           str(ws_dr["E5"].border.bottom.color.rgb or "").endswith(XLSX_CARD_UNDERLINES[1]))
+        ck("xlsx dashboard: the title band spans the whole fixed grid",
            str(ws_dr["A1"].fill.fgColor.rgb or "").endswith(XLSX_BAND)
-           and any(str(r) == "A1:I1" for r in ws_dr.merged_cells.ranges))
+           and any(str(r) == "A1:L1" for r in ws_dr.merged_cells.ranges))
         rules_data = [r for cf in wb_d["Data"].conditional_formatting for r in cf.rules]
         ck("xlsx dashboard: the data sheet gets a data bar",
            any(r.type == "dataBar" for r in rules_data))
@@ -2307,7 +2442,7 @@ def action_selftest():
                   {"label": "검색유입 매출 비율", "value": 34, "unit": "%", "style": "bar"},
                   {"label": "고객 만족도 (5점 만점)", "value": 4.11, "max": 5, "style": "bar"}],
             charts=[{"type": "combo", "title": "월별 수량·매출", "sheet": "월별",
-                     "labelCol": "월", "valueCols": ["수량", "매출"]},
+                     "labelCol": "월", "valueCols": ["수량", "매출"], "unit": "단위: 백만원"},
                     {"type": "doughnut", "title": "첫구매 비중", "sheet": "유입",
                      "labelCol": "구분", "valueCols": ["비중"],
                      "centerLabel": "첫구매 비율", "centerValue": "83.1%"}])
@@ -2315,22 +2450,57 @@ def action_selftest():
         with zipfile.ZipFile(p_v3) as z:
             charts_xml = [z.read(n).decode("utf-8") for n in z.namelist()
                           if n.startswith("xl/charts/chart")]
+            draw_v3 = z.read("xl/drawings/drawing1.xml").decode("utf-8")
         # openpyxl writes the chart part with the chart namespace as the DEFAULT one, so the
-        # elements carry no c: prefix — match the bare tag names.
+        # elements carry no c: prefix — match the bare tag names. Same for the drawing part.
         combo_xml = [x for x in charts_xml if "<barChart" in x]
+        dough_xml = [x for x in charts_xml if "<doughnutChart" in x]
         ck("xlsx v3: combo draws bars and a line, the line on a secondary axis",
            len(combo_xml) == 1 and "<lineChart" in combo_xml[0]
            and combo_xml[0].count("<valAx") >= 2
            and '<axId val="200"/>' in combo_xml[0])
-        ck("xlsx v3: a doughnut is a real ring, not a pie",
-           any("<doughnutChart" in x for x in charts_xml))
+        ck("xlsx v3: a doughnut is a real ring, not a pie", len(dough_xml) == 1)
         v3_cells = [c.value for row in ws_v3.iter_rows() for c in row]
-        ck("xlsx v3: the doughnut's center block carries label and value beside the ring",
+        ck("xlsx v3: the doughnut's center block carries label and value",
            "83.1%" in v3_cells and "첫구매 비율" in v3_cells)
         ck("xlsx v3: a bar-style KPI puts a data bar on the Dashboard itself",
            any(r.type == "dataBar" for cf in ws_v3.conditional_formatting for r in cf.rules))
         ck("xlsx v3: an icon KPI trades numeric-ness for the emoji",
            any(isinstance(v, str) and v.startswith("💰") and "334조원" in v for v in v3_cells))
+
+        # 2026-08-12 v4: the canvas. Two measured flaws — legends/labels landing on the data, and
+        # a page that read as empty — were both geometry, so the checks below are geometry too.
+        from openpyxl.utils import get_column_letter as _gcl
+
+        def _fill_of(ws, addr):
+            f = ws[addr].fill
+            return str(f.fgColor.rgb or "") if f is not None and f.patternType else ""
+
+        band0 = XLSX_KPI_TOP + XLSX_KPI_ROWS      # 2 cards = 1 card row, then the chart band
+        wide_cols = XLSX_DASH_COLS - max(3, round(XLSX_DASH_COLS / 3))
+        anchors = [(int(c), int(r)) for c, r in re.findall(
+            r"<from><col>(\d+)</col><colOff>\d+</colOff><row>(\d+)</row>", draw_v3)]
+        ck("xlsx v4: the page is painted slate everywhere a card is not",
+           _fill_of(ws_v3, "A2").endswith(XLSX_CANVAS)
+           and _fill_of(ws_v3, f"{_gcl(XLSX_DASH_COLS + 1)}1").endswith(XLSX_CANVAS))
+        ck("xlsx v4: a chart sits on a white card block with a hairline frame",
+           _fill_of(ws_v3, f"A{band0 + 1}").endswith(XLSX_WHITE)
+           and ws_v3[f"A{band0}"].border.top.style == "thin"
+           and "</chart><spPr>" in combo_xml[0] and "FFFFFF" in combo_xml[0].split("</chart>")[1])
+        ck("xlsx v4: a combo and a doughnut share one band, ~2/3 + ~1/3",
+           len(anchors) == 2 and anchors[0][1] == anchors[1][1] == band0
+           and anchors[0][0] == 0 and anchors[1][0] == wide_cols)
+        ck("xlsx v4: every legend sits under the plot, the doughnut's included",
+           '<legendPos val="b"/>' in combo_xml[0] and '<legendPos val="b"/>' in dough_xml[0])
+        ck("xlsx v4: the center block sits UNDER the ring, inside the doughnut's own card",
+           ws_v3.cell(row=band0 + 1 + XLSX_RING_ROWS, column=wide_cols + 1).value == "첫구매 비율"
+           and ws_v3.cell(row=band0 + 2 + XLSX_RING_ROWS,
+                          column=wide_cols + 1).value == "83.1%")
+        ck("xlsx v4: a chart's unit becomes an amber badge at its card's top-right",
+           ws_v3.cell(row=band0, column=wide_cols - 1).value == "단위: 백만원"
+           and _fill_of(ws_v3, f"{_gcl(wide_cols - 1)}{band0}").endswith(XLSX_UNIT_BADGE_BG))
+        ck("xlsx v4: value labels ride the bars of a bar-only chart, never a combo's line",
+           "<dLbls>" in dash_bar_xml and "<dLbls>" not in combo_xml[0])
 
         # Ledger genre: a document with live monthly / running subtotals.
         p_lg = f"{OUT_DIR}/selftest-ledger.xlsx"
@@ -2383,7 +2553,8 @@ def action_selftest():
            and "분기 추이" in wb_b.sheetnames)
         ck("xlsx blocks: two KPI cards land as merged label cells",
            wb_b["Dashboard"]["A3"].value == "매출"
-           and wb_b["Dashboard"]["D3"].value == "영업이익"
+           # v4: two cards split the 12-column grid in half, so card 2 starts at G
+           and wb_b["Dashboard"]["G3"].value == "영업이익"
            # 2 cards x 3 rows + the row-1 title band
            and len(wb_b["Dashboard"].merged_cells.ranges) == 7)
     except Exception as e:  # noqa: BLE001
