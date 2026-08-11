@@ -151,9 +151,12 @@ def _local(tag):
 
 
 def read_hwpx(path):
-    """OWPML (KS X 6101) — ZIP of section XMLs; text lives in <hp:t>, tables in <hp:tbl>.
+    """OWPML (KS X 6101) — ZIP of section XMLs; text lives in <hp:t>, tables in <hp:tbl>,
+    equation sources in <hp:equation><hp:script>. The <hp:t> walk already reaches text
+    boxes and footnotes (they are just deeper paragraphs — 2026-08-11 실측으로 확인).
     Namespace-agnostic on purpose: producers disagree on prefixes, localnames hold still."""
-    texts, tables = [], []
+    texts, tables, equations = [], [], []
+    seen_eq = set()
     with zipfile.ZipFile(path) as z:
         sections = sorted(n for n in z.namelist()
                           if n.startswith("Contents/") and re.search(r"section\d+\.xml$", n))
@@ -191,8 +194,24 @@ def read_hwpx(path):
                                if _local(t.tag) == "t" and id(t) not in in_table_cells)
                 if line.strip():
                     texts.append(line.strip())
-    return {"format": "hwpx", "meta": {"sections": len(sections), "tables": len(tables)},
-            "text": "\n".join(texts), "tables": tables}
+                # Equation SOURCE is not a <hp:t> — pull the script so formulas stop
+                # vanishing. id-dedup because outer paragraphs contain cell paragraphs.
+                for eq in p.iter():
+                    if _local(eq.tag) != "equation" or id(eq) in seen_eq:
+                        continue
+                    seen_eq.add(id(eq))
+                    for sc in eq:
+                        if _local(sc.tag) == "script" and (sc.text or "").strip():
+                            script = sc.text.strip()
+                            equations.append(script)
+                            texts.append(f"[수식] {script}")
+    out = {"format": "hwpx",
+           "meta": {"sections": len(sections), "tables": len(tables),
+                    "equations": len(equations)},
+           "text": "\n".join(texts), "tables": tables}
+    if equations:
+        out["equations"] = equations
+    return out
 
 
 def _rhwp_helper_read(path):
@@ -213,36 +232,32 @@ def _rhwp_helper_read(path):
     return payload["data"]
 
 
-def read_hwp_family(path):
-    """.hwp/.hwpx through the rhwp engine — it reaches what the zip+xml walk cannot
-    (legacy .hwp binaries, equations as their script, text boxes, footnotes). hwpx
-    falls back to the direct walk when the helper (node + wasm) is unavailable;
-    legacy .hwp has no fallback and says so."""
-    ext = path.rsplit(".", 1)[-1].lower()
+def read_hwp_legacy(path):
+    """.hwp (binary) through the rhwp engine — the only door into that format here.
+    Honesty note rides along: rhwp 0.8.x reads its own output perfectly but extracts
+    THIN from vintage Hancom files (5.0.3.x-era samples came back near-empty, 2026-08-11
+    실측) — so the reader names its limits instead of pretending."""
     try:
         d = _rhwp_helper_read(path)
-    except Exception as e:  # noqa: BLE001 — fallback decides by format
-        if ext == "hwpx":
-            out = read_hwpx(path)
-            out["note"] = (f"rhwp helper unavailable ({e}) — zip+xml fallback "
-                           "(equations/text boxes not extracted)")
-            return out
+    except Exception as e:  # noqa: BLE001
         raise RuntimeError(f"legacy .hwp needs the rhwp helper (node + vendored wasm): {e}")
     tables = [{"name": t.get("name"),
                "headers": (t.get("rows") or [[]])[0],
                "rows": (t.get("rows") or [[]])[1:]} for t in d.get("tables", [])]
-    out = {"format": ext, "engine": "rhwp",
+    out = {"format": "hwp", "engine": "rhwp",
            "meta": {"sections": d.get("sections", 0),
                     "paragraphs": d.get("paragraphs", 0),
                     "tables": len(tables), "equations": len(d.get("equations", []))},
-           "text": d.get("text", ""), "tables": tables}
+           "text": d.get("text", ""), "tables": tables,
+           "note": ("rhwp engine — if content looks missing (older .hwp files extract "
+                    "thin), convert to .hwpx in Hancom and read that instead")}
     if d.get("equations"):
         out["equations"] = d["equations"]
     return out
 
 
 READERS = {"pdf": read_pdf, "docx": read_docx, "xlsx": read_xlsx,
-           "pptx": read_pptx, "hwpx": read_hwp_family, "hwp": read_hwp_family}
+           "pptx": read_pptx, "hwpx": read_hwpx, "hwp": read_hwp_legacy}
 
 
 def action_read(inp):
@@ -1298,7 +1313,8 @@ HWPX_SECTION = """<?xml version="1.0" encoding="UTF-8"?>
 <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
         xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
   <hp:p><hp:run><hp:t>한글 문단 하나</hp:t></hp:run></hp:p>
-  <hp:p><hp:run><hp:t>두 번째 문단</hp:t></hp:run></hp:p>
+  <hp:p><hp:run><hp:t>두 번째 문단</hp:t>
+    <hp:equation><hp:script>a over b</hp:script></hp:equation></hp:run></hp:p>
   <hp:tbl>
     <hp:tr><hp:tc><hp:p><hp:run><hp:t>이름</hp:t></hp:run></hp:p></hp:tc>
            <hp:tc><hp:p><hp:run><hp:t>값</hp:t></hp:run></hp:p></hp:tc></hp:tr>
@@ -1465,6 +1481,8 @@ def action_selftest():
         ck("hwpx: table cells keep their grid", got["tables"]
            and got["tables"][0]["rows"] == [["가", "1"]])
         ck("hwpx: table text is not doubled into the body", "이름" not in got["text"])
+        ck("hwpx: equation script is extracted (직독)",
+           got.get("equations") == ["a over b"] and "[수식] a over b" in got["text"])
     except Exception as e:  # noqa: BLE001
         ck(f"hwpx read crashed: {e}", False)
 
@@ -1475,7 +1493,7 @@ def action_selftest():
                       "fixtures", "rhwp-roundtrip.hwp")
     if _sh.which("node") and os.path.exists(fx):
         try:
-            got = read_hwp_family(fx)
+            got = read_hwp_legacy(fx)
             ck("hwp(rhwp): text and table cell survive",
                "파이어뱃" in got["text"] and got["tables"]
                and got["tables"][0]["headers"][0] == "셀A1")

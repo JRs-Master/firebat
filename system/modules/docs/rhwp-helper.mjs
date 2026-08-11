@@ -106,6 +106,20 @@ async function main() {
             break;
           } catch {}
         }
+        if (handled) continue;
+        // Everything else — text boxes, footnotes/endnotes, shapes — falls through to the
+        // HTML exporter, the one API that renders ANY control's inner paragraphs.
+        try {
+          const html = doc.exportControlHtml(s, pi, "[]", ci);
+          const inner = String(html)
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (inner) textParts.push(inner);
+        } catch {}
       }
     }
   }
