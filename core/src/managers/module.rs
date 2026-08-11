@@ -908,6 +908,40 @@ impl ModuleManager {
             }
         }
 
+        // An errorKey is an ID, not an explanation. The MCP handler resolved it downstream, but
+        // the FC handler serializes ModuleOutput verbatim — so the model received the bare key
+        // ("error.period_required") while the lang file's sentence naming the exact params sat
+        // unread, and it brute-forced param combinations for six rounds (2026-08-11 turn 33).
+        // Resolve once here, the choke point both surfaces share; MCP's own resolver reads the
+        // same key and lands on the same sentence, so nothing drifts.
+        if !result.success && result.error.is_none() {
+            if let Some(key) = &result.error_key {
+                let owned: Vec<(String, String)> = result
+                    .error_params
+                    .as_ref()
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .map(|(k, v)| {
+                                let s = match v {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    other => other.to_string(),
+                                };
+                                (k.clone(), s)
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let refs: Vec<(&str, &str)> =
+                    owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+                result.error = Some(crate::i18n::t(
+                    &format!("module.{}.{}", module_name, key),
+                    None,
+                    &refs,
+                ));
+            }
+        }
+
         // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택).
         // success:false 응답 (outErr 호출 경로) = envelope `{success:false, errorKey, errorParams}`
         // 형태라 `data` field 가 없음 → sandbox.rs 에서 result.data = Value::Null 로 설정됨.
