@@ -1068,59 +1068,396 @@ def action_make_pptx(inp):
     }}
 
 
-def make_xlsx_file(sheets, out_path):
+# ── xlsx: the dashboard genre ──────────────────────────────────────────────────────────────────
+# Same stance as the pptx genre system: the archetypes are fixed and the block shapes choose
+# between them, so no decision is left to the caller's prose. metric blocks are KPI cards,
+# chart blocks are native charts fed from real cells (never inline literals — a chart whose
+# numbers are baked into the drawing cannot be re-pointed by the person who opens the file),
+# table blocks are styled data sheets.
+XLSX_KPI_PER_ROW = 4
+XLSX_KPI_COLS = 3           # merged card width in columns
+XLSX_KPI_ROWS = 4           # 3 content rows (label / value / delta) + 1 gap row
+XLSX_KPI_TOP = 3            # row 1 = title, row 2 = breathing room
+XLSX_CHART_PER_ROW = 2
+XLSX_CHART_COLS = 9         # ~8 columns wide + 1 gap
+XLSX_CHART_ROWS = 16        # ~15 rows tall + 1 gap
+XLSX_BAR_COLOR = "638EC6"   # one restrained blue — data bars are a reading aid, not decoration
+XLSX_SCALE_LOW, XLSX_SCALE_MID, XLSX_SCALE_HIGH = "5B9BD5", "FFFFFF", "E46C6C"
+# Korean market convention: up = red, down = blue (the inverse of the US convention).
+XLSX_UP, XLSX_DOWN, XLSX_FLAT = "C00000", "1F5FBF", "808080"
+# Ratio-ish columns diverge around zero, so a 3-color scale reads them; absolute magnitudes
+# read as bars. The header is what tells the two apart.
+_RATIO_HEADER_RE = re.compile(r"(%|율|증감|등락|change|delta|yoy)", re.I)
+_CHART_BLOCK_TYPES = ("chart", "bar_chart", "line_chart", "pie_chart",
+                      "donut_chart", "doughnut_chart", "column_chart", "area_chart")
+_CHART_TYPE_ALIASES = {"doughnut": "pie", "donut": "pie", "column": "bar", "area": "line"}
+
+
+def _sheet_title(raw, index, used):
+    """Excel-legal, <=31 chars, unique within the workbook."""
+    base = re.sub(r"[\\/*?:\[\]]", "-", str(raw or "")).strip()[:31] or f"Sheet{index + 1}"
+    name, n = base, 1
+    while name in used:
+        suffix = f"_{n}"
+        name = base[:31 - len(suffix)] + suffix
+        n += 1
+    used.add(name)
+    return name
+
+
+def _write_data_sheet(ws, sh):
+    """Header row + coerced cells + the styling every data sheet gets."""
+    from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    headers = [str(h) for h in (sh.get("headers") or [])]
+    if headers:
+        ws.append(headers)
+        for c in ws[1]:
+            c.font = Font(bold=True)
+        ws.freeze_panes = "A2"
+    body = []
+    for row in sh.get("rows") or []:
+        # "1,234" must land as the number 1234, not text — text numbers kill SUM and
+        # charts on the receiving end (2026-08-11 사용자 실측). A leading "=" stays a
+        # string here and openpyxl writes it as a live formula.
+        cells = []
+        for v in row:
+            num = parse_number(v)
+            cells.append(num if num is not None else ("" if v is None else str(v)))
+        ws.append(cells)
+        body.append(cells)
+
+    ncols = max([len(headers)] + [len(r) for r in body] + [0])
+    first_row = 2 if headers else 1
+    last_row = first_row + len(body) - 1
+    for ci in range(ncols):
+        col = get_column_letter(ci + 1)
+        vals = [r[ci] for r in body if ci < len(r)]
+        texts = ([headers[ci]] if ci < len(headers) else []) + [
+            (f"{v:,}" if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v))
+            for v in vals]
+        ws.column_dimensions[col].width = min(40, max(10, max([len(t) for t in texts] + [0]) + 2))
+        filled = [v for v in vals if v not in ("", None)]
+        nums = [v for v in filled if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        if not nums or len(nums) * 2 <= len(filled):
+            continue  # a column that is mostly text is not a number column
+        ints = [v for v in nums if float(v).is_integer()]
+        fmt = "#,##0" if len(ints) * 2 > len(nums) else "#,##0.00"
+        for r in range(first_row, last_row + 1):
+            ws.cell(row=r, column=ci + 1).number_format = fmt
+        if last_row < first_row:
+            continue
+        rng = f"{col}{first_row}:{col}{last_row}"
+        header_txt = headers[ci] if ci < len(headers) else ""
+        if _RATIO_HEADER_RE.search(header_txt):
+            ws.conditional_formatting.add(rng, ColorScaleRule(
+                start_type="min", start_color=XLSX_SCALE_LOW,
+                mid_type="percentile", mid_value=50, mid_color=XLSX_SCALE_MID,
+                end_type="max", end_color=XLSX_SCALE_HIGH))
+        else:
+            # openpyxl 3.1's DataBarRule has no `solid` switch: the classic dataBar it emits is
+            # the gradient (non-solid) one, which is the restrained look we want anyway.
+            ws.conditional_formatting.add(rng, DataBarRule(
+                start_type="min", end_type="max", color=XLSX_BAR_COLOR, showValue=True))
+
+
+def _kpi_delta(delta, delta_type=None):
+    """(text, color) for the delta line — sign decides, deltaType only rescues non-numbers."""
+    if delta in (None, ""):
+        return None, None
+    d = parse_number(delta)
+    if d is None:
+        dt = str(delta_type or "").strip().lower()
+        color = XLSX_UP if dt == "up" else XLSX_DOWN if dt == "down" else XLSX_FLAT
+        return str(delta), color
+    if d > 0:
+        return f"▲ {abs(d):,}", XLSX_UP
+    if d < 0:
+        return f"▼ {abs(d):,}", XLSX_DOWN
+    return "—", XLSX_FLAT
+
+
+def _write_kpi_cards(ws, kpis, top_row):
+    """Cards left to right, four per row. Returns the first free row below them."""
+    from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import get_column_letter
+
+    center = Alignment(horizontal="center", vertical="center")
+    for i, k in enumerate(kpis):
+        c0 = 1 + (i % XLSX_KPI_PER_ROW) * XLSX_KPI_COLS
+        r0 = top_row + (i // XLSX_KPI_PER_ROW) * XLSX_KPI_ROWS
+        for span in range(XLSX_KPI_COLS):
+            ws.column_dimensions[get_column_letter(c0 + span)].width = 13
+        for dr in range(3):
+            ws.merge_cells(start_row=r0 + dr, start_column=c0,
+                           end_row=r0 + dr, end_column=c0 + XLSX_KPI_COLS - 1)
+
+        lab = ws.cell(row=r0, column=c0)
+        lab.value = str(k.get("label") or "")
+        lab.font = Font(size=9, color="808080")
+        lab.alignment = center
+
+        unit = str(k.get("unit") or "").replace('"', "")
+        fmt = f'#,##0"{unit}"' if unit else "#,##0"
+        val = ws.cell(row=r0 + 1, column=c0)
+        raw = k.get("value")
+        s = "" if raw is None else str(raw).strip()
+        if s.startswith("="):
+            val.value = s          # the caller's live formula, kept live
+            val.number_format = fmt
+        else:
+            num = parse_number(raw)
+            if num is not None:
+                val.value = num
+                val.number_format = fmt
+            else:
+                val.value = f"{s}{unit}" if unit else s
+        val.font = Font(size=20, bold=True)
+        val.alignment = center
+
+        text, color = _kpi_delta(k.get("delta"), k.get("deltaType"))
+        if text is not None:
+            dcell = ws.cell(row=r0 + 2, column=c0)
+            dcell.value = text
+            dcell.font = Font(size=10, bold=True, color=color)
+            dcell.alignment = center
+    rows_used = -(-len(kpis) // XLSX_KPI_PER_ROW)
+    return top_row + rows_used * XLSX_KPI_ROWS
+
+
+def _resolve_column(headers, ref):
+    """header name (case-insensitive) or 0-based index -> 1-based column, None when unresolvable."""
+    names = [str(h or "").strip() for h in headers]
+    if isinstance(ref, str):
+        want = ref.strip()
+        for i, h in enumerate(names):
+            if h == want:
+                return i + 1
+        for i, h in enumerate(names):
+            if h.lower() == want.lower():
+                return i + 1
+        if re.fullmatch(r"\d+", want):
+            ref = int(want)
+    if isinstance(ref, bool):
+        return None
+    if isinstance(ref, int) and 0 <= ref < max(len(names), 1):
+        return ref + 1
+    return None
+
+
+def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
+    """Native charts anchored below the KPI band, two per row. Data comes from cells."""
+    from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+    from openpyxl.utils import get_column_letter
+
+    kinds = {"line": LineChart, "bar": BarChart, "pie": PieChart}
+    placed = 0
+    for spec in charts:
+        title = str(spec.get("title") or "").strip()
+        ref_name = str(spec.get("sheet") or "").strip()
+        who = title or ref_name or "(untitled)"
+        target = sheet_map.get(ref_name) or sheet_map.get(ref_name.lower())
+        if not target:
+            notes.append(f"chart '{who}' skipped: data sheet {ref_name!r} not found")
+            continue
+        ws = wb[target]
+        if ws.max_row < 2:
+            notes.append(f"chart '{who}' skipped: sheet '{target}' has no data rows")
+            continue
+        headers = [c.value for c in ws[1]]
+        want = spec.get("valueCols")
+        want = want if isinstance(want, list) else ([want] if want not in (None, "") else [])
+        vcols, bad = [], []
+        for ref in want:
+            col = _resolve_column(headers, ref)
+            (vcols if col else bad).append(col if col else ref)
+        if bad:
+            notes.append(f"chart '{who}': columns not found in '{target}': {bad}")
+        if not vcols:
+            notes.append(f"chart '{who}' skipped: no value column resolved in '{target}'")
+            continue
+        lab_ref = spec.get("labelCol")
+        labcol = _resolve_column(headers, 0 if lab_ref in (None, "") else lab_ref)
+        if labcol is None:
+            notes.append(f"chart '{who}': label column {lab_ref!r} not found — using row numbers")
+
+        ctype = str(spec.get("type") or "bar").strip().lower()
+        ctype = _CHART_TYPE_ALIASES.get(ctype, ctype)
+        chart = kinds.get(ctype, BarChart)()
+        for col in vcols:
+            chart.add_data(Reference(ws, min_col=col, min_row=1, max_row=ws.max_row),
+                           titles_from_data=True)
+        if labcol:
+            chart.set_categories(Reference(ws, min_col=labcol, min_row=2, max_row=ws.max_row))
+        if title:
+            chart.title = title
+        chart.width, chart.height = 13.5, 7.5
+        if len(vcols) < 2 and ctype != "pie":
+            chart.legend = None  # a one-series legend is noise
+        anchor_col = get_column_letter(1 + (placed % XLSX_CHART_PER_ROW) * XLSX_CHART_COLS)
+        anchor_row = top_row + (placed // XLSX_CHART_PER_ROW) * XLSX_CHART_ROWS
+        ws_dash.add_chart(chart, f"{anchor_col}{anchor_row}")
+        placed += 1
+    return placed
+
+
+def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
+    """Data sheets always; a Dashboard sheet in front of them when KPIs or charts exist."""
     import openpyxl
+    from openpyxl.styles import Font
+
+    sheets = [s for s in (sheets or []) if isinstance(s, dict)]
+    kpis = [k for k in (kpis or []) if isinstance(k, dict)]
+    charts = [c for c in (charts or []) if isinstance(c, dict)]
+
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    used = set()
+    used, notes = set(), []
+    # Created first so it is the sheet the file opens on; filled last, because the charts
+    # inside it need the data sheets to exist.
+    ws_dash = None
+    if kpis or charts:
+        ws_dash = wb.create_sheet(title=_sheet_title("Dashboard", 0, used))
+
+    sheet_map = {}
     for i, sh in enumerate(sheets):
-        name = re.sub(r"[\\/*?:\[\]]", "-", str(sh.get("name") or f"Sheet{i + 1}"))[:31] or f"S{i}"
-        while name in used:
-            name = (name[:28] + f"_{i}")[:31]
-        used.add(name)
-        ws = wb.create_sheet(title=name)
-        headers = sh.get("headers") or []
-        if headers:
-            from openpyxl.styles import Font
-            ws.append([str(h) for h in headers])
-            for c in ws[1]:
-                c.font = Font(bold=True)
-        for row in sh.get("rows") or []:
-            # "1,234" must land as the number 1234, not text — text numbers kill SUM and
-            # charts on the receiving end (2026-08-11 사용자 실측).
-            cells = []
-            for v in row:
-                num = parse_number(v)
-                cells.append(num if num is not None else ("" if v is None else str(v)))
-            ws.append(cells)
+        raw = str(sh.get("name") or "")
+        name = _sheet_title(raw or f"Sheet{i + 1}", i, used)
+        _write_data_sheet(wb.create_sheet(title=name), sh)
+        for key in (raw, raw.strip().lower(), name, name.strip().lower()):
+            if key:
+                sheet_map.setdefault(key, name)
+
+    placed = 0
+    if ws_dash is not None:
+        if title:
+            head = ws_dash.cell(row=1, column=1)
+            head.value = str(title)
+            head.font = Font(size=16, bold=True)
+        row = _write_kpi_cards(ws_dash, kpis, XLSX_KPI_TOP) if kpis else XLSX_KPI_TOP
+        if charts:
+            placed = _add_dashboard_charts(wb, ws_dash, charts, sheet_map, row + 1, notes)
+
     wb.save(out_path)
-    return len(sheets)
+    return {"sheets": len(sheets), "dashboard": ws_dash is not None,
+            "kpis": len(kpis), "charts": placed, "notes": notes}
+
+
+def _chart_block(b, index, taken):
+    """chart-family block -> (data sheet, chart spec). Inline series become real cells so the
+    native chart can point at them; None when the block carries no plottable numbers."""
+    t = str(b.get("type") or "").lower()
+    p = b.get("props") or {}
+    ctype = str(p.get("chartType") or p.get("type") or "").strip().lower()
+    if not ctype and t.endswith("_chart"):
+        ctype = t[: -len("_chart")]
+    ctype = _CHART_TYPE_ALIASES.get(ctype, ctype)
+    if ctype not in ("bar", "line", "pie"):
+        ctype = "bar"
+
+    labels = [str(x) for x in (p.get("labels") or [])]
+    cols = []
+    series = p.get("series")
+    if isinstance(series, list) and series:
+        for si, s in enumerate(series):
+            if not isinstance(s, dict):
+                continue
+            name = str(s.get("name") or s.get("label") or f"계열{si + 1}")
+            cols.append((name, list(s.get("data") or s.get("values") or [])))
+    else:
+        data = p.get("data")
+        if isinstance(data, list) and data and not isinstance(data[0], dict):
+            cols.append((str(p.get("title") or "값"), list(data)))
+    if not labels or not cols:
+        return None
+
+    seen, names = set(), []
+    for name, _vals in cols:
+        uniq, n = name, 2
+        while uniq in seen:
+            uniq = f"{name} {n}"
+            n += 1
+        seen.add(uniq)
+        names.append(uniq)
+
+    title = str(p.get("title") or "").strip() or f"차트{index}"
+    sheet_name, n = title, 2   # the chart spec points at this sheet BY NAME — keep it unique
+    while sheet_name in taken:
+        sheet_name = f"{title} {n}"
+        n += 1
+    taken.add(sheet_name)
+
+    rows = [[lab] + [(vals[ri] if ri < len(vals) else None) for _n, vals in cols]
+            for ri, lab in enumerate(labels)]
+    sheet = {"name": sheet_name, "headers": ["항목"] + names, "rows": rows}
+    spec = {"type": ctype, "title": title, "sheet": sheet_name,
+            "labelCol": 0, "valueCols": names}
+    return sheet, spec
+
+
+def _blocks_to_xlsx(blocks):
+    """Render blocks -> (table sheets, kpis, charts, chart data sheets)."""
+    tables, kpis, charts, chart_sheets = [], [], [], []
+    taken, last_header = set(), None
+    for b in blocks:
+        t, p = str(b.get("type") or "").lower(), b.get("props") or {}
+        if t == "header":
+            last_header = str(p.get("text") or "")
+        elif t == "table":
+            name = last_header or f"표{len(tables) + 1}"
+            taken.add(name)
+            tables.append({"name": name, "headers": p.get("headers") or [],
+                           "rows": p.get("rows") or []})
+            last_header = None
+        elif t == "metric":
+            kpis.append({"label": p.get("label"), "value": p.get("value"),
+                         "unit": p.get("unit"), "delta": p.get("delta"),
+                         "deltaType": p.get("deltaType")})
+        elif t in _CHART_BLOCK_TYPES:
+            made = _chart_block(b, len(charts) + 1, taken)
+            if made:
+                chart_sheets.append(made[0])
+                charts.append(made[1])
+    return tables, kpis, charts, chart_sheets
 
 
 def action_make_xlsx(inp):
     sheets = inp.get("sheets")
+    sheets = [s for s in sheets if isinstance(s, dict)] if isinstance(sheets, list) else []
+    kpis = [k for k in (inp.get("kpis") or []) if isinstance(k, dict)]
+    charts = [c for c in (inp.get("charts") or []) if isinstance(c, dict)]
+
+    b_tables, b_kpis, b_charts, b_chart_sheets = _blocks_to_xlsx(
+        normalize_blocks(inp.get("blocks")))
+    # Explicit input wins per axis, so blocks never duplicate what the caller stated.
     if not sheets:
-        blocks = normalize_blocks(inp.get("blocks"))
-        sheets, last_header = [], None
-        for b in blocks:
-            t, p = str(b.get("type") or ""), b.get("props") or {}
-            if t == "header":
-                last_header = str(p.get("text") or "")
-            elif t == "table":
-                sheets.append({"name": last_header or f"표{len(sheets) + 1}",
-                               "headers": p.get("headers") or [], "rows": p.get("rows") or []})
-                last_header = None
-    if not sheets:
+        sheets = b_tables
+    if not kpis:
+        kpis = b_kpis
+    if not charts and b_charts:
+        charts = b_charts
+        names = {str(s.get("name") or "") for s in sheets}
+        for sh, spec in zip(b_chart_sheets, b_charts):
+            while sh["name"] in names:
+                sh["name"] = sh["name"] + "_"
+            spec["sheet"] = sh["name"]
+            names.add(sh["name"])
+        sheets = list(sheets) + b_chart_sheets
+
+    if not sheets and not kpis and not charts:
         return {"success": False, "action": "make_xlsx",
-                "error": "nothing to write — pass sheets, or blocks containing table blocks"}
-    title = str(inp.get("title") or sheets[0].get("name") or "sheet")
-    out_path, stem = out_file(title, "xlsx", sheets)
+                "error": "nothing to write — pass sheets/kpis/charts, or blocks containing "
+                         "table, metric or chart blocks"}
+    title = str(inp.get("title") or (sheets[0].get("name") if sheets else "") or "sheet")
+    out_path, stem = out_file(title, "xlsx", {"s": sheets, "k": kpis, "c": charts})
     try:
-        n = make_xlsx_file(sheets, out_path)
+        res = make_xlsx_file(sheets, out_path, title=title, kpis=kpis, charts=charts)
     except Exception as e:  # noqa: BLE001
         return {"success": False, "action": "make_xlsx", "error": f"xlsx build failed: {e}"}
     return {"success": True, "action": "make_xlsx", "data": {
-        "sheets": n, "_mediaImport": media_import_decl(out_path, "xlsx", stem),
+        **res, "_mediaImport": media_import_decl(out_path, "xlsx", stem),
     }}
 
 
@@ -1489,6 +1826,79 @@ def action_selftest():
            vals == [1234, -3.1, "48억"])
     except Exception as e:  # noqa: BLE001
         ck(f"xlsx round trip crashed: {e}", False)
+
+    # xlsx dashboard genre — KPI cards, native charts fed from cells, conditional formatting
+    p_dash = f"{OUT_DIR}/selftest-dash.xlsx"
+    tmp.append(p_dash)
+    try:
+        from openpyxl import load_workbook as _lw
+        res_d = make_xlsx_file(
+            [{"name": "Data", "headers": ["월", "매출"],
+              "rows": [["1월", 100], ["2월", 220], ["3월", 180]]}],
+            p_dash, title="월간 대시보드",
+            kpis=[{"label": "합계", "value": "=SUM(Data!B2:B4)"},
+                  {"label": "평균", "value": 166.7, "unit": "억"},
+                  {"label": "영업이익", "value": 180, "delta": -40}],
+            charts=[{"type": "bar", "title": "월별 매출", "sheet": "Data",
+                     "labelCol": "월", "valueCols": ["매출"]},
+                    {"type": "line", "title": "없는 시트", "sheet": "NoSuchSheet",
+                     "valueCols": ["x"]}])
+        wb_d = _lw(p_dash, data_only=False)
+        ck("xlsx dashboard: Dashboard sheet exists and is first",
+           wb_d.sheetnames[0] == "Dashboard" and "Data" in wb_d.sheetnames)
+        # openpyxl drops charts when READING, so the chart part is counted in the package.
+        with zipfile.ZipFile(p_dash) as z:
+            parts = z.namelist()
+            dash_rels = (z.read("xl/worksheets/_rels/sheet1.xml.rels").decode("utf-8")
+                         if "xl/worksheets/_rels/sheet1.xml.rels" in parts else "")
+        ck("xlsx dashboard: exactly one native chart is written",
+           len([n for n in parts if n.startswith("xl/charts/chart")]) == 1 and res_d["charts"] == 1)
+        ck("xlsx dashboard: the chart is anchored on the Dashboard sheet", "drawing" in dash_rels)
+        ck("xlsx dashboard: an unresolvable chart is skipped WITH a note",
+           len(res_d["notes"]) == 1 and "NoSuchSheet" in res_d["notes"][0])
+        dash_cells = [c.value for row in wb_d["Dashboard"].iter_rows() for c in row]
+        ck("xlsx dashboard: the formula KPI stays a live formula",
+           any(isinstance(v, str) and v.startswith("=SUM(Data!") for v in dash_cells))
+        ck("xlsx dashboard: KPI labels and the negative delta are rendered",
+           "합계" in dash_cells and any(isinstance(v, str) and v.startswith("▼") for v in dash_cells))
+        rules_data = [r for cf in wb_d["Data"].conditional_formatting for r in cf.rules]
+        ck("xlsx dashboard: the data sheet gets a data bar",
+           any(r.type == "dataBar" for r in rules_data))
+        ck("xlsx dashboard: the header row is frozen", wb_d["Data"].freeze_panes == "A2")
+
+        p_cf = f"{OUT_DIR}/selftest-cf.xlsx"
+        tmp.append(p_cf)
+        make_xlsx_file([{"name": "비율", "headers": ["종목", "증감률(%)"],
+                         "rows": [["가", 1.5], ["나", -2.5], ["다", 0.5]]}], p_cf)
+        rules_cf = [r for cf in _lw(p_cf)["비율"].conditional_formatting for r in cf.rules]
+        ck("xlsx dashboard: a 증감률(%) column takes a color scale, not bars",
+           any(r.type == "colorScale" for r in rules_cf)
+           and not any(r.type == "dataBar" for r in rules_cf))
+
+        res_b = action_make_xlsx({"title": "실적 대시보드", "blocks": [
+            {"type": "metric", "props": {"label": "매출", "value": 1200,
+                                         "unit": "억", "delta": 30}},
+            {"type": "metric", "props": {"label": "영업이익", "value": 180, "delta": -12}},
+            {"type": "header", "props": {"text": "실적표", "level": 2}},
+            {"type": "table", "props": {"headers": ["항목", "값"], "rows": [["매출", 1200]]}},
+            {"type": "chart", "props": {"chartType": "line", "title": "분기 추이",
+                                        "labels": ["1Q", "2Q", "3Q"], "data": [10, 20, 30]}},
+        ]})
+        ck("xlsx blocks: metric + chart blocks trigger dashboard mode",
+           res_b.get("success") and res_b["data"]["kpis"] == 2
+           and res_b["data"]["charts"] == 1 and res_b["data"]["dashboard"])
+        p_b = res_b["data"]["_mediaImport"]["path"]
+        tmp.append(p_b)
+        wb_b = _lw(p_b)
+        ck("xlsx blocks: Dashboard first, the chart gets its own data sheet",
+           wb_b.sheetnames[0] == "Dashboard" and "실적표" in wb_b.sheetnames
+           and "분기 추이" in wb_b.sheetnames)
+        ck("xlsx blocks: two KPI cards land as merged label cells",
+           wb_b["Dashboard"]["A3"].value == "매출"
+           and wb_b["Dashboard"]["D3"].value == "영업이익"
+           and len(wb_b["Dashboard"].merged_cells.ranges) == 6)
+    except Exception as e:  # noqa: BLE001
+        ck(f"xlsx dashboard crashed: {e}", False)
 
     # docx round-trip
     p = f"{OUT_DIR}/selftest.docx"

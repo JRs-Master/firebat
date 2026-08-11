@@ -59,11 +59,14 @@
       },
       {
         "id": "make_xlsx",
-        "name": "XLSX 만들기 (표 → 시트)",
-        "description": "Build a .xlsx: pass sheets [{name, headers, rows}] or render blocks (each table block becomes a sheet named by the preceding header). The file lands in the media store.",
+        "name": "XLSX 만들기 (표 → 시트 · 대시보드)",
+        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns). Dashboard genre: pass kpis and/or charts — or render blocks where metric blocks become KPI cards and chart blocks become native Excel charts — and a \"Dashboard\" sheet is placed first, KPI cards four per row (up=red / down=blue delta) above native line/bar/pie charts that reference the data sheets' cells (chart blocks get their own data sheet). Any cell string starting with \"=\" stays a live formula, so pass formulas for totals and averages instead of precomputed numbers. A chart whose sheet or columns cannot be resolved is skipped and reported in data.notes. The file lands in the media store.",
         "params": {
           "sheets": "[{name, headers?, rows}]",
-          "blocks": "render-block array (table blocks are taken)"
+          "blocks": "render-block array (table → sheet, metric → KPI card, chart → native chart)",
+          "kpis": "[{label, value (number or \"=FORMULA\"), delta?, unit?}] — KPI cards on the Dashboard sheet",
+          "charts": "[{type: line|bar|pie, title, sheet, labelCol, valueCols[]}] — native charts pointing at a data sheet's columns (header name or 0-based index)",
+          "title": "dashboard/file title (row 1 of the Dashboard sheet + filename)"
         }
       },
       {
@@ -142,7 +145,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / image{src} / divider. In make_pptx, header level 1 or divider starts a new slide. Render-fence dialect ({name:'Header',type:'component'}) is absorbed."
+        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / image{src} / divider. In make_pptx, header level 1 or divider starts a new slide. In make_xlsx, table blocks become data sheets while metric blocks become KPI cards and chart{chartType,labels,data|series,title} blocks become native charts on a Dashboard sheet. Render-fence dialect ({name:'Header',type:'component'}) is absorbed."
       },
       "blocksCacheKey": {
         "type": [
@@ -159,7 +162,27 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over blocks."
+        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula."
+      },
+      "kpis": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "For make_xlsx: KPI cards on the Dashboard sheet — [{label, value, delta?, unit?}]. value may be a number or a live formula string (\"=SUM(Data!B2:B100)\"); delta colors itself (positive = red ▲, negative = blue ▼, zero = gray). Wins over metric blocks."
+      },
+      "charts": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "For make_xlsx: native Excel charts on the Dashboard sheet — [{type: line|bar|pie, title, sheet, labelCol, valueCols[]}]. sheet = the data sheet name; labelCol/valueCols = header names or 0-based indices in that sheet. Data is read from cells, so the chart stays editable. Unresolvable charts are skipped and listed in data.notes. Wins over chart blocks."
       },
       "masterMediaPath": {
         "type": [
