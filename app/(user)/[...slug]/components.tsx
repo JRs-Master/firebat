@@ -21,6 +21,7 @@ import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFireba
 import { compileExpression, sampleFunction, fitYRange, niceTicks, tickLabel, viewSegments } from '../../../lib/util/function-plot';
 import { loadCdn } from '@/lib/util/load-cdn';
 import { CodeComp } from '@/app/components/CodeBlock';
+import { FileCard, documentTarget } from '../../../lib/file-card';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -2614,10 +2615,13 @@ function useMediaPhase(src: string, skip: boolean) {
  *  self-swap. Lives inside a <p>, so spans only (a figure inside a p is invalid nesting). */
 export function MdImg({ src, alt }: { src?: string; alt?: string }) {
   const s = String(src ?? '');
-  const media = useMediaPhase(s, false);
+  const doc = documentTarget(s);
+  const media = useMediaPhase(s, Boolean(doc));
   const t = usePublicTranslations();
   const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
   if (!s) return null;
+  // A .xlsx behind an image address is a document, not a slow image — see ImageComp.
+  if (doc) return <FileCard href={s} name={doc.name} ext={doc.ext} />;
   if (media.phase === 'meta-wait' || media.phase === 'probe-wait') {
     return (
       <span className="flex flex-col items-center justify-center gap-3 px-6 py-10 my-4 mx-auto w-80 max-w-full rounded-xl border border-gray-100 bg-gray-50 text-gray-500">
@@ -2674,6 +2678,12 @@ function ImageComp({
   // (2026-08-09 logo fence: {"url": ..., "caption": ...} rendered as a broken icon because only
   // `src` was read). Same policy as the fence parser: accept the dialect at the boundary.
   const src = srcProp || url || '';
+  // Judge the address by what it can do, not by what the block calls itself. An Image block
+  // pointing at /user/media/....xlsx is a document the model mislabelled (measured 2026-08-11:
+  // the <img> 404s, the retry budget reads that as "still generating" and the card spins for
+  // 7.5 minutes). A file the reader can download is the honest degradation — and it is the same
+  // card a markdown link to that address already produces.
+  const doc = documentTarget(src);
   const t = usePublicTranslations();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -2704,7 +2714,8 @@ function ImageComp({
   // figure/blurhash/caption presentation.
   const { phase, probeSrc, retryTick, onLoad: mediaLoad, onError: onImgError } = useMediaPhase(
     src,
-    Boolean((variants && variants.length > 0) || blurhash), // finished artifact — no meta lookup needed
+    // finished artifact (or not an image at all) — no meta lookup needed
+    Boolean((variants && variants.length > 0) || blurhash || doc),
   );
   const onImgLoad = () => { setLoaded(true); mediaLoad(); };
   // Standard height cap — same frame as maps/plots/slides (mobile 320 / desktop 480); width follows the ratio.
@@ -2736,6 +2747,17 @@ function ImageComp({
           <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50 w-0 min-w-full border-t border-gray-100">
             {caption || alt}
           </figcaption>
+        )}
+      </figure>
+    );
+  }
+
+  if (doc) {
+    return (
+      <figure className="w-fit max-w-full mx-auto">
+        <FileCard href={src} name={doc.name} ext={doc.ext} block />
+        {(caption || alt) && (
+          <figcaption className="text-sm text-gray-500 px-1 pt-1.5 text-center">{caption || alt}</figcaption>
         )}
       </figure>
     );

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react';
 import { useRouter } from 'next/navigation';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Mic, Plus, Square, ListChecks, Share2, ChevronDown, ChevronUp, Image as ImageIcon, Download, FileText, Music } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Mic, Plus, Square, ListChecks, Share2, ChevronDown, ChevronUp, Image as ImageIcon, Music } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { CodeComp } from '@/app/components/CodeBlock';
 import { CDN_LIBRARIES, IFRAME_CSP_META } from '../../lib/cdn-libraries';
@@ -30,6 +30,7 @@ import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, esc
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, PendingAction, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
+import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, FileCard } from '../../lib/file-card';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
 import { parseSkillMd, skillToMd } from '../../lib/util/skill-md';
@@ -97,18 +98,8 @@ const mdComponents = {
 // 사용자: "다운로드가 허접"). A DISPLAY-layer upgrade beats teaching the model a component:
 // any /user|system/media (hub 포함) link whose extension we know becomes a file card — office
 // files get a typed badge + download, audio gets an inline player. Retroactive for old
-// messages, zero model cooperation needed. Office-format colors are semantics, not decoration
-// (green IS excel to every reader), so they stand outside the blue/slate palette rule.
-const FILE_CARD_EXTS: Record<string, string> = {
-  pptx: 'text-orange-700 bg-orange-50 border-orange-200',
-  xlsx: 'text-emerald-700 bg-emerald-50 border-emerald-200',
-  docx: 'text-blue-700 bg-blue-50 border-blue-200',
-  pdf: 'text-red-700 bg-red-50 border-red-200',
-  hwpx: 'text-sky-700 bg-sky-50 border-sky-200',
-  hwp: 'text-sky-700 bg-sky-50 border-sky-200',
-  mid: 'text-indigo-700 bg-indigo-50 border-indigo-200',
-};
-const AUDIO_PLAYER_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'flac']);
+// messages, zero model cooperation needed. The card itself now lives in lib/file-card so the
+// Image block can degrade to the same look (a render fence pointing at a .xlsx is not an image).
 const MEDIA_LINK_RE = /^\/(?:user|system)\/(?:hub\/[^?#]+\/)?media\/([^/?#]+)\.([a-z0-9]+)(?:[?#].*)?$/i;
 
 function MdMediaLink({ href, children, ...props }: any) {
@@ -129,20 +120,7 @@ function MdMediaLink({ href, children, ...props }: any) {
         </span>
       );
     }
-    return (
-      <a
-        href={href}
-        download={`${name}.${ext}`}
-        className="not-prose my-1.5 flex items-center gap-2.5 max-w-md px-3 py-2.5 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-blue-300 hover:shadow transition-all group no-underline"
-      >
-        <span className={`shrink-0 w-10 h-10 rounded-lg border flex flex-col items-center justify-center ${FILE_CARD_EXTS[ext]}`}>
-          <FileText size={15} />
-          <span className="text-[8px] font-black tracking-wide leading-none mt-0.5">{ext.toUpperCase()}</span>
-        </span>
-        <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-800 truncate">{name}.{ext}</span>
-        <Download size={16} className="shrink-0 text-slate-300 group-hover:text-blue-500 transition-colors" />
-      </a>
-    );
+    return <FileCard href={href} name={name} ext={ext} />;
   }
   return (
     <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" href={href} {...props}>
