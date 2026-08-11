@@ -774,11 +774,25 @@ impl ModuleManager {
                             }
                         }
                     }
-                    return Err(crate::i18n::t(
+                    let mut msg = crate::i18n::t(
                         "core.error.module.input_validation_failed_catalog",
                         None,
                         &[("name", module_name), ("detail", &detail)],
-                    ));
+                    );
+                    // A failing cacheInputs param gets its cheapest correct next step named:
+                    // pass the producing call's key. Turn 34 (2026-08-11) hand-reassembled DART
+                    // rows via cache_grep for seven rounds and broke the JSON mid-retype, while
+                    // the live statementsCacheKey sat unused — the generic "search→schema" hint
+                    // sends the model back up the ladder when the fix is one field rename.
+                    for param in crate::utils::cache_inputs::declared(config) {
+                        if detail.contains(&format!("/{param}")) || detail.contains(&format!("'{param}'")) {
+                            msg.push_str(&format!(
+                                " `{param}` accepts `{param}CacheKey` — pass the producing call's `_cacheKey` instead of retyping rows."
+                            ));
+                            break;
+                        }
+                    }
+                    return Err(msg);
                 }
             }
         }
