@@ -2868,6 +2868,12 @@ impl AiManager {
         // Sibling of the pair above for the opposite failure: tools ran, answer never came.
         let mut empty_final_nudge_used = false;
         let mut empty_final_nudge_this_round = false;
+        // A render call redirected to the fence path obligates the ANSWER to carry a
+        // ```firebat-render``` fence — the model prepared a chart and then dropped it
+        // (2026-08-11 삼성전자 실측: schema+cache 준비 후 fence 0, 차트가 조용히 증발).
+        let mut render_redirected = false;
+        let mut missing_fence_nudge_used = false;
+        let mut missing_fence_nudge_this_round = false;
         // Accepted no-action finish (banner-stamped below) — must also fail the unattended
         // (cron) verdict: an action-task run that executed nothing is a missed run.
         let mut no_action_final = false;
@@ -3091,7 +3097,24 @@ impl AiManager {
             let force_final_prompt: String;
             let nudge_prompt: String;
             let empty_final_prompt: String;
+            let missing_fence_prompt: String;
             let llm_prompt: &str = if !force_final
+                && std::mem::take(&mut missing_fence_nudge_this_round)
+            {
+                // The render redirect promised the reader a visualization; an answer without
+                // the fence quietly breaks that promise. One rewrite round, no tools.
+                missing_fence_prompt = format!(
+                    "{llm_prompt}\n\n[system] Earlier this turn the render tool redirected you: \
+                     those components must be EMITTED as a ```firebat-render``` fenced block \
+                     inside your answer text. Your answer contains NO such fence, so the \
+                     visualization the user asked for is missing. Write the final answer again \
+                     now and INCLUDE the ```firebat-render``` fence with the prepared blocks \
+                     (reference cached data via dataCacheKey instead of retyping rows). Do not \
+                     call tools.{}",
+                    ledger_note(&turn_ledger)
+                );
+                &missing_fence_prompt
+            } else if !force_final
                 && std::mem::take(&mut empty_final_nudge_this_round)
             {
                 // Tools ran, the model returned nothing. Reasoning gets pulled down to `low` for
@@ -3282,8 +3305,18 @@ impl AiManager {
                 && last_text.trim().is_empty()
                 && blocks.is_empty()
                 && !turn_ledger.is_empty();
-            let round_ends_turn =
-                no_tools_round && !will_nudge_no_action && !will_nudge_empty_final;
+            // A redirected render with no fence in the closing text = the visualization
+            // silently vanished (2026-08-11 삼성전자 차트 실측). One corrective round.
+            let will_nudge_missing_fence = no_tools_round
+                && !force_final
+                && !missing_fence_nudge_used
+                && render_redirected
+                && !last_text.trim().is_empty()
+                && !last_text.contains("```firebat-render");
+            let round_ends_turn = no_tools_round
+                && !will_nudge_no_action
+                && !will_nudge_empty_final
+                && !will_nudge_missing_fence;
             if !last_text.trim().is_empty() {
                 // Text in a round that goes on to call tools is the model thinking aloud
                 // ("긁어보자", "DNS 가 안 잡히네") — the user called it thinking content and
@@ -3427,6 +3460,17 @@ impl AiManager {
                     empty_final_nudge_this_round = true;
                     self.log.warn(
                         "[AiManager] tools ran but the final round returned no text — one corrective round (write the answer)",
+                    );
+                    continue;
+                }
+                // Prepared-but-dropped visualization: the render redirect obligated a fence
+                // and the closing text has none — the chart the user asked for would silently
+                // vanish (2026-08-11 실측). One rewrite round.
+                if will_nudge_missing_fence {
+                    missing_fence_nudge_used = true;
+                    missing_fence_nudge_this_round = true;
+                    self.log.warn(
+                        "[AiManager] render was redirected to the fence path but the final text has no firebat-render fence — one corrective round",
                     );
                     continue;
                 }
@@ -4129,6 +4173,13 @@ impl AiManager {
                             error_message: None,
                         });
                         let mut result = self.dispatch_tool(effective_call).await;
+                        // Remember a fence redirect (render_exec sets useFence on the rejected
+                        // block) — the missing-fence nudge at turn end reads this.
+                        if effective_call.name == "render"
+                            && result.result.to_string().contains("\"useFence\"")
+                        {
+                            render_redirected = true;
+                        }
                         // Whole-turn repeat of a DISCOVERY tool (declared per-turn cap = static
                         // result) that outlived the 60s Layer-1 cache — same "already did this"
                         // signal as the cache-hit path (16차 실측: 9분 턴에서 스키마 재확인이
