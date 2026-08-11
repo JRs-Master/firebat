@@ -572,10 +572,19 @@ fn derive_entries_from_input(
         // carries an action tag (`[short/ultra-*]`, `[medium-ta]`, …) are kept only for the
         // actions they name; untagged params are module-wide and always kept.
         let scoped = filter_params_for_action(&params, action_id, &all_actions);
-        let required: Vec<&String> = module_required
+        // `required` must state the ACTUAL call contract. It used to list module params minus
+        // the `action` selector — the envelope prose said "include action" but the structured
+        // field denied it, and a model trusts the structured field over prose: ta was called
+        // with bars-and-no-action six times across two measured turns (33/34, 2026-08-11),
+        // each refusal burning a round. A selector module's first required param IS `action`.
+        let mut required: Vec<String> = module_required
             .iter()
             .filter(|r| scoped.get(r.as_str()).is_some())
+            .cloned()
             .collect();
+        if !all_actions.is_empty() {
+            required.insert(0, "action".to_string());
+        }
         let mut extra = serde_json::json!({
             "module": name,
             "action": action_id,
@@ -1389,5 +1398,25 @@ mod display_vs_document_tests {
         let params = e.extra.get("params").and_then(|p| p.as_object()).expect("params map");
         assert!(params.contains_key("market"), "param names must reach the row");
         assert!(!params.contains_key("action"), "the selector is not a param");
+    }
+
+    #[test]
+    fn derived_required_names_the_action_selector() {
+        // The structured `required` used to omit the selector while the envelope prose demanded
+        // it — and a model trusts the structured field over prose: ta was called with
+        // bars-and-no-action six times across two measured turns (33/34, 2026-08-11).
+        let cfg = upbit_like();
+        let entries = derive_entries_from_input("upbit", &cfg, &serde_json::Value::Null);
+        let e = entries.first().expect("at least one entry");
+        let req = e
+            .extra
+            .get("required")
+            .and_then(|r| r.as_array())
+            .expect("required list");
+        assert_eq!(
+            req.first().and_then(|v| v.as_str()),
+            Some("action"),
+            "a selector module's first required param is the selector itself"
+        );
     }
 }
