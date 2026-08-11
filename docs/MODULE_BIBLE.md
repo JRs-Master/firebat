@@ -278,6 +278,14 @@ node scripts/gen.mjs             # _apis.json → config + index
 - 선언한 **배열 파라미터**를 `<param>CacheKey` 로도 받는다. 호출자가 `barsCacheKey: "<_cacheKey>"` 를 보내면 **스키마 검증 전에** 서버가 캐시를 펼쳐 `bars` 에 넣는다 → `required` 의 뜻이 그대로 살고 모듈 코드는 무변.
 - 키 이름은 규약(`bars` → `barsCacheKey`) — 선언을 둘로 나누지 않는다. 인라인 배열을 직접 주면 그쪽이 우선. 만료·판독 불가 키는 **필드명을 담은 에러**(조용히 건너뛰면 "bars is required" 로 되돌아와 진짜 원인이 숨는다).
 - **왜**: 큰 결과는 캐시되고 호출자는 키만 받는데, 그 rows 를 먹는 모듈이 키를 못 받으면 600행을 인자로 되돌려 보내야 한다. 그러면 모델은 도구를 부르는 대신 직접 계산한다(수수료·세금·슬리피지 없이) — **도구가 안 쓰는 것보다 비싸면 안 쓴다**(2026-07-31 골든크로스 실측). 렌더 쪽 `dataCacheKey` 의 입력측 대응물.
+- **object 파라미터도 된다**: 선언한 파라미터의 input 스키마가 `object`(또는 `["object","null"]`)면 확장이 1-원소 배열 대신 **레코드 자체**를 넣는다. 짝 = 아래 `autoCacheWhole`.
+
+#### `autoCacheWhole` — 다섹션 응답을 한 레코드로 캐시 (2026-08-11)
+```json
+{ "autoCacheWhole": ["국내주식-187"] }
+```
+- 선언한 액션의 응답은 auto-cache 가 "가장 큰 배열 하나"를 뜯어 저장하는 대신 **응답 객체 통째를 단일 레코드**로 저장한다(인라인은 무손실 유지 — 선언 대상은 작은 응답). `_cacheMeta.kind = "whole"`.
+- **왜**: KIS estimate-perform(output1..output4)처럼 여러 섹션이 한 datum 인 응답에서 옛 규칙은 output3 만 캐시했다 — 키로는 응답을 재현할 수 없어, 그 응답을 as-is 로 받는 소비자(fa `estimates`)에게 모델이 손으로 재타이핑해 나르다 거부당하고 섹션을 통째로 포기했다(2026-08-11 턴 33 실측). 선언 하나로 `estimatesCacheKey` 가 `barsCacheKey` 와 같은 경제가 된다.
 - 구현 = `core/utils/cache_inputs.rs`, `ModuleManager::with_sysmod_cache`.
 
 #### `pageBinding` — 페이지↔모듈 바인딩 (발행 bake · 방문 SSR · rebake 크론 · shortcode, 2026-07-18)
@@ -363,7 +371,8 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `tags` | 모듈 선택 신호(얇은 도구 설명에 append) **+ 액션 검색의 게이트 어휘**. 랭커 문서에는 안 들어간다 — 같은 태그를 233행에 이면 액션끼리 흐려진다 | 도구 등록 + `vocab_text` |
 | `aliases` | **그 모듈을 사람들이 실제로 부르는 이름**(`한투`·`한국투자증권`·`KIS`). 모듈 이름과 함께 **랭커 문서**에 들어간다 — 거래소를 대는 게 곧 라우팅 신호다. 파생 불가라 선언이 유일한 소스. recall 의 `entity_passage_text`(name+aliases)와 같은 패턴 | 액션 카탈로그 (`module_identity`) |
 | `accounts` | 계좌별 앱키 등록·주계좌 지정 (`account` 로 선택, `mock` 은 계좌가 결정) | `ModuleManager.run` + sandbox/WS 시크릿 해석 (`account_secrets.rs`) |
-| `cacheInputs` | 배열 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장) | `ModuleManager.run` (`cache_inputs.rs`) |
+| `cacheInputs` | 배열·object 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장, object 는 레코드 자체) | `ModuleManager.run` (`cache_inputs.rs`) |
+| `autoCacheWhole` | 선언 액션의 응답을 통째 단일 레코드로 캐시 (다섹션 datum — cacheInputs object 의 짝) | sandbox `apply_auto_cache` (`cache_whole`) |
 | `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
 | `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |
 | `_mediaImport` (출력 선언) | 모듈이 만든 파일을 미디어 스토리지로 반출 (게이트 저장 → `data.media`) | `ModuleManager.run` (`IMediaIntakePort`) |
