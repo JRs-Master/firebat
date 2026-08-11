@@ -2754,6 +2754,12 @@ impl AiManager {
         // (e.g. a stock code) must appear here or the call is rejected with a resolve hint. Mirror of
         // the MCP session accumulator; shares the pure check_grounding helper.
         let mut observed: Vec<String> = vec![prompt.to_string()];
+        // Discovery-first gate (표준 절차 ②, 2026-08-11 사용자 확정): a multi-action sysmod
+        // call dispatches only after get_action_schema(module, action) ran THIS turn. Familiar
+        // is not exempt — the measured failures (statementType, klines, bars-누락) were all
+        // confident first calls on familiar actions. Keys "module:action", '_'→'-' normalized
+        // (tool names underscore what module names hyphenate).
+        let mut schema_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         if let Some(p) = &plan_provenance {
             // Approved-plan identifiers are legitimate provenance (verified during planning).
             observed.push(p.clone());
@@ -3176,7 +3182,11 @@ impl AiManager {
             // then synthesizes with all results in prior_results (and handles any failures —
             // natural agent fallback). 재발견 0: 실행 턴이 식별자를 다시 사냥하다 소진되던
             // 클래스(2026-07-11 실측 2회)의 구조 해법.
-            let response = if !plan_replay_calls.is_empty() {
+            // Plan-replay rounds bypass the discovery gate below: their args were verified
+            // when the plan was compiled and approved — re-laddering them re-burns the exact
+            // budget the replay exists to save.
+            let plan_replay_round = !plan_replay_calls.is_empty();
+            let response = if plan_replay_round {
                 let calls = std::mem::take(&mut plan_replay_calls);
                 self.log.info(&format!(
                     "[AiManager] plan replay round — executing {} compiled steps without an LLM round",
@@ -3772,6 +3782,31 @@ impl AiManager {
                 // trace to observed provenance (prompt + this turn's tool results). Only sysmods with a
                 // `grounding` config are checked. Rejection → the model gets the resolve hint and retries
                 // (resolve → use). Mirror of the MCP gate; shares the pure check_grounding helper.
+                // Discovery-first gate (표준 절차 ②) — a multi-action sysmod call whose action
+                // was not schema-checked THIS turn is rejected before dispatch, familiar or
+                // not. Plan-replay calls are exempt (verified at compile+approve time).
+                let discovery_reject: Option<String> = if !plan_replay_round
+                    && effective_call.name.starts_with("sysmod_")
+                {
+                    match effective_call.arguments.get("action").and_then(|v| v.as_str()) {
+                        Some(act) if !act.is_empty() => {
+                            let module = effective_call
+                                .name
+                                .trim_start_matches("sysmod_")
+                                .replace('_', "-");
+                            if schema_seen.contains(&format!("{module}:{act}")) {
+                                None
+                            } else {
+                                Some(format!(
+                                    "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first — in THIS turn — then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
+                                ))
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 let grounding_reject: Option<String> = if let Some(reg) = &self.dynamic_tools {
                     match reg.grounding_for(&effective_call.name).await {
                         Some(g) if !g.is_empty() => crate::utils::grounding::check_grounding(
@@ -4113,6 +4148,27 @@ impl AiManager {
                         error: Some("ui-only action".to_string()),
                         arguments: call.arguments.clone(),
                     }
+                } else if let Some(why) = discovery_reject {
+                    // Discovery-first reject — the ladder is the procedure, not a fallback.
+                    // Cache key inserted so the identical undiscovered call can't re-run;
+                    // the model must go get the schema and come back.
+                    self.log.info(&format!(
+                        "[AiManager] discovery-first reject (FC): {} — schema not fetched this turn",
+                        effective_call.name
+                    ));
+                    turn_call_set.insert(cache_key.clone());
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: serde_json::json!({
+                            "success": false,
+                            "error": why,
+                            "discoveryFirst": true,
+                        }),
+                        success: false,
+                        error: Some("schema not fetched this turn".to_string()),
+                        arguments: call.arguments.clone(),
+                    }
                 } else if let Some(hint) = grounding_reject {
                     // L1 grounding reject — do NOT dispatch. Return the resolve hint so the model looks
                     // the identifier up first, then retries with a grounded value (resolve → use). Insert
@@ -4179,6 +4235,17 @@ impl AiManager {
                             && result.result.to_string().contains("\"useFence\"")
                         {
                             render_redirected = true;
+                        }
+                        // Discovery-first bookkeeping: a schema lookup unlocks exactly that
+                        // (module, action) for the rest of the turn. Recorded on the attempt —
+                        // a wrong id unlocks nothing the model can actually call.
+                        if effective_call.name == "get_action_schema" {
+                            if let (Some(m), Some(a)) = (
+                                effective_call.arguments.get("module").and_then(|v| v.as_str()),
+                                effective_call.arguments.get("action").and_then(|v| v.as_str()),
+                            ) {
+                                schema_seen.insert(format!("{}:{}", m.replace('_', "-"), a));
+                            }
                         }
                         // Whole-turn repeat of a DISCOVERY tool (declared per-turn cap = static
                         // result) that outlived the 60s Layer-1 cache — same "already did this"

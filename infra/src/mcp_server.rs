@@ -542,6 +542,36 @@ fn record_observed(session: &str, text: &str) {
     evict_expired(q);
 }
 
+/// Discovery-first gate (표준 절차 ②, 2026-08-11 사용자 확정) — a multi-action sysmod call
+/// runs only after this session fetched get_action_schema(module, action) within the same
+/// window. Familiar is not exempt: the measured failures (statementType, klines) were all
+/// confident first calls on well-known actions. Mirrors the grounding accumulator — the FC
+/// path keeps a turn-local set; MCP sessions (a CLI turn spans many tools/call) reuse the
+/// 30-minute window. Keys "module:action", '_'→'-' normalized.
+fn schema_seen_store() -> &'static Mutex<HashMap<String, VecDeque<(Instant, String)>>> {
+    static STORE: OnceLock<Mutex<HashMap<String, VecDeque<(Instant, String)>>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn record_schema_seen(session: &str, module: &str, action: &str) {
+    let mut store = schema_seen_store().lock().unwrap_or_else(|e| e.into_inner());
+    let q = store.entry(session.to_string()).or_default();
+    q.push_back((Instant::now(), format!("{}:{}", module.replace('_', "-"), action)));
+    evict_expired(q);
+}
+
+fn schema_was_seen(session: &str, module: &str, action: &str) -> bool {
+    let key = format!("{}:{}", module.replace('_', "-"), action);
+    let mut store = schema_seen_store().lock().unwrap_or_else(|e| e.into_inner());
+    match store.get_mut(session) {
+        Some(q) => {
+            evict_expired(q);
+            q.iter().any(|(_, k)| k == &key)
+        }
+        None => false,
+    }
+}
+
 /// The session's current provenance corpus (recent observed tool-result text).
 fn observed_corpus(session: &str) -> Vec<String> {
     let mut store = observed_store().lock().unwrap_or_else(|e| e.into_inner());
@@ -663,6 +693,30 @@ async fn gated_tool_call(
 ) -> Result<Value, String> {
     // CLI 로컬 이미지 경로 → 갤러리 URL (grounding 검사보다 먼저 — 치환된 값이 게이트를 통과해야).
     let args = substitute_cli_local_images(state, args).await;
+    // Discovery-first gate — before grounding on purpose: you discover the parameters before
+    // you ground their values. Pipelines never pass here (internal dispatch), so unattended
+    // flows stay untouched.
+    if name.starts_with("sysmod_") {
+        if let Some(act) = args.get("action").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            let module = name.trim_start_matches("sysmod_").replace('_', "-");
+            if !schema_was_seen(session, &module, act) {
+                tracing::info!(target: "discovery", tool = name, action = act,
+                    "discovery-first reject — schema not fetched in this session window");
+                return Err(format!(
+                    "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first, then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
+                ));
+            }
+        }
+    }
+    if name == "get_action_schema" {
+        if let (Some(m), Some(a)) = (
+            args.get("module").and_then(|v| v.as_str()),
+            args.get("action").and_then(|v| v.as_str()),
+        ) {
+            // Recorded on the attempt — a wrong id unlocks nothing the model can call.
+            record_schema_seen(session, m, a);
+        }
+    }
     let grounded = {
         let map = state.grounding.read().await;
         map.get(name).cloned()
