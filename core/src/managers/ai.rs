@@ -3193,7 +3193,7 @@ impl AiManager {
             // when the plan was compiled and approved — re-laddering them re-burns the exact
             // budget the replay exists to save.
             let plan_replay_round = !plan_replay_calls.is_empty();
-            let response = if plan_replay_round {
+            let mut response = if plan_replay_round {
                 let calls = std::mem::take(&mut plan_replay_calls);
                 self.log.info(&format!(
                     "[AiManager] plan replay round — executing {} compiled steps without an LLM round",
@@ -3232,6 +3232,19 @@ impl AiManager {
                     }
                 }
             };
+            // force_final means tool calls are CLOSED — structurally, not rhetorically. The
+            // prompt already says so and the measured turn ignored it: with the tool list
+            // stripped, the model still emitted tool-call tokens in its dying round and shipped
+            // zero answer text (turn 34, 2026-08-11 — 25 rounds of real work rendered as an
+            // empty bubble, and the round-by-round narration read as "the answer"). Whatever a
+            // closed round emits as calls is discarded; only its text can matter now.
+            if force_final && !plan_replay_round && !response.tool_calls.is_empty() {
+                self.log.warn(&format!(
+                    "[AiManager] force_final round emitted {} tool call(s) — dropped (tools are closed this turn)",
+                    response.tool_calls.len()
+                ));
+                response.tool_calls.clear();
+            }
             last_text = response.text.clone();
             last_model_id = response.model_id.clone();
             // Fabrication containment — deterministic server-side banner on a forced final,
@@ -4801,6 +4814,82 @@ impl AiManager {
                 "[AiManager] MAX_TOOL_TURNS({}) exhausted — loop ended without natural finish",
                 max_turns
             ));
+            // Emergency synthesis lap — a turn that did real work must never ship an empty
+            // bubble. Turn 34 (2026-08-11): 25 rounds, financials and candles all in hand, the
+            // forced-final round spent its budget deliberating and the user got "" — with the
+            // buffered process narration standing where the answer should be. One text-only
+            // call (no tools offered, none can run) over the collected results; if even that
+            // returns nothing, an honest line plus the ledger still beats silence.
+            if last_text.trim().is_empty() && !prior_results.is_empty() {
+                let mut lap_opts = effective_opts.clone();
+                lap_opts.thinking_level = Some("low".to_string());
+                let verified = if turn_ledger.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\nVerified this turn (ONLY these happened — anything else was NOT executed):\n{}",
+                        turn_ledger.join("\n")
+                    )
+                };
+                let lap_prompt = format!(
+                    "{prompt}\n\n[system] The tool budget is exhausted and no answer text \
+                     was produced. Using ONLY the tool results you already have, write the \
+                     final answer for the user NOW, in their language, as normal text (render \
+                     fences allowed). Do not emit tool-call syntax — no tool can run anymore; \
+                     anything not in the results simply did not happen. If something could not \
+                     be completed, say so honestly in one line.{verified}"
+                );
+                match self
+                    .llm
+                    .ask_with_tools_streaming(&lap_prompt, &[], &prior_results, &lap_opts, llm_sink.clone())
+                    .await
+                {
+                    Ok(r) => {
+                        if let Some(c) = r.cost_usd {
+                            total_cost += c;
+                        }
+                        if let Some(t) = r.thinking_text.as_deref() {
+                            let t = t.trim();
+                            if !t.is_empty() {
+                                final_reasoning = Some(t.to_string());
+                            }
+                        }
+                        if !r.text.trim().is_empty() {
+                            last_text = r.text.clone();
+                            self.log.warn(
+                                "[AiManager] emergency synthesis lap produced the final text (post-exhaustion)",
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        self.log.warn(&format!(
+                            "[AiManager] emergency synthesis lap failed: {}",
+                            e
+                        ));
+                    }
+                }
+                if last_text.trim().is_empty() {
+                    last_text = crate::i18n::t("core.error.ai.exhausted_empty_final", None, &[]);
+                    if !turn_ledger.is_empty() {
+                        last_text.push_str("\n\n");
+                        last_text.push_str(&turn_ledger.join("\n"));
+                    }
+                } else if !post_narrow_success {
+                    // Same fabrication-banner rule as the in-loop forced final.
+                    let key = if turn_grounded_success {
+                        "core.error.ai.partial_grounded_final"
+                    } else {
+                        "core.error.ai.ungrounded_final"
+                    };
+                    last_text = format!("{}\n\n{}", crate::i18n::t(key, None, &[]), last_text);
+                }
+                // Answer channel is replace-not-append on the client, so this emit is safe
+                // whether or not the lap streamed live.
+                emit_event(AiStreamEvent::Chunk {
+                    event_type: "text".to_string(),
+                    content: last_text.clone(),
+                });
+            }
         }
 
         // ── Intent Agent S0 — shadow recall 기록 (행동 0) ──
