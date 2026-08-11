@@ -195,8 +195,54 @@ def read_hwpx(path):
             "text": "\n".join(texts), "tables": tables}
 
 
+def _rhwp_helper_read(path):
+    """Spawn the vendored rhwp WASM helper (node, ./rhwp-helper.mjs). One JSON in, one out."""
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        raise RuntimeError("node runtime not found")
+    helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rhwp-helper.mjs")
+    req = json.dumps({"op": "read", "path": path}).encode("utf-8")
+    proc = subprocess.run([node, helper], input=req, capture_output=True, timeout=120)
+    lines = proc.stdout.decode("utf-8", "replace").strip().splitlines()
+    payload = json.loads(lines[-1]) if lines else {}
+    if not payload.get("ok"):
+        err = payload.get("error") or proc.stderr.decode("utf-8", "replace")[:400]
+        raise RuntimeError(err or "helper failed")
+    return payload["data"]
+
+
+def read_hwp_family(path):
+    """.hwp/.hwpx through the rhwp engine — it reaches what the zip+xml walk cannot
+    (legacy .hwp binaries, equations as their script, text boxes, footnotes). hwpx
+    falls back to the direct walk when the helper (node + wasm) is unavailable;
+    legacy .hwp has no fallback and says so."""
+    ext = path.rsplit(".", 1)[-1].lower()
+    try:
+        d = _rhwp_helper_read(path)
+    except Exception as e:  # noqa: BLE001 — fallback decides by format
+        if ext == "hwpx":
+            out = read_hwpx(path)
+            out["note"] = (f"rhwp helper unavailable ({e}) — zip+xml fallback "
+                           "(equations/text boxes not extracted)")
+            return out
+        raise RuntimeError(f"legacy .hwp needs the rhwp helper (node + vendored wasm): {e}")
+    tables = [{"name": t.get("name"),
+               "headers": (t.get("rows") or [[]])[0],
+               "rows": (t.get("rows") or [[]])[1:]} for t in d.get("tables", [])]
+    out = {"format": ext, "engine": "rhwp",
+           "meta": {"sections": d.get("sections", 0),
+                    "paragraphs": d.get("paragraphs", 0),
+                    "tables": len(tables), "equations": len(d.get("equations", []))},
+           "text": d.get("text", ""), "tables": tables}
+    if d.get("equations"):
+        out["equations"] = d["equations"]
+    return out
+
+
 READERS = {"pdf": read_pdf, "docx": read_docx, "xlsx": read_xlsx,
-           "pptx": read_pptx, "hwpx": read_hwpx}
+           "pptx": read_pptx, "hwpx": read_hwp_family, "hwp": read_hwp_family}
 
 
 def action_read(inp):
@@ -1421,6 +1467,24 @@ def action_selftest():
         ck("hwpx: table text is not doubled into the body", "이름" not in got["text"])
     except Exception as e:  # noqa: BLE001
         ck(f"hwpx read crashed: {e}", False)
+
+    # hwp via the rhwp engine — the committed fixture was made BY rhwp (create → export),
+    # so this proves the vendored wasm runs on this host and equations survive as script.
+    import shutil as _sh
+    fx = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                      "fixtures", "rhwp-roundtrip.hwp")
+    if _sh.which("node") and os.path.exists(fx):
+        try:
+            got = read_hwp_family(fx)
+            ck("hwp(rhwp): text and table cell survive",
+               "파이어뱃" in got["text"] and got["tables"]
+               and got["tables"][0]["headers"][0] == "셀A1")
+            ck("hwp(rhwp): the equation comes back as its script",
+               any("over" in e for e in got.get("equations", [])))
+        except Exception as e:  # noqa: BLE001
+            ck(f"hwp(rhwp) crashed: {e}", False)
+    else:
+        ck("hwp(rhwp): skipped — node runtime or fixture absent", True)
 
     # pdf read (hand-written minimal fixture)
     p = f"{OUT_DIR}/selftest.pdf"
