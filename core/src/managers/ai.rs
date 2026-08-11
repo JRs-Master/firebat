@@ -1274,7 +1274,14 @@ impl AiManager {
         // 6→8 (2026-07-12 18차): 4-부품 복합(차트+스트림+메신저+전일종가)의 정당 검색 수요가
         // 6 을 넘는 첫 실측 — 문서화된 인상 트리거("정당 수요가 캡에 막힌 첫 실측에서 올림").
         self.tools.set_per_turn_limit("search_module_actions", 8);
-        self.tools.set_per_turn_limit("get_action_schema", 8);
+        // get_action_schema 8→20 (2026-08-11 turn 33): the discovery-first gate made the schema
+        // fetch MANDATORY per (module, action) per turn, so this cap became a hard budget of
+        // "at most 8 distinct actions per turn". A legitimate 7-module analysis turn needed 13+,
+        // starved at round 12, and the model — schema blocked by the cap, direct call blocked by
+        // the gate — ESTIMATED marketCap/shares instead of fetching them. Identical re-fetch
+        // thrash is already killed by the Layer-2 duplicate guard; this cap only needs to stop
+        // varied-args orbiting, which 20 still does.
+        self.tools.set_per_turn_limit("get_action_schema", 20);
         // Discovery classification rides per_turn_limit declarations — an UNDECLARED discovery
         // tool leaks into the action class (19차 실측: get_module_config 성공이 "grounded
         // action succeeded"로 집계 → stall 재개방 + 날조 배너 억제 + 원장 DONE 오염).

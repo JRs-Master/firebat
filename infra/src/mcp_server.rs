@@ -1035,7 +1035,7 @@ fn thin_sysmod_input_schema() -> Value {
     serde_json::json!({
         "type": "object",
         "additionalProperties": true,
-        "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Guessing params will fail validation."
+        "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a call whose action schema was not fetched via get_action_schema in this session window is rejected before dispatch — fetch schemas first, several in one round is fine."
     })
 }
 

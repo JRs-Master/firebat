@@ -126,7 +126,7 @@ impl DynamicToolRegistry {
             let parameters = serde_json::json!({
                 "type": "object",
                 "additionalProperties": true,
-                "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Guessing params will fail validation."
+                "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a call whose action schema was not fetched via get_action_schema THIS TURN is rejected before dispatch — fetch schemas first, several in one round is fine."
             });
             let tool_name = format!("sysmod_{}", entry.name);
             // Description = what the module is (module selection = step 1) + declared `tags`.
