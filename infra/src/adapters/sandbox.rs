@@ -624,7 +624,7 @@ impl ProcessSandboxAdapter {
         module_name: &str,
         input_action: &str,
     ) -> serde_json::Value {
-        Self::apply_auto_cache_opts(data, cache, module_name, input_action, false)
+        Self::apply_auto_cache_opts(data, cache, module_name, input_action, false, false)
     }
 
     pub(crate) fn apply_auto_cache_opts(
@@ -633,6 +633,7 @@ impl ProcessSandboxAdapter {
         module_name: &str,
         input_action: &str,
         keep_full_rows: bool,
+        cache_whole: bool,
     ) -> serde_json::Value {
         const AUTO_CACHE_THRESHOLD: usize = 30;
         const AUTO_CACHE_PREVIEW: usize = 5;
@@ -643,6 +644,62 @@ impl ProcessSandboxAdapter {
             None => return data,
         };
         if obj.contains_key("_cacheKey") {
+            return serde_json::Value::Object(obj);
+        }
+        // Declared whole-object caching (`autoCacheWhole`) — a multi-section response
+        // (output1..output4 style) is ONE datum. The largest-sub-array rule below would store
+        // a torn-off page: the key held output3 alone, so `estimatesCacheKey` could never
+        // reproduce the response and the model retyped it by hand (2026-08-11 turn 33).
+        // Store the whole object as a single record; nothing inline is removed (declared
+        // responses are small), the key exists so `cacheInputs` expands it back losslessly.
+        if cache_whole {
+            let snapshot = serde_json::Value::Object(obj.clone());
+            let action_label = format!("{}:_", input_action);
+            match cache.data(
+                module_name,
+                &action_label,
+                serde_json::Value::Null,
+                vec![snapshot],
+                None,
+            ) {
+                Ok(key) => {
+                    obj.insert(
+                        "_cacheKey".to_string(),
+                        serde_json::Value::String(key.clone()),
+                    );
+                    obj.insert("_cacheMeta".to_string(), {
+                        let mut m = serde_json::json!({
+                            "sysmod": module_name,
+                            "action": action_label,
+                            "kind": "whole",
+                            "truncated": false,
+                            "autoCached": true,
+                            "note": "the whole response object is cached as one record — pass this key to a <param>CacheKey input that accepts this response",
+                        });
+                        if let Some((at, left)) = Self::expiry_fields(cache, &key) {
+                            m["expiresAt"] = serde_json::json!(at);
+                            m["expiresInSec"] = serde_json::json!(left);
+                        }
+                        m
+                    });
+                    tracing::info!(
+                        target: "sandbox",
+                        module = module_name,
+                        action = input_action,
+                        cache_key = %key,
+                        "[sandbox] auto-cache applied — whole response cached (declared autoCacheWhole)"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "sandbox",
+                        module = module_name,
+                        action = input_action,
+                        error = %e,
+                        "[sandbox] auto-cache (whole) save failed — discarded"
+                    );
+                }
+            }
             return serde_json::Value::Object(obj);
         }
         let mut arrays: Vec<(Vec<String>, usize)> = Vec::new();
@@ -2157,6 +2214,7 @@ impl ProcessSandboxAdapter {
                     module_name,
                     input_action,
                     opts.keep_full_rows,
+                    opts.cache_whole,
                 )
             }
         } else {
@@ -2515,12 +2573,42 @@ mod tests {
         let items: Vec<serde_json::Value> = (0..40).map(|i| serde_json::json!({"i": i})).collect();
         let data = serde_json::json!({"items": items});
         let out = ProcessSandboxAdapter::apply_auto_cache_opts(
-            data, cache.as_ref(), "autotrade", "plan_sweep", true,
+            data, cache.as_ref(), "autotrade", "plan_sweep", true, false,
         );
         assert_eq!(out["items"].as_array().unwrap().len(), 40);
         assert!(out["_cacheKey"].is_string());
         assert_eq!(out["_cacheMeta"]["truncated"], false);
         assert_eq!(out["_cacheMeta"]["totalCount"], 40);
+    }
+
+    #[test]
+    fn apply_auto_cache_whole_keeps_sections_together() {
+        // Declared multi-section response (autoCacheWhole) — the whole object is ONE cached
+        // record and every section stays inline. The old largest-sub-array rule stored output3
+        // alone, so the key could never reproduce the response (2026-08-11 turn 33).
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        let data = serde_json::json!({
+            "output1": {"name": "삼성전자"},
+            "output2": (0..6).map(|i| serde_json::json!({"data1": i})).collect::<Vec<_>>(),
+            "output3": (0..10).map(|i| serde_json::json!({"data1": i})).collect::<Vec<_>>(),
+            "output4": [{"dt": "2026E"}],
+        });
+        let out = ProcessSandboxAdapter::apply_auto_cache_opts(
+            data, cache.as_ref(), "korea-invest", "국내주식-187", false, true,
+        );
+        let obj = out.as_object().unwrap();
+        // every section still inline, untouched
+        assert_eq!(obj["output3"].as_array().unwrap().len(), 10);
+        assert_eq!(obj["output4"].as_array().unwrap().len(), 1);
+        let key = obj["_cacheKey"].as_str().unwrap();
+        assert_eq!(obj["_cacheMeta"]["kind"], "whole");
+        // the cached record is the whole object, not a torn-off sub-array
+        let read = cache.read(key, 0, usize::MAX).unwrap();
+        let records = read["records"].as_array().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["output2"].as_array().unwrap().len(), 6);
+        assert_eq!(records[0]["output1"]["name"], "삼성전자");
     }
 
     #[test]

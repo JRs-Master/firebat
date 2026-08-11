@@ -27,7 +27,8 @@
     "재무지표"
   ],
   "cacheInputs": [
-    "statements"
+    "statements",
+    "estimates"
   ],
   "actionCatalog": {
     "actions": [
@@ -39,7 +40,7 @@
           "statements": "DART fnlttSinglAcnt/All rows (or statementsCacheKey from the dart call)",
           "marketCap": "market capitalization in KRW for valuation ratios",
           "shares": "listed share count for per-share figures",
-          "estimates": "KIS 국내주식-187 response data (optional) — adds broker estimates"
+          "estimates": "KIS 국내주식-187 response as-is, or estimatesCacheKey from that call (optional) — adds broker estimates; never rebuild rows by hand"
         }
       },
       {
@@ -100,7 +101,7 @@
           "object",
           "null"
         ],
-        "description": "KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed."
+        "description": "KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4 — OR pass estimatesCacheKey with the _cacheKey from that call (preferred: no retyping). Never rebuild rows by hand; a hand-made array is refused, not normalized. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed."
       }
     }
   },

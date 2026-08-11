@@ -28,6 +28,27 @@ pub fn key_field(param: &str) -> String {
     format!("{param}CacheKey")
 }
 
+/// Whether the module's input schema declares this param as an object (plain `"object"` or
+/// the nullable union `["object","null"]`). Such a param takes the cached record itself.
+fn param_wants_object(config: &serde_json::Value, param: &str) -> bool {
+    let ty = config
+        .get("input")
+        .and_then(|i| i.get("properties"))
+        .and_then(|p| p.get(param))
+        .and_then(|s| s.get("type"));
+    match ty {
+        Some(serde_json::Value::String(s)) => s == "object",
+        Some(serde_json::Value::Array(arr)) => {
+            let mut non_null = arr
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter(|s| *s != "null");
+            matches!((non_null.next(), non_null.next()), (Some("object"), None))
+        }
+        _ => false,
+    }
+}
+
 /// Array parameters this module accepts as a cache key. Empty unless declared.
 pub fn declared(config: &serde_json::Value) -> Vec<String> {
     config
@@ -80,8 +101,20 @@ pub fn expand(
             .and_then(|r| r.as_array())
             .cloned()
             .ok_or_else(|| format!("{field}: cache entry {key} holds no records"))?;
+        // A param declared as an OBJECT receives the record itself, not a one-element list.
+        // Whole-object caching (`autoCacheWhole`) stores a multi-section response as a single
+        // record; wrapping it in an array here would fail the very schema the expansion exists
+        // to satisfy (fa `estimates` is `object|null` — measured 2026-08-11 turn 33).
+        let value = if param_wants_object(config, &param)
+            && records.len() == 1
+            && records[0].is_object()
+        {
+            records.into_iter().next().unwrap()
+        } else {
+            serde_json::Value::Array(records)
+        };
         let target = out.get_or_insert_with(|| obj.clone());
-        target.insert(param.clone(), serde_json::Value::Array(records));
+        target.insert(param.clone(), value);
         // The key itself is dropped: it is not a declared parameter, so leaving it would fail
         // validation on modules whose schema forbids extra properties.
         target.remove(&field);
@@ -136,6 +169,24 @@ mod tests {
         let cfg = serde_json::json!({"cacheInputs": ["bars"]});
         let input = serde_json::json!({"bars": [{"close": 1}]});
         assert!(expand("m", &cfg, &input, Some(&cache)).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_object_param_receives_the_record_itself() {
+        // autoCacheWhole stores a multi-section response as ONE record; a param declared
+        // `["object","null"]` (fa estimates) must get the object back, not a 1-element list.
+        let (cache, key, _d) = cache_with(vec![serde_json::json!({
+            "output1": {"name": "x"}, "output2": [1, 2], "output4": [{"dt": "2026E"}],
+        })]);
+        let cfg = serde_json::json!({
+            "cacheInputs": ["estimates"],
+            "input": {"properties": {"estimates": {"type": ["object", "null"]}}},
+        });
+        let input = serde_json::json!({"action": "ratios", "estimatesCacheKey": key});
+        let out = expand("m", &cfg, &input, Some(&cache)).unwrap().unwrap();
+        assert!(out["estimates"].is_object(), "{out}");
+        assert_eq!(out["estimates"]["output2"].as_array().unwrap().len(), 2);
+        assert!(out.get("estimatesCacheKey").is_none());
     }
 
     #[test]

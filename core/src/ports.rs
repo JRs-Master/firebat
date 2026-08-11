@@ -909,6 +909,15 @@ pub struct SandboxExecuteOpts {
     /// since a later step may want to pass it on rather than the rows.
     #[serde(default)]
     pub keep_full_rows: bool,
+    /// Cache the WHOLE response object as one record — declared per action via the module
+    /// config's `autoCacheWhole: ["<action>", …]`. A multi-section API response (KIS
+    /// output1..output4 style) is one datum, not a rows table: auto-caching its largest
+    /// sub-array stores a torn-off page, so a consumer that accepts the response as-is
+    /// (fa `estimates`) could never receive it by key and the model retyped it by hand
+    /// (2026-08-11 turn 33). Nothing inline is truncated — declared responses are small;
+    /// the key exists so `cacheInputs` can expand it back losslessly.
+    #[serde(default)]
+    pub cache_whole: bool,
 }
 
 /// Declarative timeseries-store spec — all data, zero provider knowledge (TokenProvider /

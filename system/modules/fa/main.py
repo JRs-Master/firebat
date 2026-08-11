@@ -99,7 +99,13 @@ def parse_estimates(raw):
     row5 ROE 41->4.1); the rest are dropped, not guessed.
     """
     if not isinstance(raw, dict):
-        return None, None
+        # A hand-rebuilt list (or any non-dict) is refused loudly, not skipped silently —
+        # the silent branch let a whole requested section vanish from the answer with no
+        # trace (2026-08-11: "include estimates" was asked, the model rebuilt rows, the
+        # rebuild was dropped here, and the final answer carried no estimates and no note).
+        return None, ("estimates: expected the KIS estimate-perform response as-is "
+                      "(object with output1..output4) or estimatesCacheKey from that call — "
+                      f"got {type(raw).__name__}; hand-rebuilt rows are refused, not normalized")
     data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
     o1 = data.get("output1") or {}
     o2 = data.get("output2") or []
@@ -295,6 +301,9 @@ def action_selftest():
         ck("PER undoes the x10", 36.8, est["periods"][0]["per"])
         ck("ROE undoes the x10", 4.1, est["periods"][0]["roePct"])
         ck("opinion rides along", "매수", est["opinion"])
+    _, rebuilt_err = parse_estimates([{"fiscalYear": 2026, "eps": 8500}])
+    ck("rebuilt rows refused with a reason", True,
+       rebuilt_err is not None and "as-is" in rebuilt_err)
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed, "action": "selftest",

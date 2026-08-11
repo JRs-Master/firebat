@@ -809,9 +809,25 @@ impl ModuleManager {
                 // 시계열 영구 store 선언 (config `timeseries`) — 스펙은 core 가 데이터로 파싱,
                 // 갭 축소·병합·서빙은 sandbox choke-point (rows 실물이 있는 곳). 미선언·범위
                 // 비명시·limit 호출 = None (기존 30분 ephemeral 경로 그대로).
+                // Declared whole-object caching — `autoCacheWhole: ["<action>"]` marks actions
+                // whose response is one structured datum (multi-section, output1..output4
+                // style) rather than a rows table. See SandboxExecuteOpts::cache_whole.
+                let cache_whole = config
+                    .as_ref()
+                    .and_then(|c| c.get("autoCacheWhole"))
+                    .and_then(|v| v.as_array())
+                    .map(|list| {
+                        let act = input_data
+                            .get("action")
+                            .and_then(|a| a.as_str())
+                            .unwrap_or("");
+                        list.iter().filter_map(|v| v.as_str()).any(|a| a == act)
+                    })
+                    .unwrap_or(false);
                 let mut exec_opts = SandboxExecuteOpts {
                     skip_auto_cache,
                     keep_full_rows,
+                    cache_whole,
                     ..SandboxExecuteOpts::default()
                 };
                 // Whether a person is waiting on the other end. A module that can spend money
