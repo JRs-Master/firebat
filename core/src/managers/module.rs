@@ -792,6 +792,28 @@ impl ModuleManager {
                             break;
                         }
                     }
+                    // A JSON-LOOKING string that does not parse is almost always a hand-typed
+                    // serialization broken mid-stream (escape slip or output truncation) — the
+                    // generic "search→schema" hint sends the model back up the ladder when the
+                    // real fix is "resend the actual value" (2026-08-12: a giant `sheets` string
+                    // died this way; turn 34's statements rows before it). Valid strings never
+                    // reach here — coercion already parses those.
+                    if let Some(in_obj) = input_data.as_object() {
+                        for (k, v) in in_obj {
+                            let Some(s) = v.as_str() else { continue };
+                            let t = s.trim_start();
+                            if (t.starts_with('[') || t.starts_with('{'))
+                                && serde_json::from_str::<serde_json::Value>(s.trim()).is_err()
+                                && (detail.contains(&format!("/{k}"))
+                                    || detail.contains(&format!("'{k}'")))
+                            {
+                                msg.push_str(&format!(
+                                    " `{k}` is a STRING whose JSON does not parse (likely truncated or a broken escape) — resend it as the actual array/object value, not a quoted string."
+                                ));
+                                break;
+                            }
+                        }
+                    }
                     return Err(msg);
                 }
             }
@@ -1082,6 +1104,11 @@ impl ModuleManager {
                         "url": saved.url,
                         "bytes": bin.size,
                         "contentType": content_type,
+                        // Consumption-point guidance — nothing anywhere told the model what to
+                        // DO with this url, so it improvised an Image block around an .xlsx and
+                        // the UI spun on "generating image" forever (2026-08-12 실측). The note
+                        // arrives exactly when the model holds the url; zero resident prompt.
+                        "note": "Attach this in your answer as a markdown link — [파일명](url) — it renders as a downloadable file card. Never put a document url in an Image/image block (images only).",
                     }),
                 );
             }
