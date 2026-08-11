@@ -62,7 +62,7 @@
         "name": "XLSX 만들기 (표 → 시트 · 대시보드)",
         "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns). Dashboard genre: pass kpis and/or charts — or render blocks where metric blocks become KPI cards and chart blocks become native Excel charts — and a \"Dashboard\" sheet is placed first, KPI cards four per row (up=red / down=blue delta) above native line/bar/pie charts that reference the data sheets' cells (chart blocks get their own data sheet). Any cell string starting with \"=\" stays a live formula, so pass formulas for totals and averages instead of precomputed numbers. A chart whose sheet or columns cannot be resolved is skipped and reported in data.notes. The file lands in the media store.",
         "params": {
-          "sheets": "[{name, headers?, rows}]",
+          "sheets": "[{name, headers?, rows}] — a long row set goes as {name, headers, rowsCacheKey: \"<the producing call's _cacheKey>\"} instead of rows: the server expands the FULL cached rows, so a 120-day candle sheet carries 120 real rows and not the 5-row inline preview",
           "blocks": "render-block array (table → sheet, metric → KPI card, chart → native chart)",
           "kpis": "[{label, value (number or \"=FORMULA\"), delta?, unit?}] — KPI cards on the Dashboard sheet",
           "charts": "[{type: line|bar|pie, title, sheet, labelCol, valueCols[]}] — native charts pointing at a data sheet's columns (header name or 0-based index)",
@@ -162,7 +162,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula."
+        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula. NEVER retype a long row set: a tool result you saw only as a truncated preview carries a `_cacheKey`, so send that sheet as {name, headers, rowsCacheKey: \"<that _cacheKey>\"} and the server expands the FULL cached rows into it — a 120-day candle sheet then holds 120 real rows instead of the 5 preview rows. Inline rows win if both are given."
       },
       "kpis": {
         "type": [
@@ -215,7 +215,8 @@
     }
   },
   "cacheInputs": [
-    "blocks"
+    "blocks",
+    "sheets.*.rows"
   ],
   "output": {
     "type": "object",
