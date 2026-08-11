@@ -183,7 +183,7 @@
             "integer",
             "null"
           ],
-          "description": "empty bar slots reserved to the RIGHT of the last candle, for projections. Annotations with barsAhead land there. 0 or omitted = none."
+          "description": "empty bar slots reserved to the RIGHT of the last candle, for projections. Annotations with barsAhead land there. 0 or omitted = none. The chart clamps this to the annotations' actual reach (+2) — or to a quarter of the bars when no annotation extends forward — so do not inflate it: reserved-but-empty future renders as blank canvas."
         },
         "annotations": {
           "type": [
@@ -3448,7 +3448,7 @@
         },
         "futureSlots": {
           "type": "number",
-          "description": "empty candle slots reserved on the right for projections (same as stock_chart). Set from the analysis module's projectBars."
+          "description": "empty candle slots reserved on the right for projections (same as stock_chart, same clamp to the annotations' reach). Set from the analysis module's projectBars."
         },
         "scale": {
           "type": "string",

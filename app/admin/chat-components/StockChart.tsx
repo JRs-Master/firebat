@@ -352,7 +352,23 @@ function PointGroup({ title, points, tone }: {
   );
 }
 
-export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots = 0, annotations, scale = 'linear', prevClose: sessionPrevClose }: StockChartProps) {
+export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots: futureSlotsProp = 0, annotations, scale = 'linear', prevClose: sessionPrevClose }: StockChartProps) {
+  // futureSlots is a request, not a contract. A hand-written fence once reserved 240 future
+  // slots on a 200-bar chart with zero annotations to fill them (2026-08-11) — half the canvas
+  // was blank sky. The useful future is what the annotations actually reach: clamp to that
+  // extent (+2 slots of air). The reverse direction matters just as much — annotations beyond
+  // a too-small futureSlots used to land off-canvas and silently vanish (TA projection +41
+  // bars vs futureSlots 16), so the extent RAISES the value too. With no forward-reaching
+  // annotation the gutter is pure air: at most a quarter of the data, never the majority.
+  const annAhead = (annotations ?? []).reduce((m, a) => {
+    for (const p of a.points ?? []) {
+      if (typeof p.barsAhead === 'number' && p.barsAhead > m) m = p.barsAhead;
+    }
+    return m;
+  }, 0);
+  const futureSlots = annAhead > 0
+    ? annAhead + 2
+    : Math.min(futureSlotsProp, Math.max(8, Math.ceil((data?.length ?? 0) / 4)));
   const priceBoxRef = useRef<HTMLDivElement>(null);
   const volScrollRef = useRef<HTMLDivElement>(null); // 거래량 차트 — 가격과 가로 스크롤 동기화
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
