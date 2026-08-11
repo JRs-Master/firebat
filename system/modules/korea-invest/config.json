@@ -17,9 +17,9 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", \"query\": { <query.* params> }, \"body\": { <body.* params> } } — param key prefix query./body. marks the location"
   },
-  "autoCacheWhole": [
-    "국내주식-187"
-  ],
+  "autoCacheWhole": {
+    "국내주식-187": "Pass this key as estimatesCacheKey to fa ratios — it normalizes the UNLABELED output2/output3 rows with live-measured labels. NEVER decode the rows yourself: a hand-mapped sheet shipped YoY percentages labeled 영업이익 (measured 2026-08-12)."
+  },
   "grounding": {
     "FID_INPUT_ISCD": {
       "pattern": "^Q?[0-9]{6}$",

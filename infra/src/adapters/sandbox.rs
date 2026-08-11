@@ -624,7 +624,7 @@ impl ProcessSandboxAdapter {
         module_name: &str,
         input_action: &str,
     ) -> serde_json::Value {
-        Self::apply_auto_cache_opts(data, cache, module_name, input_action, false, false)
+        Self::apply_auto_cache_opts(data, cache, module_name, input_action, false, false, None)
     }
 
     pub(crate) fn apply_auto_cache_opts(
@@ -634,6 +634,7 @@ impl ProcessSandboxAdapter {
         input_action: &str,
         keep_full_rows: bool,
         cache_whole: bool,
+        cache_whole_note: Option<&str>,
     ) -> serde_json::Value {
         const AUTO_CACHE_THRESHOLD: usize = 30;
         const AUTO_CACHE_PREVIEW: usize = 5;
@@ -668,13 +669,19 @@ impl ProcessSandboxAdapter {
                         serde_json::Value::String(key.clone()),
                     );
                     obj.insert("_cacheMeta".to_string(), {
+                        let note = match cache_whole_note {
+                            Some(n) if !n.is_empty() => format!(
+                                "the whole response object is cached as one record. {n}"
+                            ),
+                            _ => "the whole response object is cached as one record — pass this key to a <param>CacheKey input that accepts this response".to_string(),
+                        };
                         let mut m = serde_json::json!({
                             "sysmod": module_name,
                             "action": action_label,
                             "kind": "whole",
                             "truncated": false,
                             "autoCached": true,
-                            "note": "the whole response object is cached as one record — pass this key to a <param>CacheKey input that accepts this response",
+                            "note": note,
                         });
                         if let Some((at, left)) = Self::expiry_fields(cache, &key) {
                             m["expiresAt"] = serde_json::json!(at);
@@ -2215,6 +2222,7 @@ impl ProcessSandboxAdapter {
                     input_action,
                     opts.keep_full_rows,
                     opts.cache_whole,
+                    opts.cache_whole_note.as_deref(),
                 )
             }
         } else {
@@ -2573,7 +2581,7 @@ mod tests {
         let items: Vec<serde_json::Value> = (0..40).map(|i| serde_json::json!({"i": i})).collect();
         let data = serde_json::json!({"items": items});
         let out = ProcessSandboxAdapter::apply_auto_cache_opts(
-            data, cache.as_ref(), "autotrade", "plan_sweep", true, false,
+            data, cache.as_ref(), "autotrade", "plan_sweep", true, false, None,
         );
         assert_eq!(out["items"].as_array().unwrap().len(), 40);
         assert!(out["_cacheKey"].is_string());
@@ -2596,6 +2604,7 @@ mod tests {
         });
         let out = ProcessSandboxAdapter::apply_auto_cache_opts(
             data, cache.as_ref(), "korea-invest", "국내주식-187", false, true,
+            Some("pass as estimatesCacheKey to fa ratios"),
         );
         let obj = out.as_object().unwrap();
         // every section still inline, untouched
@@ -2603,6 +2612,11 @@ mod tests {
         assert_eq!(obj["output4"].as_array().unwrap().len(), 1);
         let key = obj["_cacheKey"].as_str().unwrap();
         assert_eq!(obj["_cacheMeta"]["kind"], "whole");
+        // the declared consumer-naming note rides the meta
+        assert!(obj["_cacheMeta"]["note"]
+            .as_str()
+            .unwrap()
+            .contains("estimatesCacheKey to fa ratios"));
         // the cached record is the whole object, not a torn-off sub-array
         let read = cache.read(key, 0, usize::MAX).unwrap();
         let records = read["records"].as_array().unwrap();

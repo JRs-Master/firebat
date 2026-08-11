@@ -845,25 +845,42 @@ impl ModuleManager {
                 // 시계열 영구 store 선언 (config `timeseries`) — 스펙은 core 가 데이터로 파싱,
                 // 갭 축소·병합·서빙은 sandbox choke-point (rows 실물이 있는 곳). 미선언·범위
                 // 비명시·limit 호출 = None (기존 30분 ephemeral 경로 그대로).
-                // Declared whole-object caching — `autoCacheWhole: ["<action>"]` marks actions
-                // whose response is one structured datum (multi-section, output1..output4
-                // style) rather than a rows table. See SandboxExecuteOpts::cache_whole.
-                let cache_whole = config
+                // Declared whole-object caching — `autoCacheWhole` marks actions whose
+                // response is one structured datum (multi-section, output1..output4 style)
+                // rather than a rows table. Two declaration forms:
+                //   ["<action>", …]              — cache whole, generic note
+                //   {"<action>": "<note>", …}    — cache whole, and the note NAMES the
+                //                                  consumer. The generic "pass this key to a
+                //                                  <param>CacheKey input" note was ignored in
+                //                                  the field: the model hand-decoded the
+                //                                  unlabeled KIS rows again and shipped YoY
+                //                                  percentages labeled 영업이익 (turn 39,
+                //                                  2026-08-12). A note that says exactly
+                //                                  where the key goes leaves nothing to
+                //                                  improvise.
+                let act = input_data
+                    .get("action")
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("");
+                let (cache_whole, cache_whole_note) = match config
                     .as_ref()
                     .and_then(|c| c.get("autoCacheWhole"))
-                    .and_then(|v| v.as_array())
-                    .map(|list| {
-                        let act = input_data
-                            .get("action")
-                            .and_then(|a| a.as_str())
-                            .unwrap_or("");
-                        list.iter().filter_map(|v| v.as_str()).any(|a| a == act)
-                    })
-                    .unwrap_or(false);
+                {
+                    Some(serde_json::Value::Array(list)) => (
+                        list.iter().filter_map(|v| v.as_str()).any(|a| a == act),
+                        None,
+                    ),
+                    Some(serde_json::Value::Object(map)) => match map.get(act) {
+                        Some(n) => (true, n.as_str().map(String::from)),
+                        None => (false, None),
+                    },
+                    _ => (false, None),
+                };
                 let mut exec_opts = SandboxExecuteOpts {
                     skip_auto_cache,
                     keep_full_rows,
                     cache_whole,
+                    cache_whole_note,
                     ..SandboxExecuteOpts::default()
                 };
                 // Whether a person is waiting on the other end. A module that can spend money

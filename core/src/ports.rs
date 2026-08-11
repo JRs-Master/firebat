@@ -918,6 +918,11 @@ pub struct SandboxExecuteOpts {
     /// the key exists so `cacheInputs` can expand it back losslessly.
     #[serde(default)]
     pub cache_whole: bool,
+    /// Consumer-naming note for the whole-cache entry (`autoCacheWhole` map form). The
+    /// generic "pass this key to a <param>CacheKey input" was ignored in the field —
+    /// a note that says exactly where the key goes leaves nothing to improvise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_whole_note: Option<String>,
 }
 
 /// Declarative timeseries-store spec — all data, zero provider knowledge (TokenProvider /

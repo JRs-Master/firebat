@@ -107,6 +107,27 @@ pub fn declared(config: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Whether a string has the cache-key SHAPE (`…-<16 hex>-<13 digit ms>`). Models hand keys to
+/// the value slot instead of the key slot ("statements": "<key>" — measured 2026-08-12, turn
+/// 39, two rounds burned); the shape is distinctive enough to read the intent losslessly.
+pub fn looks_like_cache_key(s: &str) -> bool {
+    let s = s.trim();
+    let Some((head, ts)) = s.rsplit_once('-') else { return false };
+    let Some((_, hash)) = head.rsplit_once('-') else { return false };
+    ts.len() == 13
+        && ts.bytes().all(|b| b.is_ascii_digit())
+        && hash.len() == 16
+        && hash.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Whether a cache key points at a WHOLE-response entry (scalar/autoCacheWhole path — the
+/// action label's field segment is `_`). Such an entry is one object, never a rows list.
+fn is_whole_entry_key(key: &str) -> bool {
+    let Some((head, _ts)) = key.trim().rsplit_once('-') else { return false };
+    let Some((label, _hash)) = head.rsplit_once('-') else { return false };
+    label.ends_with(":_")
+}
+
 /// Reads the records behind one key. `where_` names the argument slot (`barsCacheKey` or
 /// `sheets[2].rowsCacheKey`) so every failure below says which one died.
 fn read_records(
@@ -150,6 +171,18 @@ fn expand_nested(
         };
         let key = key.to_string();
         let at = format!("{}[{i}].{field}", spec.list);
+        // A whole-response key can never be rows. Turn 39 (2026-08-12) shipped a "일봉
+        // (120일)" sheet that was EMPTY: the model grabbed an earlier dud call's `…:_`
+        // key while the real 500-row array key sat one call later in the history.
+        // Expanding it faithfully injects one response object where rows belong — data
+        // loss that looks like data. Refuse with the shape named instead.
+        if is_whole_entry_key(&key) {
+            return Err(format!(
+                "{at}: {key} is a WHOLE-response cache entry (label ':_'), not a rows list — \
+                 pass the _cacheKey whose label names the rows field (e.g. \
+                 module-action:rowsField-…), from the call that actually returned the rows."
+            ));
+        }
         let items = out.get_or_insert_with(|| list.to_vec());
         let target = items[i].as_object_mut().expect("checked above");
         // Inline wins: the element already carries the real rows, so the stray key is just
@@ -217,9 +250,31 @@ pub fn expand(
             continue;
         }
         let field = key_field(&param);
-        let Some(key) = obj.get(&field).and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+        let key_owned: Option<String> = obj
+            .get(&field)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                // Dialect: the key handed to the VALUE slot — "statements": "<key>" (string
+                // coercion then wraps it into a one-item list, so both shapes arrive).
+                // The key shape is unmistakable; reading the intent is lossless and saves
+                // the relearning round (measured 2026-08-12 turn 39: two rounds burned).
+                match obj.get(&param) {
+                    Some(serde_json::Value::String(s)) if looks_like_cache_key(s) => {
+                        Some(s.trim().to_string())
+                    }
+                    Some(serde_json::Value::Array(a)) if a.len() == 1 => a[0]
+                        .as_str()
+                        .filter(|s| looks_like_cache_key(s))
+                        .map(|s| s.trim().to_string()),
+                    _ => None,
+                }
+            });
+        let Some(key) = key_owned else {
             continue;
         };
+        let key = key.as_str();
         let records = read_records(
             cache.ok_or_else(|| {
                 format!(
@@ -389,6 +444,42 @@ mod tests {
         // declared() hands the raw entries on, nested ones included.
         let cfg = serde_json::json!({"cacheInputs": ["blocks", "sheets.*.rows"]});
         assert_eq!(declared(&cfg), vec!["blocks", "sheets.*.rows"]);
+    }
+
+    #[test]
+    fn a_key_in_the_value_slot_is_read_as_the_key() {
+        // "statements": "<key>" and "statements": ["<key>"] — the model hands the key to
+        // the value slot; the shape is unmistakable, so the intent is read losslessly.
+        let (cache, key, _d) = cache_with(vec![serde_json::json!({"a": 1})]);
+        let cfg = serde_json::json!({"cacheInputs": ["statements"]});
+        for input in [
+            serde_json::json!({"action": "ratios", "statements": key}),
+            serde_json::json!({"action": "ratios", "statements": [key]}),
+        ] {
+            let out = expand("m", &cfg, &input, Some(&cache)).unwrap().unwrap();
+            assert_eq!(out["statements"].as_array().unwrap().len(), 1, "{out}");
+            assert_eq!(out["statements"][0]["a"], 1);
+        }
+        // An ordinary string value is NOT mistaken for a key.
+        let plain = serde_json::json!({"statements": "hello world"});
+        assert!(expand("m", &cfg, &plain, Some(&cache)).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_whole_entry_key_is_refused_for_nested_rows() {
+        // Turn 39: a `…:_` whole-response key in rowsCacheKey shipped an EMPTY 120-day
+        // sheet. The label is decisive — refuse with the shape named.
+        let dir = tempfile::tempdir().unwrap();
+        let c = SysmodCacheAdapter::new(dir.path().to_path_buf()).unwrap();
+        let key = c
+            .data("kiwoom", "ka10081:_", serde_json::json!({}), vec![serde_json::json!({"whole": true})], None)
+            .unwrap();
+        let cache = Arc::new(c);
+        let cfg = serde_json::json!({"cacheInputs": ["sheets.*.rows"]});
+        let input = serde_json::json!({"sheets": [{"name": "일봉", "rowsCacheKey": key}]});
+        let err = expand("docs", &cfg, &input, Some(&cache)).unwrap_err();
+        assert!(err.contains("WHOLE-response"), "{err}");
+        assert!(err.starts_with("sheets[0].rowsCacheKey:"), "{err}");
     }
 
     #[test]
