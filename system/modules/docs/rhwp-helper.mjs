@@ -6,9 +6,16 @@
 // reach — legacy .hwp binaries, equations, text boxes, footnotes. The python side owns
 // the envelope; this process turns one file into one JSON line on stdout and exits.
 //
-// stdin : {"op":"read","path":"<absolute file path>"}
-// stdout: {"ok":true,"data":{"sections":N,"paragraphs":N,"text":"...","tables":[...],
-//          "equations":[...]}}  |  {"ok":false,"error":"..."}
+// stdin : {"op":"read","path":"<abs>"}
+//       | {"op":"make","donor":"<abs .hwp>","out":"<abs>","format":"hwpx"|"hwp",
+//          "title":"...","blocks":[{type,props},...]}
+// stdout: {"ok":true,"data":{...}} | {"ok":false,"error":"..."} — one JSON line.
+//
+// MAKE seeds from a REAL Hancom blank (the donor) instead of createEmpty: the blank
+// document ships no charPr/paraPr/faceName tables, so exports from it reference styles
+// that do not exist — Hancom then draws garbage (2026-08-11 해부로 확정). The donor
+// carries 함초롬 tables and both exportHwp and exportHwpx pass. Equation font size is
+// HWPUNIT (1pt = 100): 1000, never 10 — 10 renders a microscopic dot.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,6 +27,87 @@ function fail(msg) {
   process.exit(0);
 }
 
+function makeFromBlocks(doc, blocks, title) {
+  const stats = { paragraphs: 0, tables: 0 };
+  let para = 0;
+  let off = 0;
+  const write = (text, fmt) => {
+    const t = String(text ?? "");
+    if (!t) return;
+    doc.insertText(0, para, off, t);
+    const start = off;
+    off += t.length;
+    if (fmt) {
+      try { doc.applyCharFormat(0, para, start, off, JSON.stringify(fmt)); } catch {}
+    }
+  };
+  const newPara = () => {
+    doc.insertParagraph(0, para + 1);
+    para += 1;
+    off = 0;
+    stats.paragraphs += 1;
+  };
+  const H_SIZE = { 1: 1600, 2: 1300, 3: 1150 };
+  if (title) {
+    write(title, { bold: true, fontSize: 1800 });
+    newPara();
+  }
+  for (const b of blocks || []) {
+    const t = String((b && b.type) || "");
+    const p = (b && b.props) || {};
+    if (t === "header") {
+      const lv = Math.max(1, Math.min(3, Number(p.level) || 2));
+      write(p.text, { bold: true, fontSize: H_SIZE[lv] });
+      newPara();
+    } else if (t === "text") {
+      write(p.content);
+      newPara();
+    } else if (t === "list") {
+      for (const it of p.items || []) {
+        write(`• ${it}`);
+        newPara();
+      }
+    } else if (t === "metric") {
+      const delta = p.delta != null && p.delta !== "" ? ` (${p.delta})` : "";
+      write(`${p.label ?? ""}: ${p.value ?? ""}${p.unit || ""}${delta}`);
+      newPara();
+    } else if (t === "divider") {
+      newPara();
+    } else if (t === "table") {
+      let headers = (p.headers || []).map(String);
+      let rows = p.rows || [];
+      if (!headers.length && rows.length) {
+        headers = rows[0].map(String);
+        rows = rows.slice(1);
+      }
+      if (!headers.length) continue;
+      const cc = headers.length;
+      const all = [headers, ...rows];
+      const ret = JSON.parse(doc.createTable(0, para, off, all.length, cc));
+      for (let r = 0; r < all.length; r++) {
+        for (let c = 0; c < cc; c++) {
+          const v = all[r] && all[r][c] != null ? String(all[r][c]) : "";
+          if (!v) continue;
+          try {
+            doc.insertTextInCell(0, ret.paraIdx, ret.controlIdx, r * cc + c, 0, 0, v);
+            if (r === 0) {
+              doc.applyCharFormatInCell(0, ret.paraIdx, ret.controlIdx, r * cc + c,
+                                        0, 0, v.length, JSON.stringify({ bold: true }));
+            }
+          } catch {}
+        }
+      }
+      stats.tables += 1;
+      // Land the cursor on a fresh paragraph BELOW the table.
+      doc.insertParagraph(0, ret.paraIdx + 1);
+      para = ret.paraIdx + 1;
+      off = 0;
+      stats.paragraphs += 1;
+    }
+  }
+  return stats;
+}
+
 async function main() {
   let req;
   try {
@@ -27,13 +115,30 @@ async function main() {
   } catch (e) {
     return fail(`stdin JSON: ${e}`);
   }
-  if (req.op !== "read" || !req.path) return fail("expected {op:'read', path}");
+  if (!(req.op === "read" && req.path)
+      && !(req.op === "make" && req.donor && req.out)) {
+    return fail("expected {op:'read', path} or {op:'make', donor, out, blocks}");
+  }
 
   const mod = await import(pathToFileURL(path.join(HERE, "rhwp", "rhwp.js")).href);
   await mod.default({
     module_or_path: fs.readFileSync(path.join(HERE, "rhwp", "rhwp_bg.wasm")),
   });
   const { HwpDocument } = mod;
+
+  if (req.op === "make") {
+    try {
+      const doc = new HwpDocument(fs.readFileSync(req.donor));
+      const stats = makeFromBlocks(doc, req.blocks, String(req.title || ""));
+      const bytes = req.format === "hwp" ? doc.exportHwp() : doc.exportHwpx();
+      fs.writeFileSync(req.out, bytes);
+      process.stdout.write(JSON.stringify(
+        { ok: true, data: { ...stats, bytes: bytes.length } }) + "\n");
+    } catch (e) {
+      fail(`make: ${e}`);
+    }
+    return;
+  }
 
   let doc;
   try {

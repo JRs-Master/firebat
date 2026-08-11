@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "document-io",
-  "description": "오피스 문서 읽기·만들기 — pptx·xlsx·docx·hwp·hwpx·pdf 를 읽어 텍스트·표·수식을 뽑고(hwpx 는 글상자·각주·수식 스크립트까지, 구형 .hwp 는 rhwp 엔진 — 옛 파일은 얇게 나올 수 있음), 렌더 블록(IR)으로 pptx·xlsx·docx·pdf 를 만듭니다. 만든 파일은 미디어 보관함에 저장되어 바로 내려받을 수 있습니다. 회사 마스터 .pptx 를 올려 두면 그 서식 위에 만듭니다.",
+  "description": "오피스 문서 읽기·만들기 — pptx·xlsx·docx·hwp·hwpx·pdf 를 읽어 텍스트·표·수식을 뽑고(hwpx 는 글상자·각주·수식 스크립트까지, 구형 .hwp 는 rhwp 엔진 — 옛 파일은 얇게 나올 수 있음), 렌더 블록(IR)으로 pptx·xlsx·docx·hwpx·pdf 를 만듭니다. 만든 파일은 미디어 보관함에 저장되어 바로 내려받을 수 있습니다. 회사 마스터 .pptx 를 올려 두면 그 서식 위에 만듭니다.",
   "aliases": [
     "문서",
     "피피티",
@@ -76,6 +76,15 @@
         }
       },
       {
+        "id": "make_hwpx",
+        "name": "HWPX 만들기 (렌더 블록 → 한글 문서)",
+        "description": "Build a .hwpx (Hancom) from render blocks via the rhwp engine, seeded from a real Hancom blank so fonts and styles are valid. Headers become bold headings, tables become real editable tables. The file lands in the media store.",
+        "params": {
+          "blocks": "render-block array [{type, props}] — header/text/list/table/metric",
+          "title": "document title (heading + filename)"
+        }
+      },
+      {
         "id": "make_pdf",
         "name": "PDF 만들기 (렌더 블록 → 문서)",
         "description": "Build a .pdf from render blocks: headings, lists, real tables, images; divider = page break. Korean text via an embedded host font or the viewer-supplied CID font. The file lands in the media store.",
@@ -105,6 +114,7 @@
           "make_pptx",
           "make_xlsx",
           "make_docx",
+          "make_hwpx",
           "make_pdf",
           "selftest"
         ],

@@ -29,6 +29,7 @@ MIME = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
+    "hwpx": "application/vnd.hancom.hwpx",
 }
 
 
@@ -214,7 +215,7 @@ def read_hwpx(path):
     return out
 
 
-def _rhwp_helper_read(path):
+def _rhwp_helper(request, timeout=180):
     """Spawn the vendored rhwp WASM helper (node, ./rhwp-helper.mjs). One JSON in, one out."""
     import shutil
     import subprocess
@@ -222,14 +223,18 @@ def _rhwp_helper_read(path):
     if not node:
         raise RuntimeError("node runtime not found")
     helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rhwp-helper.mjs")
-    req = json.dumps({"op": "read", "path": path}).encode("utf-8")
-    proc = subprocess.run([node, helper], input=req, capture_output=True, timeout=120)
+    req = json.dumps(request).encode("utf-8")
+    proc = subprocess.run([node, helper], input=req, capture_output=True, timeout=timeout)
     lines = proc.stdout.decode("utf-8", "replace").strip().splitlines()
     payload = json.loads(lines[-1]) if lines else {}
     if not payload.get("ok"):
         err = payload.get("error") or proc.stderr.decode("utf-8", "replace")[:400]
         raise RuntimeError(err or "helper failed")
     return payload["data"]
+
+
+def _rhwp_helper_read(path):
+    return _rhwp_helper({"op": "read", "path": path}, timeout=120)
 
 
 def read_hwp_legacy(path):
@@ -1283,6 +1288,34 @@ def action_make_docx(inp):
     }}
 
 
+def action_make_hwpx(inp):
+    """Render blocks → .hwpx through the rhwp engine, seeded from a REAL Hancom blank
+    (fixtures/donor-blank.hwp, 사용자 한컴 저장본) — createEmpty ships no style tables and
+    Hancom draws garbage from its exports (2026-08-11 해부). Tables and bold headings
+    ride along; the file lands in the media store like every other make."""
+    blocks = normalize_blocks(inp.get("blocks"))
+    title = str(inp.get("title") or "").strip()
+    if not blocks and not title:
+        return {"success": False, "action": "make_hwpx",
+                "error": "blocks (or at least a title) required"}
+    donor = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "fixtures", "donor-blank.hwp")
+    if not os.path.exists(donor):
+        return {"success": False, "action": "make_hwpx",
+                "error": "donor-blank.hwp fixture missing — hwpx needs the Hancom seed"}
+    out_path, stem = out_file(title or "document", "hwpx", {"t": title, "b": blocks})
+    try:
+        made = _rhwp_helper({"op": "make", "donor": donor, "out": out_path,
+                             "format": "hwpx", "title": title, "blocks": blocks})
+    except Exception as e:  # noqa: BLE001 — the engine names its own failure
+        return {"success": False, "action": "make_hwpx", "error": f"hwpx build failed: {e}"}
+    return {"success": True, "action": "make_hwpx", "data": {
+        "blocks": len(blocks),
+        "paragraphs": made.get("paragraphs"), "tables": made.get("tables"),
+        "_mediaImport": media_import_decl(out_path, "hwpx", stem),
+    }}
+
+
 # ── selftest ───────────────────────────────────────────────────────────────────────────────────
 
 def minimal_pdf():
@@ -1501,6 +1534,25 @@ def action_selftest():
                any("over" in e for e in got.get("equations", [])))
         except Exception as e:  # noqa: BLE001
             ck(f"hwp(rhwp) crashed: {e}", False)
+        # make: donor-seeded hwpx round trip through our own direct-walk reader.
+        donor = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "fixtures", "donor-blank.hwp")
+        if os.path.exists(donor):
+            p_mk = f"{OUT_DIR}/selftest-made.hwpx"
+            tmp.append(p_mk)
+            try:
+                _rhwp_helper({"op": "make", "donor": donor, "out": p_mk,
+                              "format": "hwpx", "title": "셀프테스트 문서",
+                              "blocks": blocks})
+                got_mk = read_hwpx(p_mk)
+                ck("hwpx make: text and heading survive the round trip",
+                   "본문 한 줄" in got_mk["text"] and "첫 장" in got_mk["text"])
+                ck("hwpx make: the table is a real table",
+                   got_mk["tables"] and got_mk["tables"][0]["headers"] == ["이름", "값"])
+            except Exception as e:  # noqa: BLE001
+                ck(f"hwpx make crashed: {e}", False)
+        else:
+            ck("hwpx make: skipped — donor fixture absent", True)
     else:
         ck("hwp(rhwp): skipped — node runtime or fixture absent", True)
 
@@ -1554,6 +1606,7 @@ def main():
     inp = envelope.get("data") or envelope
     action = str(inp.get("action") or "").strip()
     handlers = {"read": action_read, "make_pptx": action_make_pptx,
+                "make_hwpx": action_make_hwpx,
                 "make_xlsx": action_make_xlsx, "make_docx": action_make_docx,
                 "make_pdf": action_make_pdf}
     if action == "selftest":
