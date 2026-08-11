@@ -19,7 +19,9 @@ use std::sync::Mutex;
 
 use crate::ports::InfraResult;
 
-const TTL_MS: i64 = 30 * 60 * 1000; // 30분 — drill-in 후속 질문 + 긴 본문 재참조 여유
+// 60분 — 실측(2026-08-11): 만료 5건이 전부 30분을 74~118초 넘긴 후속 질문이었다. 사용 리듬이
+// TTL 바로 바깥이라 한 단계 늘린다. 신선도는 캐시가 아니라 모델의 재조회 습관이 지킨다(실측).
+const TTL_MS: i64 = 60 * 60 * 1000;
 /// Live keys are never evicted by count (the old global LRU of 100 meant the autotrade crons'
 /// ~900 keys per half hour buried a chat's chart series mid-turn — 2026-08-06 실측). Deletion is
 /// by expiry: a sweep removes pairs whose TTL ran out more than SWEEP_GRACE_MS ago. The grace
