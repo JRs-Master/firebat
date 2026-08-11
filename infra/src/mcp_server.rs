@@ -553,15 +553,26 @@ fn schema_seen_store() -> &'static Mutex<HashMap<String, VecDeque<(Instant, Stri
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Canonical module key for the discovery gate. get_action_schema resolves dialects the
+/// gate's raw-string keys never matched — "sysmod_kma_weather" fetched the schema fine and
+/// the ladder-following call was still rejected four times in one measured cron turn
+/// (2026-08-11). Record and check must speak the same name.
+fn canon_gate_module(m: &str) -> String {
+    let m = m.trim();
+    let m = m.strip_prefix("sysmod_").unwrap_or(m);
+    let m = m.strip_prefix("sysmod-").unwrap_or(m);
+    m.replace('_', "-")
+}
+
 fn record_schema_seen(session: &str, module: &str, action: &str) {
     let mut store = schema_seen_store().lock().unwrap_or_else(|e| e.into_inner());
     let q = store.entry(session.to_string()).or_default();
-    q.push_back((Instant::now(), format!("{}:{}", module.replace('_', "-"), action)));
+    q.push_back((Instant::now(), format!("{}:{}", canon_gate_module(module), action)));
     evict_expired(q);
 }
 
 fn schema_was_seen(session: &str, module: &str, action: &str) -> bool {
-    let key = format!("{}:{}", module.replace('_', "-"), action);
+    let key = format!("{}:{}", canon_gate_module(module), action);
     let mut store = schema_seen_store().lock().unwrap_or_else(|e| e.into_inner());
     match store.get_mut(session) {
         Some(q) => {

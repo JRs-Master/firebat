@@ -4260,11 +4260,33 @@ impl AiManager {
                         // (module, action) for the rest of the turn. Recorded on the attempt —
                         // a wrong id unlocks nothing the model can actually call.
                         if effective_call.name == "get_action_schema" {
-                            if let (Some(m), Some(a)) = (
-                                effective_call.arguments.get("module").and_then(|v| v.as_str()),
-                                effective_call.arguments.get("action").and_then(|v| v.as_str()),
-                            ) {
-                                schema_seen.insert(format!("{}:{}", m.replace('_', "-"), a));
+                            // Record what the handler RESOLVED, not what the model typed —
+                            // the handler accepts dialects ("sysmod_kma_weather") the raw
+                            // argument key never matched, so a correctly climbed ladder was
+                            // still rejected four times in one cron turn (2026-08-11 실측).
+                            // The response carries the canonical module/action; the argument
+                            // is only the fallback, prefix-stripped the same way.
+                            let m = result
+                                .result
+                                .get("module")
+                                .and_then(|v| v.as_str())
+                                .or_else(|| {
+                                    effective_call.arguments.get("module").and_then(|v| v.as_str())
+                                });
+                            let a = result
+                                .result
+                                .get("action")
+                                .and_then(|v| v.as_str())
+                                .or_else(|| {
+                                    effective_call.arguments.get("action").and_then(|v| v.as_str())
+                                });
+                            if let (Some(m), Some(a)) = (m, a) {
+                                let m = m
+                                    .trim()
+                                    .trim_start_matches("sysmod_")
+                                    .trim_start_matches("sysmod-")
+                                    .replace('_', "-");
+                                schema_seen.insert(format!("{m}:{a}"));
                             }
                         }
                         // Whole-turn repeat of a DISCOVERY tool (declared per-turn cap = static
