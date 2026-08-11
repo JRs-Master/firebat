@@ -27,6 +27,11 @@ impl TimeseriesStoreAdapter {
         conn.execute_batch(
             r#"
             PRAGMA journal_mode = WAL;
+            -- Tick bars arrive every second; FULL fsync per commit turned the collector into
+            -- a disk hose (2026-08-11 실측: 1TB written in 3h, ~2,100 fsync/s, schedule UI 10s).
+            -- WAL + NORMAL keeps integrity on app crash; an OS crash may lose the last moments
+            -- of tick data, which this store can always re-fetch or live without.
+            PRAGMA synchronous = NORMAL;
             CREATE TABLE IF NOT EXISTS ts_rows (
                 series_key TEXT NOT NULL,
                 date_key   INTEGER NOT NULL,
@@ -159,6 +164,12 @@ impl ITimeseriesStorePort for TimeseriesStoreAdapter {
         cov_end: i64,
     ) -> (usize, bool) {
         let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
+        // ONE transaction for the whole merge. Autocommit ran every row upsert and every
+        // coverage rewrite as its own commit+fsync — with per-second tick flushes and
+        // day-long interval lists that amplified into ~2,100 fsync/s and 1TB written in 3h
+        // (2026-08-11 실측). COMMIT below pairs with this; statement errors inside keep the
+        // adapter's best-effort semantics.
+        let _ = conn.execute_batch("BEGIN IMMEDIATE;");
 
         // 1) 소급 조정 감지 — 완결 과거(cov 대상 이전 date)의 기존 row 와 내용 불일치.
         //    (미완결 최신 봉 — cov_end 이후 — 은 장중 갱신이 정상이라 conflict 아님.)
@@ -234,6 +245,7 @@ impl ITimeseriesStorePort for TimeseriesStoreAdapter {
             }
         }
 
+        let _ = conn.execute_batch("COMMIT;");
         (upserted, conflict)
     }
 }
