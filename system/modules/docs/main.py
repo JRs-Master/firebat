@@ -1083,6 +1083,16 @@ XLSX_CHART_COLS = 9         # ~8 columns wide + 1 gap
 XLSX_CHART_ROWS = 16        # ~15 rows tall + 1 gap
 XLSX_BAR_COLOR = "638EC6"   # one restrained blue — data bars are a reading aid, not decoration
 XLSX_SCALE_LOW, XLSX_SCALE_MID, XLSX_SCALE_HIGH = "5B9BD5", "FFFFFF", "E46C6C"
+# The dashboard wears the pptx genre's clothes: the same navy the section band uses (SLATE_D)
+# plus the one accent (blue-600). A workbook and a deck built from the same blocks should not
+# look like they came from two houses.
+XLSX_BAND = "1E293B"        # title band fill — the pptx section-band navy
+XLSX_ACCENT = "2563EB"      # the single accent (blue-600): card spine + one-series charts
+XLSX_CARD_LINE = "D9D9D9"   # card hairline
+XLSX_CARD_LABEL_BG = "F2F5FA"
+XLSX_WHITE = "FFFFFF"
+XLSX_TITLE_ROW_H = 26
+XLSX_CHART_W_CM, XLSX_CHART_H_CM = 16.0, 8.5
 # Korean market convention: up = red, down = blue (the inverse of the US convention).
 XLSX_UP, XLSX_DOWN, XLSX_FLAT = "C00000", "1F5FBF", "808080"
 # Ratio-ish columns diverge around zero, so a 3-color scale reads them; absolute magnitudes
@@ -1181,10 +1191,17 @@ def _kpi_delta(delta, delta_type=None):
 
 def _write_kpi_cards(ws, kpis, top_row):
     """Cards left to right, four per row. Returns the first free row below them."""
-    from openpyxl.styles import Alignment, Font
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     center = Alignment(horizontal="center", vertical="center")
+    # A card is a box, not three loose cells: hairline on all four edges, an accent spine on the
+    # left, a very light label strip on top. Interior verticals stay out — the merges already
+    # read as one field and extra rules make a school-project grid.
+    hair = Side(style="thin", color=XLSX_CARD_LINE)
+    spine = Side(style="thick", color=XLSX_ACCENT)
+    label_fill = PatternFill("solid", fgColor=XLSX_CARD_LABEL_BG)
+    body_fill = PatternFill("solid", fgColor=XLSX_WHITE)
     for i, k in enumerate(kpis):
         c0 = 1 + (i % XLSX_KPI_PER_ROW) * XLSX_KPI_COLS
         r0 = top_row + (i // XLSX_KPI_PER_ROW) * XLSX_KPI_ROWS
@@ -1193,10 +1210,23 @@ def _write_kpi_cards(ws, kpis, top_row):
         for dr in range(3):
             ws.merge_cells(start_row=r0 + dr, start_column=c0,
                            end_row=r0 + dr, end_column=c0 + XLSX_KPI_COLS - 1)
+        # Styled after the merge, on every constituent cell — Excel composes a merged range's
+        # frame from the cells underneath it, so styling only the anchor leaves three open sides.
+        for dr in range(3):
+            for dc in range(XLSX_KPI_COLS):
+                cell = ws.cell(row=r0 + dr, column=c0 + dc)
+                cell.border = Border(
+                    left=spine if dc == 0 else None,
+                    right=hair if dc == XLSX_KPI_COLS - 1 else None,
+                    top=hair if dr == 0 else None,
+                    bottom=hair if dr == 2 else None)
+                cell.fill = label_fill if dr == 0 else body_fill
+        ws.row_dimensions[r0].height = 16
+        ws.row_dimensions[r0 + 1].height = 30
 
         lab = ws.cell(row=r0, column=c0)
         lab.value = str(k.get("label") or "")
-        lab.font = Font(size=9, color="808080")
+        lab.font = Font(size=9, bold=True, color="64748B")
         lab.alignment = center
 
         unit = str(k.get("unit") or "").replace('"', "")
@@ -1214,7 +1244,7 @@ def _write_kpi_cards(ws, kpis, top_row):
                 val.number_format = fmt
             else:
                 val.value = f"{s}{unit}" if unit else s
-        val.font = Font(size=20, bold=True)
+        val.font = Font(size=20, bold=True, color=XLSX_BAND)
         val.alignment = center
 
         text, color = _kpi_delta(k.get("delta"), k.get("deltaType"))
@@ -1247,9 +1277,21 @@ def _resolve_column(headers, ref):
     return None
 
 
+def _style_chart_title(chart, pt=11):
+    """openpyxl builds a string title as rich text whose size lives on the paragraph's default
+    run properties — runs carry no rPr of their own, so setting defRPr is the whole job."""
+    rich = getattr(getattr(chart.title, "tx", None), "rich", None)
+    for para in (getattr(rich, "p", None) or []):
+        if para.pPr is not None and para.pPr.defRPr is not None:
+            para.pPr.defRPr.sz = int(pt * 100)   # hundredths of a point
+            para.pPr.defRPr.b = True
+
+
 def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
     """Native charts anchored below the KPI band, two per row. Data comes from cells."""
     from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+    from openpyxl.chart.shapes import GraphicalProperties
+    from openpyxl.drawing.line import LineProperties
     from openpyxl.utils import get_column_letter
 
     kinds = {"line": LineChart, "bar": BarChart, "pie": PieChart}
@@ -1293,9 +1335,22 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
             chart.set_categories(Reference(ws, min_col=labcol, min_row=2, max_row=ws.max_row))
         if title:
             chart.title = title
-        chart.width, chart.height = 13.5, 7.5
+            _style_chart_title(chart)
+        chart.width, chart.height = XLSX_CHART_W_CM, XLSX_CHART_H_CM
+        if ctype != "pie":
+            # Thousands separators on the value axis — a dashboard is read, not decoded.
+            chart.y_axis.number_format = "#,##0"
         if len(vcols) < 2 and ctype != "pie":
             chart.legend = None  # a one-series legend is noise
+            # One series = one color. Excel's default palette exists to tell series apart; with
+            # nothing to tell apart it just adds a hue the design did not choose.
+            for s in chart.series:
+                if ctype == "line":
+                    s.graphicalProperties = GraphicalProperties(
+                        ln=LineProperties(solidFill=XLSX_ACCENT, w=22000))
+                    s.smooth = False   # invented curvature between real points is a lie
+                else:
+                    s.graphicalProperties = GraphicalProperties(solidFill=XLSX_ACCENT)
         anchor_col = get_column_letter(1 + (placed % XLSX_CHART_PER_ROW) * XLSX_CHART_COLS)
         anchor_row = top_row + (placed // XLSX_CHART_PER_ROW) * XLSX_CHART_ROWS
         ws_dash.add_chart(chart, f"{anchor_col}{anchor_row}")
@@ -1303,10 +1358,35 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes):
     return placed
 
 
+def _dash_band_width(kpis, charts):
+    """Columns the title band spans. The KPI row is the only band made of *cells*, so it decides
+    the width; charts are floating drawings whose column span says nothing about their size."""
+    if kpis:
+        return min(len(kpis), XLSX_KPI_PER_ROW) * XLSX_KPI_COLS
+    if charts:
+        return min(len(charts), XLSX_CHART_PER_ROW) * XLSX_CHART_COLS - 1
+    return 1
+
+
+def _write_dash_title(ws, title, kpis, charts):
+    """Row 1 = the navy band, same spine as the pptx section band."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    width = _dash_band_width(kpis, charts)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=width)
+    fill = PatternFill("solid", fgColor=XLSX_BAND)
+    for c in range(1, width + 1):
+        ws.cell(row=1, column=c).fill = fill
+    head = ws.cell(row=1, column=1)
+    head.value = str(title)
+    head.font = Font(size=14, bold=True, color=XLSX_WHITE)
+    head.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[1].height = XLSX_TITLE_ROW_H
+
+
 def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
     """Data sheets always; a Dashboard sheet in front of them when KPIs or charts exist."""
     import openpyxl
-    from openpyxl.styles import Font
 
     sheets = [s for s in (sheets or []) if isinstance(s, dict)]
     kpis = [k for k in (kpis or []) if isinstance(k, dict)]
@@ -1320,6 +1400,9 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
     ws_dash = None
     if kpis or charts:
         ws_dash = wb.create_sheet(title=_sheet_title("Dashboard", 0, used))
+        # The single biggest difference between "a report" and "a spreadsheet someone typed in":
+        # the grid. Data sheets keep theirs — they are working sheets.
+        ws_dash.sheet_view.showGridLines = False
 
     sheet_map = {}
     for i, sh in enumerate(sheets):
@@ -1333,9 +1416,7 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
     placed = 0
     if ws_dash is not None:
         if title:
-            head = ws_dash.cell(row=1, column=1)
-            head.value = str(title)
-            head.font = Font(size=16, bold=True)
+            _write_dash_title(ws_dash, title, kpis, charts)
         row = _write_kpi_cards(ws_dash, kpis, XLSX_KPI_TOP) if kpis else XLSX_KPI_TOP
         if charts:
             placed = _add_dashboard_charts(wb, ws_dash, charts, sheet_map, row + 1, notes)
@@ -1861,6 +1942,18 @@ def action_selftest():
            any(isinstance(v, str) and v.startswith("=SUM(Data!") for v in dash_cells))
         ck("xlsx dashboard: KPI labels and the negative delta are rendered",
            "합계" in dash_cells and any(isinstance(v, str) and v.startswith("▼") for v in dash_cells))
+        # The dashboard genre: no grid behind the report, and a KPI card is a boxed field.
+        ws_dr = wb_d["Dashboard"]
+        ck("xlsx dashboard: the Dashboard sheet drops the gridlines",
+           ws_dr.sheet_view.showGridLines is False and wb_d["Data"].sheet_view.showGridLines
+           is not False)
+        a3 = ws_dr["A3"]
+        ck("xlsx dashboard: KPI cards get a border box, an accent spine and a label fill",
+           a3.border.top.style == "thin" and a3.border.left.style == "thick"
+           and str(a3.fill.fgColor.rgb or "").endswith(XLSX_CARD_LABEL_BG))
+        ck("xlsx dashboard: the title lands in a navy band across the KPI width",
+           str(ws_dr["A1"].fill.fgColor.rgb or "").endswith(XLSX_BAND)
+           and any(str(r) == "A1:I1" for r in ws_dr.merged_cells.ranges))
         rules_data = [r for cf in wb_d["Data"].conditional_formatting for r in cf.rules]
         ck("xlsx dashboard: the data sheet gets a data bar",
            any(r.type == "dataBar" for r in rules_data))
@@ -1896,7 +1989,8 @@ def action_selftest():
         ck("xlsx blocks: two KPI cards land as merged label cells",
            wb_b["Dashboard"]["A3"].value == "매출"
            and wb_b["Dashboard"]["D3"].value == "영업이익"
-           and len(wb_b["Dashboard"].merged_cells.ranges) == 6)
+           # 2 cards x 3 rows + the row-1 title band
+           and len(wb_b["Dashboard"].merged_cells.ranges) == 7)
     except Exception as e:  # noqa: BLE001
         ck(f"xlsx dashboard crashed: {e}", False)
 
