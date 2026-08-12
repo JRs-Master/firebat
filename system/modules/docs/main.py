@@ -16,9 +16,11 @@ mature library and hand-written XML is the most work of the four; read-only by d
 
 import hashlib
 import json
+import math
 import os
 import re
 import sys
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -760,6 +762,23 @@ _NUMERIC_RE = re.compile(r"^[+\-]?\d{1,3}(,\d{3})*(\.\d+)?$|^[+\-]?\d+(\.\d+)?$"
 _NUMLIKE_RE = re.compile(r"^[+\-±]?[\d,]+(\.\d+)?\s*\S{0,3}$")
 # Titles that read as points on a schedule — they pull item groups onto a timeline.
 _STEPISH_RE = re.compile(r"(\d{4}|\d+\s*년|\d+\s*월|[1-4]\s*Q|분기|단계|Phase|Step)", re.I)
+# A title's own enumeration: "1. " / "01. " / "1) " / "(1) " / "제1장 ". The trailing (?!\d)
+# is what keeps "1.5배 성장" and "2026. 실적" whole — a digit after the separator means the
+# marker was never a marker.
+_LEADING_ENUM_RE = re.compile(
+    r"^\s*(?:\(\s*\d{1,2}\s*\)|제\s*\d{1,2}\s*[장절부편]|\d{1,2}\s*[.)])(?!\d)\s*")
+
+
+def strip_leading_enum(text):
+    """Drop the author's own numbering from a title that is about to get a drawn one.
+
+    The model writes headers as "1. 실적 추이"; the proposal genre then draws its own numbered
+    ring or band beside it and the slide reads "01 | 1. 실적 추이" (2026-08-12 사용자 스크린샷).
+    Only renderers that DRAW a number marker call this — everywhere else the author's
+    numbering is the only numbering there is, and it stays.
+    """
+    s = str(text or "")
+    return _LEADING_ENUM_RE.sub("", s, count=1).strip() or s.strip()
 
 
 def parse_number(v):
@@ -928,7 +947,8 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         # a light band carrying the slide's one-line message behind a small accent bar.
         add_box(slide, MSO_SHAPE.RECTANGLE, 0, 0, sw_in, BAND_H, fill=SLATE_D)
         add_text(slide, 0.55, 0, sw_in - 2.6, BAND_H,
-                 [(f"{state['sec_no']:02d}. {state['sec_title']}", 16, True, WHITE)],
+                 [(f"{state['sec_no']:02d}. {strip_leading_enum(state['sec_title'])}",
+                   16, True, WHITE)],
                  wrap=False, anchor=MSO_ANCHOR.MIDDLE)
         if title:
             add_text(slide, sw_in - 2.05, 0, 1.55, BAND_H,
@@ -1343,21 +1363,31 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
 
     def item_row(no, g):
         text_w = sw_in - ITEM_X - PPTX_MARGIN_IN
-        t_lines = _wrap_lines(g["title"], text_w, chars_per_in=4.5)
+        # The ring is about to draw "01", so the title drops its own "1. " (2026-08-12).
+        title = strip_leading_enum(g["title"])
+        t_lines = _wrap_lines(title, text_w, chars_per_in=4.5)
         b_lines = sum(_wrap_lines(l, text_w) for l in g["body"])
         h = max(0.68, 0.3 * t_lines + 0.22 * b_lines + 0.16)
         ensure_room(h + 0.1)
         slide, y = state["slide"], state["y"]
         ring = add_box(slide, MSO_SHAPE.OVAL, PPTX_MARGIN_IN + 0.02, y + 0.02, 0.6, 0.6,
                        fill=WHITE, line=BLUE, line_w=2.25)
-        rp = ring.text_frame.paragraphs[0]
+        rtf = ring.text_frame
+        # Two digits, one line. An autoshape wraps by default and keeps 0.1" insets on each
+        # side, so a 0.6" ring offered "01" barely 0.4" of text width and broke it into
+        # "0 / 1" (2026-08-12 사용자 스크린샷). No wrap + no insets + middle anchor.
+        rtf.word_wrap = False
+        rtf.margin_left = rtf.margin_right = Inches(0)
+        rtf.margin_top = rtf.margin_bottom = Inches(0)
+        rtf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        rp = rtf.paragraphs[0]
         rp.text = f"{no:02d}"
         rp.font.size = Pt(14)
         rp.font.bold = True
         rp.font.color.rgb = BLUE
         rp.alignment = PP_ALIGN.CENTER
         apply_font(rp)
-        runs = [(g["title"], 13.5, True, SLATE_D)]
+        runs = [(title, 13.5, True, SLATE_D)]
         runs += [(l, 11, False, SLATE_B) for l in g["body"]]
         add_text(slide, ITEM_X, y, text_w, h, runs)
         state["y"] = y + h + 0.12
@@ -1707,6 +1737,13 @@ XLSX_TITLE_ROW_H = 26
 XLSX_CANVAS = "F1F5F9"      # slate-100, the page the cards sit on
 XLSX_UNIT_BADGE_BG = "FEF3C7"   # amber-100 — the "단위: 백만원" chip
 XLSX_UNIT_BADGE_FG = "B45309"   # amber-700
+# Excel auto-fits a row to its text — EXCEPT when the cell is merged, where it silently keeps
+# the default height and clips every line past the first (2026-08-12 사용자 스크린샷: the amber
+# note's second line was cut in half). Any merged cell that wraps has to be measured by hand.
+XLSX_NOTE_LINE_PT = 13.0        # one wrapped line of the 9pt note
+XLSX_NOTE_PAD_PT = 4.0          # the top/bottom breathing the default row already has
+XLSX_NOTE_MIN_H = 20            # the one-line height this band always had
+XLSX_NOTE_MAX_LINES = 6         # a note longer than this is a paragraph, not an annotation
 # Card v3: the accent moved from a left spine to a thick bottom underline that cycles per card,
 # so a row of cards reads as a row (the reference dashboards' language) instead of four clones.
 XLSX_CARD_UNDERLINES = ("2563EB", "E0475B", "EAB308", "22C55E")
@@ -1862,6 +1899,20 @@ def _write_data_sheet(ws, sh):
             # the gradient (non-solid) one, which is the restrained look we want anyway.
             ws.conditional_formatting.add(rng, DataBarRule(
                 start_type="min", end_type="max", color=XLSX_BAR_COLOR, showValue=True))
+
+    # A TRANSPOSED table turns the accounts into rows and the years into columns, so one column
+    # holds trillions and percentages at once — the column majority picked "#,##0" and rounded
+    # 영업이익률 2.54 to "3" (2026-08-12 사용자 스크린샷). The row's own label is the header here,
+    # so a ratio row overrides the column format for its own numeric cells. Conditional
+    # formatting stays column-wide: only the NUMBER FORMAT is a row-level claim.
+    for ri, cells in enumerate(body):
+        label = cells[0] if cells else None
+        if not isinstance(label, str) or not _RATIO_HEADER_RE.search(label):
+            continue
+        for ci in range(1, len(cells)):
+            v = cells[ci]
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                ws.cell(row=first_row + ri, column=ci + 1).number_format = "#,##0.00"
 
 
 # ── xlsx: the ledger (총계정원장) sheet style ──────────────────────────────────────────────────
@@ -2576,6 +2627,29 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes, width)
     return len(prepared), row
 
 
+def _display_width(text):
+    """Text width in Excel's column unit, where a CJK glyph is worth two Latin ones.
+
+    Column width is "how many default-font digits fit", so counting characters would make a
+    Korean note look half as long as it prints — the exact error that clips it."""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in str(text))
+
+
+def _wrapped_row_height(text, span_cols, col_w=XLSX_DASH_COL_W, indent_cols=1,
+                        line_pt=XLSX_NOTE_LINE_PT, pad_pt=XLSX_NOTE_PAD_PT,
+                        min_h=XLSX_NOTE_MIN_H, max_lines=XLSX_NOTE_MAX_LINES):
+    """The height a wrapped, merged cell needs, in points.
+
+    Chars per line comes from the merged span (span_cols x column width, less the indent), and
+    every explicit newline starts a line of its own."""
+    per_line = max(8.0, span_cols * col_w - indent_cols * col_w)
+    lines = 0
+    for segment in str(text or "").split("\n"):
+        lines += max(1, math.ceil(_display_width(segment) / per_line))
+    lines = max(1, min(max_lines, lines))
+    return max(min_h, round(lines * line_pt + pad_pt, 1))
+
+
 def _write_note_band(ws, texts, top_row, width):
     """callout blocks as full-width amber note rows at the foot of the Dashboard.
 
@@ -2591,11 +2665,13 @@ def _write_note_band(ws, texts, top_row, width):
         for c in range(1, width + 1):
             ws.cell(row=row, column=c).fill = fill
         cell = ws.cell(row=row, column=1)
-        cell.value = f"※ {text}"
+        body = f"※ {text}"
+        cell.value = body
         cell.font = Font(size=9, bold=True, color=XLSX_UNIT_BADGE_FG)
         cell.alignment = Alignment(horizontal="left", vertical="center", indent=1,
                                    wrap_text=True)
-        ws.row_dimensions[row].height = 20
+        # A merged cell never auto-grows, so the wrap has to be measured (see XLSX_NOTE_*).
+        ws.row_dimensions[row].height = _wrapped_row_height(body, width)
         row += 2   # one page row between notes, the spacing every other band uses
     return row
 
@@ -2933,6 +3009,39 @@ def _metric_runs(blocks):
     return runs
 
 
+DOCX_EA_FONT = "맑은 고딕"   # Malgun Gothic — the safe East Asian default on Korean Windows
+
+
+def _docx_declare_ea_font(d, name=DOCX_EA_FONT):
+    """Name the East Asian face once, on every style the report writes through.
+
+    A .docx that never declares one leaves Word to pick the CJK face by FALLBACK, and a
+    fallback that misses renders tofu (ㅁㅁㅁ) until the file is reopened (2026-08-12 사용자
+    실측). The pptx genre already stamps <a:ea> per paragraph; this is the docx equivalent,
+    done centrally at style setup so no writer has to remember it per run.
+
+    The latin face is left exactly as it was — only w:eastAsia is claimed. w:eastAsiaTheme is
+    dropped wherever it appears, because a theme reference outranks the explicit attribute and
+    the default theme's minorEastAsia is empty, which is the fallback we are here to remove.
+
+    Every <w:rFonts> in styles.xml is swept, not just the top-level styles: the font table lives
+    in three kinds of place — docDefaults (what everything inherits), the styles themselves, and
+    the <w:tblStylePr> conditional bands inside a table style (header row, first column). Naming
+    only the styles left a table's header row on the fallback, which is exactly the kind of
+    partial coverage a "one helper" fix exists to avoid.
+    """
+    from docx.oxml.ns import qn
+
+    styles = d.styles.element
+    targets = list(styles.iter(qn("w:rFonts")))
+    if not targets:   # a template with no font table anywhere: give Normal one to carry
+        targets = [d.styles["Normal"].element.get_or_add_rPr().get_or_add_rFonts()]
+    for rfonts in targets:
+        rfonts.attrib.pop(qn("w:eastAsiaTheme"), None)
+        rfonts.set(qn("w:eastAsia"), name)
+    return len(targets)
+
+
 def _docx_el(tag, **attrs):
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
@@ -3155,6 +3264,7 @@ def make_docx_file(blocks, title, out_path):
     from docx.shared import Pt
 
     d = docx.Document()
+    _docx_declare_ea_font(d)
     section = d.sections[0]
     body_width = section.page_width - section.left_margin - section.right_margin
     cover, blocks = _report_cover(blocks, title)
@@ -4216,6 +4326,39 @@ def action_selftest():
            all(s in arch_txt for s in ("2026 1Q 설계", "현행", "개선", "진척률", "68%")))
         ck("pptx: a callout is drawn as a band and keeps its words",
            "주의" in arch_txt and "잠정 일정입니다" in arch_txt)
+
+        # The number the genre DRAWS vs the number the model TYPED (2026-08-12 스크린샷):
+        # a ring reading "01" beside a title reading "1. 알파" numbers the item twice, and the
+        # ring's own text frame wrapped those two digits onto two lines. The trailing table is
+        # what keeps this group set off the 3-item pill archetype, which draws no ring.
+        p_num = f"{OUT_DIR}/selftest-numbering.pptx"
+        tmp.append(p_num)
+        make_pptx_file(normalize_blocks([
+            {"type": "header", "props": {"text": "제1장 개요", "level": 1}},
+            {"type": "header", "props": {"text": "1. 알파", "level": 2}},
+            {"type": "text", "props": {"content": "첫 단계입니다"}},
+            {"type": "header", "props": {"text": "2. 베타", "level": 2}},
+            {"type": "text", "props": {"content": "둘째 단계입니다"}},
+            {"type": "header", "props": {"text": "3. 감마", "level": 2}},
+            {"type": "text", "props": {"content": "셋째 단계입니다"}},
+            {"type": "table", "props": {"headers": ["항목", "값"], "rows": [["합계", 3]]}},
+        ]), None, None, p_num)
+        num_shapes = [s for sl in _PP(p_num).slides for s in sl.shapes
+                      if s.has_text_frame and s.text_frame.text.strip()]
+        num_texts = [s.text_frame.text for s in num_shapes]
+        ck("pptx: a drawn number marker strips the title's own '1. ' / '제1장 '",
+           any(t.startswith("알파") for t in num_texts)
+           and not any(t.startswith(("1. 알파", "2. 베타", "3. 감마")) for t in num_texts)
+           and any(t.startswith("01. 개요") for t in num_texts))
+        rings = [s for s in num_shapes if s.text_frame.text.strip() in ("01", "02", "03")]
+        ck("pptx: the numbered ring keeps two digits on ONE line",
+           bool(rings) and all(r.text_frame.word_wrap is False
+                               and "\n" not in r.text_frame.text for r in rings))
+        ck("pptx: a title keeps its own numbering where nothing draws a marker",
+           strip_leading_enum("1.5배 성장") == "1.5배 성장"
+           and strip_leading_enum("2026. 실적") == "2026. 실적"
+           and strip_leading_enum("(1) 개요") == "개요"
+           and strip_leading_enum("1) 개요") == "개요")
     except Exception as e:  # noqa: BLE001
         ck(f"pptx coverage pass crashed: {e}", False)
 
@@ -4265,6 +4408,40 @@ def action_selftest():
            XLSX_UP in sxml and XLSX_DOWN in sxml)
         ck("xlsx: volume rides a bar group on the secondary axis",
            "<barChart>" in sxml and '<axId val="200"/>' in sxml)
+
+        # Two things Excel gets wrong on its own (2026-08-12 사용자 스크린샷): a merged cell
+        # never auto-grows for its own wrap, and a column-wide number format rounds the ratio
+        # ROW it shares with trillion-scale amounts.
+        long_note = "본 자료의 수치는 감사 전 잠정치이며 환율과 회계 기준 변경에 따라 " \
+                    "확정 공시와 달라질 수 있습니다. 투자 판단의 최종 책임은 이용자에게 " \
+                    "있으며 본 문서는 참고 자료입니다."
+        res_w = action_make_xlsx({"title": "연결 재무", "blocks": [
+            {"type": "table", "props": {
+                "headers": ["구분", "2023", "2024", "2025"],
+                "rows": [["매출액", 258935000000000, 300870000000000, 335000000000000],
+                         ["영업이익", 6566000000000, 32730000000000, 43790000000000],
+                         ["영업이익률(%)", 2.54, 10.88, 13.07]]}},
+            {"type": "callout", "props": {"message": long_note}},
+        ]})
+        p_w = res_w["data"]["_mediaImport"]["path"]
+        tmp.append(p_w)
+        wb_w = _lw2(p_w)
+        dash_w = wb_w["Dashboard"]
+        note_rows = [c.row for r in dash_w.iter_rows() for c in r
+                     if isinstance(c.value, str) and c.value.startswith("※")]
+        ck("xlsx: a merged callout row is grown to fit its own wrap",
+           bool(note_rows)
+           and dash_w.row_dimensions[note_rows[0]].height > XLSX_NOTE_MIN_H
+           and dash_w.row_dimensions[note_rows[0]].height
+           == _wrapped_row_height(f"※ {long_note}", XLSX_DASH_COLS))
+        ws_w = wb_w[[n for n in wb_w.sheetnames if n != "Dashboard"][0]]
+        by_label = {ws_w.cell(row=r, column=1).value: r
+                    for r in range(2, ws_w.max_row + 1)}
+        ck("xlsx: a ratio ROW overrides the column format its big-amount neighbours set",
+           ws_w.cell(row=by_label["영업이익률(%)"], column=2).number_format == "#,##0.00"
+           and ws_w.cell(row=by_label["영업이익률(%)"], column=4).number_format == "#,##0.00"
+           and ws_w.cell(row=by_label["매출액"], column=2).number_format == "#,##0"
+           and ws_w.cell(row=by_label["영업이익"], column=4).number_format == "#,##0")
     except Exception as e:  # noqa: BLE001
         ck(f"xlsx coverage pass crashed: {e}", False)
 
@@ -4311,6 +4488,15 @@ def action_selftest():
            and any("삼성전자" in f and "70500" in f for f in flat))
         ck("docx report: the callout box keeps its words",
            "잠정치" in rep["text"] and "감사 전 수치입니다" in rep["text"])
+
+        # Korean must not depend on Word's fallback: an undeclared East Asian face renders
+        # tofu until the file is reopened (2026-08-12 사용자 실측).
+        with zipfile.ZipFile(p_rep) as z:
+            styles_xml = z.read("word/styles.xml").decode("utf-8")
+        ck("docx: the East Asian face is declared, not left to Word's fallback",
+           f'w:eastAsia="{DOCX_EA_FONT}"' in styles_xml
+           and 'w:eastAsiaTheme=' not in styles_xml
+           and styles_xml.count(f'w:eastAsia="{DOCX_EA_FONT}"') >= 3)
 
         p_rpdf = f"{OUT_DIR}/selftest-report.pdf"
         tmp.append(p_rpdf)
