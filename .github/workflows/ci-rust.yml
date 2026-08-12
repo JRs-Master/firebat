@@ -6,6 +6,13 @@
 # Trigger:
 #   - core / infra / proto / Cargo.* 변경 시만 rust + release-binary 실행
 #   - .github/workflows/ci-rust.yml 자체 변경 시도 trigger (workflow 자체 검증)
+#
+# Known gap (2026-08-12, measured): discipline tests (clock_discipline 등) SCAN system/**,
+# but a system-only push does not trigger this workflow — a module-side violation stays
+# invisible until the next core-touching push, and a red run here also means NO release
+# artifact for the core commits in it. Adding system/** to `paths` would rebuild ~10min per
+# module edit (docs iterated 8× in one evening), so the gap is documented instead; revisit
+# if module-side violations recur.
 
 name: CI Rust
 
