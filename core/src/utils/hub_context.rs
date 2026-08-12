@@ -6,11 +6,15 @@
 //! 동시 visitor race fix (옛 단일 ActiveHubContext static): hub CLI 는 공유 HTTP MCP(:50052)에 붙어
 //! 동시 visitor 가 같은 전역 1개를 덮어쓰면 A 의 도구 호출이 B 의 owner/context 를 읽어 답이 꼬이고
 //! 자료가 새던 버그가 있었다. 닫는 방식:
-//! - ai.rs 가 턴마다 고유 토큰 발급 → HUB_CONTEXTS 맵에 (토큰→컨텍스트) 등록 + 그 토큰을 mcp_token 으로 주입.
+//! - ai.rs 가 턴마다 고유 토큰 발급 → TOKEN_SCOPES 맵에 (토큰→스코프) 등록 + 그 토큰을 mcp_token 으로 주입.
 //! - CLI 가 그 토큰으로 MCP 호출 → handle_rpc 가 토큰으로 컨텍스트를 찾아 요청 단위 task-local(CURRENT_HUB)에 set.
 //! - active_* 는 CURRENT_HUB(task-local)만 읽음 → 동시 요청이 서로 격리.
 //!
 //! ai.rs FC 경로(effective_tools 필터)는 permits_tool 에 allowed_sysmods 를 직접 넘겨 별도 격리(전역 무관).
+//!
+//! The registry is no longer hub-only: an **admin** turn can register a token too, purely to carry
+//! `token → conversation` for the MCP side. `TokenScope` keeps those two kinds apart by type, so a
+//! conversation token has no hub fields for a consumer to misread — see its doc.
 
 use std::collections::BTreeMap;
 use std::sync::RwLock;
@@ -44,10 +48,35 @@ pub struct ActiveHubContext {
     pub conversation_id: Option<String>,
 }
 
-/// 턴별 토큰 → 컨텍스트. ai.rs HubContextGuard::enter 가 등록, guard drop 시 제거.
-/// MCP verify_token 이 등록 여부로 인증, handle_rpc 가 lookup 해서 요청 단위 CURRENT_HUB 에 주입.
+/// What a registered turn token IS — the registry's entry type.
+///
+/// The registry began hub-only, so "registered" and "hub" were the same fact. The moment a chat
+/// turn needed a token of its own — purely to carry `token → conversation` for the MCP side's
+/// conversation-scoped state — those two facts came apart, and every hub consumer downstream still
+/// read the first as the second: `is_tool_visible` would empty the sysmod list against an empty
+/// allowlist, `hub_blocks_tool` would refuse request_secret / execute / schedule_task,
+/// `inject_hub_owner` would stamp `owner = "hub:"` on everything the turn saved, `confine_hub_path`
+/// would jail the workspace, and `pending_or_passthrough` would file the approval card under a hub
+/// scope nobody can approve from.
+///
+/// A derived discriminator (instance_id non-empty = hub) can answer that question, but it leaves
+/// the illegal state representable: an admin conversation token is still a struct with hub fields
+/// on it, one careless constructor away from being read as a visitor. The variant IS the answer —
+/// a `Conversation` entry has no hub fields to carry, so `lookup` cannot hand one to `CURRENT_HUB`
+/// because it is not an `ActiveHubContext` at all.
+enum TokenScope {
+    /// A hub visitor's turn — every hub restriction applies, exactly as before.
+    Hub(ActiveHubContext),
+    /// An admin turn that registered only to bind its conversation. Admin scope everywhere; the
+    /// conversation binding is the entire payload.
+    Conversation { conversation_id: String },
+}
+
+/// 턴별 토큰 → 스코프. ai.rs 의 `HubContextGuard::enter`(hub) / `enter_conversation`(admin 대화)가
+/// 등록하고, guard drop 시 제거. MCP verify_token 이 등록 여부로 인증(두 변종 모두 유효한 자격증명),
+/// handle_rpc 는 `lookup` 이 Hub 를 줄 때만 CURRENT_HUB 에 주입한다.
 /// (BTreeMap::new() 는 const-fn 이라 Lazy/once_cell 의존 없이 static 초기화 가능.)
-static HUB_CONTEXTS: RwLock<BTreeMap<String, ActiveHubContext>> = RwLock::new(BTreeMap::new());
+static TOKEN_SCOPES: RwLock<BTreeMap<String, TokenScope>> = RwLock::new(BTreeMap::new());
 
 tokio::task_local! {
     /// MCP 요청 1건 동안의 hub 컨텍스트 — handle_rpc 가 토큰으로 lookup 해 scope 로 set.
@@ -92,18 +121,18 @@ impl HubContextGuard {
         full_tools: bool,
         conversation_id: Option<String>,
     ) -> (Self, String) {
-        let token = new_turn_token(&instance_id, &session_id);
-        if let Ok(mut map) = HUB_CONTEXTS.write() {
+        let token = new_turn_token("hubturn", &instance_id, &session_id);
+        if let Ok(mut map) = TOKEN_SCOPES.write() {
             map.insert(
                 token.clone(),
-                ActiveHubContext {
+                TokenScope::Hub(ActiveHubContext {
                     allowed_sysmods,
                     instance_id,
                     session_id,
                     allowed_references,
                     full_tools,
                     conversation_id: conversation_id.filter(|s| !s.trim().is_empty()),
-                },
+                }),
             );
         }
         (Self { token: token.clone() }, token)
@@ -112,47 +141,106 @@ impl HubContextGuard {
 
 impl Drop for HubContextGuard {
     fn drop(&mut self) {
-        if let Ok(mut map) = HUB_CONTEXTS.write() {
-            map.remove(&self.token);
-        }
+        deregister(&self.token);
     }
 }
 
-/// 턴별 고유 MCP 토큰 — instance/session + 단조 카운터 + 시각. localhost 내부 상관용(외부 노출 0).
-fn new_turn_token(instance_id: &str, session_id: &str) -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!(
-        "hubturn-{}-{}-{}-{}",
-        instance_id,
-        session_id,
-        crate::utils::time::now_ms(),
-        n
+/// RAII guard for an **admin** turn token — same shape as `HubContextGuard`, no hub payload.
+/// Created by `enter_conversation`; drop deregisters.
+pub struct ConversationTokenGuard {
+    token: String,
+}
+
+impl Drop for ConversationTokenGuard {
+    fn drop(&mut self) {
+        deregister(&self.token);
+    }
+}
+
+/// Register a per-turn token that carries a conversation and NOTHING else.
+///
+/// A CLI model runs its tool calls inside its own MCP loop, so the only thing travelling from the
+/// turn to the tool call is this token. Without a registration the loop authenticates on the
+/// process-wide internal token and lands on a scope key shared by every turn at once; with one it
+/// resolves to this conversation and reaches the state the FC side of the same conversation is
+/// building. The variant guarantees the registration cannot buy hub restrictions on the way.
+pub fn enter_conversation(conversation_id: &str) -> (ConversationTokenGuard, String) {
+    let cid = conversation_id.trim().to_string();
+    // Random component, unlike the hub token: this credential authenticates at **admin** scope, so
+    // its unguessability must not rest on the conversation id being unguessable. A hub token's
+    // worth is bounded by that hub's own restrictions; this one is not.
+    let token = new_turn_token("convturn", &uuid::Uuid::new_v4().simple().to_string(), "");
+    if let Ok(mut map) = TOKEN_SCOPES.write() {
+        map.insert(
+            token.clone(),
+            TokenScope::Conversation {
+                conversation_id: cid,
+            },
+        );
+    }
+    (
+        ConversationTokenGuard {
+            token: token.clone(),
+        },
+        token,
     )
 }
 
-/// 토큰이 등록된 hub 턴 토큰인지 — MCP verify_token 인증용.
+fn deregister(token: &str) {
+    if let Ok(mut map) = TOKEN_SCOPES.write() {
+        map.remove(token);
+    }
+}
+
+/// 턴별 고유 MCP 토큰 — 종류 prefix + 발급자 식별자 + 시각 + 단조 카운터.
+/// localhost 내부 상관용(외부 노출 0). 한 토막만 있으면 그 토막만 (hub 토큰 형태는 옛 그대로).
+fn new_turn_token(kind: &str, a: &str, b: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let who = if b.is_empty() {
+        a.to_string()
+    } else {
+        format!("{a}-{b}")
+    };
+    format!("{}-{}-{}-{}", kind, who, crate::utils::time::now_ms(), n)
+}
+
+/// 토큰이 등록된 턴 토큰인지 — MCP verify_token 인증용.
+/// **두 변종 모두 유효한 자격증명**: admin 대화 토큰도 그 턴 동안 진짜 발급된 토큰이다.
 pub fn is_registered_token(token: &str) -> bool {
-    HUB_CONTEXTS
+    TOKEN_SCOPES
         .read()
         .map(|m| m.contains_key(token))
         .unwrap_or(false)
 }
 
-/// 토큰으로 컨텍스트 조회 — MCP handle_rpc 가 CURRENT_HUB 스코프에 주입.
+/// 토큰으로 **hub** 컨텍스트 조회 — MCP handle_rpc 가 CURRENT_HUB 스코프에 주입.
+///
+/// An admin conversation token yields `None` here by construction, so `CURRENT_HUB` is never set
+/// for one and every hub consumer naturally reads admin. This is the whole type-level fix: there
+/// is no payload to sniff and no ambiguity to fail closed on.
 pub fn lookup(token: &str) -> Option<ActiveHubContext> {
-    HUB_CONTEXTS.read().ok().and_then(|m| m.get(token).cloned())
+    TOKEN_SCOPES.read().ok().and_then(|m| match m.get(token) {
+        Some(TokenScope::Hub(ctx)) => Some(ctx.clone()),
+        _ => None,
+    })
 }
 
-/// token → conversation id. The MCP side holds a turn token and needs the conversation to key
+/// token → conversation id, from EITHER variant — a hub turn's optional binding or an admin
+/// turn's mandatory one. The MCP side holds a turn token and needs the conversation to key
 /// `utils::conversation_scope` on; `None` means the registrant did not know one (or the token is
 /// not registered), and the caller falls back to the token as its scope key.
 pub fn conversation_id_of_token(token: &str) -> Option<String> {
-    HUB_CONTEXTS
+    TOKEN_SCOPES
         .read()
         .ok()
-        .and_then(|m| m.get(token).and_then(|c| c.conversation_id.clone()))
+        .and_then(|m| match m.get(token) {
+            Some(TokenScope::Hub(ctx)) => ctx.conversation_id.clone(),
+            Some(TokenScope::Conversation { conversation_id }) => Some(conversation_id.clone()),
+            None => None,
+        })
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// The current request's conversation id, from the task-local context. `None` = admin / no hub
@@ -711,6 +799,62 @@ mod tests {
 
         // Outside any request scope there is no conversation either.
         assert_eq!(active_conversation_id(), None);
+    }
+
+    /// The type-level fix, stated as behaviour: an admin conversation token is a real credential
+    /// (verify_token accepts it) and yields NO hub context, so `CURRENT_HUB` stays unset and every
+    /// consumer — tool visibility, the sysmod allowlist, the path jail, the deny-list, the
+    /// approval scope — reads admin. Before this, the same registration was a hub payload with an
+    /// empty instance id and had to be told apart by sniffing the fields.
+    #[test]
+    fn a_conversation_token_authenticates_but_is_never_a_hub_context() {
+        let (guard, token) = enter_conversation("conv-77");
+        // A valid credential…
+        assert!(is_registered_token(&token));
+        // …that cannot produce a hub context, so the request scope stays admin.
+        assert!(lookup(&token).is_none());
+        CURRENT_HUB.sync_scope(lookup(&token), || {
+            assert!(!is_hub_context_active());
+            assert!(active_allowed_sysmods().is_none());
+            assert!(active_hub_owner().is_none());
+            assert!(active_allowed_references().is_none());
+            assert!(!active_full_tools());
+            // The gates a hub visitor would hit are all open again.
+            assert!(!is_sysmod_blocked_for_hub("kiwoom-trade"));
+        });
+        drop(guard);
+        assert!(!is_registered_token(&token));
+    }
+
+    /// Conversation resolution answers from both variants — a hub turn's optional binding and an
+    /// admin turn's mandatory one — because `tool_scope_key` asks this one question for every MCP
+    /// request regardless of who is calling.
+    #[test]
+    fn the_conversation_resolves_from_either_variant() {
+        let (g_conv, t_conv) = enter_conversation("conv-a");
+        let (g_hub, t_hub) = HubContextGuard::enter_with_conversation(
+            vec!["notes".to_string()],
+            "inst".to_string(),
+            "sess".to_string(),
+            vec![],
+            false,
+            Some("conv-b".to_string()),
+        );
+        assert_eq!(conversation_id_of_token(&t_conv).as_deref(), Some("conv-a"));
+        assert_eq!(conversation_id_of_token(&t_hub).as_deref(), Some("conv-b"));
+        // …and the hub half keeps its hub context, which the conversation half never gets.
+        assert!(lookup(&t_hub).is_some());
+        assert!(lookup(&t_conv).is_none());
+        drop(g_conv);
+        drop(g_hub);
+        assert_eq!(conversation_id_of_token(&t_conv), None);
+        assert_eq!(conversation_id_of_token(&t_hub), None);
+
+        // A blank id is not an id — it must not become a scope key every admin turn shares.
+        let (g_blank, t_blank) = enter_conversation("   ");
+        assert!(is_registered_token(&t_blank));
+        assert_eq!(conversation_id_of_token(&t_blank), None);
+        drop(g_blank);
     }
 
     #[test]

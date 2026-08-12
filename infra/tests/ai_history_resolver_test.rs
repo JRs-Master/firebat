@@ -3,25 +3,16 @@
 use std::sync::Arc;
 use tempfile::TempDir;
 
-use firebat_core::managers::ai::history_resolver::{CompressHistoryOpts, HistoryResolver};
+use firebat_core::managers::ai::history_resolver::HistoryResolver;
 use firebat_core::managers::conversation::ConversationManager;
-use firebat_core::ports::{IDatabasePort, IEmbedderPort};
+use firebat_core::ports::IDatabasePort;
 use firebat_infra::adapters::database::SqliteDatabaseAdapter;
-use firebat_infra::adapters::embedder::StubEmbedderAdapter;
 
 fn manager() -> (Arc<ConversationManager>, TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let db: Arc<dyn IDatabasePort> =
         Arc::new(SqliteDatabaseAdapter::new(dir.path().join("app.db")).unwrap());
     (Arc::new(ConversationManager::new(db)), dir)
-}
-
-fn manager_with_embedder() -> (Arc<ConversationManager>, TempDir) {
-    let dir = tempfile::tempdir().unwrap();
-    let db: Arc<dyn IDatabasePort> =
-        Arc::new(SqliteDatabaseAdapter::new(dir.path().join("app.db")).unwrap());
-    let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-    (Arc::new(ConversationManager::new(db).with_embedder(embedder)), dir)
 }
 
 #[test]
@@ -78,116 +69,7 @@ fn resolve_includes_lone_system_message() {
     assert!(ctx.contains("init reply"));
 }
 
-// ── compress_history_with_search (벡터 spread 판정) ──────────────────────
-
-#[tokio::test]
-async fn compress_empty_owner_returns_empty() {
-    let (mgr, _dir) = manager();
-    let resolver = HistoryResolver::new(mgr);
-    let r = resolver
-        .compress_history_with_search("query", &CompressHistoryOpts::default())
-        .await;
-    assert!(r.context_summary.is_empty());
-    assert!(r.recent_history.is_empty());
-}
-
-#[tokio::test]
-async fn compress_empty_prompt_returns_empty() {
-    let (mgr, _dir) = manager();
-    let resolver = HistoryResolver::new(mgr);
-    let r = resolver
-        .compress_history_with_search(
-            "",
-            &CompressHistoryOpts {
-                owner: Some("admin".to_string()),
-                ..Default::default()
-            },
-        )
-        .await;
-    assert!(r.context_summary.is_empty());
-}
-
-#[tokio::test]
-async fn compress_no_embedder_returns_empty() {
-    // embedder 미설정한 ConversationManager 의 search_history 는 빈 결과
-    // → spread 판정 stage 도달 X → 빈 contextSummary
-    let (mgr, _dir) = manager();
-    let resolver = HistoryResolver::new(mgr);
-    let r = resolver
-        .compress_history_with_search(
-            "삼성전자",
-            &CompressHistoryOpts {
-                owner: Some("admin".to_string()),
-                ..Default::default()
-            },
-        )
-        .await;
-    assert!(r.context_summary.is_empty());
-}
-
-#[tokio::test]
-async fn compress_with_embedder_low_spread_returns_empty() {
-    // Stub embedder 는 결정론적 hash — 모든 메시지 score 가 비슷 → spread 약함 → 신호 없음
-    let (mgr, _dir) = manager_with_embedder();
-    let messages = serde_json::json!([
-        {"role": "user", "content": "메시지 A"},
-        {"role": "assistant", "content": "응답 A"},
-        {"role": "user", "content": "메시지 B"},
-        {"role": "assistant", "content": "응답 B"},
-        {"role": "user", "content": "메시지 C"},
-    ]);
-    mgr.save("admin", "c1", "test", &messages, None).await.unwrap();
-
-    let resolver = HistoryResolver::new(mgr);
-    let r = resolver
-        .compress_history_with_search(
-            "totally-unrelated-xyz-query",
-            &CompressHistoryOpts {
-                owner: Some("admin".to_string()),
-                current_conv_id: Some("c1".to_string()),
-                ..Default::default()
-            },
-        )
-        .await;
-    // Stub embedder 는 query/passage prefix 차이로 spread 가 우연히 클 수 있어
-    // 결과 검증은 "구조 valid" 정도만 (context_summary 가 string OR 빈 string)
-    if !r.context_summary.is_empty() {
-        assert!(r.context_summary.contains("[Related past conversations"));
-    }
-}
-
-#[tokio::test]
-async fn compress_with_strong_match_returns_context() {
-    // 동일 query 로 같은 메시지 설정한 후 검색 — spread 강함 (자기 매칭 score 1.0 대비 다른 메시지)
-    let (mgr, _dir) = manager_with_embedder();
-    let messages = serde_json::json!([
-        {"role": "user", "content": "삼성전자 1주 매수했습니다"},
-        {"role": "assistant", "content": "75,000원 진입가 좋습니다"},
-        {"role": "user", "content": "랜덤 메시지 X"},
-        {"role": "assistant", "content": "응답 X"},
-        {"role": "user", "content": "다른 주제 Y"},
-    ]);
-    mgr.save("admin", "c1", "test", &messages, None).await.unwrap();
-
-    let resolver = HistoryResolver::new(mgr);
-    let r = resolver
-        .compress_history_with_search(
-            "삼성전자 1주 매수했습니다",
-            &CompressHistoryOpts {
-                owner: Some("admin".to_string()),
-                current_conv_id: Some("c1".to_string()),
-                ..Default::default()
-            },
-        )
-        .await;
-    // spread 가 MIN_SPREAD 이상이면 context 설정. Stub embedder 결정론이라 검증 가능.
-    // 구조 valid 만 검증
-    if !r.context_summary.is_empty() {
-        assert!(r.context_summary.contains("[Related past conversations"));
-    }
-}
-
-// ── resolve (recent N fallback) ──────────────────────────────────────────
+// ── resolve (recent N window) ────────────────────────────────────────────
 
 #[test]
 fn resolve_limits_to_recent_n() {

@@ -184,6 +184,14 @@ pub struct AiResponse {
     /// thinkingText is overwritten by the "답변 완료" label on completion, so the DB loses it).
     #[serde(rename = "finalReasoning", default, skip_serializing_if = "Option::is_none")]
     pub final_reasoning: Option<String>,
+    /// Files this turn ACTUALLY produced — the system file-card channel, `{url, name, contentType?}`
+    /// per entry. Harvested from the tool results themselves (a media record the store really
+    /// wrote), never from the answer's prose, which is the whole point: the frontend renders a card
+    /// per entry, so a turn that wrote a file always shows it and a turn that wrote nothing shows
+    /// nothing whatever the model claims (2026-08-12: a .docx slug renamed to .pdf produced a file
+    /// card for a file that never existed, and the user found out via a 404).
+    #[serde(rename = "producedFiles", default, skip_serializing_if = "Vec::is_empty")]
+    pub produced_files: Vec<serde_json::Value>,
 }
 
 impl AiResponse {
@@ -195,7 +203,7 @@ impl AiResponse {
     /// (mapHubMessages reconstructs the message from data alone). Every key is always
     /// emitted (unlike the struct's skip_serializing_if) so the shape stays stable.
     pub fn message_data_json(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut data = serde_json::json!({
             "blocks": self.blocks,
             "executedActions": self.executed_actions,
             "toolResults": self.tool_results,
@@ -208,7 +216,21 @@ impl AiResponse {
             // 사후 판독: 이 응답을 낸 모델 (똥멍청이 Solar vs 똑똑이 Sonnet 추론 비교 —
             // 옛엔 llm_costs 테이블 조인해야 알았음). reasoningTrace 라운드별 model 과 짝.
             "model": self.model_id,
-        })
+        });
+        // The one key that is NOT always emitted. Every other field above is stable-shape on
+        // purpose (hub reconstructs a message from `data` alone), but an empty `producedFiles`
+        // would rewrite the payload of every file-less message ever stored, and the renderer's
+        // contract is already "absent or non-empty" — a turn that produced nothing must be
+        // indistinguishable from a turn recorded before this channel existed.
+        if !self.produced_files.is_empty() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert(
+                    "producedFiles".to_string(),
+                    serde_json::Value::Array(self.produced_files.clone()),
+                );
+            }
+        }
+        data
     }
 
     /// Wire JSON for a result event: the serialized response plus the canonical `data`
@@ -222,6 +244,26 @@ impl AiResponse {
         }
         v.to_string()
     }
+}
+
+/// The produced-file record carried by a successful tool result, or `None`.
+///
+/// The detection itself lives in `utils::conversation_scope` — the MCP path needs the identical
+/// judgement (a CLI turn's files are produced inside the CLI's own loop, where this harvester
+/// cannot see them), and two copies of "what counts as a file that really exists" is exactly the
+/// drift that produced a card for a file nobody wrote. This wrapper is the wire shape.
+fn produced_file_of_result(result: &serde_json::Value) -> Option<serde_json::Value> {
+    crate::utils::conversation_scope::produced_file_of_result(result).map(produced_file_record)
+}
+
+/// A receipt as the frontend takes it — `{url, name, contentType?}`, one card per entry. An
+/// unknown content type is omitted, not guessed.
+fn produced_file_record(f: crate::utils::conversation_scope::ProducedFile) -> serde_json::Value {
+    let mut rec = serde_json::json!({ "url": f.url, "name": f.name });
+    if let Some(ct) = f.content_type {
+        rec["contentType"] = serde_json::Value::String(ct);
+    }
+    rec
 }
 
 /// AiResponse 안 모든 사용자 노출 string 필드 안 시크릿 / 토큰 마스킹. process_with_tools_opts
@@ -2033,6 +2075,38 @@ impl AiManager {
             effective_opts.mcp_token = Some(token);
             guard
         });
+        // A hosted-MCP turn that has a conversation of its own gets its OWN per-turn token, for
+        // one reason: the model runs its tool calls inside its own MCP loop, and this token is the
+        // ONLY thing that travels from the turn to those calls. On the shared internal token the
+        // server can resolve no conversation, so every such call keys its tool-procedure state by
+        // that one process-wide token — the L1 grounding corpus, the discovery-first gate and the
+        // produced-file receipts pooled across all turns at once, and none of them shared with the
+        // FC side of this same conversation.
+        //
+        // Registered as a conversation scope, which carries the conversation and NOTHING else: by
+        // type it cannot reach a consumer as a hub visitor. The guard lives to the end of this
+        // function (= the turn); drop unregisters the token.
+        //
+        // Skipped when a token is already set (cron's per-turn token above, or one the caller
+        // supplied) and for hub turns, which mint their own hub-scoped token further down. A turn
+        // with no conversation keeps the shared internal token exactly as before.
+        let _conversation_turn_guard = if effective_opts.mcp_token.is_none()
+            && ai_opts.hub_context.is_none()
+            && self.llm.supports_hosted_mcp(&effective_opts)
+        {
+            ai_opts
+                .conversation_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|cid| {
+                    let (guard, token) = crate::utils::hub_context::enter_conversation(cid);
+                    effective_opts.mcp_token = Some(token);
+                    guard
+                })
+        } else {
+            None
+        };
         // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
         // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
         // server 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
@@ -2273,9 +2347,11 @@ impl AiManager {
                     .unwrap_or(false);
                 // Conversation history — ONE path for admin & hub (owner/conv_id injected; no hub/admin branch).
                 // Direct recent-N from the single owner-keyed store (robust, always present — now includes AI
-                // replies via resolve's system→AI fix) + vector recall of relevant older/cross-conv turns as a
-                // supplement. The old split (hub used hub_context.history / admin used the resolver) was the
-                // divergence that made admin lose context when the embedding lagged. owner = the injected id.
+                // replies via resolve's system→AI fix). The old split (hub used hub_context.history / admin
+                // used the resolver) was the divergence that made admin lose context when the embedding
+                // lagged. owner = the injected id. Vector recall of OLDER / cross-conversation turns is not
+                // done here — that is the RetrievalEngine's <RETRIEVED_CONTEXT> below, one channel (see the
+                // note where the second injection used to be).
                 if let Some(hr) = &self.history_resolver {
                     let owner = effective_opts
                         .owner
@@ -2306,21 +2382,20 @@ impl AiManager {
                         history_chars = hist.chars().count();
                         extra_parts.push(hist);
                     }
-                    // 관련 과거 회상 — 벡터(E5) 보강. 빌드 세션 중엔 skip (진행 칩이 prompt 라 헛돔).
-                    if !build_active {
-                        let search = hr
-                            .compress_history_with_search(
-                                prompt,
-                                &history_resolver::CompressHistoryOpts {
-                                    owner: Some(owner.to_string()),
-                                    current_conv_id: conv_id.map(String::from),
-                                },
-                            )
-                            .await;
-                        if !search.context_summary.is_empty() {
-                            extra_parts.push(search.context_summary);
-                        }
-                    }
+                    // Vector recall of related past conversations used to be injected HERE too, as
+                    // a second `[Related past conversations (n)]` block, and the RetrievalEngine
+                    // below emits its own inside <RETRIEVED_CONTEXT> from the same store with the
+                    // same query and the same current-conversation exclusion. Measured on a live
+                    // turn: one past conversation carried in the prompt twice — tokens spent to
+                    // tell the model the same thing in two voices, which is also how a model comes
+                    // to treat one recalled turn as two pieces of evidence.
+                    //
+                    // One channel now, and it is <RETRIEVED_CONTEXT> (canonical: it is where
+                    // recall, facts, events and library already meet, and it is the block the
+                    // prompt documents). Full verbatim Q&A of a recalled conversation is no longer
+                    // ambient — it is one `search_history` / `read_conversation` call away, which
+                    // is the recall ladder's own design and costs nothing on the turns that do not
+                    // need it.
                 }
                 // hub instance 커스텀 지침 — admin 엔 없는 capability(history 아님). 기본 프롬프트(에이전트·plan·
                 // render 규칙)에 **추가** 합성 (hub_context 있을 때만 = 정당한 capability 게이트).
@@ -2759,20 +2834,50 @@ impl AiManager {
         // ToolExchangeEntry 에 tool_calls + tool_results + raw_model_parts 동시 보존 →
         // 다음 turn `opts.tool_exchanges` 로 어댑터에 echo (Gemini thought_signature 보존 필수).
         let mut tool_exchanges: Vec<crate::ports::ToolExchangeEntry> = Vec::new();
-        // L1 grounding corpus (FC path, #8-2) — provenance the model legitimately observed this turn:
-        // the user prompt (user-typed codes) + each successful tool result. A declared opaque param
-        // (e.g. a stock code) must appear here or the call is rejected with a resolve hint. Mirror of
-        // the MCP session accumulator; shares the pure check_grounding helper.
-        let mut observed: Vec<String> = vec![prompt.to_string()];
-        // Discovery-first gate (표준 절차 ②, 2026-08-11 사용자 확정): a multi-action sysmod
-        // call dispatches only after get_action_schema(module, action) ran THIS turn. Familiar
-        // is not exempt — the measured failures (statementType, klines, bars-누락) were all
-        // confident first calls on familiar actions. Keys "module:action", '_'→'-' normalized
-        // (tool names underscore what module names hyphenate).
-        let mut schema_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Files this turn really produced — the system file-card channel (see `produced_files` on
+        // AiResponse and `produced_file_of_result`). Deduped by address: one file the model made
+        // twice (a retry after a timeout) is one card, and the same media url reached through two
+        // different tools is still one file.
+        let mut produced_files: Vec<serde_json::Value> = Vec::new();
+        let mut produced_file_urls: HashSet<String> = HashSet::new();
+        // Tool-procedure state — the L1 grounding corpus (#8-2) and the discovery-first gate
+        // (표준 절차 ②) — now lives in `utils::conversation_scope`, the ONE store both tool paths
+        // read. Scope = the conversation, window = 30 minutes sliding.
+        //
+        // Both used to be turn-local locals right here (`Vec<String>` + `HashSet<String>`), so a
+        // follow-up turn in the same conversation re-resolved identifiers it had already resolved
+        // and re-fetched schemas it had already fetched — while the MCP path, on that same
+        // conversation, remembered both. Same two procedures, two lifetimes, two answers.
+        //
+        // The corpus is provenance the model legitimately observed: the user's prompt (user-typed
+        // codes), an approved plan, and each successful tool result. A declared opaque param (a
+        // stock code) must trace to it or the call is rejected with the resolve hint. The gate
+        // remembers `get_action_schema(module, action)` fetches; the store canonicalises the
+        // module name on both sides, so a schema fetched as `sysmod_kma_weather` unlocks a call
+        // made on `kma-weather`.
+        //
+        // No conversation id (cron agent, internal dispatch) → the key falls back to a per-turn
+        // unique string, which is EXACTLY the old turn-local lifetime. Never a shared fallback:
+        // that would pool one caller's provenance into another caller's gate.
+        let scope_fallback = ai_opts
+            .user_msg_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+        let tool_scope = crate::utils::conversation_scope::scope_key(
+            ai_opts
+                .conversation_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
+            &scope_fallback,
+        );
+        crate::utils::conversation_scope::observe(&tool_scope, prompt);
         if let Some(p) = &plan_provenance {
             // Approved-plan identifiers are legitimate provenance (verified during planning).
-            observed.push(p.clone());
+            crate::utils::conversation_scope::observe(&tool_scope, p);
         }
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
@@ -2806,12 +2911,16 @@ impl AiManager {
         // CLI 의 MCP 호출이 그 토큰으로 자기 컨텍스트만 보게 해 동시 visitor race(답 꼬임/누수) 차단.
         // MCP server handler 가 토큰으로 컨텍스트를 찾아 owner 격리 + allowed_sysmods 검사. Guard drop = 등록 해제.
         let _hub_guard = ai_opts.hub_context.as_ref().map(|ctx| {
-            let (guard, token) = crate::utils::hub_context::HubContextGuard::enter(
+            // Conversation binding included so a hub CLI turn's MCP calls share tool-procedure
+            // state (schema window / grounding corpus / produced-file receipts) with the same
+            // conversation's FC turns, instead of keying by token.
+            let (guard, token) = crate::utils::hub_context::HubContextGuard::enter_with_conversation(
                 ctx.allowed_sysmods.clone(),
                 ctx.instance_id.clone(),
                 ctx.session_id.clone(),
                 ctx.allowed_references.clone(),
                 ctx.full_tools,
+                ai_opts.conversation_id.clone().filter(|c| !c.trim().is_empty()),
             );
             // shared internal token 대신 이 턴 토큰을 주입 — CLI 가 이 토큰으로 MCP 인증·컨텍스트 조회.
             effective_opts.mcp_token = Some(token);
@@ -3063,6 +3172,7 @@ impl AiManager {
                             build_session: None,
                             reasoning_trace: Vec::new(),
                             final_reasoning: None,
+                            produced_files: Vec::new(),
                         }));
                     }
                 }
@@ -3808,12 +3918,14 @@ impl AiManager {
                 // 캐시 재서빙에 "이미 했던 그 호출" 신호를 붙이는 데 쓴다.
                 let seen_before_this_turn = !turn_seen_keys.insert(cache_key.clone());
                 // L1 grounding gate (FC path, #8-2) — a declared opaque param (e.g. a stock code) must
-                // trace to observed provenance (prompt + this turn's tool results). Only sysmods with a
-                // `grounding` config are checked. Rejection → the model gets the resolve hint and retries
-                // (resolve → use). Mirror of the MCP gate; shares the pure check_grounding helper.
+                // trace to observed provenance (the conversation's corpus: prompts + tool results
+                // within the window). Only sysmods with a `grounding` config are checked. Rejection →
+                // the model gets the resolve hint and retries (resolve → use). Same store and same
+                // pure `check_grounding` as the MCP gate.
                 // Discovery-first gate (표준 절차 ②) — a multi-action sysmod call whose action
-                // was not schema-checked THIS turn is rejected before dispatch, familiar or
-                // not. Plan-replay calls are exempt (verified at compile+approve time).
+                // was not schema-checked WITHIN THE WINDOW (this conversation, last 30 minutes —
+                // `utils::conversation_scope`) is rejected before dispatch, familiar or not.
+                // Plan-replay calls are exempt (verified at compile+approve time).
                 // Applicability = the module REALLY has an action selector: a volunteered
                 // `action` arg on a single-action module (stock-lookup) is not a multi-action
                 // call, and its grounding hint says "call directly" — the gate was rejecting
@@ -3828,15 +3940,19 @@ impl AiManager {
                 {
                     match effective_call.arguments.get("action").and_then(|v| v.as_str()) {
                         Some(act) if !act.is_empty() => {
-                            let module = effective_call
-                                .name
-                                .trim_start_matches("sysmod_")
-                                .replace('_', "-");
-                            if schema_seen.contains(&format!("{module}:{act}")) {
+                            // The module name is handed over as the tool spells it; the store
+                            // canonicalises both sides, so no dialect stripping is needed here.
+                            let module = effective_call.name.trim_start_matches("sysmod_");
+                            if crate::utils::conversation_scope::schema_ok(
+                                &tool_scope,
+                                module,
+                                act,
+                            ) {
                                 None
                             } else {
+                                let module = module.replace('_', "-");
                                 Some(format!(
-                                    "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first — in THIS turn — then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
+                                    "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first — it counts for the next 30 minutes of this conversation — then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
                                 ))
                             }
                         }
@@ -3850,7 +3966,7 @@ impl AiManager {
                         Some(g) if !g.is_empty() => crate::utils::grounding::check_grounding(
                             &effective_call.arguments,
                             &g,
-                            &observed,
+                            &crate::utils::conversation_scope::observed_snapshot(&tool_scope),
                         )
                         .err(),
                         _ => None,
@@ -4191,7 +4307,7 @@ impl AiManager {
                     // Cache key inserted so the identical undiscovered call can't re-run;
                     // the model must go get the schema and come back.
                     self.log.info(&format!(
-                        "[AiManager] discovery-first reject (FC): {} — schema not fetched this turn",
+                        "[AiManager] discovery-first reject (FC): {} — schema not fetched in this conversation's window",
                         effective_call.name
                     ));
                     turn_call_set.insert(cache_key.clone());
@@ -4204,7 +4320,7 @@ impl AiManager {
                             "discoveryFirst": true,
                         }),
                         success: false,
-                        error: Some("schema not fetched this turn".to_string()),
+                        error: Some("action schema not fetched yet".to_string()),
                         arguments: call.arguments.clone(),
                     }
                 } else if let Some(hint) = grounding_reject {
@@ -4299,12 +4415,13 @@ impl AiManager {
                                     effective_call.arguments.get("action").and_then(|v| v.as_str())
                                 });
                             if let (Some(m), Some(a)) = (m, a) {
-                                let m = m
-                                    .trim()
-                                    .trim_start_matches("sysmod_")
-                                    .trim_start_matches("sysmod-")
-                                    .replace('_', "-");
-                                schema_seen.insert(format!("{m}:{a}"));
+                                // Canonicalisation lives in the store, so record and check cannot
+                                // speak different module names.
+                                crate::utils::conversation_scope::record_schema(
+                                    &tool_scope,
+                                    m,
+                                    a,
+                                );
                             }
                         }
                         // Whole-turn repeat of a DISCOVERY tool (declared per-turn cap = static
@@ -4523,14 +4640,27 @@ impl AiManager {
                         _ => {}
                     }
                 }
-                // grounding corpus (#8-2) — record successful tool-result text as provenance so a later
-                // call this turn can reference resolved identifiers (e.g. dart lookup → stock code).
+                // grounding corpus (#8-2) — record successful tool-result text as provenance so a
+                // later call in this conversation can reference resolved identifiers (e.g. dart
+                // lookup → stock code). The store char-caps each entry (256 KiB, mirroring the MCP
+                // accumulator), so the whole serialized result goes in as it always did.
                 // F6 — but NOT discovery/schema tools: their output embeds documentation examples
                 // (get_action_schema param docs carry `KRX:005930` etc.), which would let a
                 // fabricated code "ground" against a doc example that merely matched.
                 if action.success && crate::utils::grounding::records_provenance(&call.name) {
                     if let Ok(text) = serde_json::to_string(&action.result) {
-                        observed.push(text);
+                        crate::utils::conversation_scope::observe(&tool_scope, &text);
+                    }
+                }
+                // Produced-file harvest — the receipt the file card is drawn from. Only a SUCCESS
+                // counts: a failed run can still carry a stale `data.media` from a partial result,
+                // and a card is a claim that the file is there.
+                if action.success {
+                    if let Some(rec) = produced_file_of_result(&action.result) {
+                        let url = rec["url"].as_str().unwrap_or_default().to_string();
+                        if produced_file_urls.insert(url) {
+                            produced_files.push(rec);
+                        }
                     }
                 }
                 // Ledger footer on every DISCOVERY-class success — the continuation vehicle.
@@ -5505,6 +5635,20 @@ impl AiManager {
             archive.save_turn(&rec);
         }
 
+        // Files this turn produced inside a CLI's OWN tool loop. The harvest in the round loop
+        // only sees results this manager dispatched, so a CLI turn's .docx never reached the card
+        // channel at all — the MCP path records the receipt against this same conversation scope
+        // as the result passes, and this is where the turn claims it. Draining (not reading) is
+        // what stops the same file getting a second card on the next turn.
+        //
+        // Deduped by address against what the round loop already harvested: a turn that ran tools
+        // both ways gets one card per file.
+        for f in crate::utils::conversation_scope::drain_produced_files(&tool_scope) {
+            if produced_file_urls.insert(f.url.clone()) {
+                produced_files.push(produced_file_record(f));
+            }
+        }
+
         // 시크릿 / 토큰 redaction — 외부 API 응답 본문 안 api-key / customer-id / Bearer / JWT 등이
         // 도구 결과 / 에러 메시지 / 응답 텍스트 안에 그대로 흘러가 사용자 채팅 화면 노출되는 사고
         // 차단. 본 layer 단일 게이트 — 도구별 / sysmod별 개별 mask 작업 불필요.
@@ -5545,6 +5689,7 @@ impl AiManager {
             },
             reasoning_trace,
             final_reasoning,
+            produced_files,
         };
 
         Ok(self.finalize(ai_opts, response))
@@ -6322,5 +6467,89 @@ mod unknown_tool_hint_tests {
         // Better silent than misleading — a fixed list of examples was the old behaviour and it
         // answered a question nobody asked.
         assert!(rank_tool_names("zzz", registry(), 5).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod produced_files_tests {
+    use super::{produced_file_of_result, AiResponse};
+    use serde_json::json;
+
+    /// The generic path: a module declares `_mediaImport`, the framework carries the file into the
+    /// store and leaves `data.media` behind. That record — not the answer's prose — is the card.
+    #[test]
+    fn a_carried_media_record_becomes_a_file_card() {
+        let result = json!({
+            "success": true,
+            "data": {
+                "blocks": 12,
+                "media": {
+                    "slug": "samsung-brief-a1b2",
+                    "url": "/user/media/samsung-brief-a1b2.pdf",
+                    "bytes": 91234,
+                    "contentType": "application/pdf",
+                    "note": "Attach this in your answer as a markdown link"
+                }
+            }
+        });
+        let rec = produced_file_of_result(&result).expect("a stored media record is a produced file");
+        assert_eq!(rec["url"], "/user/media/samsung-brief-a1b2.pdf");
+        assert_eq!(rec["name"], "samsung-brief-a1b2");
+        assert_eq!(rec["contentType"], "application/pdf");
+    }
+
+    /// `filenameHint` is the human name the module chose, so it wins over the slug; with neither,
+    /// the address still names the file. The url is the only field that cannot be missing.
+    #[test]
+    fn the_name_falls_back_but_the_address_never_does() {
+        let hinted = json!({"data": {"media": {
+            "slug": "x-9f", "url": "/user/media/x-9f.xlsx", "filenameHint": "삼성 대시보드"
+        }}});
+        assert_eq!(produced_file_of_result(&hinted).unwrap()["name"], "삼성 대시보드");
+
+        let bare = json!({"data": {"media": {"url": "/user/media/x-9f.xlsx"}}});
+        let rec = produced_file_of_result(&bare).unwrap();
+        assert_eq!(rec["name"], "x-9f.xlsx");
+        assert!(rec.get("contentType").is_none(), "an unknown type is omitted, not guessed");
+    }
+
+    /// Everything that is not a file the media store actually holds must yield nothing — this is
+    /// the whole safety property. A url outside `/user/media/` is a link the model wrote, not a
+    /// receipt: the fabricated-artifact turn (2026-08-12) is exactly a plausible address with no
+    /// file behind it.
+    #[test]
+    fn anything_that_is_not_a_stored_file_yields_nothing() {
+        for shape in [
+            json!({"data": {"media": {"url": "https://example.com/report.pdf"}}}),
+            json!({"data": {"media": {"url": "/user/attachments/report.pdf"}}}),
+            json!({"data": {"media": {"url": "/user/media/"}}}),
+            json!({"data": {"media": {"slug": "no-url"}}}),
+            json!({"data": {"mediaExportError": "media import refused"}}),
+            json!({"data": {}}),
+            json!({"success": true}),
+        ] {
+            assert!(
+                produced_file_of_result(&shape).is_none(),
+                "not a stored file: {shape}"
+            );
+        }
+    }
+
+    /// A turn that produced nothing must persist byte-for-byte what it persisted before this
+    /// channel existed — otherwise every file-less message ever stored reads as a new shape.
+    #[test]
+    fn an_empty_list_is_omitted_from_the_message_payload() {
+        let plain = AiResponse { reply: "안녕하세요".to_string(), ..Default::default() };
+        let data = plain.message_data_json();
+        assert!(data.get("producedFiles").is_none());
+
+        let with_file = AiResponse {
+            produced_files: vec![json!({"url": "/user/media/a.docx", "name": "보고서"})],
+            ..Default::default()
+        };
+        let data = with_file.message_data_json();
+        let files = data["producedFiles"].as_array().expect("present when non-empty");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["url"], "/user/media/a.docx");
     }
 }

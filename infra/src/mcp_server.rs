@@ -12,10 +12,9 @@
 //! 도구 registry: McpToolRegistry trait 으로 추상화. 호출자가 핸들러 + schema 등록.
 //! 초기 핸들러는 ToolManager 의 list/execute 위임 — 추후 sysmod / render_* / pending 등록 확장.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use axum::{
     extract::State,
@@ -28,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
+use firebat_core::managers::ai::sysmod_surface;
 use firebat_core::managers::auth::AuthManager;
 use firebat_core::managers::conversation::{ConversationManager, SearchHistoryOpts};
 use firebat_core::managers::entity::EntityManager;
@@ -42,7 +42,8 @@ use firebat_core::managers::secret::SecretManager;
 use firebat_core::managers::storage::StorageManager;
 use firebat_core::managers::task::{PipelineStep, TaskManager};
 use firebat_core::managers::tool::{ToolListFilter, ToolManager};
-use firebat_core::utils::grounding::{check_grounding, parse_grounding, GroundedParam};
+use firebat_core::utils::conversation_scope;
+use firebat_core::utils::grounding::{check_grounding, GroundedParam};
 use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 // ToolManager / ToolListFilter — 옛 register_render_tools 가 사용했으나 2026-05-14 폐기 후
 // 단일 RenderUnifiedHandler 로 통합 → 이 모듈에서는 직접 import 불필요.
@@ -356,6 +357,13 @@ async fn handle_rpc(
     // hub 턴별 토큰이면 그 컨텍스트를, 아니면 None(admin) 을 이 요청 단위 task-local 에 주입.
     // active_* (inject_hub_owner / hub_blocks_tool / is_tool_visible / SearchLibraryHandler 등)는
     // 전역이 아니라 이 CURRENT_HUB 만 읽으므로 동시 요청이 서로 격리된다.
+    //
+    // A registered token is not automatically a hub token: the registry also holds **admin** turn
+    // tokens, registered purely to carry `token → conversation`. `hub_context::lookup` answers
+    // only for the `Hub` variant, so an admin conversation token yields `None` here by
+    // construction — no payload to sniff, no ambiguity to fail closed on, and no way for one to
+    // reach a consumer as a restricted visitor. The conversation binding is unaffected either way:
+    // `tool_scope_key` reads it from the registry directly, not from this task-local.
     let hub_ctx = firebat_core::utils::hub_context::lookup(&token);
     // A cron turn token resolves back to its job; the request runs inside that job's cron scope.
     // Everything else — internal token, hub token, API token — carries None, so the approval
@@ -497,115 +505,32 @@ fn rpc_error(id: Value, code: i32, message: &str) -> axum::response::Response {
     .into_response()
 }
 
-// ── L1 grounding gate — Fact-Provenance Firewall (plan #8-2) ──────────────────
-// Declared opaque params (e.g. a stock code) must trace to a value the model observed this
-// session — a prior tool result (a real lookup) or the user — else the call is rejected with
-// a resolve hint and the model retries (resolve → use). Per-session corpus of recent
-// tool-result text, TTL + size bounded; "recently observed" is enough to tell a looked-up id
-// from an invented one. Covers the MCP path (both transports); the FC path builds its own
-// corpus inline (Stage 2).
+// ── tool-procedure state — L1 grounding corpus + discovery-first gate ─────────
+//
+// Both procedures need to know what already happened before this call: a declared opaque param
+// (a stock code) must trace to something the model actually observed, and a multi-action sysmod
+// call runs only after `get_action_schema(module, action)` was fetched for that exact pair.
+//
+// This file used to keep both itself — an `observed_store` and a `schema_seen_store`, each a
+// per-session deque with a 30-minute window — while the FC path kept turn-local copies of the
+// same two things. One conversation reached from both transports therefore had two answers to
+// the same question, and every gate had to be planted twice. Both now live in
+// `firebat_core::utils::conversation_scope`, keyed by conversation (falling back to the caller's
+// token), so a CLI turn and the chat turn that spawned it share one state.
 
-const OBSERVED_TTL: Duration = Duration::from_secs(30 * 60);
-const OBSERVED_MAX: usize = 60;
-const OBSERVED_TEXT_CAP: usize = 256 * 1024;
-
-fn observed_store() -> &'static Mutex<HashMap<String, VecDeque<(Instant, String)>>> {
-    static STORE: OnceLock<Mutex<HashMap<String, VecDeque<(Instant, String)>>>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+/// The scope key for one MCP request.
+///
+/// A turn token registered with a conversation resolves to that conversation, so the CLI's own
+/// tool loop lands on the state its chat turn is building. An unbound token — an external MCP
+/// client (Claude Code, Cursor), the stdio pseudo-token — keys by the token exactly as the old
+/// per-session stores did.
+fn tool_scope_key(token: &str) -> String {
+    conversation_scope::scope_key(
+        firebat_core::utils::hub_context::conversation_id_of_token(token).as_deref(),
+        token,
+    )
 }
 
-fn evict_expired(q: &mut VecDeque<(Instant, String)>) {
-    let now = Instant::now();
-    while q
-        .front()
-        .map(|(t, _)| now.duration_since(*t) > OBSERVED_TTL)
-        .unwrap_or(false)
-    {
-        q.pop_front();
-    }
-    while q.len() > OBSERVED_MAX {
-        q.pop_front();
-    }
-}
-
-/// Record a successful tool result's text as provenance for this session.
-fn record_observed(session: &str, text: &str) {
-    // Cap stored text to bound memory. Identifier provenance comes from small lookup/grep
-    // results, not huge numeric payloads, so a cap doesn't lose codes. Truncate on a char
-    // boundary — byte slicing would panic on multi-byte (Korean) content.
-    let capped = if text.len() > OBSERVED_TEXT_CAP {
-        let mut end = OBSERVED_TEXT_CAP;
-        while end > 0 && !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        text[..end].to_string()
-    } else {
-        text.to_string()
-    };
-    let mut store = observed_store().lock().unwrap_or_else(|e| e.into_inner());
-    let q = store.entry(session.to_string()).or_default();
-    q.push_back((Instant::now(), capped));
-    evict_expired(q);
-}
-
-/// Discovery-first gate (표준 절차 ②, 2026-08-11 사용자 확정) — a multi-action sysmod call
-/// runs only after this session fetched get_action_schema(module, action) within the same
-/// window. Familiar is not exempt: the measured failures (statementType, klines) were all
-/// confident first calls on well-known actions. Mirrors the grounding accumulator — the FC
-/// path keeps a turn-local set; MCP sessions (a CLI turn spans many tools/call) reuse the
-/// 30-minute window. Keys "module:action", '_'→'-' normalized.
-fn schema_seen_store() -> &'static Mutex<HashMap<String, VecDeque<(Instant, String)>>> {
-    static STORE: OnceLock<Mutex<HashMap<String, VecDeque<(Instant, String)>>>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Canonical module key for the discovery gate. get_action_schema resolves dialects the
-/// gate's raw-string keys never matched — "sysmod_kma_weather" fetched the schema fine and
-/// the ladder-following call was still rejected four times in one measured cron turn
-/// (2026-08-11). Record and check must speak the same name.
-fn canon_gate_module(m: &str) -> String {
-    let m = m.trim();
-    let m = m.strip_prefix("sysmod_").unwrap_or(m);
-    let m = m.strip_prefix("sysmod-").unwrap_or(m);
-    m.replace('_', "-")
-}
-
-fn record_schema_seen(session: &str, module: &str, action: &str) {
-    let mut store = schema_seen_store().lock().unwrap_or_else(|e| e.into_inner());
-    let q = store.entry(session.to_string()).or_default();
-    q.push_back((Instant::now(), format!("{}:{}", canon_gate_module(module), action)));
-    evict_expired(q);
-}
-
-fn schema_was_seen(session: &str, module: &str, action: &str) -> bool {
-    let key = format!("{}:{}", canon_gate_module(module), action);
-    let mut store = schema_seen_store().lock().unwrap_or_else(|e| e.into_inner());
-    match store.get_mut(session) {
-        Some(q) => {
-            evict_expired(q);
-            q.iter().any(|(_, k)| k == &key)
-        }
-        None => false,
-    }
-}
-
-/// The session's current provenance corpus (recent observed tool-result text).
-fn observed_corpus(session: &str) -> Vec<String> {
-    let mut store = observed_store().lock().unwrap_or_else(|e| e.into_inner());
-    match store.get_mut(session) {
-        Some(q) => {
-            evict_expired(q);
-            q.iter().map(|(_, s)| s.clone()).collect()
-        }
-        None => Vec::new(),
-    }
-}
-
-/// tools/call wrapper — L1 grounding check (before) + provenance record (after). Both MCP
-/// transports (HTTP `handle_rpc` / stdio `dispatch_method`) route through here so the gate
-/// covers both (args-based, per the hub-scope lesson that task-local alone is a no-op on FC).
-/// Returns the handler's result; a grounding rejection surfaces as `Err(hint)` → the existing
-/// isError tool-result path delivers the hint to the model, which retries (resolve → use).
 /// CLI 자기 홈(temp)에 떨어진 이미지 파일 경로를 갤러리 URL 로 치환한다.
 ///
 /// 왜 게이트인가: CLI(codex)가 자기 내장 이미지 도구를 쓰면 **로컬 파일 경로**만 손에 쥐고, 그걸
@@ -701,13 +626,20 @@ fn replace_string_value(v: &mut Value, from: &str, to: &str) {
     }
 }
 
+/// tools/call wrapper — discovery-first gate + L1 grounding check (before) + provenance record
+/// (after). Both MCP transports (HTTP `handle_rpc` / stdio `dispatch_method`) route through here
+/// so the gates cover both. Returns the handler's result; a rejection surfaces as `Err(hint)` →
+/// the existing isError tool-result path delivers the hint to the model, which retries.
 async fn gated_tool_call(
     state: &Arc<McpServerState>,
     name: &str,
     args: Value,
     handler: &Arc<dyn McpToolHandler>,
-    session: &str,
+    token: &str,
 ) -> Result<Value, String> {
+    // Conversation when the token is bound to one, the token itself otherwise — the FC path of
+    // the same conversation writes and reads this same scope.
+    let scope = tool_scope_key(token);
     // CLI 로컬 이미지 경로 → 갤러리 URL (grounding 검사보다 먼저 — 치환된 값이 게이트를 통과해야).
     let args = substitute_cli_local_images(state, args).await;
     // Discovery-first gate — before grounding on purpose: you discover the parameters before
@@ -716,9 +648,9 @@ async fn gated_tool_call(
     if name.starts_with("sysmod_") && state.action_selectors.read().await.contains(name) {
         if let Some(act) = args.get("action").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
             let module = name.trim_start_matches("sysmod_").replace('_', "-");
-            if !schema_was_seen(session, &module, act) {
+            if !conversation_scope::schema_ok(&scope, &module, act) {
                 tracing::info!(target: "discovery", tool = name, action = act,
-                    "discovery-first reject — schema not fetched in this session window");
+                    "discovery-first reject — schema not fetched in this conversation window");
                 return Err(format!(
                     "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first, then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
                 ));
@@ -731,7 +663,7 @@ async fn gated_tool_call(
             args.get("action").and_then(|v| v.as_str()),
         ) {
             // Recorded on the attempt — a wrong id unlocks nothing the model can call.
-            record_schema_seen(session, m, a);
+            conversation_scope::record_schema(&scope, m, a);
         }
     }
     let grounded = {
@@ -740,7 +672,8 @@ async fn gated_tool_call(
     };
     if let Some(grounded) = grounded {
         if !grounded.is_empty() {
-            if let Err(hint) = check_grounding(&args, &grounded, &observed_corpus(session)) {
+            let corpus = conversation_scope::observed_snapshot(&scope);
+            if let Err(hint) = check_grounding(&args, &grounded, &corpus) {
                 tracing::info!(target: "grounding", tool = name, "L1 grounding reject");
                 return Err(hint);
             }
@@ -752,7 +685,30 @@ async fn gated_tool_call(
         // would let a fabricated code "ground" against a doc example (mirror of the FC path).
         if firebat_core::utils::grounding::records_provenance(name) {
             if let Ok(text) = serde_json::to_string(v) {
-                record_observed(session, &text);
+                conversation_scope::observe(&scope, &text);
+            }
+        }
+        // Produced-file receipt — the file card's evidence. A CLI model calls its tools inside its
+        // OWN loop, so the FC harvester in `managers::ai` never sees these results and a CLI turn
+        // that wrote a .docx showed no card at all. Recorded here as the result passes; the turn's
+        // final assembly drains this same scope and merges.
+        //
+        // Only a SUCCESS counts, as on the FC path: a failed run can still carry a stale
+        // `data.media` from a partial result, and a card is a claim that the file is there. A
+        // result with no `success` field is a builtin that does not report one — not a failure.
+        let failed = matches!(v.get("success").and_then(Value::as_bool), Some(false));
+        if !failed {
+            if let Some(f) = conversation_scope::produced_file_of_result(v) {
+                tracing::info!(
+                    target: "media", tool = name, url = %f.url,
+                    "produced file recorded for this conversation's turn"
+                );
+                conversation_scope::record_produced_file(
+                    &scope,
+                    &f.url,
+                    &f.name,
+                    f.content_type.as_deref(),
+                );
             }
         }
     }
@@ -1043,23 +999,28 @@ fn resolve_sysmod_error(module_name: &str, output: &firebat_core::ports::ModuleO
         .unwrap_or_else(|| "module failed".to_string())
 }
 
-/// Thin sysmod tool schema (Part 1-B) — the full input schema is NOT exposed. The model must
-/// discover params via search_module_actions → get_action_schema (the uniform 4-step procedure);
-/// `additionalProperties:true` carries the discovered flat params and module.rs validates them
-/// against config.input. Forces procedure compliance (no direct-call shortcut) + shrinks the
-/// cached tool-list prefix. Mirror of the FC path (dynamic_tools.rs) so both stay uniform.
-fn thin_sysmod_input_schema() -> Value {
-    serde_json::json!({
-        "type": "object",
-        "additionalProperties": true,
-        "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a call whose action schema was not fetched via get_action_schema in this session window is rejected before dispatch — fetch schemas first, several in one round is fine."
-    })
-}
-
-/// Append declared config `tags` to a tool description (module selection = step 1 of the procedure).
-/// Shares the core reader so a mis-typed declaration is reported, not dropped, on both transports.
-fn append_tags(desc: String, module: &str, config: &Value) -> String {
-    firebat_core::utils::module_tags::append_tags(desc, module, config)
+/// The MCP transport's own decoration of the shared surface description.
+///
+/// Everything about *the module* — its text, its declared tags — comes from
+/// `sysmod_surface::build_surface`. What this adds is addressed to the hosted-MCP client, not to
+/// the module: the `[시스템 모듈] ` badge that separates modules from builtin tools in a CLI's flat
+/// tool list, the declared `capability` line, and the required-secrets hint that tells a CLI model
+/// to call `request_secret` instead of failing on a missing key. Keeping them here is deliberate —
+/// they are transport decoration, so planting them in the shared builder would push MCP wording
+/// onto the FC surface.
+fn decorate_for_mcp(surface_description: &str, config: &Value) -> String {
+    let cap = config
+        .get("capability")
+        .and_then(|v| v.as_str())
+        .map(|c| format!("\ncapability: {c}"))
+        .unwrap_or_default();
+    let names = firebat_core::utils::secret_schema::secret_names(config);
+    let secrets = if names.is_empty() {
+        String::new()
+    } else {
+        format!("\n필요 시크릿: {} (미설정 시 request_secret 호출)", names.join(", "))
+    };
+    format!("[시스템 모듈] {surface_description}{cap}{secrets}")
 }
 
 /// Scan system/modules config.json → register ONE thin `sysmod_<name>` tool per module.
@@ -1085,30 +1046,42 @@ pub async fn register_sysmod_tools(
         // action enum inside the now-thin schema, so it is dropped: this also aligns MCP with the
         // FC path (dynamic_tools.rs = one sysmod_<name> per module) so `search_module_actions` →
         // call resolves to a single, predictable tool name on both paths.
-        let tool_name = format!("sysmod_{}", entry.name.replace('-', "_"));
-        let description =
-            append_tags(build_sysmod_description(&entry.name, &config), &entry.name, &config);
-        let input_schema = thin_sysmod_input_schema();
+        // ONE derivation, shared with the FC registry: description base + tags, the thin parameter
+        // schema (discovery-gate notice included), the selector judgment, the L1 grounding
+        // declaration. Everything below is transport decoration layered on top of it.
+        let surface = sysmod_surface::build_surface(&entry.name, &config);
+
+        // MCP-only decoration ①: the published tool NAME. The surface names the tool
+        // `sysmod_<module>` verbatim (`sysmod_kakao-map`); MCP has always published the underscore
+        // form (`sysmod_kakao_map`), which is what every connected client's cached tool list and
+        // every skill doc already says, so the substitution stays and `SysmodToolHandler` keeps the
+        // dispatch-side undo ('_'→'-'). Derived from the surface's module name, never re-read from
+        // the config, so the two names cannot drift apart.
+        let tool_name = format!("sysmod_{}", surface.module.replace('-', "_"));
+
+        // MCP-only decoration ②: the hosted-client badge + capability + required-secrets hint,
+        // appended after the shared description. CLI clients read the secrets line to reach for
+        // request_secret rather than failing on a missing key.
+        let description = decorate_for_mcp(&surface.description, &config);
+
         let tool = McpTool {
             name: tool_name.clone(),
             description,
-            input_schema,
+            input_schema: surface.thin_parameters,
             handler: Arc::new(SysmodToolHandler {
-                module_name: entry.name.clone(),
+                module_name: surface.module.clone(),
                 module_manager: module_manager.clone(),
             }),
         };
         state.register(tool).await;
-        let g = parse_grounding(&config);
-        if !g.is_empty() {
-            state.grounding.write().await.insert(tool_name.clone(), g);
+        if !surface.grounding.is_empty() {
+            state
+                .grounding
+                .write()
+                .await
+                .insert(tool_name.clone(), surface.grounding);
         }
-        if config
-            .get("input")
-            .and_then(|i| i.get("properties"))
-            .and_then(|p| p.get("action"))
-            .is_some()
-        {
+        if surface.has_action_selector {
             state
                 .action_selectors
                 .write()
@@ -1177,26 +1150,6 @@ pub async fn register_render_tools(state: &Arc<McpServerState>) {
         handler: Arc::new(RenderUnifiedHandler),
     };
     state.register(tool).await;
-}
-
-fn build_sysmod_description(name: &str, config: &Value) -> String {
-    let base = config
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or(name)
-        .to_string();
-    let cap = config
-        .get("capability")
-        .and_then(|v| v.as_str())
-        .map(|c| format!("\ncapability: {c}"))
-        .unwrap_or_default();
-    let names = firebat_core::utils::secret_schema::secret_names(config);
-    let secrets = if names.is_empty() {
-        String::new()
-    } else {
-        format!("\n필요 시크릿: {} (미설정 시 request_secret 호출)", names.join(", "))
-    };
-    format!("[시스템 모듈] {base}{cap}{secrets}")
 }
 
 // ════════════════════════════════════════════════════════════════════════════

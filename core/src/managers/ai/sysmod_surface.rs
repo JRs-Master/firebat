@@ -22,8 +22,10 @@
 //! 2. **description** — FC = module description + tags. MCP additionally prefixes
 //!    `[시스템 모듈] ` and appends `capability:` and a required-secrets line
 //!    (`build_sysmod_description`).
-//! 3. **discovery-gate notice** — FC says the schema must have been fetched "THIS TURN"; MCP says
-//!    "in this session window". Same gate, two texts.
+//! 3. **discovery-gate notice** — reconciled in wave 2. The gate is one store now
+//!    (`utils::conversation_scope`: conversation scope, 30-minute sliding window) on both
+//!    transports, so the notice states that window instead of the two texts it used to have
+//!    ("THIS TURN" on FC, "in this session window" on MCP).
 //! 4. **module set** — FC registers `list_system_modules()`, MCP `list_system()` (modules +
 //!    services). That is the caller's loop, not this derivation.
 
@@ -60,7 +62,7 @@ pub fn thin_parameters() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "additionalProperties": true,
-        "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a call whose action schema was not fetched via get_action_schema THIS TURN is rejected before dispatch — fetch schemas first, several in one round is fine."
+        "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a multi-action call whose schema was not fetched via get_action_schema within the last 30 minutes in this conversation is rejected before dispatch — fetch schemas first, several in one round is fine, and a schema you keep using stays valid."
     })
 }
 
@@ -159,8 +161,17 @@ mod tests {
         let desc = s.thin_parameters["description"].as_str().unwrap();
         assert!(desc.contains("get_action_schema"));
         assert!(desc.contains("\"action\""));
-        // The discovery-gate notice travels with the schema (planting it once is the point).
+        // The discovery-gate notice travels with the schema (planting it once is the point), and
+        // it has to state the window the gate actually enforces: conversation + 30 minutes
+        // sliding, both transports. "THIS TURN" was true of neither path after wave 2.
         assert!(desc.contains("rejected before dispatch"));
+        assert!(desc.contains("30 minutes"));
+        assert!(desc.contains("this conversation"));
+        assert!(
+            !desc.contains("THIS TURN"),
+            "the gate is no longer turn-local — a notice that says so trains the model to \
+             re-fetch a schema it already holds"
+        );
     }
 
     #[test]

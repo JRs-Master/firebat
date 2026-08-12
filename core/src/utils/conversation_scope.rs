@@ -61,11 +61,30 @@ pub const SCHEMA_SEEN_MAX: usize = 256;
 /// dropped. Losing a cold scope costs one re-resolve or one re-fetch, never correctness.
 pub const MAX_SCOPES: usize = 200;
 
+/// Produced-file receipts held per scope between the tool call and the turn's final assembly.
+/// A turn that writes more than this many files is not a turn whose 21st card matters; the cap is
+/// here so a runaway loop cannot grow the entry without bound.
+pub const PRODUCED_MAX: usize = 20;
+
+/// A file a tool really produced — the receipt a file card is drawn from.
+///
+/// `url` is the only field that cannot be missing: it is the address the media store actually
+/// wrote, and it is the membership test. `name` and `content_type` are advisory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProducedFile {
+    pub url: String,
+    pub name: String,
+    pub content_type: Option<String>,
+}
+
 struct ScopeState {
     /// Provenance the model legitimately observed, oldest first, each stamped when recorded.
     observed: VecDeque<(Instant, String)>,
     /// `"module:action"` → the stamp of the last fetch *or* the last successful check.
     schema_seen: HashMap<String, Instant>,
+    /// Files produced by tool calls that assemble no answer of their own (the CLI's own MCP
+    /// loop), oldest first, waiting for the turn's final assembly to drain them.
+    produced: VecDeque<(Instant, ProducedFile)>,
     /// Last read or write of this scope — the LRU key for `MAX_SCOPES`.
     last_touch: Instant,
 }
@@ -75,6 +94,7 @@ impl ScopeState {
         Self {
             observed: VecDeque::new(),
             schema_seen: HashMap::new(),
+            produced: VecDeque::new(),
             last_touch: now,
         }
     }
@@ -145,6 +165,80 @@ pub fn observe(scope_key: &str, text: &str) {
 /// straight to `grounding::check_grounding`.
 pub fn observed_snapshot(scope_key: &str) -> Vec<String> {
     observed_snapshot_at(scope_key, Instant::now())
+}
+
+// ── produced files ───────────────────────────────────────────────────────────
+//
+// A CLI model runs its tool calls inside its OWN loop, so the FC harvester in `managers::ai`
+// never sees their results — a CLI turn that wrote a .docx produced no file card at all, while
+// the identical FC turn did. The MCP path records the receipt here as it passes, and the turn's
+// final assembly drains this scope and merges. Same store, same key, same window as the corpus.
+
+/// The produced-file record carried by a successful tool result, or `None`.
+///
+/// One detector for both tool paths, because the second shape becomes the first before anyone
+/// sees it: the docs module returns `data.media` itself, and a module that declares
+/// `data._mediaImport` has it replaced by `data.media` when the framework carries the file into
+/// the media store (`ModuleManager::export_declared_media`). So the address of a file that really
+/// exists is always `data.media.url`, and it is always under `/user/media/` — that prefix is the
+/// membership test, not a guess about the module.
+///
+/// `filenameHint` is preferred when a module supplies one (it is the human name the module chose),
+/// then the slug, then the url's own basename — never the answer's prose.
+pub fn produced_file_of_result(result: &serde_json::Value) -> Option<ProducedFile> {
+    let media = result.get("data")?.get("media")?;
+    let url = media.get("url")?.as_str()?.trim();
+    if !url.starts_with("/user/media/") || url.len() <= "/user/media/".len() {
+        return None;
+    }
+    let name = media
+        .get("filenameHint")
+        .or_else(|| media.get("slug"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| url.rsplit('/').next().unwrap_or(url).to_string());
+    let content_type = media
+        .get("contentType")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    Some(ProducedFile {
+        url: url.to_string(),
+        name,
+        content_type,
+    })
+}
+
+/// Remember a file this scope produced. Deduped by url — one file made twice (a retry after a
+/// timeout) is one card, and the same address reached through two tools is still one file.
+pub fn record_produced_file(
+    scope_key: &str,
+    url: &str,
+    name: &str,
+    content_type: Option<&str>,
+) {
+    record_produced_file_at(
+        scope_key,
+        ProducedFile {
+            url: url.trim().to_string(),
+            name: name.trim().to_string(),
+            content_type: content_type
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+        },
+        Instant::now(),
+    );
+}
+
+/// Take this scope's produced files and clear them — the turn's final assembly claims them once.
+/// Draining rather than reading is what keeps a file from getting a second card on the next turn
+/// of the same conversation.
+pub fn drain_produced_files(scope_key: &str) -> Vec<ProducedFile> {
+    drain_produced_files_at(scope_key, Instant::now())
 }
 
 // ── diagnostics ──────────────────────────────────────────────────────────────
@@ -218,6 +312,36 @@ fn observed_snapshot_at(scope_key: &str, now: Instant) -> Vec<String> {
     state.observed.iter().map(|(_, s)| s.clone()).collect()
 }
 
+fn record_produced_file_at(scope_key: &str, file: ProducedFile, now: Instant) {
+    if file.url.is_empty() {
+        return; // no address = no receipt; a card is a claim that the file is there
+    }
+    let mut map = store();
+    let state = map
+        .entry(scope_key.to_string())
+        .or_insert_with(|| ScopeState::new(now));
+    state.last_touch = now;
+    evict_produced(&mut state.produced, now);
+    if state.produced.iter().any(|(_, f)| f.url == file.url) {
+        return; // deduped by address
+    }
+    state.produced.push_back((now, file));
+    evict_produced(&mut state.produced, now);
+    enforce_scope_cap(&mut map, now);
+}
+
+fn drain_produced_files_at(scope_key: &str, now: Instant) -> Vec<ProducedFile> {
+    let mut map = store();
+    // A drain must not create a scope: every turn's final assembly asks this, including the many
+    // that produced nothing.
+    let Some(state) = map.get_mut(scope_key) else {
+        return Vec::new();
+    };
+    state.last_touch = now;
+    evict_produced(&mut state.produced, now);
+    state.produced.drain(..).map(|(_, f)| f).collect()
+}
+
 /// Cap to `max` bytes, backing up to a char boundary — byte slicing panics on multi-byte content
 /// and this corpus is full of Korean tool output.
 fn truncate_on_char_boundary(text: &str, max: usize) -> String {
@@ -240,6 +364,22 @@ fn evict_observed(q: &mut VecDeque<(Instant, String)>, now: Instant) {
         q.pop_front();
     }
     while q.len() > OBSERVED_MAX {
+        q.pop_front();
+    }
+}
+
+/// Same hygiene for the receipts — expired off the front (the deque is stamp-ordered), then the
+/// size cap. A receipt older than the window belongs to a turn that already ended without
+/// claiming it, and re-attaching it to a later turn would be a card for a file this turn did not
+/// make.
+fn evict_produced(q: &mut VecDeque<(Instant, ProducedFile)>, now: Instant) {
+    while q
+        .front()
+        .is_some_and(|(t, _)| now.saturating_duration_since(*t) > SCOPE_TTL)
+    {
+        q.pop_front();
+    }
+    while q.len() > PRODUCED_MAX {
         q.pop_front();
     }
 }
@@ -491,6 +631,129 @@ mod tests {
         forget(live);
         for i in 0..MAX_SCOPES {
             forget(&key(i));
+        }
+    }
+
+    /// The gap this closes: a CLI turn's tool call produces the file inside the CLI's own loop,
+    /// so the record has to survive until the turn assembles its answer. Drained once — a second
+    /// drain is empty, or the same .docx gets a card on the next turn too.
+    #[test]
+    fn produced_files_are_recorded_once_and_drained_once() {
+        let _g = lock();
+        let k = "test:produced";
+        forget(k);
+
+        record_produced_file(k, "/user/media/a-1.docx", "보고서", Some("application/docx"));
+        // Same address twice — one file, whatever route it arrived by.
+        record_produced_file(k, "/user/media/a-1.docx", "보고서 (재시도)", None);
+        record_produced_file(k, "/user/media/b-2.xlsx", "대시보드", None);
+        // No address = no receipt.
+        record_produced_file(k, "  ", "이름뿐", None);
+
+        let drained = drain_produced_files(k);
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].url, "/user/media/a-1.docx");
+        assert_eq!(drained[0].name, "보고서");
+        assert_eq!(drained[0].content_type.as_deref(), Some("application/docx"));
+        assert_eq!(drained[1].url, "/user/media/b-2.xlsx");
+        assert!(drained[1].content_type.is_none());
+        // Drained means gone.
+        assert!(drain_produced_files(k).is_empty());
+        forget(k);
+    }
+
+    /// A drain on a scope nobody wrote to must not start remembering that caller — every turn's
+    /// final assembly asks, and most turns produced nothing.
+    #[test]
+    fn draining_an_unknown_scope_creates_no_scope() {
+        let _g = lock();
+        let k = "test:produced-none";
+        forget(k);
+        assert!(drain_produced_files(k).is_empty());
+        assert!(!store().contains_key(k));
+    }
+
+    /// The receipts age and cap on the same terms as the corpus: a record older than the window
+    /// belongs to a turn that already ended, and a runaway loop cannot grow the entry unbounded.
+    #[test]
+    fn produced_files_expire_and_are_capped() {
+        let _g = lock();
+        let k = "test:produced-hygiene";
+        forget(k);
+        let t0 = Instant::now();
+
+        record_produced_file_at(k, file("/user/media/old.pdf"), t0);
+        record_produced_file_at(k, file("/user/media/new.pdf"), t0 + mins(20));
+        let left = drain_produced_files_at(k, t0 + mins(40));
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].url, "/user/media/new.pdf");
+
+        for i in 0..(PRODUCED_MAX + 5) {
+            record_produced_file_at(
+                k,
+                file(&format!("/user/media/f{i}.pdf")),
+                t0 + Duration::from_millis(i as u64),
+            );
+        }
+        let capped = drain_produced_files_at(k, t0 + mins(1));
+        assert_eq!(capped.len(), PRODUCED_MAX);
+        // Oldest first, and the 5 that overflowed are the 5 oldest.
+        assert_eq!(capped.first().unwrap().url, "/user/media/f5.pdf");
+        forget(k);
+    }
+
+    fn file(url: &str) -> ProducedFile {
+        ProducedFile {
+            url: url.to_string(),
+            name: url.rsplit('/').next().unwrap_or(url).to_string(),
+            content_type: None,
+        }
+    }
+
+    /// The detector both tool paths now share. A stored media record is a receipt; a plausible
+    /// address with no file behind it is the fabricated-artifact turn (2026-08-12) and must yield
+    /// nothing.
+    #[test]
+    fn the_detector_accepts_only_a_stored_media_record() {
+        let f = produced_file_of_result(&serde_json::json!({
+            "success": true,
+            "data": { "media": {
+                "slug": "samsung-brief-a1b2",
+                "url": "/user/media/samsung-brief-a1b2.pdf",
+                "contentType": "application/pdf"
+            }}
+        }))
+        .expect("a stored media record is a produced file");
+        assert_eq!(f.url, "/user/media/samsung-brief-a1b2.pdf");
+        assert_eq!(f.name, "samsung-brief-a1b2");
+        assert_eq!(f.content_type.as_deref(), Some("application/pdf"));
+
+        // filenameHint wins over slug; with neither, the address names the file.
+        let hinted = produced_file_of_result(&serde_json::json!({"data": {"media": {
+            "slug": "x-9f", "url": "/user/media/x-9f.xlsx", "filenameHint": "삼성 대시보드"
+        }}}))
+        .unwrap();
+        assert_eq!(hinted.name, "삼성 대시보드");
+        let bare = produced_file_of_result(
+            &serde_json::json!({"data": {"media": {"url": "/user/media/x-9f.xlsx"}}}),
+        )
+        .unwrap();
+        assert_eq!(bare.name, "x-9f.xlsx");
+        assert!(bare.content_type.is_none(), "an unknown type is omitted, not guessed");
+
+        for shape in [
+            serde_json::json!({"data": {"media": {"url": "https://example.com/report.pdf"}}}),
+            serde_json::json!({"data": {"media": {"url": "/user/attachments/report.pdf"}}}),
+            serde_json::json!({"data": {"media": {"url": "/user/media/"}}}),
+            serde_json::json!({"data": {"media": {"slug": "no-url"}}}),
+            serde_json::json!({"data": {"mediaExportError": "media import refused"}}),
+            serde_json::json!({"data": {}}),
+            serde_json::json!({"success": true}),
+        ] {
+            assert!(
+                produced_file_of_result(&shape).is_none(),
+                "not a stored file: {shape}"
+            );
         }
     }
 
