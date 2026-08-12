@@ -2890,6 +2890,12 @@ impl AiManager {
         // Accepted no-action finish (banner-stamped below) — must also fail the unattended
         // (cron) verdict: an action-task run that executed nothing is a missed run.
         let mut no_action_final = false;
+        // Pre-cap warning — the round budget closes without notice, so the model plans a next
+        // call that never runs and then narrates it as done (2026-08-12 실측: r19 still planning
+        // make_xlsx, force_final dropped the call, and the final text described a full dashboard
+        // while the tool response it had already read said dashboard:false, kpis:0, charts:0).
+        // One notice attached to the results the model reads at the START of its LAST tool round.
+        let mut precap_warning_used = false;
         // Turn ledger — "cards in hand" harvested from THIS turn's successes: ready-to-call
         // envelopes (schemas fetched), stream/action candidates (top search hits), and receipts
         // of completed actions. A weak model re-derives its plan from scratch every round and,
@@ -4771,6 +4777,46 @@ impl AiManager {
                 }
             }
 
+            // Pre-cap warning. The budget-exhaustion forced final fires at the top of round
+            // `max_turns - 1`, so the last round that can still EXECUTE tools is `max_turns - 2`,
+            // and the results the model reads entering that round are the ones produced here at
+            // `max_turns - 3`. Warning any later reaches the model only after tools are already
+            // closed, which is exactly the silent cut-off this exists to remove.
+            // Pairing-safe by construction: this mutates the payload of a result that already has
+            // its matching call, so the assistant tool_calls ↔ tool results 1:1 mapping every FC
+            // adapter replays stays intact — a synthetic extra result would carry a call_id no
+            // assistant message declares and openai-chat/anthropic would reject the next round.
+            if !force_final
+                && !precap_warning_used
+                && max_turns >= 3
+                && turn == max_turns - 3
+            {
+                if let Some((_, last)) = turn_results
+                    .iter_mut()
+                    .rev()
+                    .find(|(_, r)| r.result.is_object())
+                {
+                    if let serde_json::Value::Object(map) = &mut last.result {
+                        map.insert(
+                            "toolBudget".to_string(),
+                            serde_json::Value::String(
+                                "Tool budget: next round is the last — no further tool calls \
+                                 will execute after it. Finish now and, in the final answer, \
+                                 state plainly what was completed and what was not; do not \
+                                 describe work that did not run."
+                                    .to_string(),
+                            ),
+                        );
+                        precap_warning_used = true;
+                        self.log.warn(&format!(
+                            "[AiManager] pre-cap warning attached at round {} — one tool round left of {}",
+                            turn + 1,
+                            max_turns
+                        ));
+                    }
+                }
+            }
+
             // prior_results 누적 — 다음 turn 의 toolExchanges 로 LLM 에 전달.
             // 학습 로그용 + Gemini thought_signature echo 용 — turn 별 entry 보존.
             let turn_calls: Vec<ToolCall> = turn_results.iter().map(|(c, _)| c.clone()).collect();
@@ -4879,8 +4925,10 @@ impl AiManager {
                      was produced. Using ONLY the tool results you already have, write the \
                      final answer for the user NOW, in their language, as normal text (render \
                      fences allowed). Do not emit tool-call syntax — no tool can run anymore; \
-                     anything not in the results simply did not happen. If something could not \
-                     be completed, say so honestly in one line.{verified}"
+                     anything not in the results simply did not happen. State plainly what was \
+                     completed and what was not; do not describe work that did not run — a \
+                     result that reports empty or zero counts is NOT a completed artifact.\
+                     {verified}"
                 );
                 match self
                     .llm
@@ -5639,10 +5687,22 @@ fn trim_tool_exchanges(exchanges: &mut [crate::ports::ToolExchangeEntry]) -> usi
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             if !is_stub {
-                r.result = serde_json::json!({
-                    "trimmed": true,
-                    "note": "older round result removed to fit the context window — re-fetch if needed",
-                });
+                // The payload leaves, the HANDLE must not. A trimmed result whose data is
+                // still in the sysmod cache used to say only "re-fetch if needed", and the
+                // model re-fetched from the broker while reasoning "the data IS in the cache
+                // though" — it had no key to read with (2026-08-12 실측). Carry the cacheKey
+                // through the stub so recovery is a cache_read, not another round trip.
+                r.result = match crate::ports::extract_cache_key(&r.result) {
+                    Some(key) => serde_json::json!({
+                        "trimmed": true,
+                        "cacheKey": key,
+                        "note": "older round result removed to fit the context window — the full data is still in the result cache; cache_read with cacheKey recovers it (no re-fetch needed)",
+                    }),
+                    None => serde_json::json!({
+                        "trimmed": true,
+                        "note": "older round result removed to fit the context window — re-fetch if needed",
+                    }),
+                };
                 changed = true;
             }
         }
@@ -5656,6 +5716,87 @@ fn trim_tool_exchanges(exchanges: &mut [crate::ports::ToolExchangeEntry]) -> usi
         }
     }
     trimmed
+}
+
+#[cfg(test)]
+mod trim_tool_exchanges_tests {
+    use super::trim_tool_exchanges;
+    use crate::ports::{ToolCall, ToolExchangeEntry, ToolResult};
+
+    fn entry(id: &str, payload: serde_json::Value) -> ToolExchangeEntry {
+        ToolExchangeEntry {
+            tool_calls: vec![ToolCall {
+                id: id.to_string(),
+                name: "sysmod_yfinance".to_string(),
+                arguments: serde_json::json!({}),
+            }],
+            tool_results: vec![ToolResult {
+                call_id: id.to_string(),
+                name: "sysmod_yfinance".to_string(),
+                result: payload,
+                success: true,
+                error: None,
+                arguments: serde_json::Value::Null,
+            }],
+            raw_model_parts: None,
+        }
+    }
+
+    /// A trimmed result whose rows live in the sysmod cache must hand the key forward, or the
+    /// model re-fetches data it already paid for (2026-08-12 실측).
+    #[test]
+    fn a_trimmed_result_keeps_its_cache_key() {
+        // Each entry alone is ~60K chars, so three of them clear the 120K budget and the two
+        // most recent rounds stay untouched — only the oldest is eligible for trimming.
+        let filler = "x".repeat(60_000);
+        let mut exchanges = vec![
+            entry(
+                "call-0",
+                serde_json::json!({
+                    "data": {"_cacheKey": "yf:005930:1d", "rows": filler.clone()},
+                }),
+            ),
+            entry("call-1", serde_json::json!({"rows": filler.clone()})),
+            entry("call-2", serde_json::json!({"rows": filler})),
+        ];
+
+        assert_eq!(trim_tool_exchanges(&mut exchanges), 1);
+        let stub = &exchanges[0].tool_results[0].result;
+        assert_eq!(stub.get("trimmed").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            stub.get("cacheKey").and_then(|v| v.as_str()),
+            Some("yf:005930:1d"),
+            "the stub must carry the key the discarded payload was addressable by"
+        );
+        assert!(
+            stub.get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .contains("cache_read"),
+            "the note must name the recovery call"
+        );
+        // Pairing is preserved: the call side of the round is untouched.
+        assert_eq!(exchanges[0].tool_calls.len(), 1);
+        assert_eq!(exchanges[0].tool_results.len(), 1);
+        // Recent rounds are inviolable.
+        assert!(exchanges[2].tool_results[0].result.get("trimmed").is_none());
+    }
+
+    /// No key = no promise. The stub must not invent a recovery path that does not exist.
+    #[test]
+    fn a_keyless_result_keeps_the_plain_note() {
+        let filler = "x".repeat(60_000);
+        let mut exchanges = vec![
+            entry("call-0", serde_json::json!({"rows": filler.clone()})),
+            entry("call-1", serde_json::json!({"rows": filler.clone()})),
+            entry("call-2", serde_json::json!({"rows": filler})),
+        ];
+
+        assert_eq!(trim_tool_exchanges(&mut exchanges), 1);
+        let stub = &exchanges[0].tool_results[0].result;
+        assert_eq!(stub.get("trimmed").and_then(|v| v.as_bool()), Some(true));
+        assert!(stub.get("cacheKey").is_none());
+    }
 }
 
 /// 텍스트 블록 dedup push — 같은 signature 의 text 가 이미 blocks 에 있으면 스킵.
