@@ -26,6 +26,7 @@ pub mod category_logger;
 pub mod secret_schema;
 pub mod cron_context;
 pub mod hub_context;
+pub mod conversation_scope;
 pub mod grounding;
 pub mod net_guard;
 pub mod timeseries;

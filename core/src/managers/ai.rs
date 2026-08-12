@@ -26,6 +26,9 @@ pub mod component_registry;
 pub mod render_exec;
 pub mod component_search_index;
 pub mod tool_search_index;
+// One derivation of the sysmod_* tool surface, consumed by BOTH transports (FC dynamic_tools +
+// MCP register_sysmod_tools) — a gate planted once instead of twice.
+pub mod sysmod_surface;
 pub mod dynamic_tools;
 // #search-tool — 공용 시맨틱 카탈로그 엔진(S1) + 모듈 액션 카탈로그(S2) + 도메인 카탈로그
 // (skills/templates/pages/media — 수백 개 스케일 대비 시맨틱 발견).

@@ -14,17 +14,22 @@
 //! 4. 그 후 `build_tool_definitions()` (sync ToolManager.list()) 호출 — 정적 + 동적 통합
 //!
 //! Sysmod 활성/비활성 토글 — `ModuleManager.is_enabled(name)` 검사. 비활성 시 unregister.
+//!
+//! What a sysmod tool LOOKS like is not decided here: `ai::sysmod_surface::build_surface` derives
+//! the name, description, thin params, selector judgment and grounding once for both transports.
+//! This registry only owns registration and the lookup state the FC dispatch path reads.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 
+use crate::managers::ai::sysmod_surface::build_surface;
 use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::tool::{make_handler, ToolDefinition, ToolListFilter, ToolManager};
 use crate::ports::InfraResult;
-use crate::utils::grounding::{parse_grounding, GroundedParam};
+use crate::utils::grounding::GroundedParam;
 
 /// Cache TTL — 옛 TS 60초 1:1.
 const CACHE_TTL: Duration = Duration::from_secs(60);
@@ -48,11 +53,8 @@ pub struct DynamicToolRegistry {
     /// uiOnly 선언 — same shape. Actions a model may not call at all (screen actions).
     ui_only: RwLock<HashMap<String, (String, serde_json::Value)>>,
     /// Tools whose module input declares an `action` selector (multi-action modules). The
-    /// discovery-first gate applies to THESE only: a single-action module (stock-lookup) is
-    /// exempt by design, and its grounding hint even says "call directly" — but the gate
-    /// used to key on the CALL carrying an `action` arg, so a model that volunteered
-    /// `action:"lookup"` on the single-action tool was rejected by the very procedure the
-    /// hint told it to skip (2026-08-12 실측).
+    /// discovery-first gate applies to THESE only — the judgment itself lives in
+    /// `sysmod_surface::declares_action_selector`, where both transports read it.
     action_selectors: RwLock<std::collections::HashSet<String>>,
 }
 
@@ -134,46 +136,28 @@ impl DynamicToolRegistry {
             let Some(config) = self.module.get_module_config("system", &entry.name).await else {
                 continue;
             };
-            // Thin tool (Part 1-B): the full input schema is NOT exposed — the model must discover
-            // params via search_module_actions → get_action_schema (the uniform 4-step procedure).
-            // `additionalProperties:true` lets it pass the discovered flat params; module.rs still
-            // validates against config.input. This forces procedure compliance (no direct-call
-            // shortcut) and shrinks the tool-list prefix (cached; peak context ↓, 128K overflow ↓).
-            let parameters = serde_json::json!({
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a call whose action schema was not fetched via get_action_schema THIS TURN is rejected before dispatch — fetch schemas first, several in one round is fine."
-            });
-            let tool_name = format!("sysmod_{}", entry.name);
-            // Description = what the module is (module selection = step 1) + declared `tags`.
-            let description = crate::utils::module_tags::append_tags(
-                entry.description.clone(),
-                &entry.name,
-                &config,
-            );
-            // L1 grounding — config 의 `grounding` 선언을 이 도구에 매핑 (있을 때만). MCP 등록 패턴과 대칭.
-            let g = parse_grounding(&config);
+            // The whole derivation — tool name, description (+tags), thin params, selector
+            // judgment, grounding — comes from the shared builder. The MCP transport reads the same
+            // one, so a gate is planted once instead of twice (that duplication is what let the
+            // selector gate, the key canon and the gate notice each drift).
+            let surface = build_surface(&entry.name, &config);
+            let tool_name = surface.tool_name;
             if let Some(ra) = config.get("requiresApproval") {
                 new_approval.insert(tool_name.clone(), (entry.name.clone(), ra.clone()));
             }
             if let Some(uo) = config.get("uiOnly") {
                 new_ui_only.insert(tool_name.clone(), (entry.name.clone(), uo.clone()));
             }
-            if !g.is_empty() {
-                new_grounding.insert(tool_name.clone(), g);
+            if !surface.grounding.is_empty() {
+                new_grounding.insert(tool_name.clone(), surface.grounding);
             }
-            if config
-                .get("input")
-                .and_then(|i| i.get("properties"))
-                .and_then(|p| p.get("action"))
-                .is_some()
-            {
+            if surface.has_action_selector {
                 new_selectors.insert(tool_name.clone());
             }
             self.tools.register(ToolDefinition {
                 name: tool_name.clone(),
-                description,
-                parameters,
+                description: surface.description,
+                parameters: surface.thin_parameters,
                 source: SOURCE_SYSMOD.to_string(),
             });
             // 핸들러 — ModuleManager.run() 위임. 옛 코드는 주석만 "run() 위임"이고 실제론

@@ -15,7 +15,10 @@
 use std::collections::BTreeMap;
 use std::sync::RwLock;
 
-#[derive(Clone, Debug)]
+/// `Default` is derived so a constructor can name only the fields it cares about
+/// (`..Default::default()`) — the struct has grown optional bindings and enumerating every field
+/// at every literal is how a new one gets a wrong value copy-pasted into it.
+#[derive(Clone, Debug, Default)]
 pub struct ActiveHubContext {
     pub allowed_sysmods: Vec<String>,
     /// owner 주입용 — hosted/MCP 경로(CLI)는 ai.rs FC owner 주입을 우회하므로, MCP dispatch 가
@@ -28,6 +31,17 @@ pub struct ActiveHubContext {
     /// tenant hub = full tools. true = widget deny-list / sysmod-allowlist gate skipped (admin-clone).
     /// false (widget) = restricted. Data isolation stays via owner injection (inject_hub_owner), not this.
     pub full_tools: bool,
+    /// The conversation this turn belongs to, when the caller knows it.
+    ///
+    /// Tool-procedure state (the L1 grounding corpus, the discovery-first gate) is scoped to the
+    /// **conversation**, not the turn and not the session — see `utils::conversation_scope`. The
+    /// MCP path only ever holds a turn token, so unless the conversation travels with the
+    /// registered context, a CLI turn's tool calls cannot find the state its own conversation
+    /// built. This field is that binding, and `conversation_id_of_token` is the lookup.
+    ///
+    /// `None` = not known (stdio, internal dispatch, an older caller), and every consumer must
+    /// fall back to the token as its scope key rather than treating None as a shared scope.
+    pub conversation_id: Option<String>,
 }
 
 /// 턴별 토큰 → 컨텍스트. ai.rs HubContextGuard::enter 가 등록, guard drop 시 제거.
@@ -56,6 +70,28 @@ impl HubContextGuard {
         allowed_references: Vec<String>,
         full_tools: bool,
     ) -> (Self, String) {
+        Self::enter_with_conversation(
+            allowed_sysmods,
+            instance_id,
+            session_id,
+            allowed_references,
+            full_tools,
+            None,
+        )
+    }
+
+    /// Same, plus the conversation this turn belongs to — so the MCP side can resolve
+    /// token → conversation and reach the conversation-scoped tool-procedure state
+    /// (`utils::conversation_scope`) that the FC side of the same conversation is building.
+    /// `enter` is this with `None`, so existing callers are unchanged.
+    pub fn enter_with_conversation(
+        allowed_sysmods: Vec<String>,
+        instance_id: String,
+        session_id: String,
+        allowed_references: Vec<String>,
+        full_tools: bool,
+        conversation_id: Option<String>,
+    ) -> (Self, String) {
         let token = new_turn_token(&instance_id, &session_id);
         if let Ok(mut map) = HUB_CONTEXTS.write() {
             map.insert(
@@ -66,6 +102,7 @@ impl HubContextGuard {
                     session_id,
                     allowed_references,
                     full_tools,
+                    conversation_id: conversation_id.filter(|s| !s.trim().is_empty()),
                 },
             );
         }
@@ -106,6 +143,25 @@ pub fn is_registered_token(token: &str) -> bool {
 /// 토큰으로 컨텍스트 조회 — MCP handle_rpc 가 CURRENT_HUB 스코프에 주입.
 pub fn lookup(token: &str) -> Option<ActiveHubContext> {
     HUB_CONTEXTS.read().ok().and_then(|m| m.get(token).cloned())
+}
+
+/// token → conversation id. The MCP side holds a turn token and needs the conversation to key
+/// `utils::conversation_scope` on; `None` means the registrant did not know one (or the token is
+/// not registered), and the caller falls back to the token as its scope key.
+pub fn conversation_id_of_token(token: &str) -> Option<String> {
+    HUB_CONTEXTS
+        .read()
+        .ok()
+        .and_then(|m| m.get(token).and_then(|c| c.conversation_id.clone()))
+}
+
+/// The current request's conversation id, from the task-local context. `None` = admin / no hub
+/// turn / registrant did not supply one.
+pub fn active_conversation_id() -> Option<String> {
+    CURRENT_HUB
+        .try_with(|c| c.as_ref().and_then(|x| x.conversation_id.clone()))
+        .ok()
+        .flatten()
 }
 
 /// 현재 요청의 hub context 의 (instance_id, session_id) — MCP 경로 owner 주입용. None = admin.
@@ -571,8 +627,7 @@ mod tests {
             allowed_sysmods: vec!["notes".to_string(), "calendar".to_string()],
             instance_id: "inst".to_string(),
             session_id: "sess".to_string(),
-            allowed_references: vec![],
-            full_tools: false,
+            ..Default::default()
         };
         CURRENT_HUB.sync_scope(Some(ctx), || {
             assert!(is_hub_context_active());
@@ -601,6 +656,61 @@ mod tests {
         // drop = 등록 해제.
         assert!(!is_registered_token(&token));
         assert!(lookup(&token).is_none());
+    }
+
+    /// The MCP side holds a turn token and needs the conversation to key its tool-procedure
+    /// state on. A registrant that knows the conversation binds it; one that does not resolves to
+    /// None and the caller falls back to the token — never to a shared scope.
+    #[test]
+    fn a_token_resolves_to_its_conversation_when_one_was_bound() {
+        let (guard, token) = HubContextGuard::enter_with_conversation(
+            vec!["notes".to_string()],
+            "inst".to_string(),
+            "sess".to_string(),
+            vec![],
+            false,
+            Some("conv-42".to_string()),
+        );
+        assert_eq!(conversation_id_of_token(&token).as_deref(), Some("conv-42"));
+        assert_eq!(
+            lookup(&token).unwrap().conversation_id.as_deref(),
+            Some("conv-42")
+        );
+        // Available inside a request scope too, for the dispatch path.
+        CURRENT_HUB.sync_scope(lookup(&token), || {
+            assert_eq!(active_conversation_id().as_deref(), Some("conv-42"));
+        });
+        drop(guard);
+        // Unregistered token = None, same as "not bound" — the caller's fallback covers both.
+        assert_eq!(conversation_id_of_token(&token), None);
+
+        // The existing 5-arg entry point is unchanged: no binding.
+        let (g2, t2) = HubContextGuard::enter(
+            vec!["notes".to_string()],
+            "inst".to_string(),
+            "sess".to_string(),
+            vec![],
+            false,
+        );
+        assert!(is_registered_token(&t2));
+        assert_eq!(conversation_id_of_token(&t2), None);
+        assert!(lookup(&t2).unwrap().conversation_id.is_none());
+        drop(g2);
+
+        // A blank id is not an id — it would otherwise become a scope key every hub turn shares.
+        let (g3, t3) = HubContextGuard::enter_with_conversation(
+            vec![],
+            "inst".to_string(),
+            "sess".to_string(),
+            vec![],
+            false,
+            Some("   ".to_string()),
+        );
+        assert_eq!(conversation_id_of_token(&t3), None);
+        drop(g3);
+
+        // Outside any request scope there is no conversation either.
+        assert_eq!(active_conversation_id(), None);
     }
 
     #[test]
@@ -704,8 +814,8 @@ mod tests {
             allowed_sysmods: vec!["law-search".to_string()],
             instance_id: "inst".to_string(),
             session_id: "sess".to_string(),
-            allowed_references: vec![],
             full_tools: true,
+            ..Default::default()
         };
         CURRENT_HUB.sync_scope(Some(ctx), || {
             assert!(is_hub_context_active());
@@ -720,8 +830,7 @@ mod tests {
             allowed_sysmods: vec!["law-search".to_string()],
             instance_id: "inst".to_string(),
             session_id: "sess".to_string(),
-            allowed_references: vec![],
-            full_tools: false,
+            ..Default::default()
         };
         CURRENT_HUB.sync_scope(Some(widget), || {
             assert!(!active_full_tools());

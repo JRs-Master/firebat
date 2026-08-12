@@ -30,7 +30,7 @@ import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, esc
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, PendingAction, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
-import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, FileCard } from '../../lib/file-card';
+import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, FileCard, ProducedFileStrip, type ProducedFile } from '../../lib/file-card';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
 import { parseSkillMd, skillToMd } from '../../lib/util/skill-md';
@@ -1292,6 +1292,59 @@ function BuildCard({ stages: rawStages, loading, building, buildStatus, liveStep
   );
 }
 
+// ── 산출물(produced files) — 메시지에서 읽어내는 세 조각 ─────────────────────────────────────
+// The backend stamps `producedFiles` on the answering message: the files the turn actually
+// wrote, counted server-side. Everything here is defensive — the field is absent on every
+// message written before it shipped, and those must render byte-identically to today.
+
+/** The turn's produced files. Canonical home = the message `data` payload (Rust
+ *  `message_data_json`), which is what both surfaces persist and replay; a top-level
+ *  `producedFiles` (the shape data_json badges take) is accepted too so neither wiring order
+ *  leaves the strip blank. Anything else → empty, i.e. no strip. */
+function producedFilesOf(msg: Message): ProducedFile[] {
+  const m = msg as unknown as Record<string, unknown>;
+  const data = m.data;
+  const fromData = data && typeof data === 'object' && !Array.isArray(data)
+    ? (data as Record<string, unknown>).producedFiles
+    : undefined;
+  const raw = Array.isArray(fromData) ? fromData : m.producedFiles;
+  return Array.isArray(raw) ? (raw as ProducedFile[]) : [];
+}
+
+/** The markdown this bubble renders — the plain answer plus every text block. Its links are the
+ *  ones the reader can already see, so the strip subtracts them. */
+function messageBodyMarkdown(msg: Message): string {
+  const parts: string[] = [];
+  if (msg.content) parts.push(msg.content);
+  const blocks = (msg.data as { blocks?: unknown[] } | undefined)?.blocks;
+  if (Array.isArray(blocks)) {
+    for (const b of blocks) {
+      const bo = b as Record<string, unknown> | null;
+      if (bo && typeof bo === 'object' && typeof bo.text === 'string') parts.push(bo.text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+/** Addresses the bubble shows outside markdown: a component block's own address prop. An Image
+ *  block pointing at a .xlsx degrades to the very same FileCard (lib/file-card), so a produced
+ *  file delivered that way is already on screen. Shallow by design — a URL buried in chart data
+ *  is not a card, and treating it as one would suppress a real file. */
+function blockFileAddresses(msg: Message): string[] {
+  const blocks = (msg.data as { blocks?: unknown[] } | undefined)?.blocks;
+  if (!Array.isArray(blocks)) return [];
+  const out: string[] = [];
+  for (const b of blocks) {
+    const props = (b as { props?: unknown } | null)?.props;
+    if (!props || typeof props !== 'object') continue;
+    for (const k of ['src', 'url', 'href']) {
+      const v = (props as Record<string, unknown>)[k];
+      if (typeof v === 'string' && v) out.push(v);
+    }
+  }
+  return out;
+}
+
 function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building, buildStatus, liveStep }: {
   msg: Message;
   loading: boolean;
@@ -1438,6 +1491,15 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                   })()}
                 </>
               )}
+
+              {/* 산출물 = 백엔드가 센 것. 본문 아래 고정 스트립 — 모델이 링크를 빠뜨려도 카드가 서고,
+                  아무것도 안 만든 턴은 본문이 뭐라 주장하든 아무것도 안 선다. 본문에 이미 링크된
+                  파일은 카드가 두 번 서지 않게 걸러진다. */}
+              <ProducedFileStrip
+                files={producedFilesOf(msg)}
+                bodyText={messageBodyMarkdown(msg)}
+                shownAddresses={blockFileAddresses(msg)}
+              />
 
               {/* 에러 — 접이식 태그 */}
               {msg.error && !msg.steps?.some(s => s.error) && (
