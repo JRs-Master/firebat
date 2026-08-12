@@ -1361,17 +1361,34 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
 
     ITEM_X = PPTX_MARGIN_IN + 0.95
 
+    RING_D = 0.6           # the numbered ring's diameter
+    RING_TOP = 0.02        # its top, measured from the item row's own top
+
     def item_row(no, g):
         text_w = sw_in - ITEM_X - PPTX_MARGIN_IN
         # The ring is about to draw "01", so the title drops its own "1. " (2026-08-12).
         title = strip_leading_enum(g["title"])
         t_lines = _wrap_lines(title, text_w, chars_per_in=4.5)
         b_lines = sum(_wrap_lines(l, text_w) for l in g["body"])
-        h = max(0.68, 0.3 * t_lines + 0.22 * b_lines + 0.16)
+        # The ring and the title are ONE line of reading, so their centers have to coincide.
+        # A top-anchored title box starting at the row's top put the words half an inch above
+        # the ring's center line (2026-08-12 사용자 스크린샷). The title now gets a box of its
+        # own, at least as tall as the ring, middle-anchored — and the ring is centered on THAT
+        # box, so a title that wraps to three lines stays aligned instead of pushing the ring
+        # off the row. The body keeps flowing under the title's real text, not under the box.
+        title_text_h = 0.3 * t_lines
+        title_h = max(RING_D, title_text_h)
+        title_top_rel = RING_TOP
+        ring_top_rel = RING_TOP + (title_h - RING_D) / 2.0
+        body_top_rel = title_top_rel + title_h / 2.0 + title_text_h / 2.0 + 0.02
+        body_h = 0.22 * b_lines
+        bottom_rel = max(title_top_rel + title_h,
+                         body_top_rel + body_h if b_lines else 0.0)
+        h = max(0.68, bottom_rel + 0.06)
         ensure_room(h + 0.1)
         slide, y = state["slide"], state["y"]
-        ring = add_box(slide, MSO_SHAPE.OVAL, PPTX_MARGIN_IN + 0.02, y + 0.02, 0.6, 0.6,
-                       fill=WHITE, line=BLUE, line_w=2.25)
+        ring = add_box(slide, MSO_SHAPE.OVAL, PPTX_MARGIN_IN + 0.02, y + ring_top_rel,
+                       RING_D, RING_D, fill=WHITE, line=BLUE, line_w=2.25)
         rtf = ring.text_frame
         # Two digits, one line. An autoshape wraps by default and keeps 0.1" insets on each
         # side, so a 0.6" ring offered "01" barely 0.4" of text width and broke it into
@@ -1387,9 +1404,14 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         rp.font.color.rgb = BLUE
         rp.alignment = PP_ALIGN.CENTER
         apply_font(rp)
-        runs = [(title, 13.5, True, SLATE_D)]
-        runs += [(l, 11, False, SLATE_B) for l in g["body"]]
-        add_text(slide, ITEM_X, y, text_w, h, runs)
+        # Zero top/bottom insets: the default 0.05" pair is what a MIDDLE anchor would otherwise
+        # have to share out, and the centers must match to the hundredth of an inch.
+        tb = add_text(slide, ITEM_X, y + title_top_rel, text_w, title_h,
+                      [(title, 13.5, True, SLATE_D)], anchor=MSO_ANCHOR.MIDDLE)
+        tb.text_frame.margin_top = tb.text_frame.margin_bottom = Inches(0)
+        if g["body"]:
+            add_text(slide, ITEM_X, y + body_top_rel, text_w, max(body_h, 0.22),
+                     [(l, 11, False, SLATE_B) for l in g["body"]])
         state["y"] = y + h + 0.12
 
     def pill_columns(items):
@@ -1856,7 +1878,8 @@ def _fit_column_widths(ws, headers, body, ncols):
 
 
 def _write_data_sheet(ws, sh):
-    """Header row + coerced cells + the styling every data sheet gets."""
+    """Header row + coerced cells + the styling every data sheet gets. Returns the number of DATA
+    rows written (the header excluded) — the caller reports it back to the model."""
     from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
@@ -1913,6 +1936,7 @@ def _write_data_sheet(ws, sh):
             v = cells[ci]
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 ws.cell(row=first_row + ri, column=ci + 1).number_format = "#,##0.00"
+    return len(body)
 
 
 # ── xlsx: the ledger (총계정원장) sheet style ──────────────────────────────────────────────────
@@ -1962,7 +1986,10 @@ def _ledger_subtotal_rows(ws, row, spans, numfmt, ncols, box):
 def _write_ledger_sheet(ws, sh):
     """A bookkeeping document: centered title, period line, fully ruled table, live monthly and
     running subtotals. Deliberately NOT a data sheet — no data bars, no color scale. A ledger is
-    something you print and sign, and a heatmap in it reads as a mistake."""
+    something you print and sign, and a heatmap in it reads as a mistake.
+
+    Returns the number of DATA rows written (subtotal bands and the masthead excluded), the same
+    contract as _write_data_sheet, so the caller counts both sheet styles the same way."""
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     headers, rows_in = _table_rows(sh.get("headers"), sh.get("rows"))
@@ -2031,6 +2058,7 @@ def _write_ledger_sheet(ws, sh):
         spans.append((span_start, row - 1))
         row = _ledger_subtotal_rows(ws, row, spans, numfmt, ncols, box)
     _fit_column_widths(ws, headers, body, ncols)
+    return len(body)
 
 
 def _kpi_delta(delta, delta_type=None):
@@ -2260,12 +2288,19 @@ def _resolve_column(headers, ref):
 
 def _style_chart_title(chart, pt=11):
     """openpyxl builds a string title as rich text whose size lives on the paragraph's default
-    run properties — runs carry no rPr of their own, so setting defRPr is the whole job."""
+    run properties — runs carry no rPr of their own, so setting defRPr is the whole job.
+
+    The title also has to be told it does NOT overlay the plot. openpyxl omits <c:overlay>, and an
+    omitted CT_Boolean reads TRUE — the same omission-is-true family as the deleted axes and the
+    grown data labels — so Excel let the caption float INSIDE the plot area, on top of the top
+    gridlines ("매출액·영업이익·당기순이익 (단위: 조원)", 2026-08-12 사용자 스크린샷). overlay=0
+    makes the plot area shrink and hands the title its own band above it."""
     rich = getattr(getattr(chart.title, "tx", None), "rich", None)
     for para in (getattr(rich, "p", None) or []):
         if para.pPr is not None and para.pPr.defRPr is not None:
             para.pPr.defRPr.sz = int(pt * 100)   # hundredths of a point
             para.pPr.defRPr.b = True
+    chart.title.overlay = False
 
 
 def _show_axes(chart):
@@ -2641,13 +2676,19 @@ def _wrapped_row_height(text, span_cols, col_w=XLSX_DASH_COL_W, indent_cols=1,
     """The height a wrapped, merged cell needs, in points.
 
     Chars per line comes from the merged span (span_cols x column width, less the indent), and
-    every explicit newline starts a line of its own."""
+    every explicit newline starts a line of its own.
+
+    The padding is spent SYMMETRICALLY — half above the wrapped text, half below — so the box
+    only reads as even when the cell is also vertically centered; the two are one fix, and the
+    caller that draws the amber note band owes the other half (2026-08-12 사용자 스크린샷: a
+    two-line callout with its words on the ceiling and all the amber underneath)."""
     per_line = max(8.0, span_cols * col_w - indent_cols * col_w)
     lines = 0
     for segment in str(text or "").split("\n"):
         lines += max(1, math.ceil(_display_width(segment) / per_line))
     lines = max(1, min(max_lines, lines))
-    return max(min_h, round(lines * line_pt + pad_pt, 1))
+    half_pad = pad_pt / 2.0
+    return max(min_h, round(half_pad + lines * line_pt + half_pad, 1))
 
 
 def _write_note_band(ws, texts, top_row, width):
@@ -2659,6 +2700,12 @@ def _write_note_band(ws, texts, top_row, width):
     from openpyxl.styles import Alignment, Font, PatternFill
 
     fill = PatternFill("solid", fgColor=XLSX_UNIT_BADGE_BG)
+    # The whole box is the ANCHOR cell's style: openpyxl rewrites every other cell of a merged
+    # range at save time, so styling them is a no-op (measured — their fill and alignment come
+    # back empty). vertical="center" here plus the symmetric height from _wrapped_row_height is
+    # what puts the same amount of amber above the words as below them (2026-08-12 사용자
+    # 스크린샷: the text sat on the box's ceiling).
+    align = Alignment(horizontal="left", vertical="center", indent=1, wrap_text=True)
     row = top_row
     for text in texts:
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=width)
@@ -2668,8 +2715,7 @@ def _write_note_band(ws, texts, top_row, width):
         body = f"※ {text}"
         cell.value = body
         cell.font = Font(size=9, bold=True, color=XLSX_UNIT_BADGE_FG)
-        cell.alignment = Alignment(horizontal="left", vertical="center", indent=1,
-                                   wrap_text=True)
+        cell.alignment = align
         # A merged cell never auto-grows, so the wrap has to be measured (see XLSX_NOTE_*).
         ws.row_dimensions[row].height = _wrapped_row_height(body, width)
         row += 2   # one page row between notes, the spacing every other band uses
@@ -2712,15 +2758,25 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None, callout
         # the grid. Data sheets keep theirs — they are working sheets.
         ws_dash.sheet_view.showGridLines = False
 
-    sheet_map = {}
+    sheet_map, sheet_rows = {}, []
     for i, sh in enumerate(sheets):
         raw = str(sh.get("name") or "")
         name = _sheet_title(raw or f"Sheet{i + 1}", i, used)
         ws_new = wb.create_sheet(title=name)
         if str(sh.get("style") or "").strip().lower() == "ledger":
-            _write_ledger_sheet(ws_new, sh)
+            written = _write_ledger_sheet(ws_new, sh)
         else:
-            _write_data_sheet(ws_new, sh)
+            written = _write_data_sheet(ws_new, sh)
+        # Per-sheet row telemetry, always — the response used to report "sheets: 3" for a file
+        # whose sheets were three bare header rows, so the count that mattered (did the DATA
+        # arrive?) was the one number nobody could see (2026-08-12 판독).
+        sheet_rows.append({"name": name, "rows": written})
+        if written == 0:
+            # Not an error: a headers-only template sheet is a legitimate thing to ask for. But
+            # the far likelier cause is rows that never made it — an unexpanded rowsCacheKey, or
+            # a caller who meant to "add the data next call" — so it is said out loud.
+            notes.append(f"sheet '{name}' has 0 data rows — rows/rowsCacheKey did not arrive; "
+                         "the file is likely incomplete.")
         for key in (raw, raw.strip().lower(), name, name.strip().lower()):
             if key:
                 sheet_map.setdefault(key, name)
@@ -2748,7 +2804,7 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None, callout
         _paint_canvas(ws_dash, row, width)
 
     wb.save(out_path)
-    return {"sheets": len(sheets), "dashboard": ws_dash is not None,
+    return {"sheets": len(sheets), "sheetRows": sheet_rows, "dashboard": ws_dash is not None,
             "kpis": len(kpis), "charts": placed, "notes": notes}
 
 
@@ -3864,6 +3920,11 @@ def action_selftest():
     except Exception as e:  # noqa: BLE001
         ck(f"xlsx round trip crashed: {e}", False)
 
+    def _title_el(xml):
+        """A chart part's OWN <c:title> element. The legend carries an <overlay> of its own, so
+        matching anywhere after "<title>" would pass on the legend's tag alone."""
+        return xml.split("<title>", 1)[1].split("</title>", 1)[0] if "<title>" in xml else ""
+
     # xlsx dashboard genre — KPI cards, native charts fed from cells, conditional formatting
     p_dash = f"{OUT_DIR}/selftest-dash.xlsx"
     tmp.append(p_dash)
@@ -4072,6 +4133,14 @@ def action_selftest():
            and '<showLegendKey val="0"/>' in single)
         wb_v6 = _px6.load_workbook(p_v6)
         ws_v6 = wb_v6["연간"]
+        # 2026-08-12 사용자 스크린샷: the chart's caption sat INSIDE the plot, across the top
+        # gridlines. An omitted <c:overlay> reads TRUE — the same omission-is-true family as the
+        # deleted axes and the grown data labels — so every titled chart says overlay=0 out loud
+        # and Excel reserves a band for the title above the plot. Asserted on every chart path
+        # the module emits: the dashboard bar, the export bar, the combo and the candlestick.
+        ck("xlsx: a chart title never overlays the plot — overlay=0 is explicit",
+           all('<overlay val="0"/>' in _title_el(x)
+               for x in (multi, single, dash_bar_xml, combo_xml[0])))
         ck("xlsx v6: a year column is plain '0' — no thousands comma, no decoration",
            ws_v6.cell(row=2, column=1).number_format == "0"
            and all("A" not in str(rng) for rng in ws_v6.conditional_formatting))
@@ -4082,7 +4151,7 @@ def action_selftest():
         # Ledger genre: a document with live monthly / running subtotals.
         p_lg = f"{OUT_DIR}/selftest-ledger.xlsx"
         tmp.append(p_lg)
-        make_xlsx_file([{
+        res_lg = make_xlsx_file([{
             "name": "원장", "style": "ledger", "docTitle": "총 계 정 원 장",
             "period": "2026.01.01 ~ 2026.02.28", "subtotalBy": "일자",
             "headers": ["일자", "구분", "적요", "입금", "출금"],
@@ -4109,6 +4178,38 @@ def action_selftest():
            not [r for cf in ws_lg.conditional_formatting for r in cf.rules])
         ck("xlsx ledger: the ledger sheet drops the gridlines",
            ws_lg.sheet_view.showGridLines is False)
+
+        # 2026-08-12 판독: a model treated make_xlsx as INCREMENTAL — it sent headers with a
+        # rowsCacheKey the server could not expand, meant to "add the dashboard next call", and
+        # shipped an empty workbook. The response said "sheets: 2" and nothing else, so neither
+        # the model nor the user could see that the rows never arrived. Per-sheet row counts
+        # plus a loud note make the hole visible in the tool result itself.
+        p_empty = f"{OUT_DIR}/selftest-emptyrows.xlsx"
+        tmp.append(p_empty)
+        res_e = make_xlsx_file(
+            [{"name": "일봉", "headers": ["일자", "종가"], "rows": []},
+             {"name": "요약", "headers": ["항목", "값"], "rows": [["매출", 100], ["이익", 20]]}],
+            p_empty, title="빈 시트")
+        ck("xlsx telemetry: every sheet reports its own DATA row count",
+           res_e["sheetRows"] == [{"name": "일봉", "rows": 0}, {"name": "요약", "rows": 2}])
+        ck("xlsx telemetry: a 0-row sheet is named in the notes, and the build still succeeds",
+           any("'일봉'" in n and "0 data rows" in n for n in res_e["notes"])
+           and not any("'요약'" in n for n in res_e["notes"])
+           and os.path.exists(p_empty))
+        res_ea = action_make_xlsx({
+            "title": "일봉 대시보드",
+            "sheets": [{"name": "일봉", "headers": ["일자", "종가"], "rows": []}]})
+        ck("xlsx telemetry: the 0-row note reaches the action's data.notes",
+           res_ea.get("success")
+           and res_ea["data"]["sheetRows"] == [{"name": "일봉", "rows": 0}]
+           and any("0 data rows" in n and "rowsCacheKey" in n
+                   for n in res_ea["data"].get("notes") or []))
+        tmp.append(res_ea["data"]["_mediaImport"]["path"])
+        # A ledger counts its DATA rows too — the subtotal bands it inserts are not data.
+        ck("xlsx telemetry: a normal call reports the rows it really wrote, ledger included",
+           res_d["sheetRows"] == [{"name": "Data", "rows": 3}]
+           and not any("0 data rows" in n for n in res_d["notes"])
+           and res_lg["sheetRows"] == [{"name": "원장", "rows": 4}])
 
         res_b = action_make_xlsx({"title": "실적 대시보드", "blocks": [
             {"type": "metric", "props": {"label": "매출", "value": 1200,
@@ -4356,6 +4457,29 @@ def action_selftest():
         ck("pptx: the numbered ring keeps two digits on ONE line",
            bool(rings) and all(r.text_frame.word_wrap is False
                                and "\n" not in r.text_frame.text for r in rings))
+        # The ring and the title it numbers are one line of reading, so their centers have to
+        # coincide — the title used to start at the row's top and print half an inch above the
+        # ring's center line (2026-08-12 사용자 스크린샷). Geometry, measured in EMU: the title
+        # box is middle-anchored, at least as tall as the ring, and its center is the ring's.
+        from pptx.enum.text import MSO_ANCHOR as _ANCH
+        from pptx.util import Inches as _In
+        pairs = []
+        for r in rings:
+            r_mid = r.top + r.height // 2
+            near = [s for s in num_shapes
+                    if s is not r and s.left > r.left + r.width
+                    and abs(s.top + s.height // 2 - r_mid) < _In(0.5)]
+            if near:
+                # The title is the box whose center is nearest the ring's — the body text under
+                # it shares the same left edge, so "leftmost" would not tell them apart.
+                pairs.append(
+                    (r, min(near, key=lambda s: abs(s.top + s.height // 2 - r_mid))))
+        ck("pptx: the numbered ring and its title share one center line",
+           len(pairs) == len(rings) and bool(pairs)
+           and all(abs((r.top + r.height // 2) - (t.top + t.height // 2)) <= _In(0.01)
+                   and t.height >= r.height
+                   and t.text_frame.vertical_anchor == _ANCH.MIDDLE
+                   for r, t in pairs))
         ck("pptx: a title keeps its own numbering where nothing draws a marker",
            strip_leading_enum("1.5배 성장") == "1.5배 성장"
            and strip_leading_enum("2026. 실적") == "2026. 실적"
@@ -4410,6 +4534,8 @@ def action_selftest():
            XLSX_UP in sxml and XLSX_DOWN in sxml)
         ck("xlsx: volume rides a bar group on the secondary axis",
            "<barChart>" in sxml and '<axId val="200"/>' in sxml)
+        ck("xlsx: the candlestick's title sits above its plot too, not on the candles",
+           '<overlay val="0"/>' in _title_el(sxml))
 
         # Two things Excel gets wrong on its own (2026-08-12 사용자 스크린샷): a merged cell
         # never auto-grows for its own wrap, and a column-wide number format rounds the ratio
@@ -4436,6 +4562,21 @@ def action_selftest():
            and dash_w.row_dimensions[note_rows[0]].height > XLSX_NOTE_MIN_H
            and dash_w.row_dimensions[note_rows[0]].height
            == _wrapped_row_height(f"※ {long_note}", XLSX_DASH_COLS))
+        # The two-line callout in the 2026-08-12 screenshot wore its amber unevenly — text on
+        # the ceiling, the slack all underneath. The box is the anchor cell's style (openpyxl
+        # rewrites the rest of a merged range on save), so that is where the centering is pinned.
+        note_align = dash_w.cell(row=note_rows[0], column=1).alignment
+        ck("xlsx: the callout box centers its text vertically inside the merged range",
+           note_align.vertical == "center" and note_align.wrap_text
+           and note_align.horizontal == "left")
+        # Symmetry is arithmetic, not taste: the box may be no taller than the wrap plus its
+        # padding, or the centered text floats in a field of amber (and an over-tall box was
+        # what made the gap under the words visible in the first place).
+        ck("xlsx: the callout box is exactly its wrap plus one padding, never a line more",
+           dash_w.row_dimensions[note_rows[0]].height
+           <= XLSX_NOTE_MAX_LINES * XLSX_NOTE_LINE_PT + XLSX_NOTE_PAD_PT
+           and _wrapped_row_height("한 줄", XLSX_DASH_COLS, min_h=0)
+           == round(XLSX_NOTE_LINE_PT + XLSX_NOTE_PAD_PT, 1))
         ws_w = wb_w[[n for n in wb_w.sheetnames if n != "Dashboard"][0]]
         by_label = {ws_w.cell(row=r, column=1).value: r
                     for r in range(2, ws_w.max_row + 1)}
