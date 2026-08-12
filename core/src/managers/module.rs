@@ -465,19 +465,6 @@ impl ModuleManager {
         }
         let input_data: &serde_json::Value = unstrung.as_ref().unwrap_or(input_data);
 
-        // A declared array parameter may arrive as a cache key — expand it BEFORE validation, so
-        // `required` still means what it says and the module receives real rows either way.
-        let expanded = match &config {
-            Some(cfg) => crate::utils::cache_inputs::expand(
-                module_name,
-                cfg,
-                input_data,
-                self.sysmod_cache.as_ref(),
-            )?,
-            None => None,
-        };
-        let input_data: &serde_json::Value = expanded.as_ref().unwrap_or(input_data);
-
         // Which registered account this call runs as (config `accounts`). Resolved once, here, so
         // the sandbox, the WS transport and the token provider all receive a concrete id — and so
         // an alias the user never registered fails with the registered ones listed instead of an
@@ -734,15 +721,49 @@ impl ModuleManager {
         // numbers routine). If validation needed the coerced value to pass, the module receives
         // the coerced value: the declared type is the contract, not a hint.
         let mut coerce_notes: Vec<String> = Vec::new();
-        let coerced: Option<serde_json::Value> = config
-            .as_ref()
-            .and_then(|c| c.get("input"))
-            .map(|schema| coerce_for_validation(input_data, schema, &mut coerce_notes))
-            .filter(|c| c != input_data);
+        let coerce = |v: &serde_json::Value, notes: &mut Vec<String>| -> Option<serde_json::Value> {
+            config
+                .as_ref()
+                .and_then(|c| c.get("input"))
+                .map(|schema| coerce_for_validation(v, schema, notes))
+                .filter(|c| c != v)
+        };
+        let coerced: Option<serde_json::Value> = coerce(input_data, &mut coerce_notes);
+        let input_data: &serde_json::Value = coerced.as_ref().unwrap_or(input_data);
+
+        // A declared array parameter may arrive as a cache key — expand it BEFORE validation, so
+        // `required` still means what it says and the module receives real rows either way.
+        //
+        // This runs AFTER coercion, not before: a model under load serialises the whole container
+        // as a JSON *string* (`"sheets": "[{\"name\":…,\"rowsCacheKey\":…}]"`), and nested
+        // expansion (`sheets.*.rows`) cannot traverse a string — it skipped, coercion then parsed
+        // the string into a real array so validation PASSED, and docs received sheets with headers
+        // and no rows: a "successful" empty xlsx the user downloaded (measured 2026-08-12).
+        // Coercion first means expansion always sees real arrays/objects. Nothing between the two
+        // depends on expanded values — the account paths read only the `account`/`market`/`mock`
+        // scalars.
+        let expanded = match &config {
+            Some(cfg) => crate::utils::cache_inputs::expand(
+                module_name,
+                cfg,
+                input_data,
+                self.sysmod_cache.as_ref(),
+            )?,
+            None => None,
+        };
+        let input_data: &serde_json::Value = expanded.as_ref().unwrap_or(input_data);
+
+        // Rows that came out of the cache get the same type treatment as rows sent inline — a
+        // broker's stringified prices in a `bars` slot declared as numbers must not depend on
+        // which channel carried them. Only runs when expansion actually changed something.
+        let coerced_expanded: Option<serde_json::Value> = match &expanded {
+            Some(_) => coerce(input_data, &mut coerce_notes),
+            None => None,
+        };
+        let input_data: &serde_json::Value = coerced_expanded.as_ref().unwrap_or(input_data);
         if !coerce_notes.is_empty() {
             dialect_absorbed(module_name, "coerce", &coerce_notes.join(", "));
         }
-        let input_data: &serde_json::Value = coerced.as_ref().unwrap_or(input_data);
 
         // Container relocation — a module whose schema forbids extra top-level keys and
         // nests its per-action params under ONE declared object slot (kiwoom's `params`)
@@ -3032,6 +3053,18 @@ fn schema_type(schema: &serde_json::Value) -> Option<&str> {
     }
 }
 
+/// Keys the FRAMEWORK owns at the top level, never the caller — so relocation must leave them
+/// where they are even when the module's schema does not declare them.
+///
+/// `account` is the measured case (2026-08-12): account resolution injects a top-level `account`
+/// unconditionally, and the infra sandbox reads it at the TOP level to pick account-scoped
+/// credentials and the oauth token scope. kiwoom declares no `account` property and sets
+/// `additionalProperties: false`, so relocation swept the injected key into `params` — the
+/// credentials went unscoped and every call died with "KIWOOM_APP_KEY 미설정" on an account that
+/// had its keys stored. Validation already tolerates the key (`input_for_validation` strips it
+/// when undeclared), so there is nothing for relocation to rescue here.
+const RELOCATION_RESERVED_KEYS: &[&str] = &["account"];
+
 /// Moves undeclared top-level keys into the module's single declared object container.
 ///
 /// Fires only when the schema says `additionalProperties: false` — the flat call WILL be
@@ -3058,6 +3091,7 @@ fn relocate_unknowns_into_container(
     let unknown: Vec<String> = obj
         .keys()
         .filter(|k| !props.contains_key(*k))
+        .filter(|k| !RELOCATION_RESERVED_KEYS.contains(&k.as_str()))
         .cloned()
         .collect();
     if unknown.is_empty() {
@@ -3254,9 +3288,21 @@ pub fn validate_value(
     value: &serde_json::Value,
     schema: &serde_json::Value,
 ) -> Result<(), String> {
+    // 거대 enum 오류 캡 — "is not one of [275개 전체]" 가 도구 결과로 그대로 가면
+    // 컨텍스트 폭탄 + 약한 모델이 목록에서 아무거나 집는 유도(2026-07-06 실측: 한투 275
+    // 액션 덤프를 보고 주문 API 를 시세용으로 선택). 앞부분만 남기고 char-경계 안전 절단.
+    const MAX_ERR_CHARS: usize = 400;
+    // How much of the offending VALUE may be echoed back. jsonschema's Display leads with the
+    // whole instance, so a 50KB `blocks` array pushed the reason — the only actionable part —
+    // past the downstream truncation and the model never learned WHY the call failed: four
+    // rounds of guessing on make_xlsx (measured 2026-08-12). Reason and path lead; the value
+    // follows as an excerpt.
+    const MAX_VALUE_CHARS: usize = 200;
+
     let compiled = compiled_schema_cached(schema)?;
     if let Err(errors) = compiled.validate(value) {
         let mut suggestion: Option<String> = None;
+        let mut excerpt: Option<String> = None;
         let first = errors
             .into_iter()
             .next()
@@ -3274,24 +3320,53 @@ pub fn validate_value(
                         .unwrap_or_else(|| e.instance.to_string());
                     suggestion = options.as_array().and_then(|arr| nearest_enum_value(&got, arr));
                 }
-                format!("{} (path: {})", e, e.instance_path)
+                // A big instance is lifted OUT of the reason and kept as an excerpt; a small one
+                // stays inline, where jsonschema's own wording reads best ("\"forecast_short\" is
+                // not one of […]"). `strip_prefix` is the whole test: the Display forms that lead
+                // with the instance are exactly the ones worth rewriting, and the ones that do not
+                // (required property, additional properties) are already reason-first.
+                let instance = e.instance.to_string();
+                let reason = if instance.chars().count() > MAX_VALUE_CHARS {
+                    excerpt = Some(instance.chars().take(MAX_VALUE_CHARS).collect());
+                    match e
+                        .to_string()
+                        .strip_prefix(instance.as_str())
+                        .map(|rest| rest.trim_start().to_string())
+                        .filter(|rest| !rest.is_empty())
+                    {
+                        Some(rest) => format!("value {rest}"),
+                        None => e.to_string(),
+                    }
+                } else {
+                    e.to_string()
+                };
+                // The path stays in `(path: …)`: the cacheInputs and broken-JSON hints downstream
+                // find their parameter by substring-matching it.
+                (reason, e.instance_path.to_string())
             })
             .unwrap_or_else(|| {
-                crate::i18n::t("core.error.module.unknown_validation", None, &[])
+                (
+                    crate::i18n::t("core.error.module.unknown_validation", None, &[]),
+                    String::new(),
+                )
             });
-        // 거대 enum 오류 캡 — "is not one of [275개 전체]" 가 도구 결과로 그대로 가면
-        // 컨텍스트 폭탄 + 약한 모델이 목록에서 아무거나 집는 유도(2026-07-06 실측: 한투 275
-        // 액션 덤프를 보고 주문 API 를 시세용으로 선택). 앞부분만 남기고 char-경계 안전 절단.
-        // The did-you-mean is appended AFTER the cap so it always survives the truncation.
-        const MAX_ERR_CHARS: usize = 400;
-        let mut msg = if first.chars().count() > MAX_ERR_CHARS {
-            let capped: String = first.chars().take(MAX_ERR_CHARS).collect();
+        // The cap applies to the REASON only — path, did-you-mean and the value excerpt are
+        // appended afterwards so they always survive the truncation.
+        let (reason, path) = first;
+        let mut msg = if reason.chars().count() > MAX_ERR_CHARS {
+            let capped: String = reason.chars().take(MAX_ERR_CHARS).collect();
             format!("{capped}… (truncated)")
         } else {
-            first
+            reason
         };
+        msg.push_str(&format!(" (path: {path})"));
         if let Some(s) = suggestion {
             msg.push_str(&format!(" — did you mean \"{s}\"?"));
+        }
+        if let Some(v) = excerpt {
+            msg.push_str(&format!(
+                " offending value (first {MAX_VALUE_CHARS} chars): {v}…"
+            ));
         }
         return Err(msg);
     }
@@ -3512,6 +3587,109 @@ mod coercion_tests {
             "type": "object", "properties": {"params": {"type": "object"}}
         });
         assert!(relocate_unknowns_into_container(&input, &open).is_none());
+    }
+
+    /// The framework's own top-level keys are not the caller's flat params. Regression target:
+    /// the injected `account` was swept into kiwoom's `params`, the infra sandbox read nothing at
+    /// the top level, and every call died with "KIWOOM_APP_KEY 미설정" on an account whose keys
+    /// were stored (measured 2026-08-12).
+    #[test]
+    fn framework_reserved_keys_never_relocate() {
+        let sch = serde_json::json!({
+            "type": "object", "additionalProperties": false,
+            "properties": {"action": {"type": "string"}, "params": {"type": "object"}}
+        });
+        let input = serde_json::json!({
+            "action": "ka10081", "account": "키움토스", "base_dt": "20260812"
+        });
+        let (out, moved) = relocate_unknowns_into_container(&input, &sch).unwrap();
+        assert_eq!(out["account"], "키움토스", "account must stay at the top level");
+        assert!(out["params"].get("account").is_none());
+        assert_eq!(out["params"]["base_dt"], "20260812");
+        assert_eq!(moved, "base_dt", "only the real flat params are reported moved");
+        // `account` alone leaves nothing to relocate — no rewrite at all.
+        let only_account = serde_json::json!({"action": "ka10081", "account": "키움토스"});
+        assert!(relocate_unknowns_into_container(&only_account, &sch).is_none());
+    }
+
+    /// Pipeline order: coercion parses stringified containers, THEN cache expansion traverses
+    /// them. Regression target 2026-08-12 — `sheets` arrived as a JSON *string* whose items
+    /// carried `rowsCacheKey`; expansion could not traverse a string, coercion then parsed it
+    /// into a valid but row-less array, and docs shipped a "successful" empty xlsx.
+    #[test]
+    fn stringified_container_is_parsed_before_cache_expansion() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = std::sync::Arc::new(
+            crate::utils::sysmod_cache::SysmodCacheAdapter::new(dir.path().to_path_buf()).unwrap(),
+        );
+        let key = cache
+            .data(
+                "kiwoom",
+                "ka10081:rows",
+                serde_json::json!({}),
+                vec![
+                    serde_json::json!({"d": "2026-08-11", "close": 1}),
+                    serde_json::json!({"d": "2026-08-12", "close": 2}),
+                ],
+                None,
+            )
+            .unwrap();
+        let cfg = serde_json::json!({
+            "cacheInputs": ["sheets.*.rows"],
+            "input": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string"},
+                    "sheets": {"type": "array", "items": {"type": "object"}}
+                }
+            }
+        });
+        let input = serde_json::json!({
+            "action": "make_xlsx",
+            "sheets": format!(
+                r#"[{{"name":"일봉","headers":["d","close"],"rowsCacheKey":"{key}"}}]"#
+            ),
+        });
+        // 1. coercion (what the run path does first)
+        let mut notes = Vec::new();
+        let coerced = coerce_for_validation(&input, cfg.get("input").unwrap(), &mut notes);
+        assert!(coerced["sheets"].is_array(), "JSON string → array");
+        // 2. cache expansion, which can now traverse the list
+        let out = crate::utils::cache_inputs::expand("docs", &cfg, &coerced, Some(&cache))
+            .unwrap()
+            .expect("the nested key must expand");
+        assert_eq!(out["sheets"][0]["rows"].as_array().unwrap().len(), 2);
+        assert_eq!(out["sheets"][0]["rows"][1]["close"], 2);
+        assert!(out["sheets"][0].get("rowsCacheKey").is_none());
+        // The reverse order is exactly the bug: expansion sees a string and skips it.
+        assert!(
+            crate::utils::cache_inputs::expand("docs", &cfg, &input, Some(&cache))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// A validation failure must say WHY before it says WHAT — the reason and the path lead, the
+    /// offending value follows as a capped excerpt. Regression target 2026-08-12: the whole
+    /// `blocks` array came first, the reason was truncated away downstream, and the model spent
+    /// four rounds guessing.
+    #[test]
+    fn validation_error_leads_with_the_reason_and_caps_the_value() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": { "blocks": { "type": "array" } }
+        });
+        let huge: String = "x".repeat(5_000);
+        let err = validate_value(&serde_json::json!({ "blocks": huge }), &sch).unwrap_err();
+        assert!(err.starts_with("value is not of type"), "{err}");
+        assert!(err.contains("(path: /blocks)"), "{err}");
+        assert!(err.contains("offending value (first 200 chars):"), "{err}");
+        assert!(err.chars().count() < 1_000, "the value must not be echoed whole: {}", err.len());
+        // A small value still reads in jsonschema's own wording, with the path appended.
+        let small = validate_value(&serde_json::json!({ "blocks": 7 }), &sch).unwrap_err();
+        assert!(small.starts_with("7 is not of type"), "{small}");
+        assert!(small.contains("(path: /blocks)"), "{small}");
+        assert!(!small.contains("offending value"), "{small}");
     }
 
     /// 스키마에 없는 키·타입 미선언 키는 건드리지 않는다.

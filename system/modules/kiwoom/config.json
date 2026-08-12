@@ -261,6 +261,10 @@
         "type": "object",
         "description": "키움 API request body 의 모든 필드. 각 API 의 필드는 키움 REST API 공식 문서 참조."
       },
+      "account": {
+        "type": "string",
+        "description": "Registered account alias to run as (omit = primary account)."
+      },
       "mock": {
         "type": "boolean",
         "description": "true 면 모의투자 도메인 (mockapi.kiwoom.com) 호출. 기본 false (실전)."

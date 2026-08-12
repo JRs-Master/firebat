@@ -120,6 +120,30 @@ pub fn looks_like_cache_key(s: &str) -> bool {
         && hash.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// The `{"_cacheKey": "<key>"}` dialect: the model hands back the CARRIER object the cached
+/// response advertised instead of the bare key — measured 2026-08-12, fa received
+/// `"statements": [{"_cacheKey": "dart-financialAll:list-…"}]`. Both the bare object and the
+/// one-element list around it arrive (scalar coercion wraps a lone object into a list).
+///
+/// Deliberately strict: the object must carry `_cacheKey` and NOTHING else. An object that also
+/// holds real fields is a record, and a records list whose one row happens to name a key is data,
+/// not an instruction.
+fn carrier_cache_key(v: &serde_json::Value) -> Option<String> {
+    let obj = match v {
+        serde_json::Value::Object(o) => o,
+        serde_json::Value::Array(a) if a.len() == 1 => a[0].as_object()?,
+        _ => return None,
+    };
+    if obj.len() != 1 {
+        return None;
+    }
+    obj.get("_cacheKey")
+        .and_then(|k| k.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 /// Whether a cache key points at a WHOLE-response entry (scalar/autoCacheWhole path — the
 /// action label's field segment is `_`). Such an entry is one object, never a rows list.
 fn is_whole_entry_key(key: &str) -> bool {
@@ -270,6 +294,13 @@ pub fn expand(
                         .map(|s| s.trim().to_string()),
                     _ => None,
                 }
+            })
+            .or_else(|| {
+                // Dialect: the carrier object the cached response advertised, handed back whole —
+                // `"statements": [{"_cacheKey": "…"}]` (measured 2026-08-12). Same intent, same
+                // expansion, same errors: a miss reports `<param>CacheKey` exactly as the normal
+                // path does.
+                obj.get(&param).and_then(carrier_cache_key)
             });
         let Some(key) = key_owned else {
             continue;
@@ -480,6 +511,85 @@ mod tests {
         let err = expand("docs", &cfg, &input, Some(&cache)).unwrap_err();
         assert!(err.contains("WHOLE-response"), "{err}");
         assert!(err.starts_with("sheets[0].rowsCacheKey:"), "{err}");
+    }
+
+    #[test]
+    fn a_carrier_object_in_the_value_slot_is_read_as_the_key() {
+        // `"statements": {"_cacheKey": "…"}` and the one-element list around it — the model
+        // hands back the carrier the cached response advertised (measured 2026-08-12, fa).
+        let (cache, key, _d) = cache_with(vec![
+            serde_json::json!({"a": 1}),
+            serde_json::json!({"a": 2}),
+        ]);
+        let cfg = serde_json::json!({"cacheInputs": ["statements"]});
+        for input in [
+            serde_json::json!({"action": "ratios", "statements": {"_cacheKey": key}}),
+            serde_json::json!({"action": "ratios", "statements": [{"_cacheKey": key}]}),
+        ] {
+            let out = expand("m", &cfg, &input, Some(&cache)).unwrap().unwrap();
+            assert_eq!(out["statements"].as_array().unwrap().len(), 2, "{out}");
+            assert_eq!(out["statements"][1]["a"], 2);
+        }
+    }
+
+    #[test]
+    fn a_carrier_object_with_other_keys_is_data_not_an_instruction() {
+        // A record that merely CARRIES a `_cacheKey` alongside real fields is data. Absorbing it
+        // would throw the real fields away — the one shape this dialect must not touch.
+        let (cache, key, _d) = cache_with(vec![serde_json::json!({"a": 1})]);
+        let cfg = serde_json::json!({"cacheInputs": ["statements"]});
+        for input in [
+            serde_json::json!({"statements": {"_cacheKey": key, "account": "x"}}),
+            serde_json::json!({"statements": [{"_cacheKey": key, "account": "x"}]}),
+            serde_json::json!({"statements": [{"_cacheKey": key}, {"_cacheKey": key}]}),
+            serde_json::json!({"statements": {"_cacheKey": ""}}),
+        ] {
+            assert!(
+                expand("m", &cfg, &input, Some(&cache)).unwrap().is_none(),
+                "absorbed a shape it should have left alone: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_missing_carrier_key_fails_exactly_like_the_normal_path() {
+        let (cache, key, _d) = cache_with(vec![serde_json::json!({"a": 1})]);
+        cache.drop_key(&key).unwrap();
+        let cfg = serde_json::json!({"cacheInputs": ["statements"]});
+        let input = serde_json::json!({"statements": [{"_cacheKey": key}]});
+        let err = expand("m", &cfg, &input, Some(&cache)).unwrap_err();
+        assert!(err.starts_with("statementsCacheKey:"), "{err}");
+    }
+
+    #[test]
+    fn a_container_that_is_still_a_json_string_cannot_be_traversed() {
+        // The contract behind the pipeline order in `module.rs`: expansion runs AFTER scalar
+        // coercion has parsed stringified containers. A raw JSON *string* carries the keys past
+        // every traversal — measured 2026-08-12, a `sheets` string shipped an EMPTY xlsx because
+        // expansion skipped it and coercion later parsed it into a valid, row-less array.
+        let (cache, key, _d) = cache_with(vec![serde_json::json!({"d": "2026-08-12", "c": 3})]);
+        let cfg = serde_json::json!({"cacheInputs": ["sheets.*.rows"]});
+        let as_string = serde_json::json!({
+            "action": "make_xlsx",
+            "sheets": format!(
+                r#"[{{"name":"일봉","headers":["d","c"],"rowsCacheKey":"{key}"}}]"#
+            ),
+        });
+        assert!(
+            expand("m", &cfg, &as_string, Some(&cache)).unwrap().is_none(),
+            "a string is not traversable — the caller must parse first"
+        );
+        // Parsed first (what coercion does), the very same input expands.
+        let parsed: serde_json::Value = serde_json::json!({
+            "action": "make_xlsx",
+            "sheets": serde_json::from_str::<serde_json::Value>(
+                as_string["sheets"].as_str().unwrap()
+            ).unwrap(),
+        });
+        let out = expand("m", &cfg, &parsed, Some(&cache)).unwrap().unwrap();
+        assert_eq!(out["sheets"][0]["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(out["sheets"][0]["rows"][0]["c"], 3);
+        assert!(out["sheets"][0].get("rowsCacheKey").is_none());
     }
 
     #[test]
