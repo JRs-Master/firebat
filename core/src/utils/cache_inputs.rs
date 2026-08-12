@@ -45,6 +45,69 @@ pub fn key_field(param: &str) -> String {
     format!("{param}CacheKey")
 }
 
+/// `bars` → `barsLimit` / `barsRange`: the window vocabulary, borrowed verbatim from the render
+/// layer's `dataLimit` / `dataRange` so a model learns it once and uses it in both places.
+///
+/// Without it the contract was all-or-nothing — "the server expands the FULL cached rows" — and a
+/// turn that wanted the last fifteen candles of five hundred had exactly one way to say so:
+/// hand-typing them. It did, the string broke mid-serialization, and the sheet shipped wrong
+/// (measured 2026-08-12). The occasion is the bug; this removes it.
+pub fn limit_field(param: &str) -> String {
+    format!("{param}Limit")
+}
+
+pub fn range_field(param: &str) -> String {
+    format!("{param}Range")
+}
+
+/// Applies the `<param>Limit` / `<param>Range` siblings sitting next to a cache key.
+///
+/// `holder` is whichever object carries them (the call for a flat param, the list element for a
+/// nested one) and `at` names the slot in errors. A range that matches nothing is an ERROR here,
+/// unlike the render layer which keeps the full set: a chart that blanks is a visible failure,
+/// while a sheet quietly holding all five hundred rows under a "최근 15일" heading is a lie the
+/// reader cannot see. The message names the span that does exist, so the next call is a fix
+/// rather than a guess.
+fn sliced_records(
+    param: &str,
+    holder: &serde_json::Map<String, serde_json::Value>,
+    records: Vec<serde_json::Value>,
+    at: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let limit = holder
+        .get(&limit_field(param))
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    let range = holder.get(&range_field(param)).and_then(|v| v.as_object());
+    let from = range.and_then(|r| r.get("from")).and_then(|v| v.as_str());
+    let to = range.and_then(|r| r.get("to")).and_then(|v| v.as_str());
+    if limit.is_none() && from.is_none() && to.is_none() {
+        return Ok(records);
+    }
+    let total = records.len();
+    let out = crate::utils::row_slice::slice_rows(records, limit, from, to);
+    if out.range_emptied {
+        let span = crate::utils::row_slice::date_span(&out.rows)
+            .map(|(a, b)| format!(" the cached rows span {a}..{b};"))
+            .unwrap_or_default();
+        let (rf, lf) = (range_field(param), limit_field(param));
+        return Err(format!(
+            "{at}: {rf} matched 0 of {total} cached rows —{span} widen it, or drop it and use \
+             {lf}:N for the most-recent N rows."
+        ));
+    }
+    if out.rows.len() != total {
+        tracing::info!(
+            target: "module",
+            slot = %at,
+            kept = out.rows.len(),
+            of = total,
+            "cache key sliced on expansion"
+        );
+    }
+    Ok(out.rows)
+}
+
 /// A `"<list>.*.<field>"` declaration, split. The wildcard is the only supported path element:
 /// "every element of this array may swap `<field>` for `<field>CacheKey`".
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,12 +270,16 @@ fn expand_nested(
                  module-action:rowsField-…), from the call that actually returned the rows."
             ));
         }
+        let slice_keys = (limit_field(&spec.field), range_field(&spec.field));
         let items = out.get_or_insert_with(|| list.to_vec());
         let target = items[i].as_object_mut().expect("checked above");
-        // Inline wins: the element already carries the real rows, so the stray key is just
-        // dropped (leaving it would fail schemas that forbid extra properties).
+        // Inline wins: the element already carries the real rows, so the stray key — and any
+        // window siblings meant for it — are dropped (leaving them would fail schemas that
+        // forbid extra properties). Rows the caller typed are already the slice it wanted.
         if target.get(&spec.field).is_some_and(|v| !v.is_null()) {
             target.remove(&field);
+            target.remove(&slice_keys.0);
+            target.remove(&slice_keys.1);
             continue;
         }
         let Some(cache) = cache else {
@@ -222,9 +289,12 @@ fn expand_nested(
             ));
         };
         let records = read_records(cache, &key, &at)?;
+        let records = sliced_records(&spec.field, item_obj, records, &at)?;
         let count = records.len();
         target.insert(spec.field.clone(), serde_json::Value::Array(records));
         target.remove(&field);
+        target.remove(&slice_keys.0);
+        target.remove(&slice_keys.1);
         tracing::info!(
             target: "module",
             module,
@@ -315,6 +385,7 @@ pub fn expand(
             key,
             &field,
         )?;
+        let records = sliced_records(&param, obj, records, &field)?;
         // A param declared as an OBJECT receives the record itself, not a one-element list.
         // Whole-object caching (`autoCacheWhole`) stores a multi-section response as a single
         // record; wrapping it in an array here would fail the very schema the expansion exists
@@ -329,9 +400,11 @@ pub fn expand(
         };
         let target = out.get_or_insert_with(|| obj.clone());
         target.insert(param.clone(), value);
-        // The key itself is dropped: it is not a declared parameter, so leaving it would fail
-        // validation on modules whose schema forbids extra properties.
+        // The key and its window siblings are dropped: none of them is a declared parameter, so
+        // leaving them would fail validation on modules whose schema forbids extra properties.
         target.remove(&field);
+        target.remove(&limit_field(&param));
+        target.remove(&range_field(&param));
         tracing::info!(
             target: "module",
             module,
@@ -511,6 +584,65 @@ mod tests {
         let err = expand("docs", &cfg, &input, Some(&cache)).unwrap_err();
         assert!(err.contains("WHOLE-response"), "{err}");
         assert!(err.starts_with("sheets[0].rowsCacheKey:"), "{err}");
+    }
+
+    /// The window the model always wanted. Before this it could only say "all of it", so it
+    /// hand-typed the rows instead — and the string it typed broke (2026-08-12).
+    #[test]
+    fn a_window_beside_the_key_slices_on_expansion() {
+        let (cache, key, _d) = cache_with(vec![
+            serde_json::json!({"date": "2026-08-01", "close": 1}),
+            serde_json::json!({"date": "2026-08-02", "close": 2}),
+            serde_json::json!({"date": "2026-08-03", "close": 3}),
+        ]);
+        let cfg = serde_json::json!({"cacheInputs": ["bars"]});
+        let input = serde_json::json!({"barsCacheKey": key, "barsLimit": 2});
+        let out = expand("m", &cfg, &input, Some(&cache)).unwrap().unwrap();
+        let bars = out["bars"].as_array().unwrap();
+        assert_eq!(bars.len(), 2, "the most-recent two");
+        assert_eq!(bars[0]["date"], "2026-08-02");
+        assert!(out.get("barsCacheKey").is_none());
+        assert!(out.get("barsLimit").is_none(), "window siblings are not declared params");
+    }
+
+    /// Nested slots take the window on the element that owns them — one sheet may be windowed
+    /// while its neighbour takes the full table.
+    #[test]
+    fn a_nested_window_slices_only_that_element() {
+        let (cache, key, _d) = cache_with(vec![
+            serde_json::json!({"date": "2026-08-01", "close": 1}),
+            serde_json::json!({"date": "2026-08-02", "close": 2}),
+            serde_json::json!({"date": "2026-08-03", "close": 3}),
+        ]);
+        let cfg = serde_json::json!({"cacheInputs": ["sheets.*.rows"]});
+        let input = serde_json::json!({"sheets": [
+            {"name": "일봉", "rowsCacheKey": key, "rowsLimit": 1},
+            {"name": "전체", "rowsCacheKey": key}
+        ]});
+        let out = expand("m", &cfg, &input, Some(&cache)).unwrap().unwrap();
+        let sheets = out["sheets"].as_array().unwrap();
+        assert_eq!(sheets[0]["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(sheets[0]["rows"][0]["date"], "2026-08-03");
+        assert_eq!(sheets[1]["rows"].as_array().unwrap().len(), 3);
+        assert!(sheets[0].get("rowsLimit").is_none());
+    }
+
+    /// An empty window is refused, not silently widened — a sheet holding every row under a
+    /// windowed heading is a lie the reader cannot see. The error names the span that exists.
+    #[test]
+    fn a_range_that_matches_nothing_names_the_span_that_does() {
+        let (cache, key, _d) = cache_with(vec![
+            serde_json::json!({"date": "2026-08-01", "close": 1}),
+            serde_json::json!({"date": "2026-08-03", "close": 3}),
+        ]);
+        let cfg = serde_json::json!({"cacheInputs": ["bars"]});
+        let input = serde_json::json!({
+            "barsCacheKey": key, "barsRange": {"from": "2027-01-01"}
+        });
+        let err = expand("m", &cfg, &input, Some(&cache)).unwrap_err();
+        assert!(err.contains("barsRange matched 0 of 2"), "{err}");
+        assert!(err.contains("20260801..20260803"), "{err}");
+        assert!(err.contains("barsLimit:N"), "the message names the cheaper next step: {err}");
     }
 
     #[test]

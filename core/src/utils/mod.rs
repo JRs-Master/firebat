@@ -28,6 +28,7 @@ pub mod cron_context;
 pub mod hub_context;
 pub mod conversation_scope;
 pub mod grounding;
+pub mod row_slice;
 pub mod net_guard;
 pub mod timeseries;
 pub mod page_binding;

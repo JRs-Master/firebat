@@ -829,7 +829,7 @@ impl ModuleManager {
                     for param in crate::utils::cache_inputs::declared(config) {
                         if detail.contains(&format!("/{param}")) || detail.contains(&format!("'{param}'")) {
                             msg.push_str(&format!(
-                                " `{param}` accepts `{param}CacheKey` — pass the producing call's `_cacheKey` instead of retyping rows."
+                                " `{param}` accepts `{param}CacheKey` — pass the producing call's `_cacheKey` instead of retyping rows; for part of the table add `{param}Limit`:N (most-recent N) or `{param}Range`:{{from,to}} beside it."
                             ));
                             break;
                         }

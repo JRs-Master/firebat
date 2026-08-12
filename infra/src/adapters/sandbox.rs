@@ -768,8 +768,13 @@ impl ProcessSandboxAdapter {
                     // rounds hunting for the hidden data (07-11 날씨 cron 실측: limit 30→50 재호출
                     // + 검색 4회 후 캡). 에러/응답 = 다음 단계 포인터 원칙.
                     if truncated {
+                        // The window clause is the load-bearing half. Without it the contract read
+                        // as all-or-nothing, so a turn that wanted the last fifteen candles of five
+                        // hundred hand-typed them — and the string broke mid-serialization
+                        // (2026-08-12). Say it where the truncated preview is being read, not in a
+                        // resident rule: the consumption-point channel is the one that lands.
                         meta["next"] = serde_json::Value::String(format!(
-                            "Only {AUTO_CACHE_PREVIEW} of {total_count} rows are shown inline. The FULL data is already cached — page it with cache_read({{cacheKey}}) or filter rows with cache_grep({{cacheKey, field, op, value}}); numeric aggregates via cache_aggregate; to render everything use dataCacheKey in the fence. Do NOT re-call the module with a larger limit — the inline preview stays truncated."
+                            "Only {AUTO_CACHE_PREVIEW} of {total_count} rows are shown inline. The FULL data is already cached — page it with cache_read({{cacheKey}}) or filter rows with cache_grep({{cacheKey, field, op, value}}); numeric aggregates via cache_aggregate; to render everything use dataCacheKey in the fence. Feeding these rows to another module? Pass this key as its <param>CacheKey — and for part of the table add <param>Limit:N (the most-recent N rows) or <param>Range:{{from,to}} beside it. NEVER retype rows to trim them. Do NOT re-call the module with a larger limit — the inline preview stays truncated."
                         ));
                     }
                     obj.insert("_cacheMeta".to_string(), meta);

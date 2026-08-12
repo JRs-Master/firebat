@@ -29,82 +29,32 @@ pub type FenceDataResolver<'a> = &'a dyn Fn(&str) -> Result<Vec<Value>, String>;
 /// scraped page) is referenced. Time-series keep the most recent rows (tail).
 pub(crate) const MAX_INJECT_ROWS: usize = 5000;
 
-/// Digits-only compare key: "2026-04-07" / "20260407" / "2026-04-07T09:30" all order
-/// correctly under prefix-truncated lexicographic compare.
-fn date_compare_key(s: &str) -> String {
-    s.chars().filter(|c| c.is_ascii_digit()).collect()
-}
-
-/// A row's date-ish value as a compare key. Broker/yfinance normalization uses `date`;
-/// small generic fallback list for other cached shapes.
-fn row_date_key(row: &Value) -> Option<String> {
-    for k in ["date", "datetime", "dt", "timestamp"] {
-        match row.get(k) {
-            Some(Value::String(s)) if !s.is_empty() => return Some(date_compare_key(s)),
-            Some(Value::Number(n)) => return Some(format!("{:020}", n.as_i64().unwrap_or(0))),
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Prefix-truncated compare — "202604070930" vs bound "20260407" compares on the first
-/// 8 digits, so a `to` date includes that whole day.
-fn date_in_bound(row_key: &str, bound: &str, is_from: bool) -> bool {
-    let n = bound.len().min(row_key.len());
-    let prefix = &row_key[..n];
-    if is_from { prefix >= bound } else { prefix <= bound }
-}
-
 /// Apply the optional fence-props period slice to injected cache records (generic — any
 /// component with a `data` injection). `dataRange:{from?,to?}` filters by row date;
 /// `dataLimit:N` keeps the N most-recent rows (row order preserved, newest-first or
-/// oldest-first both handled). A slice that would empty the data falls back to the full
-/// records (bad range from the model must not blank the chart). Idempotent — re-running
-/// the sanitize pass on already-sliced data is a no-op.
+/// oldest-first both handled). Idempotent — re-running the sanitize pass on already-sliced
+/// data is a no-op.
+///
+/// The engine lives in `utils::row_slice` because module inputs now speak the same words
+/// (`<param>Limit` / `<param>Range` beside `<param>CacheKey`). Only the failure policy is
+/// local: a range that matches nothing falls back to the full records, because a bad range
+/// from the model must not blank the chart. The module side refuses instead — a document
+/// silently holding every row under a windowed label is worse than an error.
 pub(crate) fn apply_data_slice(records: Vec<Value>, props: &Value) -> Vec<Value> {
-    let mut rows = records;
-    if let Some(range) = props.get("dataRange").and_then(|v| v.as_object()) {
-        let from = range.get("from").and_then(|v| v.as_str()).map(date_compare_key);
-        let to = range.get("to").and_then(|v| v.as_str()).map(date_compare_key);
-        if from.is_some() || to.is_some() {
-            let filtered: Vec<Value> = rows
-                .iter()
-                .filter(|r| {
-                    let Some(key) = row_date_key(r) else { return true };
-                    let from_ok = from.as_deref().map(|f| date_in_bound(&key, f, true)).unwrap_or(true);
-                    let to_ok = to.as_deref().map(|t| date_in_bound(&key, t, false)).unwrap_or(true);
-                    from_ok && to_ok
-                })
-                .cloned()
-                .collect();
-            if filtered.is_empty() {
-                tracing::warn!(
-                    target: "render",
-                    "[render] dataRange matched 0 rows — range ignored, full records kept"
-                );
-            } else {
-                rows = filtered;
-            }
-        }
+    let range = props.get("dataRange").and_then(|v| v.as_object());
+    let out = crate::utils::row_slice::slice_rows(
+        records,
+        props.get("dataLimit").and_then(|v| v.as_u64()).map(|n| n as usize),
+        range.and_then(|r| r.get("from")).and_then(|v| v.as_str()),
+        range.and_then(|r| r.get("to")).and_then(|v| v.as_str()),
+    );
+    if out.range_emptied {
+        tracing::warn!(
+            target: "render",
+            "[render] dataRange matched 0 rows — range ignored, full records kept"
+        );
     }
-    if let Some(limit) = props.get("dataLimit").and_then(|v| v.as_u64()) {
-        let limit = limit as usize;
-        if limit > 0 && rows.len() > limit {
-            // Most-recent N, order-aware: newest-first rows (e.g. kiwoom) take the head,
-            // oldest-first (e.g. yfinance) take the tail. No dates → tail (stable default).
-            let newest_first = match (row_date_key(&rows[0]), row_date_key(&rows[rows.len() - 1])) {
-                (Some(a), Some(b)) => a > b,
-                _ => false,
-            };
-            rows = if newest_first {
-                rows[..limit].to_vec()
-            } else {
-                rows[rows.len() - limit..].to_vec()
-            };
-        }
-    }
-    rows
+    out.rows
 }
 
 /// Alphanumeric-only lowercase key, so "Candle_Stick" / "OHLCV" / "candlestick" all compare.
