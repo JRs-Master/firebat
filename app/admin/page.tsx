@@ -1311,19 +1311,24 @@ function producedFilesOf(msg: Message): ProducedFile[] {
   return Array.isArray(raw) ? (raw as ProducedFile[]) : [];
 }
 
-/** The markdown this bubble renders — the plain answer plus every text block. Its links are the
- *  ones the reader can already see, so the strip subtracts them. */
+/** The markdown this bubble ACTUALLY renders — its links are the ones the reader can already
+ *  see, so the strip subtracts them. The precedence below mirrors the render branch: blocks win
+ *  over `content`, and the two texts are NOT interchangeable. Measured 2026-08-12: the answer
+ *  arrived twice — `content` carried a live markdown link to the xlsx, the text block carried
+ *  the same link wrapped in backticks (the model quoted it as code). Reading both made the strip
+ *  believe the file was already on screen and suppress its card, while the screen showed a code
+ *  span nobody can click: the produced file had no card at all. Only what renders counts. */
 function messageBodyMarkdown(msg: Message): string {
-  const parts: string[] = [];
-  if (msg.content) parts.push(msg.content);
   const blocks = (msg.data as { blocks?: unknown[] } | undefined)?.blocks;
-  if (Array.isArray(blocks)) {
+  if (Array.isArray(blocks) && blocks.length > 0) {
+    const parts: string[] = [];
     for (const b of blocks) {
       const bo = b as Record<string, unknown> | null;
       if (bo && typeof bo === 'object' && typeof bo.text === 'string') parts.push(bo.text);
     }
+    return parts.join('\n\n');
   }
-  return parts.join('\n\n');
+  return msg.content ?? '';
 }
 
 /** Addresses the bubble shows outside markdown: a component block's own address prop. An Image
