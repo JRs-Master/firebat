@@ -4,6 +4,10 @@
 //  - document.body 로 portal → 사이드바/패널의 overflow-y-auto 스크롤 컨테이너를 탈출(잘림·fold 아래 숨김 해소).
 //  - anchorRef(트리거) getBoundingClientRect 기준 position:fixed 앵커. 아래 공간 부족하면 위로 flip + 뷰포트 안 clamp.
 //  - 바깥 클릭 / Esc / 스크롤·리사이즈 → onClose (스크롤은 capture 로 모든 컨테이너 감지).
+//  - The portal root is a transparent positioning box; its single child is the visible panel. For a
+//    cascade (placement='right') the root carries transparent padding on the side facing the trigger
+//    (hover bridge), so the trigger-to-panel gap belongs to the submenu instead of to nothing — the
+//    dead zone that closed the submenu when the pointer crossed it slowly is gone.
 // 기존 패널의 openMenu 상태/핸들러는 그대로 두고, absolute-in-scroll 드롭다운만 이걸로 감싸 위치 문제만 해결.
 // 사용:
 //   const triggerRef = useRef<HTMLButtonElement|null>(null);
@@ -24,6 +28,15 @@ import { ChevronRight } from 'lucide-react';
 // parent counts registered nodes as inside. One shared outside-click rule, any depth.
 type RegisterNestedMenu = (el: HTMLElement) => () => void;
 const NestedMenuContext = createContext<RegisterNestedMenu | null>(null);
+
+// Visible distance between the trigger and the menu panel.
+const MENU_GAP = 4;
+// Hover bridge — transparent padding on the portal root, on the side that faces the trigger.
+// MENU_GAP + 2 so the strip also laps 2px over the trigger's edge: no pixel is left between the two
+// hover targets, so crossing the gap slowly still reads as "inside the submenu" (mouseenter cancels
+// the close timer). The padding is compensated by an equal negative offset on the root, so the
+// visible panel renders at exactly the same place as without a bridge.
+const BRIDGE_PAD = MENU_GAP + 2;
 
 export function AnchoredMenu({
   anchorRef,
@@ -49,8 +62,14 @@ export function AnchoredMenu({
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }) {
+  // menuRef = portal root (transparent positioning box + hover bridge) / panelRef = the visible panel.
+  // Outside-click and nested registration use the root (the bridge counts as "inside"); measurement
+  // uses the panel (mixing the bridge width into it would skew the flip/clamp decision).
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  // bridge = which side of the panel carries the bridge padding. 'left' = trigger sits left (default
+  // cascade), 'right' = flipped so the trigger sits right, null = no bridge (placement='bottom').
+  const [pos, setPos] = useState<{ top: number; left: number; bridge: 'left' | 'right' | null } | null>(null);
 
   // 중첩 메뉴 — 내 자식(서브메뉴)들을 "안"으로 세고, 나 자신은 부모에게 등록한다.
   const nested = useRef<Set<HTMLElement>>(new Set());
@@ -70,29 +89,39 @@ export function AnchoredMenu({
     const a = anchorRef.current;
     if (!a) { setPos(null); return; }
     const r = a.getBoundingClientRect();
-    const gap = 4;
-    const mh = menuRef.current?.offsetHeight ?? 0;
-    const mw = Math.max(menuRef.current?.offsetWidth ?? minWidth, minWidth);
+    // Measure the visible panel only — measuring the root would fold the bridge padding into the
+    // width and skew the flip/clamp decision.
+    const mh = panelRef.current?.offsetHeight ?? 0;
+    const mw = Math.max(panelRef.current?.offsetWidth ?? minWidth, minWidth);
     if (placement === 'right') {
       // 캐스케이드 — 항목 오른쪽에 붙이고 위쪽 정렬. 오른쪽이 좁으면 왼쪽으로 flip, 아래는 clamp.
       let top = r.top;
       if (mh && top + mh > window.innerHeight - 8) top = Math.max(8, window.innerHeight - mh - 8);
-      let left = r.right + gap;
+      let left = r.right + MENU_GAP;
+      let bridge: 'left' | 'right' = 'left'; // trigger is on the panel's left, so is the bridge
       if (left + mw > window.innerWidth - 8) {
-        const leftSide = r.left - gap - mw;
-        left = leftSide >= 8 ? leftSide : Math.max(8, window.innerWidth - mw - 8);
+        const leftSide = r.left - MENU_GAP - mw;
+        if (leftSide >= 8) {
+          left = leftSide;
+          bridge = 'right'; // flipped — the trigger now sits right, the bridge follows it
+        } else {
+          // Neither side fits: clamp. The panel overlaps the trigger, so there is no gap to bridge.
+          left = Math.max(8, window.innerWidth - mw - 8);
+        }
       }
-      setPos({ top, left });
+      setPos({ top, left, bridge });
       return;
     }
-    let top = r.bottom + gap;
+    let top = r.bottom + MENU_GAP;
     if (mh && top + mh > window.innerHeight - 8) {
-      const up = r.top - gap - mh;
+      const up = r.top - MENU_GAP - mh;
       top = up >= 8 ? up : Math.max(8, window.innerHeight - mh - 8);
     }
     let left = align === 'end' ? r.right - mw : r.left;
     left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
-    setPos({ top, left });
+    // placement='bottom' is a click-toggled dropdown, so no bridge: a transparent strip lapping over
+    // the trigger would swallow the toggle click and the menu could no longer be closed by it.
+    setPos({ top, left, bridge: null });
   }, [anchorRef, align, placement, minWidth]);
 
   useEffect(() => {
@@ -119,25 +148,39 @@ export function AnchoredMenu({
   }, [anchorRef, onClose]);
 
   if (typeof document === 'undefined') return null;
+  const bridge = pos?.bridge ?? null;
+  // Left padding pushes the panel right by BRIDGE_PAD, so pull the root left by the same amount:
+  // the visible panel lands on exactly the computed coordinate. A 'right' bridge grows away from the
+  // panel's origin, so it needs no compensation.
+  const rootLeft = pos ? pos.left - (bridge === 'left' ? BRIDGE_PAD : 0) : -9999;
   return createPortal(
     <div
       ref={menuRef}
-      role="menu"
-      data-anchored-menu=""
+      data-anchored-menu-root=""
       onClick={(e) => e.stopPropagation()}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{
         position: 'fixed',
         top: pos ? pos.top : -9999,
-        left: pos ? pos.left : -9999,
-        minWidth,
+        left: rootLeft,
         visibility: pos ? 'visible' : 'hidden',
         zIndex: 70,
+        // Hover bridge — transparent padding: it paints no background or shadow, but the root's
+        // border box still takes hit-testing, so the gap fires the root's mouseenter.
+        paddingLeft: bridge === 'left' ? BRIDGE_PAD : undefined,
+        paddingRight: bridge === 'right' ? BRIDGE_PAD : undefined,
       }}
-      className={`bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden ${className}`}
     >
-      <NestedMenuContext.Provider value={register}>{children}</NestedMenuContext.Provider>
+      <div
+        ref={panelRef}
+        role="menu"
+        data-anchored-menu=""
+        style={{ minWidth }}
+        className={`bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden ${className}`}
+      >
+        <NestedMenuContext.Provider value={register}>{children}</NestedMenuContext.Provider>
+      </div>
     </div>,
     document.body,
   );
@@ -157,8 +200,11 @@ export const MENU_ITEM_CLASS =
  *
  * 동작 (Windows 캐스케이드):
  *  - 항목 hover → 오른쪽에 서브메뉴. 클릭도 같은 결과(키보드·a11y fallback).
- *  - 항목/서브메뉴에서 마우스가 나가면 닫기를 **예약**(GRACE_MS)하고 둘 중 하나에 다시 들어오면
- *    취소 — 항목에서 서브메뉴로 가는 대각선 경로가 살아난다.
+ *  - The gap between item and submenu is covered by the submenu root's transparent padding
+ *    (hover bridge, `BRIDGE_PAD`): entering the gap IS entering the submenu, so crossing it slowly
+ *    no longer closes anything. The bridge follows the panel when it flips to the trigger's left.
+ *  - Leaving the item or the submenu still **schedules** a close (GRACE_MS) that re-entering either
+ *    one cancels — the fallback for a diagonal path that leaves the bridge entirely.
  *  - 같은 메뉴의 **다른 항목**에 들어가면 즉시 닫힘(부모 메뉴 element 의 mouseover 위임).
  *  - 부모 메뉴가 닫히면(Esc·바깥 클릭·항목 실행) 이 항목째 언마운트되므로 서브메뉴도 함께 사라진다.
  *
