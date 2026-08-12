@@ -842,16 +842,13 @@ impl ModuleManager {
                     // reach here — coercion already parses those.
                     if let Some(in_obj) = input_data.as_object() {
                         for (k, v) in in_obj {
-                            let Some(s) = v.as_str() else { continue };
-                            let t = s.trim_start();
-                            if (t.starts_with('[') || t.starts_with('{'))
-                                && serde_json::from_str::<serde_json::Value>(s.trim()).is_err()
-                                && (detail.contains(&format!("/{k}"))
-                                    || detail.contains(&format!("'{k}'")))
+                            if !(detail.contains(&format!("/{k}"))
+                                || detail.contains(&format!("'{k}'")))
                             {
-                                msg.push_str(&format!(
-                                    " `{k}` is a STRING whose JSON does not parse (likely truncated or a broken escape) — resend it as the actual array/object value, not a quoted string."
-                                ));
+                                continue;
+                            }
+                            if let Some(hint) = broken_json_string_hint(k, v) {
+                                msg.push_str(&hint);
                                 break;
                             }
                         }
@@ -3029,6 +3026,50 @@ fn coerce_for_validation(
     coerce_node(value, schema, "", notes)
 }
 
+/// A JSON-looking string that does not parse — the hint says WHERE it broke.
+///
+/// Hand-serialized containers break mid-stream (escape slip, truncated output) and the model
+/// cannot re-read its own bytes, so "resend it" alone leaves it hunting through thousands of
+/// characters (2026-08-12: a 3.5KB `sheets` string broke at char 1828 and the turn rebuilt the
+/// whole call from scratch). serde_json knows the offset; naming it with a small window around
+/// it turns the error into an instruction. A value wrapped in a one-element array is accepted
+/// too, so the diagnosis survives any path that wraps before validation.
+fn broken_json_string_hint(key: &str, value: &serde_json::Value) -> Option<String> {
+    let s = match value {
+        serde_json::Value::String(s) => s.as_str(),
+        serde_json::Value::Array(a) => match a.as_slice() {
+            [serde_json::Value::String(s)] => s.as_str(),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let t = s.trim();
+    if !(t.starts_with('[') || t.starts_with('{')) {
+        return None;
+    }
+    let err = serde_json::from_str::<serde_json::Value>(t).err()?;
+    // serde_json counts the column in bytes; walk to the nearest char boundary so the excerpt
+    // never splits a Korean codepoint.
+    let chars: Vec<char> = t.chars().collect();
+    let mut at = chars.len();
+    let mut bytes = 0usize;
+    for (i, c) in chars.iter().enumerate() {
+        if bytes + 1 >= err.column() {
+            at = i;
+            break;
+        }
+        bytes += c.len_utf8();
+    }
+    let lo = at.saturating_sub(40);
+    let hi = (at + 40).min(chars.len());
+    let excerpt: String = chars[lo..hi].iter().collect();
+    Some(format!(
+        " `{key}` is a STRING whose JSON does not parse ({err}) — near: …{excerpt}… \
+         Resend `{key}` as the actual array/object value, not a quoted string; if those rows \
+         came from a tool, pass that call's `_cacheKey` instead of retyping them."
+    ))
+}
+
 fn schema_type(schema: &serde_json::Value) -> Option<&str> {
     match schema.get("type") {
         Some(serde_json::Value::String(s)) => Some(s.as_str()),
@@ -3166,11 +3207,19 @@ fn coerce_node(
         // `which` arriving as "macd,rsi").
         (Some("array"), V::String(s)) => {
             let t = s.trim();
-            if t.starts_with('[') {
+            if t.starts_with('[') || t.starts_with('{') {
                 if let Ok(parsed @ V::Array(_)) = serde_json::from_str::<V>(t) {
                     notes.push(format!("{path}: JSON string → array"));
                     return coerce_node(&parsed, schema, path, notes);
                 }
+                // It MEANT to be JSON and the JSON is broken — wrapping it would bury that.
+                // Measured 2026-08-12: a 3.5KB `sheets` string broke at char 1828, got wrapped
+                // as a single-item list, and the error became "sheets[0] is not an object" —
+                // a diagnosis pointing at a structure the model never wrote, while the true
+                // fix (resend the value) went unsaid because the broken-string hint only
+                // recognises a value that is still a string. Leave it alone: the honest type
+                // error plus that hint say what actually happened.
+                return value.clone();
             }
             let enum_vals: Vec<&str> = schema
                 .get("items")
@@ -3511,6 +3560,55 @@ mod media_export_path_tests {
 #[cfg(test)]
 mod coercion_tests {
     use super::*;
+
+    /// A container the model serialized as a string, broken mid-stream, must stay a string.
+    /// Regression 2026-08-12: wrapping it produced "sheets[0] is not an object" — a complaint
+    /// about a structure nobody wrote — and silenced the hint that names the real fault.
+    #[test]
+    fn a_broken_json_container_string_is_not_wrapped() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": { "sheets": { "type": "array", "items": { "type": "object" } } }
+        });
+        let broken = r#"[{"name": "대시보드", "rows": [[1, 2] [3, 4]]}]"#; // missing comma
+        let input = serde_json::json!({ "sheets": broken });
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&input, &sch, &mut notes);
+        assert_eq!(out["sheets"], serde_json::json!(broken), "left as the string it is");
+        assert!(
+            !notes.iter().any(|n| n.contains("single-item list")),
+            "a broken container must not be wrapped: {notes:?}"
+        );
+        // …and the hint that fires on it names where it broke.
+        let hint = broken_json_string_hint("sheets", &input["sheets"]).expect("hint");
+        assert!(hint.contains("does not parse"), "{hint}");
+        assert!(hint.contains("near:"), "{hint}");
+        // The same value wrapped by some other path is still diagnosed.
+        let wrapped = serde_json::json!([broken]);
+        assert!(broken_json_string_hint("sheets", &wrapped).is_some());
+    }
+
+    /// The absorber itself is untouched: valid JSON strings still parse, and a plain scalar
+    /// still becomes a one-item list (the reading that has no alternative).
+    #[test]
+    fn valid_json_strings_parse_and_plain_scalars_still_wrap() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "sheets": { "type": "array", "items": { "type": "object" } },
+                "which":  { "type": "array", "items": { "type": "string" } }
+            }
+        });
+        let input = serde_json::json!({
+            "sheets": r#"[{"name": "재무제표"}]"#,
+            "which": "macd",
+        });
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&input, &sch, &mut notes);
+        assert_eq!(out["sheets"][0]["name"], "재무제표");
+        assert_eq!(out["which"], serde_json::json!(["macd"]));
+        assert!(broken_json_string_hint("sheets", &input["sheets"]).is_none(), "valid JSON = no hint");
+    }
 
     fn schema() -> serde_json::Value {
         serde_json::json!({
