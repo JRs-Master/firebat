@@ -48,9 +48,9 @@
       {
         "id": "make_pptx",
         "name": "PPTX 만들기 (렌더 블록 → 슬라이드)",
-        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables. Optional master pptx (media URL) carries the corporate theme. The file lands in the media store. IMPORTANT: pass the blocks as this tool's arguments (or blocksCacheKey) — blocks pasted into the chat reply render a page and make NO file.",
+        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables, chart blocks become native editable charts, callouts become tinted statement bands, and timeline/compare/key_value/progress blocks each trigger their own slide archetype. Container blocks (grid/card/tabs/accordion/carousel/slideshow) are flattened into their children, so nothing authored inside one is lost. Optional master pptx (media URL) carries the corporate theme. The file lands in the media store. IMPORTANT: pass the blocks as this tool's arguments (or blocksCacheKey) — blocks pasted into the chat reply render a page and make NO file.",
         "params": {
-          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/image",
+          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/image/chart/stock_chart/callout/key_value/progress/timeline/compare, plus containers",
           "title": "deck title (title slide + filename)",
           "masterMediaPath": "media URL of a master .pptx to build on (falls back to the module's uploaded master setting)",
           "transition": "fade (default) | wipe | push | none",
@@ -60,7 +60,7 @@
       {
         "id": "make_xlsx",
         "name": "XLSX 만들기 (표 → 시트 · 대시보드)",
-        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns). Dashboard genre: pass kpis and/or charts — or render blocks where metric blocks become KPI cards and chart blocks become native Excel charts — and a \"Dashboard\" sheet is placed first: white cards on a light slate page, laid out on one fixed 12-column grid — KPI cards up to four per row, stretched to fill the row (thick colored underline cycling blue/red/amber/green, optional emoji icon, up=red / down=blue delta) above native line/bar/pie/doughnut/combo charts that reference the data sheets' cells (chart blocks get their own data sheet). A kpi with style:\"bar\" instead becomes a progress-bar row (value + label + a live data bar against max). Ledger genre: a sheet with style:\"ledger\" is rendered as a document (centered docTitle, period line, fully ruled table, gray header) and subtotalBy inserts live [월 계]/[누 계] SUM bands per month. Any cell string starting with \"=\" stays a live formula, so pass formulas for totals and averages instead of precomputed numbers. A chart whose sheet or columns cannot be resolved is skipped and reported in data.notes. The file lands in the media store.",
+        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns). Dashboard genre: pass kpis and/or charts — or render blocks where metric blocks become KPI cards and chart blocks become native Excel charts — and a \"Dashboard\" sheet is placed first: white cards on a light slate page, laid out on one fixed 12-column grid — KPI cards up to four per row, stretched to fill the row (thick colored underline cycling blue/red/amber/green, optional emoji icon, up=red / down=blue delta) above native line/bar/pie/doughnut/combo charts that reference the data sheets' cells (chart blocks get their own data sheet). A kpi with style:\"bar\" instead becomes a progress-bar row (value + label + a live data bar against max). Ledger genre: a sheet with style:\"ledger\" is rendered as a document (centered docTitle, period line, fully ruled table, gray header) and subtotalBy inserts live [월 계]/[누 계] SUM bands per month. Any cell string starting with \"=\" stays a live formula, so pass formulas for totals and averages instead of precomputed numbers. A stock_chart block becomes a NATIVE Excel candlestick (high/low/close, or open/high/low/close when the candles carry an open) with hi-low lines and up/down bars in the Korean convention (up = red, down = blue), and its volume rides a bar group on a secondary axis. A callout block becomes a full-width amber note row at the foot of the Dashboard, so the caveat survives alongside the numbers it qualifies. A chart whose sheet or columns cannot be resolved is skipped and reported in data.notes, as is any block that has no document form. The file lands in the media store.",
         "params": {
           "sheets": "[{name, headers?, rows, style?, docTitle?, period?, subtotalBy?}] — a long row set goes as {name, headers, rowsCacheKey: \"<the producing call's _cacheKey>\"} instead of rows: the server expands the FULL cached rows, so a 120-day candle sheet carries 120 real rows and not the 5-row inline preview. style:\"ledger\" = 총계정원장 document styling with live monthly subtotals",
           "blocks": "render-block array (table → sheet, metric → KPI card, chart → native chart)",
@@ -71,11 +71,11 @@
       },
       {
         "id": "make_docx",
-        "name": "DOCX 만들기 (렌더 블록 → 문서)",
-        "description": "Build a .docx from render blocks: headers become heading levels, lists become bullets, tables become real tables. The file lands in the media store.",
+        "name": "DOCX 만들기 (렌더 블록 → 보고서)",
+        "description": "Build a .docx REPORT from render blocks — the deck genre's print sibling (navy headings, one blue accent, restrained). A stream opening with a level-1 header gets a cover page (large title, date line, accent rule); section headings are ranked and a level-1 heading carries an accent underline; tables get a banded header row, thin borders and right-aligned number columns; consecutive metric blocks become one side-by-side KPI strip; key_value becomes a two-column table; callout becomes a tinted bordered box; images fit the text width; the footer carries a live page number. Containers (grid/card/tabs/accordion/carousel/slideshow) are flattened into their children. The file lands in the media store.",
         "params": {
-          "blocks": "render-block array [{type, props}]",
-          "title": "document title (heading + filename)"
+          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/key_value/callout/image/chart/stock_chart, plus containers",
+          "title": "document title (cover + filename) — a leading level-1 header block wins over it"
         }
       },
       {
@@ -89,11 +89,11 @@
       },
       {
         "id": "make_pdf",
-        "name": "PDF 만들기 (렌더 블록 → 문서)",
-        "description": "Build a .pdf from render blocks: headings, lists, real tables, images; divider = page break. Korean text via an embedded host font or the viewer-supplied CID font. The file lands in the media store.",
+        "name": "PDF 만들기 (렌더 블록 → 보고서)",
+        "description": "Build a .pdf REPORT from render blocks — the same genre as make_docx, so the two formats of one report read alike: cover page, ranked navy headings with an accent rule under level 1, banded tables with right-aligned number columns, KPI strips from consecutive metrics, two-column key_value, tinted callout boxes, width-fitted images, page numbers in the footer; divider = page break. Containers are flattened into their children. Korean text via an embedded host font (bold face included) or the viewer-supplied CID font. The file lands in the media store.",
         "params": {
-          "blocks": "render-block array [{type, props}]",
-          "title": "document title (heading + filename)"
+          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/key_value/callout/image/chart/stock_chart, plus containers",
+          "title": "document title (cover + filename) — a leading level-1 header block wins over it"
         }
       },
       {
@@ -145,7 +145,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / image{src} / divider. In make_pptx, header level 1 or divider starts a new slide. In make_xlsx, table blocks become data sheets while metric blocks become KPI cards and chart{chartType,labels,data|series,title} blocks become native charts on a Dashboard sheet. Render-fence dialect ({name:'Header',type:'component'}) is absorbed."
+        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / callout{title,message} / key_value{items} / progress{label,value,max} / timeline{items} / compare{left,right} / chart{chartType,labels,data|series,title} / stock_chart{data:[{date,open,high,low,close,volume}]} / image{src} / divider. CONTAINERS are flattened into their children, so nothing authored inside one is lost: grid/card/carousel/slideshow splice their children in order, tabs/accordion emit each section's title as a level-3 header before its blocks, and a page `module` block splices its rendered output (props._baked). Table rows may be lists OR records ([{column: value}]) — a record is ordered by the table's headers, and with no headers the first record's keys become the header row. header.level accepts 1, \"1\" or \"h2\". Render-fence dialect ({name:'Header',type:'component'}) is absorbed, and alert is an alias of callout. Interactive-only blocks (button/form/slider/countdown/html/lottie/plan_card/ad_slot/result_display) have no document form and are dropped — each dropped TYPE is named once in data.notes. A live_* block degrades to its static sibling labelled \"(스냅샷)\" when it carries inline seed rows, otherwise it is dropped with a note. In make_pptx, header level 1 or divider starts a new slide. In make_xlsx, table blocks become data sheets while metric blocks become KPI cards and chart/stock_chart blocks become native charts on a Dashboard sheet."
       },
       "blocksCacheKey": {
         "type": [
@@ -228,7 +228,8 @@
         "type": "string"
       },
       "data": {
-        "type": "object"
+        "type": "object",
+        "description": "make_*: {_mediaImport, ...counts} plus `notes` — one line per block type that could not be carried into the document (interactive-only components, a live block with no seed, an unresolvable chart). Surface those notes to the user: a report that quietly lost a section is worse than one that says what it lost."
       }
     }
   },

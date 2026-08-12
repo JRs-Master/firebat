@@ -289,21 +289,319 @@ def action_read(inp):
 # ── make ───────────────────────────────────────────────────────────────────────────────────────
 
 
-def normalize_blocks(blocks):
-    """Absorb the render-fence dialect: {"name":"Header","type":"component","props":...} is what
-    a model living in chat fences writes (measured on the first live ppt request — it built the
-    deck in that shape). Intent is unambiguous, so absorb instead of teach: name becomes type.
-    Props already share their vocabulary (text/level/content/headers/rows)."""
+# ── block IR normalization ─────────────────────────────────────────────────────────────────────
+# Everything here runs BEFORE any renderer sees a block, because every renderer used to answer
+# "I do not know this type" with silence. A grid of metrics, a tab's children, a page module's
+# baked output — all authored content — arrived in the file as nothing at all (2026-08-12
+# coverage audit). Containers are flattened into the linear stream the renderers already speak,
+# and what genuinely cannot be printed is NAMED instead of vanishing.
+
+# Interactive-only components: there is no honest paper form of a button or a countdown.
+_DROP_BLOCK_TYPES = ("html", "form", "ad_slot", "result_display", "button", "slider",
+                     "countdown", "plan_card", "lottie")
+# Live components hold a socket topic, not data. When inline rows ride along (a seed) they
+# degrade to their static sibling; with nothing but a topic there is nothing to print.
+_LIVE_DEGRADE = {"live_feed": "table", "live_chart": "chart", "live_stock_chart": "stock_chart"}
+_SNAPSHOT_SUFFIX = " (스냅샷)"
+_ALIAS_BLOCK_TYPES = {"alert": "callout"}
+_CONTAINER_MAX_DEPTH = 6
+_STOCK_TABLE_CAP = 60          # candles printed before a document says "and N more"
+_STOCK_FIELDS = (("date", "날짜"), ("open", "시가"), ("high", "고가"),
+                 ("low", "저가"), ("close", "종가"), ("volume", "거래량"))
+_LEVEL_DIGIT_RE = re.compile(r"(\d+)")
+
+
+def _header_level(p, default=2, lo=1, hi=3):
+    """Header level from anything a caller might write: 2, "2", "h2", "Heading 2", None.
+
+    `int(p.get("level") or 2)` raised ValueError on "h2" and took the WHOLE document with it —
+    one non-numeric level killed the build (2026-08-12 audit). A level is a rank, so the only
+    honest failure mode is clamping, never raising."""
+    raw = (p or {}).get("level")
+    if isinstance(raw, bool):
+        raw = None
+    if isinstance(raw, (int, float)):
+        n = int(raw)
+    else:
+        m = _LEVEL_DIGIT_RE.search(str(raw if raw is not None else ""))
+        n = int(m.group(1)) if m else default
+    return max(lo, min(hi, n))
+
+
+def _table_rows(headers, rows):
+    """(headers, list-rows) from either row dialect — [[...]] or [{...}].
+
+    The dict dialect is what a model writes when it thinks in records, and every renderer took it
+    literally: pptx/docx/pdf indexed `row[c]` with an integer and raised KeyError, xlsx iterated
+    the dict and wrote its KEYS as the data (2026-08-12 audit). Headers give the column order;
+    with no headers the first record's key order IS the order, so it becomes the header row."""
+    headers = [str(h) for h in (headers or [])]
+    rows = list(rows or [])
+    if not headers:
+        seen = []
+        for r in rows:
+            if isinstance(r, dict):
+                for k in r:
+                    if k not in seen:
+                        seen.append(k)
+        headers = [str(k) for k in seen]
+    lowered = [h.strip().lower() for h in headers]
     out = []
+    for r in rows:
+        if isinstance(r, dict):
+            if not headers:
+                out.append(list(r.values()))
+                continue
+            loose = {str(k).strip().lower(): v for k, v in r.items()}
+            out.append([r[h] if h in r else loose.get(lowered[i], "")
+                        for i, h in enumerate(headers)])
+        elif isinstance(r, (list, tuple)):
+            out.append(list(r))
+        else:
+            out.append([r])
+    return headers, out
+
+
+def _numeric_cols(rows, ncols):
+    """Column indices that read as numbers — MAJORITY, not unanimity (the xlsx rule). One "-" in
+    a price column does not make the column text, and print renderers right-align it either way."""
+    out = set()
+    for ci in range(ncols):
+        vals = [str(r[ci]).strip() for r in rows
+                if ci < len(r) and r[ci] not in (None, "")]
+        if vals and sum(1 for v in vals if _NUMLIKE_RE.match(v)) * 2 > len(vals):
+            out.add(ci)
+    return out
+
+
+def _callout_parts(p):
+    """(title, message) — the callout dialect has four names for its body."""
+    msg = (p.get("message") if p.get("message") not in (None, "") else
+           p.get("content") if p.get("content") not in (None, "") else
+           p.get("text") if p.get("text") not in (None, "") else p.get("body"))
+    return str(p.get("title") or "").strip(), str(msg or "").strip()
+
+
+def _stock_rows(p):
+    """stock_chart props -> (headers, rows) over whichever OHLC(V) fields the candles carry.
+
+    Accepts the canonical record dialect (props.data = [{date,open,high,low,close,volume}]), the
+    columnar dialect the page schema declares ({dates:[], close:[]}), and plain list rows."""
+    raw = None
+    for key in ("data", "candles", "ohlcv", "rows", "records"):
+        v = p.get(key)
+        if isinstance(v, list) and v:
+            raw = v
+            break
+    if raw is None:
+        cols = {k: p.get(k) for k, _ in _STOCK_FIELDS if isinstance(p.get(k), list)}
+        if not cols and isinstance(p.get("dates"), list):
+            cols["date"] = p.get("dates")
+        if not cols:
+            return [], []
+        n = max(len(v) for v in cols.values())
+        raw = [{k: (v[i] if i < len(v) else None) for k, v in cols.items()} for i in range(n)]
+    recs = [r for r in raw if isinstance(r, dict)]
+    if not recs:
+        headers, rows = _table_rows(p.get("headers"), raw)
+        return headers, rows
+    present = [(k, ko) for k, ko in _STOCK_FIELDS
+               if any(r.get(k) not in (None, "") for r in recs)]
+    if not present:
+        return _table_rows(None, recs)
+    headers = [ko for _k, ko in present]
+    rows = [[r.get(k) for k, _ko in present] for r in recs]
+    return headers, rows
+
+
+def _stock_table_block(p, cap=_STOCK_TABLE_CAP):
+    """A candle series as a printable table — what a document can honestly show of a stock chart.
+    Capped, and the cap says so out loud rather than truncating in silence."""
+    headers, rows = _stock_rows(p)
+    if not rows:
+        return None, None
+    title = str(p.get("title") or p.get("symbol") or "").strip()
+    extra = None
+    if len(rows) > cap:
+        extra = f"… 앞쪽 {len(rows) - cap}개 봉은 생략했습니다 (전체 {len(rows)}개)"
+        rows = rows[-cap:]
+    return {"type": "table", "props": {"headers": headers, "rows": rows, "title": title}}, extra
+
+
+def _note_once(notes, key, text):
+    if key not in notes:
+        notes[key] = text
+
+
+def _live_snapshot(t, p):
+    """A live block that carries inline rows becomes its static sibling, labelled a snapshot.
+    A block carrying only a topic (or a fetch binding with no rows) has nothing to degrade to."""
+    rows = None
+    for key in ("data", "seed", "rows", "items", "records", "points"):
+        v = p.get(key)
+        if isinstance(v, list) and v:
+            rows = v
+            break
+    if rows is None:
+        return None
+    label = str(p.get("title") or p.get("symbol") or "").strip()
+    title = (label + _SNAPSHOT_SUFFIX) if label else _SNAPSHOT_SUFFIX.strip()
+    if t == "live_stock_chart":
+        return {"type": "stock_chart", "props": {**p, "data": rows, "title": title}}
+    if t == "live_chart":
+        field = str(p.get("valueField") or "value").split(".")[-1]
+        labels, values = [], []
+        for i, r in enumerate(rows):
+            if isinstance(r, dict):
+                lab = next((r[k] for k in ("label", "name", "time", "date", "t", "x")
+                            if r.get(k) not in (None, "")), i + 1)
+                val = next((r[k] for k in (field, "value", "v", "y", "close")
+                            if r.get(k) not in (None, "")), None)
+            else:
+                lab, val = i + 1, r
+            labels.append(str(lab))
+            values.append(parse_number(val))
+        if any(v is not None for v in values):
+            return {"type": "chart", "props": {"chartType": "line", "title": title,
+                                               "labels": labels, "data": values}}
+    headers, trows = _table_rows(p.get("headers"), rows)
+    if not trows:
+        return None
+    return {"type": "table", "props": {"headers": headers, "rows": trows, "title": title}}
+
+
+def _flatten_blocks(blocks, out, notes, depth, expand_module):
+    """The recursive pass. `expand_module` goes False under a module's baked output, so a module
+    nested inside someone else's composition is never re-expanded."""
     for b in blocks or []:
         if not isinstance(b, dict):
             continue
         t = str(b.get("type") or "").strip()
         name = str(b.get("name") or "").strip()
         if name and (t == "component" or not t):
-            b = dict(b)
-            b["type"] = name.lower()
+            t = name
+        t = t.lower()
+        t = _ALIAS_BLOCK_TYPES.get(t, t)
+        p = b.get("props") if isinstance(b.get("props"), dict) else {}
+        if t != str(b.get("type") or ""):
+            b = dict(b, type=t)
+
+        if t in _DROP_BLOCK_TYPES:
+            _note_once(notes, t, f"'{t}' 블록은 문서로 옮길 수 없어 제외했습니다 "
+                                 "(화면에서만 동작하는 컴포넌트).")
+            continue
+        if depth > _CONTAINER_MAX_DEPTH:
+            _note_once(notes, "_depth", "중첩이 너무 깊은 컨테이너가 있어 그 아래는 펼치지 "
+                                        "않았습니다.")
+            out.append(b)
+            continue
+
+        if t == "module":
+            baked = p.get("_baked")
+            if not expand_module:
+                _note_once(notes, "module_nested",
+                           "다른 모듈 출력 안에 중첩된 module 블록은 펼치지 않았습니다.")
+                out.append(b)
+            elif isinstance(baked, list) and baked:
+                _flatten_blocks(baked, out, notes, depth + 1, False)
+            else:
+                _note_once(notes, "module",
+                           "module 블록에 렌더된 결과(props._baked)가 없어 제외했습니다.")
+            continue
+        if t in ("grid", "carousel"):
+            _flatten_blocks(p.get("children"), out, notes, depth + 1, expand_module)
+            continue
+        if t == "card":
+            title = str(p.get("title") or "").strip()
+            if title:
+                out.append({"type": "header", "props": {"text": title, "level": 3}})
+            body = next((p.get(k) for k in ("content", "text", "description", "body")
+                         if str(p.get(k) or "").strip()), None)
+            if body:
+                out.append({"type": "text", "props": {"content": str(body)}})
+            img = p.get("image")
+            if isinstance(img, dict) and img.get("src"):
+                out.append({"type": "image", "props": {"src": img.get("src"),
+                                                       "alt": img.get("alt")}})
+            _flatten_blocks(p.get("children"), out, notes, depth + 1, expand_module)
+            footer = str(p.get("footer") or "").strip()
+            if footer:
+                out.append({"type": "text", "props": {"content": footer}})
+            continue
+        if t == "slideshow":
+            kids = p.get("children")
+            if isinstance(kids, list) and kids:
+                _flatten_blocks(kids, out, notes, depth + 1, expand_module)
+                continue
+            for img in (p.get("images") or []):
+                if not isinstance(img, dict) or not img.get("src"):
+                    continue
+                out.append({"type": "image", "props": {"src": img.get("src"),
+                                                       "alt": img.get("alt")}})
+                cap = str(img.get("caption") or "").strip()
+                if cap:
+                    out.append({"type": "text", "props": {"content": cap}})
+            continue
+        if t in ("tabs", "accordion"):
+            sections = p.get("tabs") if t == "tabs" else p.get("items")
+            for sec in (sections or []):
+                if not isinstance(sec, dict):
+                    continue
+                label = str(sec.get("label") or sec.get("title") or "").strip()
+                if label:
+                    out.append({"type": "header", "props": {"text": label, "level": 3}})
+                body = next((sec.get(k) for k in ("content", "text")
+                             if isinstance(sec.get(k), str) and sec.get(k).strip()), None)
+                if body:
+                    out.append({"type": "text", "props": {"content": body}})
+                kids = next((sec.get(k) for k in ("children", "blocks", "items", "content")
+                             if isinstance(sec.get(k), list)), None)
+                _flatten_blocks(kids, out, notes, depth + 1, expand_module)
+            continue
+        if t == "paper_trades":
+            recs = next((p.get(k) for k in ("records", "rows", "trades")
+                         if isinstance(p.get(k), list)), None)
+            headers, rows = _table_rows(p.get("headers"), recs)
+            if rows:
+                out.append({"type": "table",
+                            "props": {"headers": headers, "rows": rows,
+                                      "title": p.get("title")}})
+            else:
+                _note_once(notes, "paper_trades",
+                           "paper_trades 블록에 기록(props.records)이 없어 제외했습니다.")
+            continue
+        if t in _LIVE_DEGRADE:
+            snap = _live_snapshot(t, p)
+            if snap:
+                out.append(snap)
+            else:
+                _note_once(notes, t, f"'{t}' 블록은 실시간 토픽만 담고 있어 제외했습니다 "
+                                     "(문서에 실을 스냅샷 데이터 없음).")
+            continue
+        if t == "table":
+            headers, rows = _table_rows(p.get("headers"), p.get("rows"))
+            out.append({**b, "type": "table",
+                        "props": {**p, "headers": headers, "rows": rows}})
+            continue
         out.append(b)
+
+
+def normalize_blocks(blocks, notes=None):
+    """Render-block IR -> the flat, dialect-free stream every renderer here speaks.
+
+    Two dialects are absorbed rather than taught. (1) The fence dialect
+    {"name":"Header","type":"component"} is what a model living in chat fences writes — intent is
+    unambiguous, so name becomes type. (2) Containers (grid/card/tabs/accordion/carousel/
+    slideshow, and a page's `module` block with its baked output) are spliced into their children,
+    with tab and accordion sections keeping their titles as level-3 headers so the sectioning
+    survives the flattening.
+
+    `notes` (a list) collects one line per DROPPED TYPE — the make_* actions hand them back in
+    data.notes, because a document that quietly lost a form is worse than one that says so."""
+    out, dropped = [], {}
+    _flatten_blocks(blocks, out, dropped, 0, True)
+    if notes is not None:
+        notes.extend(dropped.values())
     return out
 
 
@@ -313,7 +611,7 @@ def _split_slides(blocks):
     for b in blocks:
         t = str(b.get("type") or "")
         p = b.get("props") or {}
-        is_boundary = t == "divider" or (t == "header" and int(p.get("level") or 2) == 1)
+        is_boundary = t == "divider" or (t == "header" and _header_level(p) == 1)
         if is_boundary and cur:
             slides.append(cur)
             cur = []
@@ -324,8 +622,70 @@ def _split_slides(blocks):
     return slides
 
 
+def _kv_pairs(p):
+    """key_value props -> [(label, value)] — 'key' and 'label' are the same field."""
+    pairs = []
+    for it in (p.get("items") or []):
+        if not isinstance(it, dict):
+            continue
+        key = it.get("key") if it.get("key") not in (None, "") else it.get("label")
+        pairs.append((str(key or ""), it.get("value")))
+    return pairs
+
+
+def _timeline_items(p):
+    """timeline props -> the {title, body[]} group shape the pptx archetypes consume."""
+    groups = []
+    for it in (p.get("items") or p.get("steps") or p.get("events") or []):
+        if isinstance(it, dict):
+            head = " ".join(s for s in (str(it.get("date") or "").strip(),
+                                        str(it.get("title") or "").strip()) if s)
+            body = str(it.get("description") or it.get("content") or it.get("text") or "").strip()
+            groups.append({"title": head or body, "body": [body] if body and head else []})
+        elif str(it or "").strip():
+            groups.append({"title": str(it).strip(), "body": []})
+    return groups
+
+
+def _compare_items(p):
+    """compare props -> {title, body[]} groups. The schema is left/right; an items[] list is the
+    dialect a model writes when it has three things to compare."""
+    raw = p.get("items")
+    if not isinstance(raw, list) or not raw:
+        raw = [side for side in (p.get("left"), p.get("right")) if isinstance(side, dict)]
+    groups = []
+    for side in raw:
+        if not isinstance(side, dict):
+            continue
+        title = str(side.get("label") or side.get("title") or side.get("name") or "").strip()
+        body = []
+        for it in (side.get("items") or []):
+            if isinstance(it, dict):
+                key = it.get("key") if it.get("key") not in (None, "") else it.get("label")
+                body.append(f"{key}: {it.get('value')}" if key else str(it.get("value") or ""))
+            elif str(it or "").strip():
+                body.append(str(it))
+        text = str(side.get("content") or side.get("text") or "").strip()
+        if text:
+            body.append(text)
+        groups.append({"title": title, "body": body})
+    return groups
+
+
+def _progress_line(p):
+    value = p.get("value")
+    top = parse_number(p.get("max"))
+    top = float(top) if top not in (None, 0) else 100.0
+    num = parse_number(value)
+    pct = None if num is None else max(0.0, min(1.0, float(num) / top))
+    label = str(p.get("label") or "").strip()
+    shown = f"{value}" if num is None else f"{num:,.2f}".rstrip("0").rstrip(".")
+    return label, shown, top, pct
+
+
 def _block_lines(b):
-    """text-ish block -> plain lines for a body textbox / paragraph run."""
+    """text-ish block -> plain lines for a body textbox / paragraph run. The last-resort form:
+    a renderer that has no native shape for a block still prints what the block SAYS."""
     t, p = str(b.get("type") or ""), b.get("props") or {}
     if t == "text":
         return [str(p.get("content") or "")]
@@ -339,6 +699,25 @@ def _block_lines(b):
         return [line]
     if t == "header":
         return [str(p.get("text") or "")]
+    if t == "callout":
+        title, msg = _callout_parts(p)
+        return [f"※ {title} — {msg}" if title and msg else f"※ {title or msg}"]
+    if t == "key_value":
+        head = [str(p.get("title") or "").strip()] if str(p.get("title") or "").strip() else []
+        return head + [f"{k}: {v}" for k, v in _kv_pairs(p)]
+    if t == "progress":
+        label, shown, top, pct = _progress_line(p)
+        tail = "" if pct is None else f" ({pct * 100:.0f}%)"
+        return [f"{label}: {shown} / {top:g}{tail}".lstrip(": ")]
+    if t == "timeline":
+        return [f"• {g['title']}" + (f" — {g['body'][0]}" if g["body"] else "")
+                for g in _timeline_items(p)]
+    if t == "compare":
+        lines = []
+        for g in _compare_items(p):
+            lines.append(f"[{g['title']}]" if g["title"] else "")
+            lines.extend(f"• {x}" for x in g["body"])
+        return [l for l in lines if l]
     return []
 
 
@@ -625,8 +1004,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         state["y"] = y + height_in + 0.25
 
     def render_table(p):
-        headers = [str(h) for h in (p.get("headers") or [])]
-        rows = p.get("rows") or []
+        headers, rows = _table_rows(p.get("headers"), p.get("rows"))
         if not headers and rows:
             headers = [str(c) for c in rows[0]]
             rows = rows[1:]
@@ -660,12 +1038,9 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         else:
             segments = [(rows, header_h + sum(row_hs))]
         # Number columns read right-aligned (decided on the WHOLE table, so every split
-        # segment aligns the same way).
-        def col_numeric(ci):
-            vals = [str(row[ci]).strip() for row in rows
-                    if ci < len(row) and row[ci] not in (None, "")]
-            return bool(vals) and all(_NUMLIKE_RE.match(v) for v in vals)
-        aligns = [PP_ALIGN.RIGHT if col_numeric(ci) else None for ci in range(n_cols)]
+        # segment aligns the same way) — majority, the same rule the xlsx sheets use.
+        numeric = _numeric_cols(rows, n_cols)
+        aligns = [PP_ALIGN.RIGHT if ci in numeric else None for ci in range(n_cols)]
         for seg_rows, seg_h in segments:
             place_table(headers, seg_rows, seg_h, n_cols, aligns=aligns)
 
@@ -682,6 +1057,177 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
             except Exception:  # noqa: BLE001 — a bad image loses itself, not the deck
                 pass
 
+    def deck_palette(n):
+        """n colors that all descend from the deck's one accent — a chart drawn in Excel's stock
+        palette would be the only thing on the slide the theme did not choose."""
+        base = [BLUE, _mix(BLUE, 255, 0.45), _mix(BLUE, 0, 0.28), _mix(BLUE, 255, 0.7),
+                SLATE_D, SLATE_M]
+        return [base[i % len(base)] for i in range(max(1, n))]
+
+    def render_chart(b):
+        """A chart block as a NATIVE pptx chart — editable, with its numbers in the embedded
+        workbook. Previously a chart block reached a deck as nothing at all."""
+        from pptx.chart.data import CategoryChartData
+        from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+
+        parsed = _chart_series(b)
+        if not parsed:
+            return False
+        ctype, ctitle, labels, cols = parsed
+        kinds = {"bar": XL_CHART_TYPE.COLUMN_CLUSTERED, "line": XL_CHART_TYPE.LINE,
+                 "pie": XL_CHART_TYPE.PIE, "doughnut": XL_CHART_TYPE.DOUGHNUT,
+                 "combo": XL_CHART_TYPE.COLUMN_CLUSTERED}
+        kind = kinds.get(ctype, XL_CHART_TYPE.COLUMN_CLUSTERED)
+        data = CategoryChartData()
+        data.categories = [str(x) for x in labels]
+        for name, vals in cols:
+            data.add_series(name, tuple(parse_number(v) for v in vals))
+        h = 3.3
+        ensure_room(h + 0.25)
+        slide, y = state["slide"], state["y"]
+        w = sw_in - PPTX_MARGIN_IN * 2
+        try:
+            frame = slide.shapes.add_chart(kind, Inches(PPTX_MARGIN_IN), Inches(y),
+                                           Inches(w), Inches(h), data)
+        except Exception:  # noqa: BLE001 — a bad chart loses itself, not the deck
+            return False
+        chart = frame.chart
+        chart.font.size = Pt(10)
+        if styled:
+            chart.font.color.rgb = SLATE_B
+        if ctitle:
+            chart.has_title = True
+            chart.chart_title.text_frame.text = ctitle
+            tp = chart.chart_title.text_frame.paragraphs[0]
+            tp.font.size = Pt(12)
+            tp.font.bold = True
+            if styled:
+                tp.font.color.rgb = SLATE_D
+        round_chart = ctype in ("pie", "doughnut")
+        chart.has_legend = round_chart or len(cols) > 1
+        if chart.has_legend:
+            chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+            chart.legend.include_in_layout = False
+        plot = chart.plots[0]
+        if round_chart:
+            # One color per SLICE: a pie's categories are the thing being told apart.
+            plot.vary_by_categories = True
+            pts = list(plot.series[0].points)
+            for pt, color in zip(pts, deck_palette(len(pts))):
+                pt.format.fill.solid()
+                pt.format.fill.fore_color.rgb = color
+        else:
+            for ser, color in zip(chart.series, deck_palette(len(cols))):
+                if ctype == "line":
+                    ser.format.line.color.rgb = color
+                    ser.format.line.width = Pt(2.0)
+                    ser.smooth = False
+                else:
+                    ser.format.fill.solid()
+                    ser.format.fill.fore_color.rgb = color
+        state["y"] = y + h + 0.25
+        return True
+
+    def render_stock_chart(p):
+        """No native candlestick exists in python-pptx, so a candle series is told the two honest
+        ways: the close as a line chart, and (when it will not fit) the table underneath."""
+        headers, rows = _stock_rows(p)
+        if not rows:
+            return
+        try:
+            close_i = headers.index("종가")
+        except ValueError:
+            close_i = len(headers) - 1
+        labels = [r[0] for r in rows]
+        closes = [r[close_i] if close_i < len(r) else None for r in rows]
+        title = str(p.get("title") or p.get("symbol") or "").strip()
+        done = render_chart({"type": "chart", "props": {
+            "chartType": "line", "title": title, "labels": labels, "data": closes}})
+        if not done:
+            block, _extra = _stock_table_block(p)
+            if block:
+                render_table(block["props"])
+
+    def callout_band(p):
+        """The honesty note, drawn: a tinted full-bleed band behind an accent tick. Same machinery
+        as the section statement band, because it is the same move — one line that must be read."""
+        title, msg = _callout_parts(p)
+        if not title and not msg:
+            return
+        body_w = sw_in - 1.7
+        lines = (_wrap_lines(title, body_w, chars_per_in=4.5) if title else 0) \
+            + (_wrap_lines(msg, body_w) if msg else 0)
+        h = max(0.5, 0.1 + 0.26 * lines)
+        ensure_room(h + 0.25)
+        slide, y = state["slide"], state["y"]
+        add_box(slide, MSO_SHAPE.RECTANGLE, PPTX_MARGIN_IN, y, sw_in - PPTX_MARGIN_IN * 2, h,
+                fill=SLATE_L)
+        add_box(slide, MSO_SHAPE.RECTANGLE, PPTX_MARGIN_IN, y, 0.07, h, fill=BLUE)
+        runs = ([(title, 12, True, SLATE_D)] if title else []) \
+            + ([(msg, 11, False, SLATE_B)] if msg else [])
+        add_text(slide, PPTX_MARGIN_IN + 0.22, y, body_w, h, runs,
+                 anchor=MSO_ANCHOR.MIDDLE)
+        state["y"] = y + h + 0.25
+
+    # "No Style, No Grid" — the only way to get a python-pptx table without the default style's
+    # rules and banding, which turn a two-column fact list into a spreadsheet.
+    PPTX_PLAIN_TABLE_STYLE = "{2D5ABB26-0587-4C30-8999-92F81FD0307C}"
+
+    def key_value_table(p):
+        pairs = _kv_pairs(p)
+        if not pairs:
+            return
+        title = str(p.get("title") or "").strip()
+        if title:
+            text_par([title])
+        col_w_in = (sw_in - PPTX_MARGIN_IN * 2) / 2
+        heights = [0.14 + 0.21 * max(_wrap_lines(str(k), col_w_in),
+                                     _wrap_lines("" if v is None else v, col_w_in))
+                   for k, v in pairs]
+        h = sum(heights)
+        ensure_room(h + 0.25)
+        slide, y = state["slide"], state["y"]
+        shape = slide.shapes.add_table(len(pairs), 2, Inches(PPTX_MARGIN_IN), Inches(y),
+                                       sw - Inches(PPTX_MARGIN_IN * 2), Inches(h))
+        table = shape.table
+        table.first_row = False
+        table.horz_banding = False
+        try:
+            style_id = shape._element.graphic.graphicData.tbl.tblPr.find(qn("a:tableStyleId"))
+            if style_id is not None:
+                style_id.text = PPTX_PLAIN_TABLE_STYLE
+        except Exception:  # noqa: BLE001 — a styled table beats a crashed deck
+            pass
+        for r, (k, v) in enumerate(pairs):
+            set_cell(table.cell(r, 0), str(k), True,
+                     color=SLATE_B if styled else None)
+            set_cell(table.cell(r, 1), "" if v is None else str(v), False,
+                     color=SLATE_D if styled else None, align=PP_ALIGN.RIGHT)
+        state["y"] = y + h + 0.25
+
+    def progress_rows(items):
+        """A ratio told the way a dashboard tells it: label, number, and a track whose filled
+        length IS the number."""
+        row_h, gap = 0.5, 0.12
+        for p in items:
+            label, shown, top, pct = _progress_line(p)
+            ensure_room(row_h + gap)
+            slide, y = state["slide"], state["y"]
+            track_x = PPTX_MARGIN_IN + 2.6
+            track_w = sw_in - PPTX_MARGIN_IN - track_x - 0.9
+            add_text(slide, PPTX_MARGIN_IN, y, 2.5, row_h,
+                     [(label, 11, False, SLATE_B)], anchor=MSO_ANCHOR.MIDDLE, wrap=False)
+            add_box(slide, MSO_SHAPE.ROUNDED_RECTANGLE, track_x, y + 0.16, max(track_w, 0.5),
+                    0.18, fill=SLATE_L)
+            if pct:
+                add_box(slide, MSO_SHAPE.ROUNDED_RECTANGLE, track_x, y + 0.16,
+                        max(track_w * pct, 0.06), 0.18, fill=BLUE)
+            tail = shown if pct is None else f"{pct * 100:.0f}%"
+            add_text(slide, sw_in - PPTX_MARGIN_IN - 0.85, y, 0.85, row_h,
+                     [(tail, 12, True, BLUE)], align=PP_ALIGN.RIGHT,
+                     anchor=MSO_ANCHOR.MIDDLE, wrap=False)
+            state["y"] = y + row_h + gap
+
     # ---- plain path (master decks): a quiet document flow the master's look carries ----
 
     def render_chunk_plain(chunk):
@@ -694,13 +1240,23 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                                               sw - Inches(PPTX_MARGIN_IN * 2), Inches(0.7))
                 tf = tb.text_frame
                 tf.text = str(p.get("text") or "")
-                tf.paragraphs[0].font.size = Pt(28 if int(p.get("level") or 2) == 1 else 20)
+                tf.paragraphs[0].font.size = Pt(28 if _header_level(p) == 1 else 20)
                 tf.paragraphs[0].font.bold = True
                 state["y"] = y + 0.95
             elif t == "table":
                 render_table(p)
             elif t == "image":
                 render_image(p)
+            elif t in _CHART_BLOCK_TYPES:
+                render_chart(b)
+            elif t in _STOCK_BLOCK_TYPES:
+                render_stock_chart(p)
+            elif t == "callout":
+                callout_band(p)
+            elif t == "key_value":
+                key_value_table(p)
+            elif t == "progress":
+                progress_rows([p])
             else:
                 lines = _block_lines(b)
                 if not lines:
@@ -754,10 +1310,32 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
             elif t == "text":
                 groups.append(("text", [str(p.get("content") or "")]))
                 i += 1
-            elif t in ("table", "image"):
+            elif t == "progress":
+                # Consecutive progress bars are ONE strip, the way consecutive metrics are.
+                ps = []
+                while i < len(rest) and str(rest[i].get("type") or "") == "progress":
+                    ps.append(rest[i].get("props") or {})
+                    i += 1
+                groups.append(("progress", ps))
+            elif t == "timeline":
+                # The archetypes below used to be reachable only by heuristic — a header group
+                # that HAPPENED to look like a schedule. A block that SAYS it is a timeline is
+                # the stronger signal, so it triggers the archetype directly (2026-08-12 audit).
+                groups.append(("timeline", _timeline_items(p)))
+                i += 1
+            elif t == "compare":
+                groups.append(("compare", _compare_items(p)))
+                i += 1
+            elif t in ("table", "image", "key_value", "callout"):
                 groups.append((t, p))
                 i += 1
+            elif t in _CHART_BLOCK_TYPES or t in _STOCK_BLOCK_TYPES:
+                groups.append(("chart" if t in _CHART_BLOCK_TYPES else "stock_chart", b))
+                i += 1
             else:
+                lines = _block_lines(b)
+                if lines:
+                    groups.append(("text", lines))
                 i += 1
         return groups
 
@@ -970,7 +1548,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         rest = list(chunk)
         state["sec_title"], state["sec_stmt"] = None, None
         if rest and str(rest[0].get("type") or "") == "header" \
-                and int((rest[0].get("props") or {}).get("level") or 2) == 1:
+                and _header_level(rest[0].get("props") or {}) == 1:
             sec_counter["n"] += 1
             state["sec_no"] = sec_counter["n"]
             state["sec_title"] = str((rest[0].get("props") or {}).get("text") or "")
@@ -993,6 +1571,8 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         only_items = bool(groups) and all(k == "item" for k, _ in groups)
         short = all(sum(len(l) for l in g["body"]) <= 220 for g in items)
         # Timeline outranks the donut: four year-titled groups are a schedule, not a SWOT.
+        # These stay HEURISTICS for block streams that only imply their shape; a stream that
+        # names it (a timeline/compare block) went down the direct path in collect_groups.
         timeline_fit = (only_items and 3 <= len(items) <= 6 and short
                         and sum(1 for g in items if _STEPISH_RE.search(g["title"]))
                         >= max(2, len(items) - 1))
@@ -1014,6 +1594,26 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                     render_table(val)
                 elif kind == "image":
                     render_image(val)
+                elif kind == "chart":
+                    render_chart(val)
+                elif kind == "stock_chart":
+                    render_stock_chart(val.get("props") or {})
+                elif kind == "callout":
+                    callout_band(val)
+                elif kind == "key_value":
+                    key_value_table(val)
+                elif kind == "progress":
+                    progress_rows(val)
+                elif kind == "timeline":
+                    if val:
+                        timeline(val) if len(val) <= 6 else text_par(
+                            [f"• {g['title']}" for g in val])
+                elif kind == "compare":
+                    if 2 <= len(val) <= 3:
+                        pill_columns(val)
+                    else:
+                        for gi, g in enumerate(val, start=1):
+                            item_row(gi, g)
                 elif kind == "list":
                     if 3 <= len(val) <= 6 and all(len(v) <= 22 for v in val):
                         chevron_strip(val)
@@ -1039,7 +1639,8 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
 
 
 def action_make_pptx(inp):
-    blocks = normalize_blocks(inp.get("blocks"))
+    notes = []
+    blocks = normalize_blocks(inp.get("blocks"), notes)
     title = str(inp.get("title") or "").strip()
     if not blocks and not title:
         return {"success": False, "action": "make_pptx",
@@ -1064,6 +1665,7 @@ def action_make_pptx(inp):
         return {"success": False, "action": "make_pptx", "error": f"pptx build failed: {e}"}
     return {"success": True, "action": "make_pptx", "data": {
         "slides": slides, "master": bool(master_path),
+        **({"notes": notes} if notes else {}),
         "_mediaImport": media_import_decl(out_path, "pptx", stem),
     }}
 
@@ -1136,8 +1738,12 @@ XLSX_UP, XLSX_DOWN, XLSX_FLAT = "C00000", "1F5FBF", "808080"
 # Ratio-ish columns diverge around zero, so a 3-color scale reads them; absolute magnitudes
 # read as bars. The header is what tells the two apart.
 _RATIO_HEADER_RE = re.compile(r"(%|율|증감|등락|change|delta|yoy)", re.I)
+# The lenient names ("bar_chart" etc.) are dialect the model invents and there is no cost to
+# accepting them — but the list was ALL dialect and no canon: `stock_chart`, a real page
+# component, was the one chart block that fell through (2026-08-12 audit).
 _CHART_BLOCK_TYPES = ("chart", "bar_chart", "line_chart", "pie_chart",
                       "donut_chart", "doughnut_chart", "column_chart", "area_chart")
+_STOCK_BLOCK_TYPES = ("stock_chart", "candle_chart", "candlestick_chart", "ohlc_chart")
 _CHART_TYPE_ALIASES = {"donut": "doughnut", "column": "bar", "area": "line"}
 _CHART_TYPES = ("bar", "line", "pie", "doughnut", "combo")
 _ROUND_CHARTS = ("pie", "doughnut")   # no value axis, own color per slice
@@ -1168,9 +1774,18 @@ def _coerce_row(row):
     return cells
 
 
-def _number_columns(body, ncols):
+_YEAR_HEADER_RE = re.compile(r"(연도|년도|회계연도|year)", re.I)
+
+
+def _number_columns(body, ncols, headers=None):
     """{0-based column: number format} for the columns that really hold numbers. A column that
-    is mostly text is not a number column, however many digits happen to sit in it."""
+    is mostly text is not a number column, however many digits happen to sit in it.
+
+    A YEAR column is an identifier, not a magnitude: "2,023" on an axis and a data bar over
+    연도 both read as nonsense (2026-08-12 screenshot). All-integer values inside 1000–2999,
+    or a year-ish header, take the plain "0" format — and the caller skips decoration
+    (data bars / color scales) on any column formatted "0"."""
+    headers = headers or []
     out = {}
     for ci in range(ncols):
         vals = [r[ci] for r in body if ci < len(r)]
@@ -1179,7 +1794,14 @@ def _number_columns(body, ncols):
         if not nums or len(nums) * 2 <= len(filled):
             continue
         ints = [v for v in nums if float(v).is_integer()]
-        out[ci] = "#,##0" if len(ints) * 2 > len(nums) else "#,##0.00"
+        header_txt = str(headers[ci]) if ci < len(headers) and headers[ci] is not None else ""
+        year_like = (
+            len(ints) == len(nums) and all(1000 <= v <= 2999 for v in nums)
+        ) or _YEAR_HEADER_RE.search(header_txt)
+        if year_like:
+            out[ci] = "0"
+        else:
+            out[ci] = "#,##0" if len(ints) * 2 > len(nums) else "#,##0.00"
     return out
 
 
@@ -1202,14 +1824,14 @@ def _write_data_sheet(ws, sh):
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
 
-    headers = [str(h) for h in (sh.get("headers") or [])]
+    headers, rows_in = _table_rows(sh.get("headers"), sh.get("rows"))
     if headers:
         ws.append(headers)
         for c in ws[1]:
             c.font = Font(bold=True)
         ws.freeze_panes = "A2"
     body = []
-    for row in sh.get("rows") or []:
+    for row in rows_in:
         cells = _coerce_row(row)
         ws.append(cells)
         body.append(cells)
@@ -1218,11 +1840,15 @@ def _write_data_sheet(ws, sh):
     first_row = 2 if headers else 1
     last_row = first_row + len(body) - 1
     _fit_column_widths(ws, headers, body, ncols)
-    for ci, fmt in _number_columns(body, ncols).items():
+    for ci, fmt in _number_columns(body, ncols, headers).items():
         col = get_column_letter(ci + 1)
         for r in range(first_row, last_row + 1):
             ws.cell(row=r, column=ci + 1).number_format = fmt
         if last_row < first_row:
+            continue
+        if fmt == "0":
+            # A year/identifier column: plain digits, and no bars or scales — decorating an
+            # identifier reads as a claim about magnitude it does not make.
             continue
         rng = f"{col}{first_row}:{col}{last_row}"
         header_txt = headers[ci] if ci < len(headers) else ""
@@ -1288,8 +1914,8 @@ def _write_ledger_sheet(ws, sh):
     something you print and sign, and a heatmap in it reads as a mistake."""
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-    headers = [str(h) for h in (sh.get("headers") or [])]
-    body = [_coerce_row(row) for row in (sh.get("rows") or [])]
+    headers, rows_in = _table_rows(sh.get("headers"), sh.get("rows"))
+    body = [_coerce_row(row) for row in rows_in]
     ncols = max([len(headers)] + [len(r) for r in body] + [1])
     ws.sheet_view.showGridLines = False
 
@@ -1616,6 +2242,17 @@ def _show_axes(chart):
     return axes
 
 
+def _value_labels():
+    """Value-only data labels with EVERY show* flag explicit. An omitted CT_Boolean reads
+    TRUE in Excel — the same delete-by-omission family as the hidden axes — so a bare
+    showVal grew series names, category names and legend keys onto every bar
+    ("자산총계, 2,023, 455,905,980" per label, 2026-08-12 screenshot)."""
+    from openpyxl.chart.label import DataLabelList
+    return DataLabelList(showVal=True, dLblPos="outEnd", showSerName=False,
+                         showCatName=False, showLegendKey=False,
+                         showPercent=False, showBubbleSize=False)
+
+
 def _combo_chart(ws, vcols, labcol, max_row):
     """valueCols[0] as bars, valueCols[1] as a line on its own axis. Two quantities that share a
     time axis but not a unit (수량 vs 매출) belong on one chart with two scales — one scale would
@@ -1653,8 +2290,58 @@ def _combo_chart(ws, vcols, labcol, max_row):
     # whole combo because the line dropped its numbers into the bars, which threw away the bar
     # values the reference dashboard shows above each column.
     if max_row - 1 <= XLSX_DLBL_MAX_POINTS:
-        bar.dLbls = DataLabelList(showVal=True, dLblPos="outEnd")
+        bar.dLbls = _value_labels()
     return bar
+
+
+def _stock_chart(ws, vcols, labcol, volcol, max_row):
+    """A real Excel candlestick: 3 series = High/Low/Close, 4 = Open/High/Low/Close.
+
+    The order IS the contract — Excel reads a stock chart positionally, so a swapped pair draws
+    silently wrong candles rather than failing. hiLowLines connect each day's range; UpDownBars
+    are the bodies, painted in the Korean market's colors (up = red, down = blue), which is the
+    inverse of Excel's own default and the whole reason they are set by hand.
+
+    Volume rides a BarChart on a secondary axis when the candles carry it — the same two-scales-
+    one-time-axis move as _combo_chart, because it is the same problem (a volume in millions
+    would flatten a price in thousands into the floor)."""
+    from openpyxl.chart import BarChart, Reference, StockChart
+    from openpyxl.chart.axis import ChartLines
+    from openpyxl.chart.shapes import GraphicalProperties
+    from openpyxl.chart.updown_bars import UpDownBars
+    from openpyxl.drawing.line import LineProperties
+
+    chart = StockChart()
+    for col in vcols:
+        chart.add_data(Reference(ws, min_col=col, min_row=1, max_row=max_row),
+                       titles_from_data=True)
+    cats = Reference(ws, min_col=labcol, min_row=2, max_row=max_row) if labcol else None
+    if cats is not None:
+        chart.set_categories(cats)
+    # Every price series is a marker on the day's line, never a line of its own: without this
+    # the OHLC series draw as four crossing lines ON TOP of the candles.
+    for s in chart.series:
+        s.graphicalProperties = GraphicalProperties(ln=LineProperties(noFill=True))
+    chart.hiLowLines = ChartLines()
+    chart.upDownBars = UpDownBars(
+        upBars=ChartLines(spPr=GraphicalProperties(solidFill=XLSX_UP)),
+        downBars=ChartLines(spPr=GraphicalProperties(solidFill=XLSX_DOWN)))
+    if not volcol:
+        chart.legend = None   # "고가/저가/종가" names a candle nobody needed named
+        return chart
+    vol = BarChart()
+    vol.add_data(Reference(ws, min_col=volcol, min_row=1, max_row=max_row),
+                 titles_from_data=True)
+    if cats is not None:
+        vol.set_categories(cats)
+    for s in vol.series:
+        s.graphicalProperties = GraphicalProperties(solidFill=XLSX_COMBO_BAR)
+    vol.y_axis.axId = 200
+    vol.y_axis.number_format = "#,##0"
+    vol.y_axis.majorGridlines = None
+    chart.y_axis.crosses = "max"
+    chart += vol
+    return chart
 
 
 def _write_doughnut_center(ws, spec, c0, row, cols):
@@ -1772,8 +2459,15 @@ def _build_chart(wb, spec, sheet_map, notes):
     if ctype == "combo" and len(vcols) < 2:
         notes.append(f"chart '{who}': combo needs two value columns — drawn as bars")
         ctype = "bar"
+    if ctype == "stock" and len(vcols) < 3:
+        notes.append(f"chart '{who}': a candlestick needs 고가/저가/종가 — drawn as a line")
+        ctype = "line"
     if ctype == "combo":
         chart = _combo_chart(ws, vcols, labcol, ws.max_row)
+    elif ctype == "stock":
+        volcol = _resolve_column(headers, spec.get("volumeCol")) \
+            if spec.get("volumeCol") not in (None, "") else None
+        chart = _stock_chart(ws, vcols[:4], labcol, volcol, ws.max_row)
     else:
         chart = kinds.get(ctype, BarChart)()
         for col in vcols:
@@ -1805,11 +2499,13 @@ def _build_chart(wb, spec, sheet_map, notes):
         # Under the plot it takes rows the drawing already reserved.
         chart.legend.position = "b"
         chart.legend.overlay = False
-    # Value labels only where they have somewhere to go: above the bars, and only while the bars
-    # are still wide enough to hold a number. A combo labels its bars inside _combo_chart, on the
-    # bar group alone — its line stays bare, because a line's labels land in the bars.
-    if ctype == "bar" and ws.max_row - 1 <= XLSX_DLBL_MAX_POINTS:
-        chart.dLbls = DataLabelList(showVal=True, dLblPos="outEnd")
+    # Value labels only where they have somewhere to go: above the bars of a SINGLE series,
+    # and only while the bars are still wide enough to hold a number. Three series of
+    # nine-digit values wore their labels as a solid ink cloud (2026-08-12 screenshot) —
+    # a multi-series bar already has the legend; the reference dashboards label only the
+    # lone-series kind. A combo labels its bars inside _combo_chart, on the bar group alone.
+    if ctype == "bar" and len(vcols) == 1 and ws.max_row - 1 <= XLSX_DLBL_MAX_POINTS:
+        chart.dLbls = _value_labels()
     # The chart's own page: white area, no frame line — so the drawing reads as part of the white
     # card painted under it instead of a gray rectangle floating on the canvas.
     area = GraphicalProperties(solidFill=XLSX_WHITE)
@@ -1876,6 +2572,30 @@ def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes, width)
     return len(prepared), row
 
 
+def _write_note_band(ws, texts, top_row, width):
+    """callout blocks as full-width amber note rows at the foot of the Dashboard.
+
+    A callout is where the honesty note lives ("추정치", "장중 데이터"), and until now it was
+    the ONE block type every renderer dropped — the caveat vanished while the numbers it
+    qualified survived. It wears the unit chip's amber so it reads as an annotation, not data."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    fill = PatternFill("solid", fgColor=XLSX_UNIT_BADGE_BG)
+    row = top_row
+    for text in texts:
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=width)
+        for c in range(1, width + 1):
+            ws.cell(row=row, column=c).fill = fill
+        cell = ws.cell(row=row, column=1)
+        cell.value = f"※ {text}"
+        cell.font = Font(size=9, bold=True, color=XLSX_UNIT_BADGE_FG)
+        cell.alignment = Alignment(horizontal="left", vertical="center", indent=1,
+                                   wrap_text=True)
+        ws.row_dimensions[row].height = 20
+        row += 2   # one page row between notes, the spacing every other band uses
+    return row
+
+
 def _write_dash_title(ws, title, width):
     """Row 1 = the navy band, same spine as the pptx section band."""
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -1891,13 +2611,14 @@ def _write_dash_title(ws, title, width):
     ws.row_dimensions[1].height = XLSX_TITLE_ROW_H
 
 
-def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
-    """Data sheets always; a Dashboard sheet in front of them when KPIs or charts exist."""
+def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None, callouts=None):
+    """Data sheets always; a Dashboard sheet in front of them when KPIs, charts or notes exist."""
     import openpyxl
 
     sheets = [s for s in (sheets or []) if isinstance(s, dict)]
     kpis = [k for k in (kpis or []) if isinstance(k, dict)]
     charts = [c for c in (charts or []) if isinstance(c, dict)]
+    callouts = [str(c) for c in (callouts or []) if str(c or "").strip()]
 
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -1905,7 +2626,7 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
     # Created first so it is the sheet the file opens on; filled last, because the charts
     # inside it need the data sheets to exist.
     ws_dash = None
-    if kpis or charts:
+    if kpis or charts or callouts:
         ws_dash = wb.create_sheet(title=_sheet_title("Dashboard", 0, used))
         # The single biggest difference between "a report" and "a spreadsheet someone typed in":
         # the grid. Data sheets keep theirs — they are working sheets.
@@ -1942,6 +2663,8 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
                 wb, ws_dash, charts, sheet_map, row, notes, width)
         if bars:
             row = _write_kpi_bars(ws_dash, bars, row, width)
+        if callouts:
+            row = _write_note_band(ws_dash, callouts, row, width)
         _paint_canvas(ws_dash, row, width)
 
     wb.save(out_path)
@@ -1949,9 +2672,12 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None):
             "kpis": len(kpis), "charts": placed, "notes": notes}
 
 
-def _chart_block(b, index, taken):
-    """chart-family block -> (data sheet, chart spec). Inline series become real cells so the
-    native chart can point at them; None when the block carries no plottable numbers."""
+def _chart_series(b):
+    """chart-family block -> (ctype, title, labels, [(unique series name, values)]) or None.
+
+    One parse for both consumers: xlsx turns it into real cells a native chart points at, pptx
+    hands it straight to CategoryChartData. Two parsers would drift, and the pptx one would be
+    the one that quietly stopped accepting a dialect."""
     t = str(b.get("type") or "").lower()
     p = b.get("props") or {}
     ctype = str(p.get("chartType") or p.get("type") or "").strip().lower()
@@ -1961,9 +2687,9 @@ def _chart_block(b, index, taken):
     if ctype not in _CHART_TYPES:
         ctype = "bar"
 
-    labels = [str(x) for x in (p.get("labels") or [])]
+    labels = [str(x) for x in (p.get("labels") or p.get("categories") or [])]
     cols = []
-    series = p.get("series")
+    series = p.get("series") or p.get("datasets")
     if isinstance(series, list) and series:
         for si, s in enumerate(series):
             if not isinstance(s, dict):
@@ -1971,22 +2697,35 @@ def _chart_block(b, index, taken):
             name = str(s.get("name") or s.get("label") or f"계열{si + 1}")
             cols.append((name, list(s.get("data") or s.get("values") or [])))
     else:
-        data = p.get("data")
+        data = p.get("data") if isinstance(p.get("data"), list) else p.get("values")
         if isinstance(data, list) and data and not isinstance(data[0], dict):
             cols.append((str(p.get("title") or "값"), list(data)))
     if not labels or not cols:
         return None
 
-    seen, names = set(), []
-    for name, _vals in cols:
+    seen, named = set(), []
+    for name, vals in cols:
         uniq, n = name, 2
         while uniq in seen:
             uniq = f"{name} {n}"
             n += 1
         seen.add(uniq)
-        names.append(uniq)
+        named.append((uniq, vals))
+    return ctype, str(p.get("title") or "").strip(), labels, named
 
-    title = str(p.get("title") or "").strip() or f"차트{index}"
+
+def _chart_block(b, index, taken):
+    """chart-family block -> (data sheet, chart spec). Inline series become real cells so the
+    native chart can point at them; None when the block carries no plottable numbers."""
+    parsed = _chart_series(b)
+    if not parsed:
+        return None
+    p = b.get("props") or {}
+    ctype, title, labels, named = parsed
+    names = [n for n, _v in named]
+    cols = named
+
+    title = title or f"차트{index}"
     sheet_name, n = title, 2   # the chart spec points at this sheet BY NAME — keep it unique
     while sheet_name in taken:
         sheet_name = f"{title} {n}"
@@ -2004,9 +2743,35 @@ def _chart_block(b, index, taken):
     return sheet, spec
 
 
+def _stock_block(b, index, taken):
+    """stock_chart block -> (OHLC(V) data sheet, candlestick spec). None when the block carries
+    no candles — the same contract as _chart_block, so the caller treats both alike."""
+    p = b.get("props") or {}
+    headers, rows = _stock_rows(p)
+    if not rows or len(headers) < 4:
+        return None
+    title = str(p.get("title") or p.get("symbol") or "").strip() or f"차트{index}"
+    sheet_name, n = title, 2
+    while sheet_name in taken:
+        sheet_name = f"{title} {n}"
+        n += 1
+    taken.add(sheet_name)
+    # Excel reads a stock chart positionally, so the value columns go in exactly the order the
+    # candle wants: O/H/L/C when the open is there, H/L/C when it is not.
+    price = [h for h in ("시가", "고가", "저가", "종가") if h in headers]
+    if len(price) < 3:
+        return None
+    sheet = {"name": sheet_name, "headers": headers, "rows": rows}
+    spec = {"type": "stock", "title": title, "sheet": sheet_name,
+            "labelCol": headers[0], "valueCols": price,
+            "volumeCol": "거래량" if "거래량" in headers else None,
+            "unit": p.get("unit") or p.get("unitLabel")}
+    return sheet, spec
+
+
 def _blocks_to_xlsx(blocks):
-    """Render blocks -> (table sheets, kpis, charts, chart data sheets)."""
-    tables, kpis, charts, chart_sheets = [], [], [], []
+    """Render blocks -> (table sheets, kpis, charts, chart data sheets, callout notes)."""
+    tables, kpis, charts, chart_sheets, callouts = [], [], [], [], []
     taken, last_header = set(), None
     for b in blocks:
         t, p = str(b.get("type") or "").lower(), b.get("props") or {}
@@ -2015,20 +2780,39 @@ def _blocks_to_xlsx(blocks):
         elif t == "table":
             name = last_header or f"표{len(tables) + 1}"
             taken.add(name)
-            tables.append({"name": name, "headers": p.get("headers") or [],
-                           "rows": p.get("rows") or []})
+            headers, rows = _table_rows(p.get("headers"), p.get("rows"))
+            tables.append({"name": name, "headers": headers, "rows": rows})
             last_header = None
         elif t == "metric":
             kpis.append({"label": p.get("label"), "value": p.get("value"),
                          "unit": p.get("unit"), "delta": p.get("delta"),
                          "deltaType": p.get("deltaType"), "icon": p.get("icon"),
                          "style": p.get("style"), "max": p.get("max")})
+        elif t == "callout":
+            title, msg = _callout_parts(p)
+            line = f"{title} — {msg}" if title and msg else (title or msg)
+            if line:
+                callouts.append(line)
+        elif t == "key_value":
+            # A fact list is a two-column table — the only shape a spreadsheet has for it.
+            pairs = _kv_pairs(p)
+            if pairs:
+                name = str(p.get("title") or "").strip() or last_header or f"표{len(tables) + 1}"
+                taken.add(name)
+                tables.append({"name": name, "headers": ["항목", "값"],
+                               "rows": [[k, v] for k, v in pairs]})
+                last_header = None
+        elif t in _STOCK_BLOCK_TYPES:
+            made = _stock_block(b, len(charts) + 1, taken)
+            if made:
+                chart_sheets.append(made[0])
+                charts.append(made[1])
         elif t in _CHART_BLOCK_TYPES:
             made = _chart_block(b, len(charts) + 1, taken)
             if made:
                 chart_sheets.append(made[0])
                 charts.append(made[1])
-    return tables, kpis, charts, chart_sheets
+    return tables, kpis, charts, chart_sheets, callouts
 
 
 def action_make_xlsx(inp):
@@ -2037,8 +2821,9 @@ def action_make_xlsx(inp):
     kpis = [k for k in (inp.get("kpis") or []) if isinstance(k, dict)]
     charts = [c for c in (inp.get("charts") or []) if isinstance(c, dict)]
 
-    b_tables, b_kpis, b_charts, b_chart_sheets = _blocks_to_xlsx(
-        normalize_blocks(inp.get("blocks")))
+    drops = []
+    b_tables, b_kpis, b_charts, b_chart_sheets, b_callouts = _blocks_to_xlsx(
+        normalize_blocks(inp.get("blocks"), drops))
     # Explicit input wins per axis, so blocks never duplicate what the caller stated.
     if not sheets:
         sheets = b_tables
@@ -2054,154 +2839,657 @@ def action_make_xlsx(inp):
             names.add(sh["name"])
         sheets = list(sheets) + b_chart_sheets
 
-    if not sheets and not kpis and not charts:
+    if not sheets and not kpis and not charts and not b_callouts:
         return {"success": False, "action": "make_xlsx",
                 "error": "nothing to write — pass sheets/kpis/charts, or blocks containing "
-                         "table, metric or chart blocks"}
+                         "table, metric, chart or stock_chart blocks"}
     title = str(inp.get("title") or (sheets[0].get("name") if sheets else "") or "sheet")
     out_path, stem = out_file(title, "xlsx", {"s": sheets, "k": kpis, "c": charts})
     try:
-        res = make_xlsx_file(sheets, out_path, title=title, kpis=kpis, charts=charts)
+        res = make_xlsx_file(sheets, out_path, title=title, kpis=kpis, charts=charts,
+                             callouts=b_callouts)
     except Exception as e:  # noqa: BLE001
         return {"success": False, "action": "make_xlsx", "error": f"xlsx build failed: {e}"}
+    res["notes"] = drops + list(res.get("notes") or [])
+    if not res["notes"]:
+        res.pop("notes")
     return {"success": True, "action": "make_xlsx", "data": {
         **res, "_mediaImport": media_import_decl(out_path, "xlsx", stem),
     }}
 
 
-def make_docx_file(blocks, title, out_path):
-    import docx
-    d = docx.Document()
+# ── docx / pdf: the report genre ───────────────────────────────────────────────────────────────
+# The deck genre's print sibling — same navy, same single accent, same restraint. A report is not
+# a deck flowed onto A4: it opens with a cover, its headings are ranked by weight rather than by
+# size alone, its tables are read (numbers right, header banded) and its KPI rows are laid out
+# side by side instead of stacked into a column of orphan sentences.
+RPT_NAVY = "1E293B"        # headings — the pptx section band's navy
+RPT_ACCENT = "2563EB"      # the one accent (blue-600)
+RPT_BODY = "334155"
+RPT_MUTED = "64748B"       # date line, KPI labels, footer
+RPT_BAND = "F1F5F9"        # KPI card / callout tint
+RPT_RULE = "CBD5E1"        # table hairline
+RPT_HEADFILL = "E2E8F0"    # table header row
+RPT_CALLOUT_EDGE = "BFDBFE"
+
+
+def _today_line():
+    """The cover's date, in the operator's timezone. FIREBAT_TZ is what the framework injects —
+    a report dated in UTC is dated wrong for half of every day."""
+    import datetime
+    tz = None
+    name = str(os.environ.get("FIREBAT_TZ") or "").strip()
+    if name:
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(name)
+        except Exception:  # noqa: BLE001 — an unknown zone name falls back to host local time
+            tz = None
+    now = datetime.datetime.now(tz) if tz else datetime.datetime.now()
+    return now.strftime("%Y. %m. %d.")
+
+
+def _chart_table_block(b):
+    """A chart as a table — what a page with no plotting engine can honestly show of one.
+    docx and pdf have no native chart, and silently dropping the numbers is the worse answer."""
+    parsed = _chart_series(b)
+    if not parsed:
+        return None
+    _ctype, title, labels, named = parsed
+    headers = ["항목"] + [n for n, _v in named]
+    rows = [[lab] + [(vals[i] if i < len(vals) else None) for _n, vals in named]
+            for i, lab in enumerate(labels)]
+    return {"type": "table", "props": {"headers": headers, "rows": rows, "title": title}}
+
+
+def _report_cover(blocks, title):
+    """(cover title, remaining blocks). A stream that opens with a level-1 header is telling us
+    its own name — that header becomes the cover, and a divider right behind it was only ever
+    saying "the document starts here", which the cover now says better."""
+    blocks = list(blocks or [])
+    cover = str(title or "").strip()
+    if blocks and str(blocks[0].get("type") or "") == "header" \
+            and _header_level(blocks[0].get("props") or {}) == 1:
+        cover = str((blocks[0].get("props") or {}).get("text") or "").strip() or cover
+        blocks = blocks[1:]
+        if blocks and str(blocks[0].get("type") or "") == "divider":
+            blocks = blocks[1:]
+    return cover, blocks
+
+
+def _metric_runs(blocks):
+    """[(index, [metric props, ...])] — consecutive metric blocks are ONE strip. A KPI row read
+    as four stacked sentences is the single most common way a report looks unmade."""
+    runs, i = [], 0
+    while i < len(blocks):
+        if str(blocks[i].get("type") or "") == "metric":
+            start, ms = i, []
+            while i < len(blocks) and str(blocks[i].get("type") or "") == "metric":
+                ms.append(blocks[i].get("props") or {})
+                i += 1
+            runs.append((start, ms))
+        else:
+            i += 1
+    return runs
+
+
+def _docx_el(tag, **attrs):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    el = OxmlElement(tag)
+    for k, v in attrs.items():
+        el.set(qn("w:" + k), str(v))
+    return el
+
+
+def _docx_borders(prop_el, color, sz, edges, container="w:pBdr", val="single"):
+    bdr = _docx_el(container)
+    for edge in edges:
+        bdr.append(_docx_el("w:" + edge, val=val, sz=sz, space="0", color=color))
+    prop_el.append(bdr)
+
+
+def _docx_shade(prop_el, color):
+    prop_el.append(_docx_el("w:shd", val="clear", color="auto", fill=color))
+
+
+def _docx_para_box(par, fill=None, edge=None, edges=("top", "left", "bottom", "right"), sz=6):
+    # pBdr before shd — that is the order CT_PPr declares, and Word is only forgiving until it
+    # is not.
+    pPr = par._p.get_or_add_pPr()
+    if edge:
+        _docx_borders(pPr, edge, sz, edges)
+    if fill:
+        _docx_shade(pPr, fill)
+
+
+def _docx_table_borders(table, color=RPT_RULE, sz=4,
+                        edges=("top", "left", "bottom", "right", "insideH", "insideV"),
+                        val="single"):
+    _docx_borders(table._tbl.tblPr, color, sz, edges, container="w:tblBorders", val=val)
+
+
+def _docx_cell_shade(cell, color):
+    _docx_shade(cell._tc.get_or_add_tcPr(), color)
+
+
+def _docx_set_widths(table, widths):
+    """Word autofits to CONTENT, which turns a four-card KPI row into four different-sized
+    cards. A card row is a grid — the widths are the design, so they are stated."""
+    table.autofit = False
+    for row in table.rows:
+        for cell, w in zip(row.cells, widths):
+            cell.width = w
+
+
+def _docx_run(par, text, size, bold=False, color=RPT_BODY):
+    from docx.shared import Pt, RGBColor
+    run = par.add_run(str(text))
+    run.bold = bold
+    run.font.size = Pt(size)
+    run.font.color.rgb = RGBColor.from_string(color)
+    return run
+
+
+def _docx_page_footer(section):
+    """A page number in the section footer — a PAGE field, so it counts itself. python-docx has
+    no API for fields, but fldSimple is one element and Word owns the arithmetic."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    par = section.footer.paragraphs[0] if section.footer.paragraphs \
+        else section.footer.add_paragraph()
+    par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fld = _docx_el("w:fldSimple", instr=" PAGE ")
+    run = OxmlElement("w:r")
+    rpr = OxmlElement("w:rPr")
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), "16")            # half-points: 8pt
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), RPT_MUTED)
+    rpr.append(sz)
+    rpr.append(color)
+    text = OxmlElement("w:t")
+    text.text = "1"
+    run.append(rpr)
+    run.append(text)
+    fld.append(run)
+    par._p.append(fld)
+
+
+def _docx_heading(d, text, lvl):
+    from docx.shared import Pt
+    par = d.add_paragraph()
+    _docx_run(par, text, {1: 16, 2: 13, 3: 11.5}[lvl], bold=True, color=RPT_NAVY)
+    par.paragraph_format.space_before = Pt({1: 18, 2: 13, 3: 9}[lvl])
+    par.paragraph_format.space_after = Pt({1: 7, 2: 5, 3: 3}[lvl])
+    if lvl == 1:
+        _docx_para_box(par, edge=RPT_ACCENT, edges=("bottom",), sz=8)
+    return par
+
+
+def _docx_kpi_strip(d, metrics, width):
+    """Label over value, side by side, in a borderless tinted table — the deck's metric card
+    with the deck's geometry taken out."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    per_row = min(4, max(1, len(metrics)))
+    n_rows = -(-len(metrics) // per_row)
+    table = d.add_table(rows=n_rows, cols=per_row)
+    _docx_table_borders(table, val="none")
+    _docx_set_widths(table, [int(width / per_row)] * per_row)
+    for idx, m in enumerate(metrics):
+        cell = table.cell(idx // per_row, idx % per_row)
+        _docx_cell_shade(cell, RPT_BAND)
+        lab = cell.paragraphs[0]
+        lab.paragraph_format.space_after = Pt(0)
+        _docx_run(lab, m.get("label") or "", 8, color=RPT_MUTED)
+        val = cell.add_paragraph()
+        val.paragraph_format.space_after = Pt(0)
+        _docx_run(val, f"{m.get('value', '')}{m.get('unit') or ''}", 16, bold=True,
+                  color=RPT_NAVY)
+        if m.get("delta") not in (None, ""):
+            dl = cell.add_paragraph()
+            dl.paragraph_format.space_after = Pt(0)
+            _docx_run(dl, m.get("delta"), 8.5, color=RPT_MUTED)
+        for par in cell.paragraphs:
+            par.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    d.add_paragraph().paragraph_format.space_after = Pt(4)
+
+
+def _docx_table(d, p):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    headers, rows = _table_rows(p.get("headers"), p.get("rows"))
+    if not headers and rows:
+        headers = [str(c) for c in rows[0]]
+        rows = rows[1:]
+    if not headers:
+        return
+    table = d.add_table(rows=len(rows) + 1, cols=len(headers))
+    _docx_table_borders(table)
+    numeric = _numeric_cols(rows, len(headers))
+    for c, h in enumerate(headers):
+        cell = table.cell(0, c)
+        _docx_cell_shade(cell, RPT_HEADFILL)
+        par = cell.paragraphs[0]
+        par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        par.paragraph_format.space_after = Pt(0)
+        _docx_run(par, h, 9.5, bold=True, color=RPT_NAVY)
+    for r, row in enumerate(rows):
+        for c in range(len(headers)):
+            val = row[c] if c < len(row) else ""
+            par = table.cell(r + 1, c).paragraphs[0]
+            par.alignment = (WD_ALIGN_PARAGRAPH.RIGHT if c in numeric
+                             else WD_ALIGN_PARAGRAPH.LEFT)
+            par.paragraph_format.space_after = Pt(0)
+            _docx_run(par, "" if val is None else val, 9.5)
+    d.add_paragraph().paragraph_format.space_after = Pt(4)
+
+
+def _docx_key_value(d, p, width):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    pairs = _kv_pairs(p)
+    if not pairs:
+        return
+    title = str(p.get("title") or "").strip()
     if title:
-        d.add_heading(str(title), level=0)
-    for b in blocks:
+        _docx_heading(d, title, 3)
+    table = d.add_table(rows=len(pairs), cols=2)
+    _docx_table_borders(table, edges=("insideH",))   # rules between facts, nothing around them
+    _docx_set_widths(table, [int(width * 0.45), int(width * 0.55)])
+    for r, (k, v) in enumerate(pairs):
+        kp = table.cell(r, 0).paragraphs[0]
+        kp.paragraph_format.space_after = Pt(2)
+        _docx_run(kp, k, 9.5, color=RPT_MUTED)
+        vp = table.cell(r, 1).paragraphs[0]
+        vp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        vp.paragraph_format.space_after = Pt(2)
+        _docx_run(vp, "" if v is None else v, 9.5, bold=True, color=RPT_NAVY)
+    d.add_paragraph().paragraph_format.space_after = Pt(4)
+
+
+def _docx_callout(d, p):
+    from docx.shared import Pt
+    title, msg = _callout_parts(p)
+    if not title and not msg:
+        return
+    par = d.add_paragraph()
+    _docx_para_box(par, fill=RPT_BAND, edge=RPT_CALLOUT_EDGE, sz=6)
+    fmt = par.paragraph_format
+    fmt.left_indent = Pt(8)
+    fmt.right_indent = Pt(8)
+    fmt.space_before = Pt(8)
+    fmt.space_after = Pt(8)
+    if title:
+        _docx_run(par, title + ("  " if msg else ""), 10, bold=True, color=RPT_NAVY)
+    if msg:
+        _docx_run(par, msg, 10, color=RPT_BODY)
+
+
+def _docx_image(d, p, max_width):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    path, _err = resolve_path(str(p.get("src") or ""))
+    if not path:
+        return
+    try:
+        pic = d.add_picture(path)
+    except Exception:  # noqa: BLE001 — a bad image loses itself, not the document
+        return
+    if pic.width > max_width:
+        pic.height = int(pic.height * max_width / pic.width)
+        pic.width = max_width
+    d.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+def make_docx_file(blocks, title, out_path):
+    """Render blocks -> a .docx report: cover, ranked headings, read-able tables, KPI strips,
+    callout boxes, page-numbered footer. Plain text and lists stay plain — a report is mostly
+    prose, and the genre earns its keep at the places prose is not."""
+    import docx
+    from docx.shared import Pt
+
+    d = docx.Document()
+    section = d.sections[0]
+    body_width = section.page_width - section.left_margin - section.right_margin
+    cover, blocks = _report_cover(blocks, title)
+    if cover:
+        par = d.add_paragraph()
+        par.paragraph_format.space_before = Pt(150)
+        par.paragraph_format.space_after = Pt(10)
+        _docx_run(par, cover, 26, bold=True, color=RPT_NAVY)
+        date_par = d.add_paragraph()
+        date_par.paragraph_format.space_after = Pt(6)
+        _docx_run(date_par, _today_line(), 10, color=RPT_MUTED)
+        rule = d.add_paragraph()
+        rule.paragraph_format.space_after = Pt(0)
+        _docx_para_box(rule, edge=RPT_ACCENT, edges=("bottom",), sz=12)
+        if blocks:
+            d.add_page_break()
+    _docx_page_footer(section)
+
+    metric_at = dict(_metric_runs(blocks))
+    skip_to = -1
+    for i, b in enumerate(blocks):
+        if i < skip_to:
+            continue
         t, p = str(b.get("type") or ""), b.get("props") or {}
-        if t == "header":
-            d.add_heading(str(p.get("text") or ""), level=min(4, max(1, int(p.get("level") or 2))))
+        if i in metric_at:
+            _docx_kpi_strip(d, metric_at[i], body_width)
+            skip_to = i + len(metric_at[i])
+        elif t == "header":
+            _docx_heading(d, str(p.get("text") or ""), _header_level(p))
         elif t == "list":
             style = "List Number" if p.get("ordered") else "List Bullet"
             for item in p.get("items") or []:
                 d.add_paragraph(str(item), style=style)
         elif t == "table":
-            headers = [str(h) for h in (p.get("headers") or [])]
-            rows = p.get("rows") or []
-            if not headers:
-                continue
-            tb = d.add_table(rows=len(rows) + 1, cols=len(headers))
-            tb.style = "Light Grid Accent 1"
-            for c, h in enumerate(headers):
-                cell = tb.cell(0, c)
-                cell.text = str(h)
-                for run in cell.paragraphs[0].runs:
-                    run.bold = True
-            for r, row in enumerate(rows):
-                for c in range(len(headers)):
-                    val = row[c] if c < len(row) else ""
-                    tb.cell(r + 1, c).text = "" if val is None else str(val)
+            _docx_table(d, p)
+        elif t == "key_value":
+            _docx_key_value(d, p, body_width)
+        elif t == "callout":
+            _docx_callout(d, p)
+        elif t == "image":
+            _docx_image(d, p, body_width)
+        elif t in _STOCK_BLOCK_TYPES:
+            block, extra = _stock_table_block(p)
+            if block:
+                _docx_table(d, block["props"])
+                if extra:
+                    _docx_run(d.add_paragraph(), extra, 8.5, color=RPT_MUTED)
+        elif t in _CHART_BLOCK_TYPES:
+            block = _chart_table_block(b)
+            if block:
+                if block["props"].get("title"):
+                    _docx_heading(d, block["props"]["title"], 3)
+                _docx_table(d, block["props"])
         elif t == "divider":
             d.add_page_break()
         else:
             for line in _block_lines(b):
-                d.add_paragraph(line)
+                par = d.add_paragraph()
+                par.paragraph_format.space_after = Pt(4)
+                _docx_run(par, line, 10.5)
     d.save(out_path)
 
 
 def _pdf_korean_font():
     """A Korean-capable font for reportlab: a host TTF when one exists (embedded, best
-    fidelity), else Adobe's CID KR font (no file needed — the viewer supplies the glyphs)."""
+    fidelity), else Adobe's CID KR font (no file needed — the viewer supplies the glyphs).
+
+    The BOLD face is registered as a family MEMBER, not decoration: reportlab resolves <b> by
+    looking up the family's bold entry, and with no such entry every bold in the report genre —
+    cover title, headings, KPI values, table headers — silently rendered at regular weight."""
     from reportlab.pdfbase import pdfmetrics
-    for path in (
-        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf",
-        "C:/Windows/Fonts/malgun.ttf",
+    for path, bold_path in (
+        ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+         "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
+        ("/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf",
+         "/usr/share/fonts/truetype/noto/NotoSansKR-Bold.ttf"),
+        ("C:/Windows/Fonts/malgun.ttf", "C:/Windows/Fonts/malgunbd.ttf"),
     ):
         if os.path.isfile(path):
             from reportlab.pdfbase.ttfonts import TTFont
             try:
                 pdfmetrics.registerFont(TTFont("KoreanBody", path))
-                return "KoreanBody"
             except Exception:  # noqa: BLE001 — a broken font file falls through to CID
                 continue
+            bold = "KoreanBody"
+            if os.path.isfile(bold_path):
+                try:
+                    pdfmetrics.registerFont(TTFont("KoreanBody-Bold", bold_path))
+                    bold = "KoreanBody-Bold"
+                except Exception:  # noqa: BLE001 — a missing bold face is not a broken document
+                    bold = "KoreanBody"
+            pdfmetrics.registerFontFamily("KoreanBody", normal="KoreanBody", bold=bold,
+                                          italic="KoreanBody", boldItalic=bold)
+            return "KoreanBody"
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     pdfmetrics.registerFont(UnicodeCIDFont("HYGothic-Medium"))
     return "HYGothic-Medium"
 
 
 def make_pdf_file(blocks, title, out_path):
+    """Render blocks -> a .pdf report — the docx genre's twin, drawn with reportlab's parts.
+    Same cover, same ranked headings, same banded tables and tinted callouts, so the two
+    formats of one report do not read as two different documents."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import (Image as RLImage, ListFlowable, ListItem, PageBreak,
-                                    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle)
+    from reportlab.lib.utils import ImageReader
+    from reportlab.platypus import (HRFlowable, Image as RLImage, ListFlowable, ListItem,
+                                    PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
+                                    TableStyle)
 
     font = _pdf_korean_font()
+    navy = colors.HexColor("#" + RPT_NAVY)
+    accent = colors.HexColor("#" + RPT_ACCENT)
+    body_c = colors.HexColor("#" + RPT_BODY)
+    muted = colors.HexColor("#" + RPT_MUTED)
+    band = colors.HexColor("#" + RPT_BAND)
+    rule = colors.HexColor("#" + RPT_RULE)
+    headfill = colors.HexColor("#" + RPT_HEADFILL)
+
+    def st(name, size, **kw):
+        return ParagraphStyle(name, fontName=font, fontSize=size,
+                              leading=kw.pop("leading", size * 1.45), **kw)
+
     styles = {
-        "title": ParagraphStyle("t", fontName=font, fontSize=22, leading=28, spaceAfter=10),
-        1: ParagraphStyle("h1", fontName=font, fontSize=17, leading=22, spaceBefore=10, spaceAfter=6),
-        2: ParagraphStyle("h2", fontName=font, fontSize=14, leading=18, spaceBefore=8, spaceAfter=4),
-        3: ParagraphStyle("h3", fontName=font, fontSize=12, leading=16, spaceBefore=6, spaceAfter=3),
-        "body": ParagraphStyle("b", fontName=font, fontSize=10, leading=15, spaceAfter=3),
+        "cover": st("cover", 26, textColor=navy, spaceAfter=8),
+        "date": st("date", 10, textColor=muted, spaceAfter=4),
+        1: st("h1", 16, textColor=navy, spaceBefore=14, spaceAfter=2),
+        2: st("h2", 13, textColor=navy, spaceBefore=11, spaceAfter=4),
+        3: st("h3", 11.5, textColor=navy, spaceBefore=8, spaceAfter=3),
+        "body": st("b", 10.5, textColor=body_c, spaceAfter=4),
+        "cell": st("cell", 9.5, textColor=body_c),
+        "cellr": st("cellr", 9.5, textColor=body_c, alignment=2),
+        "th": st("th", 9.5, textColor=navy, alignment=1),
+        "kpil": st("kpil", 8, textColor=muted, spaceAfter=1),
+        "kpiv": st("kpiv", 16, textColor=navy, spaceAfter=0),
+        "kpid": st("kpid", 8.5, textColor=muted),
+        "callout": st("callout", 10, textColor=body_c),
+        "note": st("note", 8.5, textColor=muted, spaceAfter=4),
     }
+    margin = 18 * mm
+    avail = A4[0] - margin * 2
 
     def esc(s):
         return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
+    def para(text, style, bold=False):
+        text = esc(text)
+        return Paragraph(f"<b>{text}</b>" if bold else text, styles[style])
+
+    def table_flow(p):
+        headers, rows = _table_rows(p.get("headers"), p.get("rows"))
+        if not headers and rows:
+            headers = [str(c) for c in rows[0]]
+            rows = rows[1:]
+        if not headers:
+            return []
+        numeric = _numeric_cols(rows, len(headers))
+        data = [[para(h, "th", bold=True) for h in headers]]
+        for row in rows:
+            cells = []
+            for c in range(len(headers)):
+                val = row[c] if c < len(row) else ""
+                cells.append(para("" if val is None else val,
+                                  "cellr" if c in numeric else "cell"))
+            data.append(cells)
+        tbl = Table(data, repeatRows=1, hAlign="LEFT")
+        tbl.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.4, rule),
+            ("BACKGROUND", (0, 0), (-1, 0), headfill),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        return [tbl, Spacer(1, 4 * mm)]
+
+    def kpi_flow(metrics):
+        per_row = min(4, max(1, len(metrics)))
+        out = []
+        for start in range(0, len(metrics), per_row):
+            chunk = metrics[start:start + per_row]
+            cells = []
+            for m in chunk:
+                stack = [para(m.get("label") or "", "kpil"),
+                         para(f"{m.get('value', '')}{m.get('unit') or ''}", "kpiv", bold=True)]
+                if m.get("delta") not in (None, ""):
+                    stack.append(para(m.get("delta"), "kpid"))
+                cells.append(stack)
+            cells += [""] * (per_row - len(chunk))
+            tbl = Table([cells], colWidths=[avail / per_row] * per_row, hAlign="LEFT")
+            tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (len(chunk) - 1, 0), band),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]))
+            out += [tbl, Spacer(1, 3 * mm)]
+        return out
+
+    def kv_flow(p):
+        pairs = _kv_pairs(p)
+        if not pairs:
+            return []
+        out = [para(p.get("title"), 3, bold=True)] if str(p.get("title") or "").strip() else []
+        data = [[para(k, "cell"), para("" if v is None else v, "cellr", bold=True)]
+                for k, v in pairs]
+        tbl = Table(data, colWidths=[avail * 0.45, avail * 0.55], hAlign="LEFT")
+        tbl.setStyle(TableStyle([
+            ("LINEBELOW", (0, 0), (-1, -2), 0.4, rule),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        return out + [tbl, Spacer(1, 4 * mm)]
+
+    def callout_flow(p):
+        c_title, msg = _callout_parts(p)
+        if not c_title and not msg:
+            return []
+        inner = []
+        if c_title:
+            inner.append(para(c_title, "callout", bold=True))
+        if msg:
+            inner.append(para(msg, "callout"))
+        tbl = Table([[inner]], colWidths=[avail], hAlign="LEFT")
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), band),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#" + RPT_CALLOUT_EDGE)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        return [tbl, Spacer(1, 4 * mm)]
+
+    def image_flow(p):
+        img_path, _err = resolve_path(str(p.get("src") or ""))
+        if not img_path:
+            return []
+        try:
+            # Fit to the text column, and never blow a small image up to reach it — the old
+            # `height=60mm, kind="proportional"` sized on height alone, so a wide screenshot
+            # ran off the page.
+            iw, ih = ImageReader(img_path).getSize()
+            w = min(float(avail), float(iw))
+            return [RLImage(img_path, width=w, height=w * float(ih) / float(iw)),
+                    Spacer(1, 3 * mm)]
+        except Exception:  # noqa: BLE001 — a bad image loses itself, not the document
+            return []
+
+    cover, blocks = _report_cover(blocks, title)
     story = []
-    if title:
-        story.append(Paragraph(esc(title), styles["title"]))
-    for b in blocks:
+    if cover:
+        story += [Spacer(1, 55 * mm), para(cover, "cover", bold=True),
+                  para(_today_line(), "date"),
+                  HRFlowable(width="35%", thickness=1.6, color=accent, hAlign="LEFT",
+                             spaceBefore=2, spaceAfter=2)]
+        if blocks:
+            story.append(PageBreak())
+
+    metric_at = dict(_metric_runs(blocks))
+    skip_to = -1
+    for i, b in enumerate(blocks):
+        if i < skip_to:
+            continue
         t, p = str(b.get("type") or ""), b.get("props") or {}
-        if t == "header":
-            lvl = min(3, max(1, int(p.get("level") or 2)))
-            story.append(Paragraph(esc(p.get("text") or ""), styles[lvl]))
+        if i in metric_at:
+            story += kpi_flow(metric_at[i])
+            skip_to = i + len(metric_at[i])
+        elif t == "header":
+            lvl = _header_level(p)
+            story.append(para(p.get("text") or "", lvl, bold=True))
+            if lvl == 1:
+                story.append(HRFlowable(width="100%", thickness=1.0, color=accent,
+                                        spaceBefore=1, spaceAfter=6))
         elif t == "list":
-            items = [ListItem(Paragraph(esc(i), styles["body"])) for i in (p.get("items") or [])]
+            items = [ListItem(para(it, "body")) for it in (p.get("items") or [])]
             if items:
+                # Tight indents: reportlab's defaults park the bullet a centimetre from its
+                # own sentence, which reads as two columns rather than one list.
                 story.append(ListFlowable(
                     items, bulletType="1" if p.get("ordered") else "bullet",
-                    bulletFontName=font))
+                    bulletFontName=font, bulletFontSize=8, leftIndent=14, bulletDedent=10,
+                    spaceAfter=4))
         elif t == "table":
-            headers = [str(h) for h in (p.get("headers") or [])]
-            rows = p.get("rows") or []
-            if not headers:
-                continue
-            data = [[Paragraph(esc(h), styles["body"]) for h in headers]]
-            for row in rows:
-                data.append([Paragraph(esc("" if (row[c] if c < len(row) else "") is None
-                                            else (row[c] if c < len(row) else "")),
-                                       styles["body"]) for c in range(len(headers))])
-            tbl = Table(data, repeatRows=1)
-            tbl.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#94a3b8")),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ]))
-            story.append(tbl)
-            story.append(Spacer(1, 4 * mm))
+            story += table_flow(p)
+        elif t == "key_value":
+            story += kv_flow(p)
+        elif t == "callout":
+            story += callout_flow(p)
         elif t == "image":
-            img_path, _ = resolve_path(str(p.get("src") or ""))
-            if img_path:
-                try:
-                    story.append(RLImage(img_path, height=60 * mm, kind="proportional"))
-                    story.append(Spacer(1, 3 * mm))
-                except Exception:  # noqa: BLE001 — a bad image loses itself, not the document
-                    pass
+            story += image_flow(p)
+        elif t in _STOCK_BLOCK_TYPES:
+            block, extra = _stock_table_block(p)
+            if block:
+                story += table_flow(block["props"])
+                if extra:
+                    story.append(para(extra, "note"))
+        elif t in _CHART_BLOCK_TYPES:
+            block = _chart_table_block(b)
+            if block:
+                if block["props"].get("title"):
+                    story.append(para(block["props"]["title"], 3, bold=True))
+                story += table_flow(block["props"])
         elif t == "divider":
             story.append(PageBreak())
         else:
             for line in _block_lines(b):
-                story.append(Paragraph(esc(line), styles["body"]))
+                story.append(para(line, "body"))
     if not story:
-        story.append(Paragraph(" ", styles["body"]))
+        story.append(para(" ", "body"))
+
+    def footer(canvas, _doc):
+        canvas.saveState()
+        canvas.setFont(font, 8)
+        canvas.setFillColor(muted)
+        canvas.drawCentredString(A4[0] / 2, 12 * mm, str(canvas.getPageNumber()))
+        canvas.restoreState()
+
+    def blank(_canvas, _doc):
+        return None
+
     SimpleDocTemplate(out_path, pagesize=A4,
                       topMargin=18 * mm, bottomMargin=18 * mm,
-                      leftMargin=18 * mm, rightMargin=18 * mm).build(story)
+                      leftMargin=margin, rightMargin=margin).build(
+        story, onFirstPage=blank if cover else footer, onLaterPages=footer)
     return font
 
 
 def action_make_pdf(inp):
-    blocks = normalize_blocks(inp.get("blocks"))
+    notes = []
+    blocks = normalize_blocks(inp.get("blocks"), notes)
     title = str(inp.get("title") or "").strip()
     if not blocks and not title:
         return {"success": False, "action": "make_pdf",
@@ -2213,12 +3501,14 @@ def action_make_pdf(inp):
         return {"success": False, "action": "make_pdf", "error": f"pdf build failed: {e}"}
     return {"success": True, "action": "make_pdf", "data": {
         "blocks": len(blocks), "font": font,
+        **({"notes": notes} if notes else {}),
         "_mediaImport": media_import_decl(out_path, "pdf", stem),
     }}
 
 
 def action_make_docx(inp):
-    blocks = normalize_blocks(inp.get("blocks"))
+    notes = []
+    blocks = normalize_blocks(inp.get("blocks"), notes)
     title = str(inp.get("title") or "").strip()
     if not blocks and not title:
         return {"success": False, "action": "make_docx",
@@ -2229,7 +3519,9 @@ def action_make_docx(inp):
     except Exception as e:  # noqa: BLE001
         return {"success": False, "action": "make_docx", "error": f"docx build failed: {e}"}
     return {"success": True, "action": "make_docx", "data": {
-        "blocks": len(blocks), "_mediaImport": media_import_decl(out_path, "docx", stem),
+        "blocks": len(blocks),
+        **({"notes": notes} if notes else {}),
+        "_mediaImport": media_import_decl(out_path, "docx", stem),
     }}
 
 
@@ -2238,8 +3530,32 @@ def action_make_hwpx(inp):
     (fixtures/donor-blank.hwp, 사용자 한컴 저장본) — createEmpty ships no style tables and
     Hancom draws garbage from its exports (2026-08-11 해부). Tables and bold headings
     ride along; the file lands in the media store like every other make."""
-    blocks = normalize_blocks(inp.get("blocks"))
-    title = str(inp.get("title") or "").strip()
+    notes = []
+    blocks = normalize_blocks(inp.get("blocks"), notes)
+    # The rhwp helper speaks header/text/list/table/metric. Everything the report renderers draw
+    # natively arrives here as its text form — a callout prefixed "※ " is a paragraph in Hancom,
+    # and a paragraph that says the caveat beats a caveat that was never written.
+    flat = []
+    for b in blocks:
+        t = str(b.get("type") or "")
+        if t in ("header", "text", "list", "table", "metric", "image", "divider"):
+            flat.append(b)
+            continue
+        if t in _STOCK_BLOCK_TYPES:
+            block, extra = _stock_table_block(b.get("props") or {})
+            if block:
+                flat.append(block)
+                if extra:
+                    flat.append({"type": "text", "props": {"content": extra}})
+            continue
+        if t in _CHART_BLOCK_TYPES:
+            block = _chart_table_block(b)
+            if block:
+                flat.append(block)
+            continue
+        for line in _block_lines(b):
+            flat.append({"type": "text", "props": {"content": line}})
+    blocks = flat
     if not blocks and not title:
         return {"success": False, "action": "make_hwpx",
                 "error": "blocks (or at least a title) required"}
@@ -2257,6 +3573,7 @@ def action_make_hwpx(inp):
     return {"success": True, "action": "make_hwpx", "data": {
         "blocks": len(blocks),
         "paragraphs": made.get("paragraphs"), "tables": made.get("tables"),
+        **({"notes": notes} if notes else {}),
         "_mediaImport": media_import_decl(out_path, "hwpx", stem),
     }}
 
@@ -2609,6 +3926,47 @@ def action_selftest():
            and (dec_cell.value, dec_cell.number_format) == (4.11, "#,##0.##")
            and int_cell.alignment.horizontal == "left")
 
+        # 2026-08-12 v6: two flaws from the deployed sample — data labels wearing series
+        # AND category names (omitted CT_Booleans read TRUE), and year columns dressed as
+        # magnitudes ("2,023" + a data bar over 연도).
+        # Aliased imports: a bare `import zipfile` here would make the name local to the
+        # WHOLE enclosing function and break the earlier blocks that already use it.
+        import zipfile as _zf6
+
+        import openpyxl as _px6
+
+        p_v6 = f"{OUT_DIR}/selftest-v6.xlsx"
+        tmp.append(p_v6)
+        make_xlsx_file(
+            [{"name": "연간", "headers": ["연도", "자산", "부채"],
+              "rows": [["2023", 455905980, 92228115], ["2024", 514531948, 112339878],
+                       ["2025", 566942110, 130621773]]}],
+            p_v6, title="v6",
+            charts=[{"type": "bar", "title": "다중", "sheet": "연간",
+                     "labelCol": "연도", "valueCols": ["자산", "부채"]},
+                    {"type": "bar", "title": "단일", "sheet": "연간",
+                     "labelCol": "연도", "valueCols": ["자산"]}])
+        with _zf6.ZipFile(p_v6) as zv6:
+            charts_v6 = sorted(n for n in zv6.namelist()
+                               if re.match(r"xl/charts/chart\d+\.xml$", n))
+            xml_v6 = [zv6.read(n).decode("utf-8") for n in charts_v6]
+        multi = next(x for x in xml_v6 if x.count("<ser>") == 2)
+        single = next(x for x in xml_v6 if x.count("<ser>") == 1)
+        ck("xlsx v6: a multi-series bar carries NO value labels — the legend is its labeling",
+           "<dLbls>" not in multi.split("<plotArea")[1].split("<catAx")[0])
+        ck("xlsx v6: a single-series bar labels values ONLY — every other show flag is 0",
+           "<dLbls>" in single and '<showVal val="1"/>' in single
+           and '<showSerName val="0"/>' in single and '<showCatName val="0"/>' in single
+           and '<showLegendKey val="0"/>' in single)
+        wb_v6 = _px6.load_workbook(p_v6)
+        ws_v6 = wb_v6["연간"]
+        ck("xlsx v6: a year column is plain '0' — no thousands comma, no decoration",
+           ws_v6.cell(row=2, column=1).number_format == "0"
+           and all("A" not in str(rng) for rng in ws_v6.conditional_formatting))
+        ck("xlsx v6: real magnitude columns keep their commas and bars",
+           ws_v6.cell(row=2, column=2).number_format == "#,##0"
+           and any("B" in str(rng.sqref) for rng in ws_v6.conditional_formatting))
+
         # Ledger genre: a document with live monthly / running subtotals.
         p_lg = f"{OUT_DIR}/selftest-ledger.xlsx"
         tmp.append(p_lg)
@@ -2743,6 +4101,236 @@ def action_selftest():
         ck("pdf: text extracts", "Hello Firebat" in got["text"])
     except Exception as e:  # noqa: BLE001
         ck(f"pdf read crashed: {e}", False)
+
+    # ── 2026-08-12 coverage pass ───────────────────────────────────────────────────────────────
+    # Every check below pins a measured hole: content that reached the file as NOTHING (container
+    # children, baked module output, callouts, chart blocks), a dialect that raised or wrote
+    # garbage (dict rows, "h2" levels), and the archetypes that only fired by accident.
+    dict_rows = [{"종목": "삼성전자", "종가": 70500, "등락률": 1.2},
+                 {"종목": "SK하이닉스", "종가": 210000, "등락률": -0.8}]
+    try:
+        drops = []
+        packed = normalize_blocks([
+            {"type": "grid", "props": {"columns": 2, "children": [
+                {"type": "metric", "props": {"label": "매출", "value": 1200, "unit": "억"}},
+                {"type": "metric", "props": {"label": "영업이익", "value": 180}}]}},
+            {"type": "tabs", "props": {"tabs": [
+                {"label": "국내", "children": [
+                    {"type": "text", "props": {"content": "국내 본문"}}]},
+                {"label": "해외", "children": [
+                    {"type": "text", "props": {"content": "해외 본문"}}]}]}},
+            {"type": "accordion", "props": {"items": [{"title": "FAQ", "content": "답변 본문"}]}},
+            {"type": "module", "props": {"_baked": [
+                {"type": "text", "props": {"content": "베이크된 문단"}},
+                {"type": "module", "props": {"_baked": [
+                    {"type": "text", "props": {"content": "중첩 모듈 본문"}}]}}]}},
+            {"type": "alert", "props": {"message": "주의 문구"}},
+            {"type": "button", "props": {"label": "클릭"}},
+            {"type": "countdown", "props": {"to": "2026-12-31"}},
+            {"type": "button", "props": {"label": "또 클릭"}},
+            {"type": "live_stock_chart", "props": {
+                "topic": "ws:1", "title": "삼성전자",
+                "data": [{"date": "2026-08-11", "open": 70000, "high": 71000,
+                          "low": 69500, "close": 70500, "volume": 1000}]}},
+            {"type": "live_feed", "props": {"topic": "ws:2", "title": "체결"}},
+        ], drops)
+        kinds = [b["type"] for b in packed]
+        ck("blocks: a grid's children are spliced in order",
+           kinds[:2] == ["metric", "metric"])
+        ck("blocks: tabs and accordion keep their section titles as level-3 headers",
+           [(b["props"].get("text"), b["props"].get("level")) for b in packed
+            if b["type"] == "header"] == [("국내", 3), ("해외", 3), ("FAQ", 3)])
+        ck("blocks: module._baked is spliced, a module nested inside it is left alone",
+           any(b["type"] == "text" and b["props"]["content"] == "베이크된 문단" for b in packed)
+           and any(b["type"] == "module" for b in packed)
+           and not any(b["type"] == "text" and b["props"]["content"] == "중첩 모듈 본문"
+                       for b in packed))
+        ck("blocks: alert is the callout it always was", "callout" in kinds)
+        ck("blocks: a live block carrying a seed degrades to a labelled snapshot",
+           any(b["type"] == "stock_chart" and b["props"]["title"].endswith(_SNAPSHOT_SUFFIX)
+               for b in packed))
+        ck("blocks: a live block holding only a topic is dropped WITH a note",
+           "live_feed" not in kinds and any("live_feed" in n for n in drops))
+        ck("blocks: a dropped type is noted once per TYPE, not once per block",
+           sum(1 for n in drops if "button" in n) == 1
+           and sum(1 for n in drops if "countdown" in n) == 1)
+
+        tbl_b = normalize_blocks([{"type": "table", "props": {
+            "headers": ["종목", "종가", "등락률"], "rows": dict_rows}}])
+        ck("blocks: dict rows are ordered by the table's own headers",
+           tbl_b[0]["props"]["rows"] == [["삼성전자", 70500, 1.2],
+                                         ["SK하이닉스", 210000, -0.8]])
+        ck("blocks: with no headers the first record's keys become the header row",
+           normalize_blocks([{"type": "table", "props": {"rows": dict_rows}}]
+                            )[0]["props"]["headers"] == ["종목", "종가", "등락률"])
+        ck("blocks: a non-numeric header level is clamped, never fatal",
+           (_header_level({"level": "h2"}), _header_level({"level": "H9"}),
+            _header_level({"level": None}), _header_level({"level": 0}),
+            _header_level({})) == (2, 3, 2, 1, 2))
+    except Exception as e:  # noqa: BLE001
+        ck(f"block normalization crashed: {e}", False)
+
+    # pptx: the two blocks a deck used to lose — a chart, and any table written as records.
+    try:
+        from pptx import Presentation as _PP
+        p_ch = f"{OUT_DIR}/selftest-chart.pptx"
+        tmp.append(p_ch)
+        make_pptx_file(normalize_blocks([
+            {"type": "header", "props": {"text": "분기 추이", "level": 1}},
+            {"type": "chart", "props": {"chartType": "bar", "title": "분기 매출",
+                                        "labels": ["1Q", "2Q", "3Q"], "data": [10, 20, 30]}},
+            {"type": "chart", "props": {"chartType": "donut", "title": "구성",
+                                        "labels": ["A", "B"], "data": [60, 40]}},
+        ]), None, None, p_ch)
+        with zipfile.ZipFile(p_ch) as z:
+            chart_parts = [n for n in z.namelist() if n.startswith("ppt/charts/chart")]
+        ck("pptx: chart blocks land as native chart parts", len(chart_parts) == 2)
+        ck("pptx: the chart is a real graphic frame on the slide",
+           any(sh.has_chart for sl in _PP(p_ch).slides for sh in sl.shapes))
+
+        p_dr = f"{OUT_DIR}/selftest-dictrows.pptx"
+        tmp.append(p_dr)
+        make_pptx_file(normalize_blocks([{"type": "table", "props": {
+            "headers": ["종목", "종가"], "rows": dict_rows}}]), None, None, p_dr)
+        ck("pptx: dict rows no longer raise, and the VALUES land in the cells",
+           read_pptx(p_dr)["tables"][0]["rows"][0] == ["삼성전자", "70500"])
+
+        p_arch = f"{OUT_DIR}/selftest-arch.pptx"
+        tmp.append(p_arch)
+        make_pptx_file(normalize_blocks([
+            {"type": "header", "props": {"text": "로드맵", "level": 1}},
+            {"type": "timeline", "props": {"items": [
+                {"date": "2026 1Q", "title": "설계", "description": "요건 확정"},
+                {"date": "2026 2Q", "title": "개발", "description": "코어 구현"},
+                {"date": "2026 3Q", "title": "검증", "description": "실측"}]}},
+            {"type": "divider", "props": {}},
+            {"type": "header", "props": {"text": "비교", "level": 1}},
+            {"type": "compare", "props": {
+                "left": {"label": "현행", "items": [{"key": "속도", "value": "느림"}]},
+                "right": {"label": "개선", "items": [{"key": "속도", "value": "빠름"}]}}},
+            {"type": "progress", "props": {"label": "진척률", "value": 68, "max": 100}},
+            {"type": "callout", "props": {"title": "주의", "message": "잠정 일정입니다"}},
+        ]), None, None, p_arch)
+        arch_txt = read_pptx(p_arch)["text"]
+        ck("pptx: timeline / compare / progress blocks fire their archetypes directly",
+           all(s in arch_txt for s in ("2026 1Q 설계", "현행", "개선", "진척률", "68%")))
+        ck("pptx: a callout is drawn as a band and keeps its words",
+           "주의" in arch_txt and "잠정 일정입니다" in arch_txt)
+    except Exception as e:  # noqa: BLE001
+        ck(f"pptx coverage pass crashed: {e}", False)
+
+    # xlsx: a grid of metrics has to reach the KPI band, dict rows have to write VALUES (the old
+    # bug wrote the KEYS), a callout has to survive, and stock_chart has to be a real candlestick.
+    try:
+        from openpyxl import load_workbook as _lw2
+        res_x = action_make_xlsx({"title": "커버리지", "blocks": [
+            {"type": "grid", "props": {"columns": 3, "children": [
+                {"type": "metric", "props": {"label": "매출", "value": 1200}},
+                {"type": "metric", "props": {"label": "영업이익", "value": 180}},
+                {"type": "metric", "props": {"label": "신규", "value": 12}}]}},
+            {"type": "table", "props": {"headers": ["종목", "종가", "등락률"],
+                                        "rows": dict_rows}},
+            {"type": "alert", "props": {"message": "잠정치입니다"}},
+            {"type": "button", "props": {"label": "클릭"}},
+        ]})
+        p_x = res_x["data"]["_mediaImport"]["path"]
+        tmp.append(p_x)
+        ck("xlsx: every metric inside a grid becomes a KPI card",
+           res_x["data"]["kpis"] == 3)
+        wb_x = _lw2(p_x)
+        data_rows = [[c.value for c in r] for r in wb_x["표1"].iter_rows()]
+        ck("xlsx: dict rows write their VALUES — the old bug wrote the KEYS as data",
+           data_rows[0][:3] == ["종목", "종가", "등락률"]
+           and data_rows[1][:3] == ["삼성전자", 70500, 1.2]
+           and data_rows[1][:3] != ["종목", "종가", "등락률"])
+        dash_x = [c.value for r in wb_x["Dashboard"].iter_rows() for c in r]
+        ck("xlsx: a callout becomes an amber note row on the Dashboard",
+           any(isinstance(v, str) and v.startswith("※") and "잠정치입니다" in v for v in dash_x))
+        ck("xlsx: an undrawable block is named in data.notes",
+           any("button" in n for n in res_x["data"].get("notes") or []))
+
+        res_s = action_make_xlsx({"title": "일봉", "blocks": [
+            {"type": "stock_chart", "props": {"title": "삼성전자", "data": [
+                {"date": f"2026-08-{d:02d}", "open": 70000 + d * 10, "high": 70500 + d * 10,
+                 "low": 69500 + d * 10, "close": 70200 + d * 10, "volume": 1000 * d}
+                for d in range(1, 11)]}}]})
+        p_s = res_s["data"]["_mediaImport"]["path"]
+        tmp.append(p_s)
+        with zipfile.ZipFile(p_s) as z:
+            sxml = "".join(z.read(n).decode("utf-8") for n in z.namelist()
+                           if n.startswith("xl/charts/chart"))
+        ck("xlsx: a stock_chart block becomes a native candlestick with up/down bars",
+           "<stockChart>" in sxml and "<upDownBars>" in sxml and "<hiLowLines" in sxml)
+        ck("xlsx: the candle bodies wear the Korean up-red / down-blue convention",
+           XLSX_UP in sxml and XLSX_DOWN in sxml)
+        ck("xlsx: volume rides a bar group on the secondary axis",
+           "<barChart>" in sxml and '<axId val="200"/>' in sxml)
+    except Exception as e:  # noqa: BLE001
+        ck(f"xlsx coverage pass crashed: {e}", False)
+
+    # docx / pdf: the report genre. A container must produce exactly the paragraphs its children
+    # would have produced on their own, and the cover has to actually be a cover.
+    try:
+        from docx import Document as _DD
+        inner = [{"type": "text", "props": {"content": f"문단 {i}"}} for i in range(3)]
+        p_g1, p_g2 = f"{OUT_DIR}/selftest-bare.docx", f"{OUT_DIR}/selftest-grid.docx"
+        tmp += [p_g1, p_g2]
+        make_docx_file(normalize_blocks(inner), "", p_g1)
+        make_docx_file(normalize_blocks(
+            [{"type": "grid", "props": {"columns": 3, "children": inner}}]), "", p_g2)
+        ck("docx: a container yields exactly the paragraphs its bare children would",
+           read_docx(p_g1)["meta"]["paragraphs"]
+           == read_docx(p_g2)["meta"]["paragraphs"] == 3)
+
+        p_rep = f"{OUT_DIR}/selftest-report.docx"
+        tmp.append(p_rep)
+        make_docx_file(normalize_blocks([
+            {"name": "Header", "type": "component", "props": {"text": "커버 제목", "level": 1}},
+            {"type": "divider", "props": {}},
+            {"type": "header", "props": {"text": "실적", "level": "h2"}},
+            {"type": "grid", "props": {"columns": 2, "children": [
+                {"type": "metric", "props": {"label": "매출", "value": 1200, "unit": "억"}},
+                {"type": "metric", "props": {"label": "영업이익", "value": 180}}]}},
+            {"type": "key_value", "props": {"items": [
+                {"key": "기간", "value": "2026 2Q"}, {"label": "기준", "value": "연결"}]}},
+            {"type": "table", "props": {"headers": ["종목", "종가", "등락률"],
+                                        "rows": dict_rows}},
+            {"type": "alert", "props": {"title": "잠정치", "message": "감사 전 수치입니다"}},
+        ]), "", p_rep)
+        first = _DD(p_rep).paragraphs[0]
+        ck("docx report: the cover heading is set at 22pt or larger",
+           "커버 제목" in first.text and bool(first.runs)
+           and first.runs[0].font.size is not None and first.runs[0].font.size.pt >= 22)
+        rep = read_docx(p_rep)
+        flat = ["\n".join(t["headers"] + [c for r in t["rows"] for c in r])
+                for t in rep["tables"]]
+        ck("docx report: a grid's metrics reach the page as one KPI strip",
+           any("매출" in f and "영업이익" in f for f in flat))
+        ck("docx report: key_value is a two-column table and dict rows keep their values",
+           any("기간" in f and "2026 2Q" in f for f in flat)
+           and any("삼성전자" in f and "70500" in f for f in flat))
+        ck("docx report: the callout box keeps its words",
+           "잠정치" in rep["text"] and "감사 전 수치입니다" in rep["text"])
+
+        p_rpdf = f"{OUT_DIR}/selftest-report.pdf"
+        tmp.append(p_rpdf)
+        make_pdf_file(normalize_blocks([
+            {"type": "header", "props": {"text": "Quarterly Report", "level": 1}},
+            {"type": "header", "props": {"text": "Summary", "level": "h2"}},
+            {"type": "grid", "props": {"columns": 2, "children": [
+                {"type": "metric", "props": {"label": "revenue", "value": 1200}},
+                {"type": "metric", "props": {"label": "profit", "value": 180}}]}},
+            {"type": "key_value", "props": {"items": [{"key": "period", "value": "2026 2Q"}]}},
+            {"type": "table", "props": {"rows": [{"item": "revenue", "value": 1200}]}},
+            {"type": "alert", "props": {"message": "provisional numbers"}},
+        ]), "", p_rpdf)
+        rpdf = read_pdf(p_rpdf)
+        ck("pdf report: the cover turns the page and every native block lands",
+           rpdf["meta"]["pages"] >= 2
+           and all(s in rpdf["text"] for s in
+                   ("Quarterly Report", "revenue", "period", "provisional numbers")))
+    except Exception as e:  # noqa: BLE001
+        ck(f"report genre crashed: {e}", False)
 
     # pdf make round-trip — ASCII asserted (CID-encoded Korean does not reliably re-extract
     # through pypdf; the Korean path is verified by the build not raising with 한글 in it).
