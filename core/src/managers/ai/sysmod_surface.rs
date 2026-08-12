@@ -31,7 +31,18 @@
 
 use crate::utils::grounding::{parse_grounding, GroundedParam};
 
-/// Everything a transport needs to expose one system module as one thin tool.
+/// Everything needed to build the step-three form, kept small enough to hold for every module:
+/// the declared property schemas, and which of them each action uses.
+///
+/// `per_action` is empty for a module whose catalog lives in a separate file (the big brokers) —
+/// those fall back to the whole property set, which for them is a handful of envelope params.
+#[derive(Debug, Clone, Default)]
+pub struct ActionForm {
+    pub props: serde_json::Map<String, serde_json::Value>,
+    pub per_action: std::collections::HashMap<String, Vec<String>>,
+}
+
+/// Everything a transport needs to expose one system module as one tool.
 #[derive(Debug, Clone)]
 pub struct SysmodSurface {
     /// Registered tool name (`sysmod_<module>`).
@@ -48,6 +59,36 @@ pub struct SysmodSurface {
     pub has_action_selector: bool,
     /// L1 grounding requirements parsed from `config.grounding` (empty when undeclared).
     pub grounding: Vec<GroundedParam>,
+    /// Material for the step-three form, once the conversation has discovered an action.
+    pub form: ActionForm,
+}
+
+/// Reads the form material out of a module config: declared property schemas, plus the catalog's
+/// per-action parameter names when they are inline.
+pub fn build_action_form(config: &serde_json::Value) -> ActionForm {
+    let props = config
+        .get("input")
+        .and_then(|i| i.get("properties"))
+        .and_then(|p| p.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let mut per_action: std::collections::HashMap<String, Vec<String>> = Default::default();
+    if let Some(list) = config
+        .get("actionCatalog")
+        .and_then(|c| c.get("actions"))
+        .and_then(|a| a.as_array())
+    {
+        for entry in list {
+            let (Some(id), Some(params)) = (
+                entry.get("id").and_then(|v| v.as_str()),
+                entry.get("params").and_then(|p| p.as_object()),
+            ) else {
+                continue;
+            };
+            per_action.insert(id.to_string(), params.keys().cloned().collect());
+        }
+    }
+    ActionForm { props, per_action }
 }
 
 /// Thin tool parameters (Part 1-B): the full input schema is NOT exposed — the model must discover
@@ -64,6 +105,75 @@ pub fn thin_parameters() -> serde_json::Value {
         "additionalProperties": true,
         "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a multi-action call whose schema was not fetched via get_action_schema within the last 30 minutes in this conversation is rejected before dispatch — fetch schemas first, several in one round is fine, and a schema you keep using stays valid."
     })
+}
+
+/// The filled-in form for the actions this conversation has already discovered.
+///
+/// The standard procedure is **pick the tool → pick the action → supply the parameters**, and a
+/// schema is the FORM you fill at each step. Steps one and two get their forms (the tool list, the
+/// action catalog); step three got prose — `get_action_schema` returns per-action parameter
+/// *descriptions*, while the tool's own `parameters` stayed thin forever, so the API contract never
+/// learned the shape. The model rebuilt it from memory and serialized containers as strings
+/// (measured 2026-08-12: same prompt and payload, thin schema → `sheets` arrives as a string twice,
+/// typed schema → a real 40-row array). Withholding the form was never part of the procedure.
+///
+/// The typed form is derived, not newly declared: the parameter NAMES of an action come from the
+/// action catalog, their TYPES from `config.input.properties` — the same schema validation already
+/// enforces, so the tool contract and the validator cannot disagree. Modules with no catalog fall
+/// back to the whole property set.
+///
+/// `required` stays `["action"]` and `additionalProperties` stays true: this form guides, it does
+/// not narrow what may be sent (validation is still module.rs's job, against the real schema).
+/// Returns `None` when nothing has been discovered — the thin form stands until the ladder is
+/// walked, so the gate keeps its teeth.
+pub fn typed_parameters(form: &ActionForm, actions: &[String]) -> Option<serde_json::Value> {
+    if actions.is_empty() || form.props.is_empty() {
+        return None;
+    }
+    let props = &form.props;
+
+    // Names first: the action's own params when the catalog names them, else every declared
+    // property (a derived-catalog module has no per-action list, and the whole set is honest).
+    let mut names: Vec<String> = Vec::new();
+    for action in actions {
+        match form.per_action.get(action) {
+            Some(list) => names.extend(list.iter().cloned()),
+            None => names.extend(props.keys().cloned()),
+        }
+    }
+    names.sort();
+    names.dedup();
+
+    let mut out = serde_json::Map::new();
+    // The selector keeps its own declaration (enum included) — picking the action is still step 2.
+    if let Some(action_prop) = props.get("action") {
+        out.insert("action".to_string(), action_prop.clone());
+    }
+    for name in names {
+        if name == "action" {
+            continue;
+        }
+        if let Some(schema) = props.get(&name) {
+            out.insert(name, schema.clone());
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    let discovered = actions.join(", ");
+    Some(serde_json::json!({
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["action"],
+        "properties": out,
+        "description": format!(
+            "Parameters below are the form for the action(s) whose schema this conversation \
+             already fetched ({discovered}) — send them as declared, at the top level, with \
+             \"action\". Any OTHER action of this module still needs get_action_schema first: a \
+             multi-action call whose schema was not fetched within the last 30 minutes in this \
+             conversation is rejected before dispatch."
+        ),
+    }))
 }
 
 /// Whether this module's input declares an `action` selector — the discovery gate's applicability
@@ -106,6 +216,7 @@ pub fn build_surface(module_name: &str, config: &serde_json::Value) -> SysmodSur
         // L1 grounding — the config declaration mapped onto this tool. Both transports gate with
         // the same pure `check_grounding`, so they must also parse with the same reader.
         grounding: parse_grounding(config),
+        form: build_action_form(config),
     }
 }
 
@@ -141,6 +252,60 @@ mod tests {
                 "properties": { "query": { "type": "string" } }
             }
         })
+    }
+
+    /// Step three finally gets a form — and only for what the ladder actually reached.
+    /// Regression target 2026-08-12: with no declared shape the model serialized `sheets` as a
+    /// string twice in a row; with one, it sent a 40-row array.
+    #[test]
+    fn the_form_appears_for_the_discovered_action_and_only_for_it() {
+        let config = json!({
+            "input": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                    "action": {"type": "string", "enum": ["read", "make_xlsx"]},
+                    "sheets": {"type": ["array", "null"], "description": "the sheets"},
+                    "path":   {"type": ["string", "null"], "description": "the document"}
+                }
+            },
+            "actionCatalog": {"actions": [
+                {"id": "make_xlsx", "params": {"sheets": "…", "title": "…"}},
+                {"id": "read", "params": {"path": "…"}}
+            ]}
+        });
+        let form = build_action_form(&config);
+        let p = typed_parameters(&form, &["make_xlsx".to_string()]).expect("a discovered action");
+        assert_eq!(p["properties"]["sheets"]["type"][0], "array", "the TYPE is what was missing");
+        assert!(p["properties"].get("action").is_some(), "picking the action is still step two");
+        assert!(p["properties"].get("path").is_none(), "another action's params stay out");
+        assert!(
+            p["properties"].get("title").is_none(),
+            "a catalog name with no declared schema has no type to publish"
+        );
+        assert_eq!(p["additionalProperties"], true, "the form guides; it does not narrow");
+        assert_eq!(p["required"], json!(["action"]));
+        assert!(p["description"].as_str().unwrap().contains("make_xlsx"));
+        // Nothing discovered → the thin form stands and the gate keeps its teeth.
+        assert!(typed_parameters(&form, &[]).is_none());
+    }
+
+    /// A module whose catalog lives in a separate file has no per-action list — publishing the
+    /// whole declared set is honest there, and for those modules it is a handful of envelope
+    /// params, not hundreds.
+    #[test]
+    fn a_module_without_an_inline_catalog_publishes_its_declared_properties() {
+        let config = json!({
+            "input": {"type": "object", "properties": {
+                "action": {"type": "string"},
+                "params": {"type": "object"}
+            }},
+            "actionCatalog": {"file": "actions.json"}
+        });
+        let form = build_action_form(&config);
+        assert!(form.per_action.is_empty());
+        let p = typed_parameters(&form, &["ka10081".to_string()]).unwrap();
+        assert_eq!(p["properties"]["params"]["type"], "object");
     }
 
     #[test]

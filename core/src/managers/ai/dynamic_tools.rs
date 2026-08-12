@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 
-use crate::managers::ai::sysmod_surface::build_surface;
+use crate::managers::ai::sysmod_surface::{build_surface, ActionForm};
 use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::tool::{make_handler, ToolDefinition, ToolListFilter, ToolManager};
@@ -56,6 +56,10 @@ pub struct DynamicToolRegistry {
     /// discovery-first gate applies to THESE only — the judgment itself lives in
     /// `sysmod_surface::declares_action_selector`, where both transports read it.
     action_selectors: RwLock<std::collections::HashSet<String>>,
+    /// Step-three form material — module name → declared property schemas + per-action param
+    /// names. Held per module (not per tool) because the overlay that fills the tool's
+    /// `parameters` runs per turn, keyed by what THIS conversation discovered.
+    forms: RwLock<HashMap<String, ActionForm>>,
 }
 
 impl DynamicToolRegistry {
@@ -69,7 +73,22 @@ impl DynamicToolRegistry {
             approval: RwLock::new(HashMap::new()),
             ui_only: RwLock::new(HashMap::new()),
             action_selectors: RwLock::new(std::collections::HashSet::new()),
+            forms: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// The typed form for the actions this conversation has already discovered, or `None` while
+    /// it has discovered nothing (the thin form stands, and the gate keeps its teeth).
+    pub async fn typed_parameters_for(
+        &self,
+        module: &str,
+        actions: &[String],
+    ) -> Option<serde_json::Value> {
+        if actions.is_empty() {
+            return None;
+        }
+        let forms = self.forms.read().await;
+        crate::managers::ai::sysmod_surface::typed_parameters(forms.get(module)?, actions)
     }
 
     /// Whether this tool's module really has an action selector — the discovery gate's
@@ -124,6 +143,7 @@ impl DynamicToolRegistry {
         let mut new_approval: HashMap<String, (String, serde_json::Value)> = HashMap::new();
         let mut new_ui_only: HashMap<String, (String, serde_json::Value)> = HashMap::new();
         let mut new_selectors: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut new_forms: HashMap<String, ActionForm> = HashMap::new();
 
         // 2. sysmod scan + register
         let modules = self.module.list_system_modules().await;
@@ -154,6 +174,9 @@ impl DynamicToolRegistry {
             if surface.has_action_selector {
                 new_selectors.insert(tool_name.clone());
             }
+            // Material for step three's form, kept by MODULE name (the tool list is rebuilt per
+            // turn from what the conversation has discovered — see the overlay in ai.rs).
+            new_forms.insert(entry.name.clone(), surface.form);
             self.tools.register(ToolDefinition {
                 name: tool_name.clone(),
                 description: surface.description,
@@ -213,6 +236,7 @@ impl DynamicToolRegistry {
         *self.approval.write().await = new_approval;
         *self.ui_only.write().await = new_ui_only;
         *self.action_selectors.write().await = new_selectors;
+        *self.forms.write().await = new_forms;
 
         // 5. cache 갱신
         let mut last = self.last_refresh.lock().await;

@@ -2146,6 +2146,35 @@ impl AiManager {
         // effective_tools schema 가 정공 (Function Calling 표준).
         // 두 경로(MCP register_builtin_tools ↔ ToolManager register_core_tools)의 도구 카탈로그
         // 동기화 책임은 tool.rs 모듈 doc 참조 — 한쪽만 등록 시 그 모델군에서 도구 누락 (drift).
+        // Tool-procedure state — the L1 grounding corpus (#8-2) and the discovery-first gate
+        // (표준 절차 ②) — lives in `utils::conversation_scope`, the ONE store both tool paths
+        // read. Scope = the conversation, window = 30 minutes sliding.
+        //
+        // Both used to be turn-local locals further down, so a follow-up turn in the same
+        // conversation re-resolved identifiers it had already resolved and re-fetched schemas it
+        // had already fetched — while the MCP path, on that same conversation, remembered both.
+        // Same two procedures, two lifetimes, two answers. Derived HERE because the tool list is
+        // built below and now depends on what this conversation has discovered.
+        //
+        // No conversation id (cron agent, internal dispatch) → the key falls back to a per-turn
+        // unique string, which is EXACTLY the old turn-local lifetime. Never a shared fallback:
+        // that would pool one caller's provenance into another caller's gate.
+        let scope_fallback = ai_opts
+            .user_msg_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+        let tool_scope = crate::utils::conversation_scope::scope_key(
+            ai_opts
+                .conversation_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
+            &scope_fallback,
+        );
+
         let supports_mcp = self.llm.supports_hosted_mcp(&effective_opts);
         if supports_mcp && effective_opts.mcp_token.is_none() {
             let model_id = effective_opts
@@ -2225,6 +2254,27 @@ impl AiManager {
             // must not fan out). Handler keeps a second guard for direct/MCP calls.
             if !self.is_sub_agent_enabled() || ai_opts.sub_agent || ai_opts.hub_context.is_some() {
                 tools_built.retain(|t| t.name != "spawn_subagent");
+            }
+            // Step three of the standard procedure — pick the tool, pick the action, SUPPLY THE
+            // PARAMETERS — finally gets its form. The ladder always ended by handing the shape
+            // over as prose (`get_action_schema` returns per-action parameter *descriptions*)
+            // while the tool's own `parameters` stayed thin forever, so the API contract never
+            // learned it and the model rebuilt the shape from memory. Measured 2026-08-12 against
+            // the live model: identical prompt and payload, thin schema → `sheets` arrives as a
+            // STRING twice, typed schema → a real 40-row array. Withholding the form was never
+            // part of the procedure; the procedure is the ORDER of the steps, and the gate is
+            // what enforces that. So the form appears only for actions this conversation already
+            // discovered — the gate keeps its teeth, and walking the ladder now earns a better
+            // calling surface instead of costing one.
+            if let Some(dyn_reg) = &self.dynamic_tools {
+                for t in tools_built.iter_mut() {
+                    let Some(module) = t.name.strip_prefix("sysmod_") else { continue };
+                    let discovered =
+                        crate::utils::conversation_scope::discovered_actions(&tool_scope, module);
+                    if let Some(form) = dyn_reg.typed_parameters_for(module, &discovered).await {
+                        t.input_schema = Some(form);
+                    }
+                }
             }
             auto_tools = tools_built;
             &auto_tools
@@ -2840,40 +2890,13 @@ impl AiManager {
         // different tools is still one file.
         let mut produced_files: Vec<serde_json::Value> = Vec::new();
         let mut produced_file_urls: HashSet<String> = HashSet::new();
-        // Tool-procedure state — the L1 grounding corpus (#8-2) and the discovery-first gate
-        // (표준 절차 ②) — now lives in `utils::conversation_scope`, the ONE store both tool paths
-        // read. Scope = the conversation, window = 30 minutes sliding.
-        //
-        // Both used to be turn-local locals right here (`Vec<String>` + `HashSet<String>`), so a
-        // follow-up turn in the same conversation re-resolved identifiers it had already resolved
-        // and re-fetched schemas it had already fetched — while the MCP path, on that same
-        // conversation, remembered both. Same two procedures, two lifetimes, two answers.
-        //
-        // The corpus is provenance the model legitimately observed: the user's prompt (user-typed
-        // codes), an approved plan, and each successful tool result. A declared opaque param (a
-        // stock code) must trace to it or the call is rejected with the resolve hint. The gate
-        // remembers `get_action_schema(module, action)` fetches; the store canonicalises the
+        // The corpus this turn writes into is the same conversation scope the tool list was built
+        // from (derived above): provenance the model legitimately observed — the user's prompt
+        // (user-typed codes), an approved plan, and each successful tool result. A declared opaque
+        // param (a stock code) must trace to it or the call is rejected with the resolve hint. The
+        // gate remembers `get_action_schema(module, action)` fetches; the store canonicalises the
         // module name on both sides, so a schema fetched as `sysmod_kma_weather` unlocks a call
         // made on `kma-weather`.
-        //
-        // No conversation id (cron agent, internal dispatch) → the key falls back to a per-turn
-        // unique string, which is EXACTLY the old turn-local lifetime. Never a shared fallback:
-        // that would pool one caller's provenance into another caller's gate.
-        let scope_fallback = ai_opts
-            .user_msg_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-        let tool_scope = crate::utils::conversation_scope::scope_key(
-            ai_opts
-                .conversation_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty()),
-            &scope_fallback,
-        );
         crate::utils::conversation_scope::observe(&tool_scope, prompt);
         if let Some(p) = &plan_provenance {
             // Approved-plan identifiers are legitimate provenance (verified during planning).

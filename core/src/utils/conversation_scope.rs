@@ -153,6 +153,33 @@ pub fn schema_ok(scope_key: &str, module: &str, action: &str) -> bool {
     schema_ok_at(scope_key, module, action, Instant::now())
 }
 
+/// The actions of one module whose schema this scope has fetched and still holds.
+///
+/// The ladder ends by handing the caller a schema, and until now it handed it over as PROSE in a
+/// tool result while the tool's own `parameters` stayed thin forever — so the API contract never
+/// learned the shape and the model rebuilt it from memory, as a string (measured 2026-08-12:
+/// identical prompt, thin schema → `sheets` arrives as a string twice, typed schema → a real
+/// array). This is the list that lets the tool definition catch up with what the conversation
+/// already discovered. Read-only: it does NOT slide the window (publishing a shape is not using
+/// it) and it never creates a scope.
+pub fn discovered_actions(scope_key: &str, module: &str) -> Vec<String> {
+    let now = Instant::now();
+    let mut map = store();
+    let Some(state) = map.get_mut(scope_key) else {
+        return Vec::new();
+    };
+    evict_schema(&mut state.schema_seen, now);
+    let prefix = format!("{}:", canon_module(module));
+    let mut out: Vec<String> = state
+        .schema_seen
+        .keys()
+        .filter_map(|k| k.strip_prefix(&prefix).map(str::to_string))
+        .filter(|a| !a.is_empty())
+        .collect();
+    out.sort();
+    out
+}
+
 // ── grounding corpus ─────────────────────────────────────────────────────────
 
 /// Append text the model legitimately observed (the user's prompt, an approved plan, a
