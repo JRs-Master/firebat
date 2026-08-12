@@ -1136,15 +1136,16 @@ impl ModuleManager {
             .filter(|s| !s.is_empty())
             .map(String::from)
             .unwrap_or(bin.mime_type);
+        let filename_hint = decl
+            .get("filenameHint")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .or_else(|| {
+                norm.rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(stem, _)| stem.to_string())
+            });
         let opts = crate::ports::MediaSaveOptions {
-            filename_hint: decl
-                .get("filenameHint")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .or_else(|| {
-                    norm.rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(stem, _)| stem.to_string())
-                }),
+            filename_hint: filename_hint.clone(),
             source: Some(format!("module:{module_name}")),
             ..Default::default()
         };
@@ -1160,6 +1161,12 @@ impl ModuleManager {
                         "url": saved.url,
                         "bytes": bin.size,
                         "contentType": content_type,
+                        // The human name the module chose, echoed back. The media record keeps it
+                        // and the gallery shows it, but the response carried only the slug — so a
+                        // produced-file card downloaded "2026-08-12-…-76ca.xlsx" while the gallery
+                        // offered "SK하이닉스-…-대시보드.xlsx": one file, two names (2026-08-12
+                        // 사용자 보고). The produced-file detector already prefers this field.
+                        "filenameHint": filename_hint,
                         // Consumption-point guidance — nothing anywhere told the model what to
                         // DO with this url, so it improvised an Image block around an .xlsx and
                         // the UI spun on "generating image" forever (2026-08-12 실측). The note
