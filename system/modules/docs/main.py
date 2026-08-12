@@ -3163,8 +3163,10 @@ def _docx_kpi_strip(d, metrics, width):
             dl = cell.add_paragraph()
             dl.paragraph_format.space_after = Pt(0)
             _docx_run(dl, m.get("delta"), 8.5, color=RPT_MUTED)
+        # Centered like the xlsx/deck cards — left-ragged label/value/delta read as three
+        # unrelated lines, centered they read as ONE card ("정렬만 잘해주면", 2026-08-12).
         for par in cell.paragraphs:
-            par.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     d.add_paragraph().paragraph_format.space_after = Pt(4)
 
 

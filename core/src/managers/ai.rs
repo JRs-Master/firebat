@@ -4370,7 +4370,19 @@ impl AiManager {
                 }
                 // Stage-1 progress — a successful ACTION tool (no declared per-turn cap = not the
                 // discovery class) after narrowing means the turn escaped its loop and did real work.
-                if envelope_ok && self.tools.per_turn_limit(&effective_call.name).is_none() {
+                // Read-only tools are excluded from BOTH classes on purpose: they retrieve what
+                // already exists and cannot change the world, so their success is not execution
+                // evidence. Two cache_reads made a turn look grounded while the model fabricated
+                // a PDF file card without ever calling make_pdf — the fabrication banner stayed
+                // off because reading counted as doing (turn 43, 2026-08-12).
+                let read_only = matches!(
+                    effective_call.name.as_str(),
+                    "cache_read" | "cache_grep" | "cache_aggregate"
+                );
+                if envelope_ok
+                    && !read_only
+                    && self.tools.per_turn_limit(&effective_call.name).is_none()
+                {
                     turn_grounded_success = true;
                     if !capped_strip.is_empty() {
                         post_narrow_success = true;
@@ -4920,6 +4932,56 @@ impl AiManager {
                     event_type: "text".to_string(),
                     content: last_text.clone(),
                 });
+            }
+        }
+
+        // Fabricated-artifact containment (bounded L3): every /user/media/ link in the final
+        // answer must point at a file that EXISTS. Turn 43 (2026-08-12) shipped a PDF file
+        // card whose file was never created — the model mutated a .docx slug's extension and
+        // declared success; the user found out via a 404 and had to ask again. Existence is
+        // an exact-path fact, so this is the rare post-hoc check with zero false positives.
+        // Percent-encoded candidates are skipped (cannot cheaply decode → a miss there would
+        // be a false accusation); the server hands raw-Korean urls, so real links are raw.
+        if !last_text.is_empty() && last_text.contains("/user/media/") {
+            let root = self
+                .config_port
+                .as_ref()
+                .and_then(|c| c.get("FIREBAT_WORKSPACE_ROOT"))
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from)
+                .or_else(|| std::env::current_dir().ok());
+            if let Some(root) = root {
+                let mut missing: Vec<String> = Vec::new();
+                let text = last_text.clone();
+                for (idx, _) in text.match_indices("/user/media/") {
+                    let tail = &text[idx..];
+                    let end = tail
+                        .find(|c: char| c.is_whitespace() || matches!(c, ')' | '"' | '\'' | ']' | '>'))
+                        .unwrap_or(tail.len());
+                    let url = &tail[..end];
+                    if url.len() <= "/user/media/".len() || url.contains('%') {
+                        continue;
+                    }
+                    let rel = url.trim_start_matches('/');
+                    if !root.join(rel).is_file() && !missing.iter().any(|m| m == url) {
+                        missing.push(url.to_string());
+                    }
+                }
+                if !missing.is_empty() {
+                    self.log.warn(&format!(
+                        "[AiManager] final answer links {} nonexistent media file(s) — neutralized: {:?}",
+                        missing.len(),
+                        missing
+                    ));
+                    for url in &missing {
+                        // Kill the link so no dead file card renders; the notice explains.
+                        last_text = last_text.replace(url.as_str(), "#");
+                    }
+                    last_text.push_str(&format!(
+                        "\n\n⚠️ 위 답변이 첨부한 파일 {}개는 실제로 생성되지 않아 링크를 제거했습니다. 파일이 필요하시면 다시 요청해 주세요.",
+                        missing.len()
+                    ));
+                }
             }
         }
 
