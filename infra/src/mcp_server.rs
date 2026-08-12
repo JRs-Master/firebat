@@ -81,6 +81,11 @@ pub struct McpServerState {
     /// CLI 자기 홈에 떨어진 이미지의 갤러리 편입 — 도구 인자 치환에 사용(아래 게이트).
     /// 미설정 시 치환 skip(옛 동작).
     pub image_import: Option<Arc<dyn firebat_core::managers::media::IImageImportPort>>,
+    /// Tools whose module input declares an `action` selector. The discovery gate applies
+    /// to THESE only — a volunteered `action` arg on a single-action module (stock-lookup)
+    /// is not a multi-action call, and its grounding hint says "call directly"
+    /// (2026-08-12 실측: the gate rejected the very call the hint prescribed).
+    pub action_selectors: RwLock<std::collections::HashSet<String>>,
 }
 
 impl McpServerState {
@@ -92,6 +97,7 @@ impl McpServerState {
             module_manager: None,
             grounding: RwLock::new(HashMap::new()),
             image_import: None,
+            action_selectors: RwLock::new(std::collections::HashSet::new()),
         }
     }
 
@@ -707,7 +713,7 @@ async fn gated_tool_call(
     // Discovery-first gate — before grounding on purpose: you discover the parameters before
     // you ground their values. Pipelines never pass here (internal dispatch), so unattended
     // flows stay untouched.
-    if name.starts_with("sysmod_") {
+    if name.starts_with("sysmod_") && state.action_selectors.read().await.contains(name) {
         if let Some(act) = args.get("action").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
             let module = name.trim_start_matches("sysmod_").replace('_', "-");
             if !schema_was_seen(session, &module, act) {
@@ -1096,6 +1102,18 @@ pub async fn register_sysmod_tools(
         let g = parse_grounding(&config);
         if !g.is_empty() {
             state.grounding.write().await.insert(tool_name.clone(), g);
+        }
+        if config
+            .get("input")
+            .and_then(|i| i.get("properties"))
+            .and_then(|p| p.get("action"))
+            .is_some()
+        {
+            state
+                .action_selectors
+                .write()
+                .await
+                .insert(tool_name.clone());
         }
     }
 }

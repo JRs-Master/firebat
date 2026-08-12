@@ -3805,7 +3805,16 @@ impl AiManager {
                 // Discovery-first gate (표준 절차 ②) — a multi-action sysmod call whose action
                 // was not schema-checked THIS turn is rejected before dispatch, familiar or
                 // not. Plan-replay calls are exempt (verified at compile+approve time).
+                // Applicability = the module REALLY has an action selector: a volunteered
+                // `action` arg on a single-action module (stock-lookup) is not a multi-action
+                // call, and its grounding hint says "call directly" — the gate was rejecting
+                // the very call the hint prescribed (2026-08-12 실측).
+                let gate_applies = match &self.dynamic_tools {
+                    Some(reg) => reg.has_action_selector(&effective_call.name).await,
+                    None => true,
+                };
                 let discovery_reject: Option<String> = if !plan_replay_round
+                    && gate_applies
                     && effective_call.name.starts_with("sysmod_")
                 {
                     match effective_call.arguments.get("action").and_then(|v| v.as_str()) {

@@ -47,6 +47,13 @@ pub struct DynamicToolRegistry {
     approval: RwLock<HashMap<String, (String, serde_json::Value)>>,
     /// uiOnly 선언 — same shape. Actions a model may not call at all (screen actions).
     ui_only: RwLock<HashMap<String, (String, serde_json::Value)>>,
+    /// Tools whose module input declares an `action` selector (multi-action modules). The
+    /// discovery-first gate applies to THESE only: a single-action module (stock-lookup) is
+    /// exempt by design, and its grounding hint even says "call directly" — but the gate
+    /// used to key on the CALL carrying an `action` arg, so a model that volunteered
+    /// `action:"lookup"` on the single-action tool was rejected by the very procedure the
+    /// hint told it to skip (2026-08-12 실측).
+    action_selectors: RwLock<std::collections::HashSet<String>>,
 }
 
 impl DynamicToolRegistry {
@@ -59,7 +66,15 @@ impl DynamicToolRegistry {
             grounding: RwLock::new(HashMap::new()),
             approval: RwLock::new(HashMap::new()),
             ui_only: RwLock::new(HashMap::new()),
+            action_selectors: RwLock::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Whether this tool's module really has an action selector — the discovery gate's
+    /// applicability test. A stray `action` arg on a selector-less module is not a
+    /// multi-action call, however much it looks like one.
+    pub async fn has_action_selector(&self, tool: &str) -> bool {
+        self.action_selectors.read().await.contains(tool)
     }
 
     /// FC 경로가 dispatch 전 조회 — 이 도구에 선언된 grounded params (없으면 None).
@@ -106,6 +121,7 @@ impl DynamicToolRegistry {
         let mut new_grounding: HashMap<String, Vec<GroundedParam>> = HashMap::new();
         let mut new_approval: HashMap<String, (String, serde_json::Value)> = HashMap::new();
         let mut new_ui_only: HashMap<String, (String, serde_json::Value)> = HashMap::new();
+        let mut new_selectors: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // 2. sysmod scan + register
         let modules = self.module.list_system_modules().await;
@@ -145,6 +161,14 @@ impl DynamicToolRegistry {
             }
             if !g.is_empty() {
                 new_grounding.insert(tool_name.clone(), g);
+            }
+            if config
+                .get("input")
+                .and_then(|i| i.get("properties"))
+                .and_then(|p| p.get("action"))
+                .is_some()
+            {
+                new_selectors.insert(tool_name.clone());
             }
             self.tools.register(ToolDefinition {
                 name: tool_name.clone(),
@@ -204,6 +228,7 @@ impl DynamicToolRegistry {
         *self.grounding.write().await = new_grounding;
         *self.approval.write().await = new_approval;
         *self.ui_only.write().await = new_ui_only;
+        *self.action_selectors.write().await = new_selectors;
 
         // 5. cache 갱신
         let mut last = self.last_refresh.lock().await;
