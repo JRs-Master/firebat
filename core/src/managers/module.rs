@@ -720,71 +720,13 @@ impl ModuleManager {
         // (measured 2026-08-08 over MCP, where the reduced discovery schema makes string-typed
         // numbers routine). If validation needed the coerced value to pass, the module receives
         // the coerced value: the declared type is the contract, not a hint.
-        let mut coerce_notes: Vec<String> = Vec::new();
-        let coerce = |v: &serde_json::Value, notes: &mut Vec<String>| -> Option<serde_json::Value> {
-            config
-                .as_ref()
-                .and_then(|c| c.get("input"))
-                .map(|schema| coerce_for_validation(v, schema, notes))
-                .filter(|c| c != v)
-        };
-        let coerced: Option<serde_json::Value> = coerce(input_data, &mut coerce_notes);
-        let input_data: &serde_json::Value = coerced.as_ref().unwrap_or(input_data);
-
-        // A declared array parameter may arrive as a cache key — expand it BEFORE validation, so
-        // `required` still means what it says and the module receives real rows either way.
-        //
-        // This runs AFTER coercion, not before: a model under load serialises the whole container
-        // as a JSON *string* (`"sheets": "[{\"name\":…,\"rowsCacheKey\":…}]"`), and nested
-        // expansion (`sheets.*.rows`) cannot traverse a string — it skipped, coercion then parsed
-        // the string into a real array so validation PASSED, and docs received sheets with headers
-        // and no rows: a "successful" empty xlsx the user downloaded (measured 2026-08-12).
-        // Coercion first means expansion always sees real arrays/objects. Nothing between the two
-        // depends on expanded values — the account paths read only the `account`/`market`/`mock`
-        // scalars.
-        let expanded = match &config {
-            Some(cfg) => crate::utils::cache_inputs::expand(
-                module_name,
-                cfg,
-                input_data,
-                self.sysmod_cache.as_ref(),
-            )?,
-            None => None,
-        };
-        let input_data: &serde_json::Value = expanded.as_ref().unwrap_or(input_data);
-
-        // Rows that came out of the cache get the same type treatment as rows sent inline — a
-        // broker's stringified prices in a `bars` slot declared as numbers must not depend on
-        // which channel carried them. Only runs when expansion actually changed something.
-        let coerced_expanded: Option<serde_json::Value> = match &expanded {
-            Some(_) => coerce(input_data, &mut coerce_notes),
-            None => None,
-        };
-        let input_data: &serde_json::Value = coerced_expanded.as_ref().unwrap_or(input_data);
-        if !coerce_notes.is_empty() {
-            dialect_absorbed(module_name, "coerce", &coerce_notes.join(", "));
-        }
-
-        // Container relocation — a module whose schema forbids extra top-level keys and
-        // nests its per-action params under ONE declared object slot (kiwoom's `params`)
-        // kept receiving them flat: three measured turns in a row opened with
-        // base_dt/stk_cd at the top level, burned the round on "Additional properties are
-        // not allowed", then re-sent nested (2026-08-12). With additionalProperties:false
-        // the flat call has exactly one reading that can succeed, so read it. Two
-        // containers (korea-invest's query+body) = ambiguous = untouched.
-        let relocated = config
-            .as_ref()
-            .and_then(|c| c.get("input"))
-            .and_then(|schema| relocate_unknowns_into_container(input_data, schema));
-        if let Some((_, moved)) = &relocated {
-            dialect_absorbed(
-                module_name,
-                "container",
-                &format!("flat keys moved into the container param: {moved}"),
-            );
-        }
-        let input_data: &serde_json::Value =
-            relocated.as_ref().map(|(v, _)| v).unwrap_or(input_data);
+        let repaired = repair_input(
+            module_name,
+            config.as_ref(),
+            input_data,
+            self.sysmod_cache.as_ref(),
+        )?;
+        let input_data: &serde_json::Value = repaired.as_ref().unwrap_or(input_data);
 
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now
@@ -3031,6 +2973,67 @@ fn coerce_for_validation(
     notes: &mut Vec<String>,
 ) -> serde_json::Value {
     coerce_node(value, schema, "", notes)
+}
+
+/// The dialect-repair pipeline, in the one order that works — and the ONLY place that order
+/// lives. `run` calls it; the replay corpus (`core/tests/dialect_replay.rs`) calls it with
+/// historical arguments, so a rule added here cannot quietly change what yesterday's calls mean.
+///
+/// Order is load-bearing, each step paid for in a measured failure:
+///   1. **coerce** — parses containers the model serialized as strings. Must precede expansion:
+///      nested `sheets.*.rows` cannot traverse a string, so a stringified `sheets` skipped
+///      expansion, parsed later, and shipped an empty xlsx that reported success (2026-08-12).
+///   2. **expand** — `<param>CacheKey` (+ the `<param>Limit`/`<param>Range` window) becomes real
+///      rows, before validation, so `required` still means what it says.
+///   3. **coerce again**, only if expansion changed something — cached rows get the same type
+///      treatment as inline ones; a broker's stringified prices must not depend on the channel.
+///   4. **relocate** — flat per-action params move into the single declared object container when
+///      `additionalProperties:false` makes that the one reading that can succeed.
+///
+/// Returns `Ok(None)` when nothing needed repair (the common case, and it clones nothing).
+pub fn repair_input(
+    module_name: &str,
+    config: Option<&serde_json::Value>,
+    input: &serde_json::Value,
+    cache: Option<&std::sync::Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
+) -> Result<Option<serde_json::Value>, String> {
+    let mut notes: Vec<String> = Vec::new();
+    let coerce = |v: &serde_json::Value, notes: &mut Vec<String>| -> Option<serde_json::Value> {
+        config
+            .and_then(|c| c.get("input"))
+            .map(|schema| coerce_for_validation(v, schema, notes))
+            .filter(|c| c != v)
+    };
+    let mut current: Option<serde_json::Value> = coerce(input, &mut notes);
+    let view = |cur: &Option<serde_json::Value>| -> serde_json::Value {
+        cur.clone().unwrap_or_else(|| input.clone())
+    };
+
+    if let Some(cfg) = config {
+        let now = view(&current);
+        if let Some(expanded) =
+            crate::utils::cache_inputs::expand(module_name, cfg, &now, cache)?
+        {
+            let recoerced = coerce(&expanded, &mut notes);
+            current = Some(recoerced.unwrap_or(expanded));
+        }
+    }
+    if !notes.is_empty() {
+        dialect_absorbed(module_name, "coerce", &notes.join(", "));
+    }
+
+    if let Some(schema) = config.and_then(|c| c.get("input")) {
+        let now = view(&current);
+        if let Some((moved_value, moved)) = relocate_unknowns_into_container(&now, schema) {
+            dialect_absorbed(
+                module_name,
+                "container",
+                &format!("flat keys moved into the container param: {moved}"),
+            );
+            current = Some(moved_value);
+        }
+    }
+    Ok(current)
 }
 
 /// A JSON-looking string that does not parse — the hint says WHERE it broke.
