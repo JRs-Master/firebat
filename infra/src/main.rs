@@ -1346,7 +1346,7 @@ async fn main() -> Result<()> {
     let template_service = grpc::template::TemplateServiceImpl::new(template_manager);
     let secret_service = grpc::secret::SecretServiceImpl::new(secret_manager.clone());
     let auth_service = grpc::auth::AuthServiceImpl::new(auth_manager.clone());
-    let event_service = grpc::event::EventServiceImpl::new(event_manager);
+    let event_service = grpc::event::EventServiceImpl::new(event_manager.clone());
     let capability_service = grpc::capability::CapabilityServiceImpl::new(capability_manager);
     let status_service = grpc::status::StatusServiceImpl::new(status_manager);
     let tool_service = grpc::tool::ToolServiceImpl::new(tool_manager.clone());
@@ -1363,7 +1363,8 @@ async fn main() -> Result<()> {
             page_manager.clone(),
             module_manager.clone(),
             cache_adapter.clone(),
-        );
+        )
+        .with_event(event_manager.clone());
     // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =

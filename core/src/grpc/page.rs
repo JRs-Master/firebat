@@ -29,6 +29,11 @@ pub struct PageServiceImpl {
     modules: Arc<crate::managers::module::ModuleManager>,
     /// dataCacheKey 페이지 bake — 저장 시 sysmod 캐시 records 를 baked data 로 굳힘.
     cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
+    /// Sidebar refresh on save. The chat path notifies from tool_registry, but an
+    /// approval-card save (MCP external session → pending → THIS Save) reached the DB
+    /// without telling the UI — the user approved and watched nothing appear
+    /// (2026-08-12 실측). This service covers every save surface, so notify here.
+    event: Option<Arc<crate::managers::event::EventManager>>,
 }
 
 impl PageServiceImpl {
@@ -37,7 +42,13 @@ impl PageServiceImpl {
         modules: Arc<crate::managers::module::ModuleManager>,
         cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
     ) -> Self {
-        Self { manager, modules, cache }
+        Self { manager, modules, cache, event: None }
+    }
+
+    /// Wire the event bus (post-construction builder — `new()` callers/tests stay unchanged).
+    pub fn with_event(mut self, event: Arc<crate::managers::event::EventManager>) -> Self {
+        self.event = Some(event);
+        self
     }
 
     /// hub project scoping — project 지정 시 page.project 와 일치할 때만 통과. admin(None/빈값)은 무검사.
@@ -174,11 +185,16 @@ impl PageService for PageServiceImpl {
             args.visibility.as_deref(),
             args.password.as_deref(),
         ) {
-            Ok(()) => Ok(Response::new(PageSaveResultPb {
-                ok: true,
-                slug,
-                error: None,
-            })),
+            Ok(()) => {
+                if let Some(ev) = &self.event {
+                    ev.notify_sidebar();
+                }
+                Ok(Response::new(PageSaveResultPb {
+                    ok: true,
+                    slug,
+                    error: None,
+                }))
+            }
             Err(e) => Ok(Response::new(PageSaveResultPb {
                 ok: false,
                 slug,
