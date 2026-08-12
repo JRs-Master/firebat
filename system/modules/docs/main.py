@@ -2115,7 +2115,11 @@ def _write_kpi_card_grid(ws, kpis, top_row, width=XLSX_DASH_COLS):
             body = f"{num:,}{unit}" if num is not None else (f"{s}{unit}" if unit else s)
             val.value = f"{icon} {body}".strip()
         val.font = Font(size=20, bold=True, color=XLSX_BAND)
-        val.alignment = center
+        # shrink_to_fit: a raw 15-digit won amount at 20pt clipped its own leading digits
+        # inside the card (2026-08-12 screenshot — "2" of 258조 gone). Shrinking is honest:
+        # every digit shows, just smaller; humanizing the number would require knowing the
+        # unit, which only the caller does (the kpis contract now asks for human units).
+        val.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
 
         text, color = _kpi_delta(k.get("delta"), k.get("deltaType"))
         if text is not None:

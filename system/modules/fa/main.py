@@ -158,6 +158,16 @@ def action_ratios(inp):
         return {"success": False, "action": "ratios",
                 "error": "no recognizable accounts in the rows — expected DART "
                          "financial/financialAll shape (account_nm + thstrm_amount)"}
+    # The fiscal YEAR of each period, read from the rows' own bsns_year. Without it the
+    # caller's labels float free of the data: a dashboard shipped 2023 figures under
+    # "(2025)" cards because current/prior/prior2 said nothing about which years they
+    # were (2026-08-12 실측). thstrm = bsns_year itself; frmtrm/bfefrmtrm step back one.
+    periods = None
+    years = [str(r.get("bsns_year")) for r in rows
+             if isinstance(r, dict) and str(r.get("bsns_year") or "").isdigit()]
+    if years:
+        y = int(max(set(years), key=years.count))
+        periods = {"current": str(y), "prior": str(y - 1), "prior2": str(y - 2)}
 
     def g(name, period="current"):
         return acc.get(name, {}).get(period)
@@ -214,6 +224,12 @@ def action_ratios(inp):
     data = {
         "fsUsed": fs_used or "unknown",
         "accounts": {k: v for k, v in acc.items()},
+        # Label KPIs with THESE years — current/prior/prior2 are positions, not dates.
+        **({"periods": periods,
+            "periodsNote": "current/prior/prior2 = fiscal years "
+                           f"{periods['current']}/{periods['prior']}/{periods['prior2']} — "
+                           "label your output with these years, never assume current means "
+                           "the latest year you asked another call for"} if periods else {}),
         "profitability": profitability,
         "stability": stability,
         "growth": growth_rates,
@@ -244,7 +260,7 @@ def action_selftest():
         checks.append({"name": name, "want": want, "got": got, "ok": want == got})
 
     rows = [
-        {"account_nm": "매출액", "fs_div": "CFS",
+        {"account_nm": "매출액", "fs_div": "CFS", "bsns_year": "2025",
          "thstrm_amount": "1,000", "frmtrm_amount": "800", "bfefrmtrm_amount": "640"},
         {"account_nm": "영업이익", "fs_div": "CFS", "thstrm_amount": "100", "frmtrm_amount": "80"},
         {"account_nm": "당기순이익", "fs_div": "CFS", "thstrm_amount": "50", "frmtrm_amount": "40"},
@@ -259,6 +275,8 @@ def action_selftest():
     out = action_ratios({"statements": rows, "marketCap": 1000.0, "shares": 10})
     d = out["data"]
     ck("CFS beats OFS", 1000.0, d["accounts"]["revenue"]["current"])
+    ck("periods carry the fiscal years so labels cannot float",
+       {"current": "2025", "prior": "2024", "prior2": "2023"}, d.get("periods"))
     ck("operating margin", 10.0, d["profitability"]["operatingMarginPct"])
     ck("ROE", 6.25, d["profitability"]["roePct"])
     ck("debt ratio", 150.0, d["stability"]["debtRatioPct"])

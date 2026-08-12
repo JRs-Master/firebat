@@ -744,6 +744,27 @@ impl ModuleManager {
         }
         let input_data: &serde_json::Value = coerced.as_ref().unwrap_or(input_data);
 
+        // Container relocation — a module whose schema forbids extra top-level keys and
+        // nests its per-action params under ONE declared object slot (kiwoom's `params`)
+        // kept receiving them flat: three measured turns in a row opened with
+        // base_dt/stk_cd at the top level, burned the round on "Additional properties are
+        // not allowed", then re-sent nested (2026-08-12). With additionalProperties:false
+        // the flat call has exactly one reading that can succeed, so read it. Two
+        // containers (korea-invest's query+body) = ambiguous = untouched.
+        let relocated = config
+            .as_ref()
+            .and_then(|c| c.get("input"))
+            .and_then(|schema| relocate_unknowns_into_container(input_data, schema));
+        if let Some((_, moved)) = &relocated {
+            dialect_absorbed(
+                module_name,
+                "container",
+                &format!("flat keys moved into the container param: {moved}"),
+            );
+        }
+        let input_data: &serde_json::Value =
+            relocated.as_ref().map(|(v, _)| v).unwrap_or(input_data);
+
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now
         // discoverable (explicit actionCatalog OR derived from the input schema), so the hint
@@ -3011,6 +3032,51 @@ fn schema_type(schema: &serde_json::Value) -> Option<&str> {
     }
 }
 
+/// Moves undeclared top-level keys into the module's single declared object container.
+///
+/// Fires only when the schema says `additionalProperties: false` — the flat call WILL be
+/// refused, so relocation is the one reading that can succeed — and when exactly one
+/// object-typed property exists to receive the keys. Existing inner keys are never
+/// overwritten. Returns the rewritten input plus the moved key list for the dialect log.
+fn relocate_unknowns_into_container(
+    input: &serde_json::Value,
+    schema: &serde_json::Value,
+) -> Option<(serde_json::Value, String)> {
+    if schema.get("additionalProperties") != Some(&serde_json::Value::Bool(false)) {
+        return None;
+    }
+    let props = schema.get("properties")?.as_object()?;
+    let obj = input.as_object()?;
+    let containers: Vec<&String> = props
+        .iter()
+        .filter(|(_, s)| matches!(schema_type(s), Some("object")))
+        .map(|(k, _)| k)
+        .collect();
+    let [container] = containers.as_slice() else {
+        return None;
+    };
+    let unknown: Vec<String> = obj
+        .keys()
+        .filter(|k| !props.contains_key(*k))
+        .cloned()
+        .collect();
+    if unknown.is_empty() {
+        return None;
+    }
+    let mut out = obj.clone();
+    let mut inner = out
+        .get(container.as_str())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    for k in &unknown {
+        if let Some(v) = out.remove(k) {
+            inner.entry(k.clone()).or_insert(v);
+        }
+    }
+    out.insert(container.to_string(), serde_json::Value::Object(inner));
+    Some((serde_json::Value::Object(out), unknown.join(", ")))
+}
+
 fn coerce_node(
     value: &serde_json::Value,
     schema: &serde_json::Value,
@@ -3404,6 +3470,48 @@ mod coercion_tests {
         assert_eq!(out["note"], serde_json::json!("그대로"));
         // 강제 후에는 스키마를 통과해야 한다(이게 목적).
         assert!(validate_value(&out, &schema()).is_ok());
+    }
+
+    /// Flat params relocate into the single declared object container — and ONLY under
+    /// additionalProperties:false with exactly one container (2026-08-12: kiwoom opened
+    /// three turns in a row with base_dt/stk_cd at the top level).
+    #[test]
+    fn flat_params_relocate_into_the_single_container() {
+        let sch = serde_json::json!({
+            "type": "object", "additionalProperties": false,
+            "properties": {
+                "action": {"type": "string"},
+                "params": {"type": "object"},
+                "mock": {"type": "boolean"}
+            }
+        });
+        let input = serde_json::json!({
+            "action": "ka10081", "base_dt": "20260812", "stk_cd": "005930"
+        });
+        let (out, moved) =
+            relocate_unknowns_into_container(&input, &sch).expect("one legal reading");
+        assert_eq!(out["params"]["base_dt"], "20260812");
+        assert_eq!(out["params"]["stk_cd"], "005930");
+        assert!(out.get("base_dt").is_none());
+        assert_eq!(out["action"], "ka10081");
+        assert!(moved.contains("base_dt") && moved.contains("stk_cd"));
+        // An existing inner key is never overwritten.
+        let input2 = serde_json::json!({
+            "action": "a", "params": {"stk_cd": "111111"}, "stk_cd": "005930"
+        });
+        let (out2, _) = relocate_unknowns_into_container(&input2, &sch).unwrap();
+        assert_eq!(out2["params"]["stk_cd"], "111111");
+        // Two containers = ambiguous = untouched.
+        let two = serde_json::json!({
+            "type": "object", "additionalProperties": false,
+            "properties": {"query": {"type": "object"}, "body": {"type": "object"}}
+        });
+        assert!(relocate_unknowns_into_container(&input, &two).is_none());
+        // A permissive schema (no additionalProperties:false) = untouched.
+        let open = serde_json::json!({
+            "type": "object", "properties": {"params": {"type": "object"}}
+        });
+        assert!(relocate_unknowns_into_container(&input, &open).is_none());
     }
 
     /// 스키마에 없는 키·타입 미선언 키는 건드리지 않는다.
