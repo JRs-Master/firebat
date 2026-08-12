@@ -1268,7 +1268,7 @@ mod tests {
     #[test]
     fn missing_labels_names_the_chart_shape() {
         let err = first_failure(serde_json::json!({ "chartType": "line" }));
-        assert!(err.contains("chart needs `labels` + `datasets`"), "{err}");
+        assert!(err.contains("chart needs `labels` + `series`"), "{err}");
         assert!(err.contains("use `stock_chart` or pass labels explicitly"), "{err}");
     }
 
