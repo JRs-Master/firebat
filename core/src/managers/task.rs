@@ -131,6 +131,118 @@ pub enum PipelineStep {
 /// blast radius of being wrong here is N real side effects.
 pub const MAX_FOREACH_ITEMS: usize = 100;
 
+/// The `pipeline` parameter as the model sees it — the form for a step, published instead of
+/// described.
+///
+/// The enum above IS the form: a tagged union with per-variant fields. It was never handed over
+/// as one. Both tool registries declared `pipeline: {items: {type: "object"}}` and carried the
+/// entire step vocabulary in a ~1,400-character prose paragraph — two paragraphs, in fact, which
+/// had already drifted apart between the FC and MCP copies. A step is the most dialect-prone
+/// payload we have and it runs unattended, where a malformed one fails with nobody watching.
+///
+/// So the shape lives here, beside the enum it mirrors, and both transports publish this. The
+/// prose keeps only what a schema cannot say: what `$prev`/`$stepN` resolve to, why TOOL_CALL and
+/// not EXECUTE, and what FOREACH scoping means.
+///
+/// `steps` is declared as a plain object array rather than a recursive `$ref`: nested steps are
+/// the same shape, but self-referencing schemas are rejected outright by some providers, and a
+/// tool schema that fails to load teaches nothing at all.
+pub fn pipeline_param_schema() -> Value {
+    serde_json::json!({
+        "type": "array",
+        "description": "executionMode=pipeline deterministic steps. Reference syntax: **$stepN counts from zero** ($step0 = the first step; the run log numbers from 1). `$prev` IS the previous step's output itself — module {success,data} envelopes auto-unwrap to data, so path from there ($prev.result[0].accountSeq); never invent wrappers like .output[], an unresolved path fails the step. Inside FOREACH, `$prev` is the CURRENT ITEM at the first inner step while `$stepN` still addresses the outer steps — that is how a loop body combines its item with a value fetched once. Call a MODULE with TOOL_CALL tool=sysmod_<name>: EXECUTE runs a file path straight in the sandbox and therefore skips input validation, account resolution and cache-key expansion (a `<param>CacheKey` argument silently never becomes rows). Bake a literal you already know instead of a reference.",
+        "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "description": "Required fields per type — EXECUTE{path} · MCP_CALL{tool} · NETWORK_REQUEST{url} · CONDITION{field,op} · LLM_TRANSFORM{instruction} · SAVE_PAGE{slug|inputMap} · TOOL_CALL{tool} · FOREACH{items,steps}. Every other field below is optional and belongs to the types that name it.",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["EXECUTE", "MCP_CALL", "NETWORK_REQUEST", "CONDITION",
+                             "LLM_TRANSFORM", "SAVE_PAGE", "TOOL_CALL", "FOREACH"]
+                },
+                "path": {"type": "string", "description": "EXECUTE: workspace-relative script path"},
+                "tool": {"type": "string", "description": "TOOL_CALL / MCP_CALL: tool name (sysmod_<module> for a system module)"},
+                "server": {"type": "string", "description": "MCP_CALL: external server; omit for our own tools"},
+                "arguments": {"type": "object", "description": "MCP_CALL: tool arguments"},
+                "inputData": {"type": ["object", "array", "string", "number", "boolean"],
+                              "description": "Literal input, or a reference like \"$prev\" / \"$step0.rows\""},
+                "inputMap": {"type": "object",
+                             "description": "Per-field references merged into the input, e.g. {\"barsCacheKey\": \"$step0._cacheKey\"}"},
+                "url": {"type": "string", "description": "NETWORK_REQUEST"},
+                "method": {"type": "string", "description": "NETWORK_REQUEST: GET by default"},
+                "body": {"type": ["object", "array", "string"], "description": "NETWORK_REQUEST"},
+                "headers": {"type": "object", "description": "NETWORK_REQUEST"},
+                "instruction": {"type": "string",
+                                "description": "LLM_TRANSFORM: what to write; format directives go here (no auto context)"},
+                "model": {"type": "string",
+                          "description": "LLM_TRANSFORM: pin a cheaper worker model for this step; omit for the main model"},
+                "field": {"type": "string", "description": "CONDITION: path into the previous output"},
+                "op": {"type": "string", "description": "CONDITION: comparison operator"},
+                "value": {"description": "CONDITION: the value compared against"},
+                "slug": {"type": "string", "description": "SAVE_PAGE: page slug"},
+                "spec": {"type": "object", "description": "SAVE_PAGE: page spec"},
+                "allowOverwrite": {"type": "boolean", "description": "SAVE_PAGE"},
+                "items": {"type": ["array", "string"],
+                          "description": "FOREACH: a literal list, or a reference to one an earlier step produced (\"$prev.orders\")"},
+                "steps": {"type": "array", "items": {"type": "object"},
+                          "description": "FOREACH: the steps run once per item (same step shape)"},
+                "maxItems": {"type": "integer", "description": "FOREACH: cap; anything dropped is reported"},
+                "continueOnError": {"type": "boolean",
+                                    "description": "FOREACH: keep going after an item fails (off by default)"}
+            }
+        }
+    })
+}
+
+/// The published form must name every step type the executor can run. There is no reflection
+/// over enum variants, so this list is the seam: a new variant fails here until it is added to
+/// `pipeline_param_schema` too — which is the whole point of keeping the schema beside the enum.
+#[cfg(test)]
+mod step_schema_tests {
+    use super::*;
+
+    #[test]
+    fn the_published_form_names_every_step_type() {
+        let variants = vec![
+            PipelineStep::Execute { path: "s.py".into(), input_data: None, input_map: None },
+            PipelineStep::McpCall { server: None, tool: "t".into(), arguments: None, input_data: None, input_map: None },
+            PipelineStep::NetworkRequest { url: "https://x".into(), method: None, body: None, headers: None },
+            PipelineStep::LlmTransform { instruction: "i".into(), input_data: None, input_map: None, model: None },
+            PipelineStep::Condition { field: "f".into(), op: ">".into(), value: None },
+            PipelineStep::SavePage { slug: None, spec: None, input_data: None, input_map: None, allow_overwrite: None },
+            PipelineStep::ToolCall { tool: "t".into(), input_data: None, input_map: None },
+            PipelineStep::ForEach { items: serde_json::json!([]), steps: vec![], max_items: None, continue_on_error: None },
+        ];
+        let schema = pipeline_param_schema();
+        let published: Vec<String> = schema["items"]["properties"]["type"]["enum"]
+            .as_array()
+            .expect("the form declares the discriminator")
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        for v in &variants {
+            let tag = serde_json::to_value(v).unwrap()["type"].as_str().unwrap().to_string();
+            assert!(published.contains(&tag), "step type {tag} runs but is not published: {published:?}");
+        }
+        assert_eq!(published.len(), variants.len(), "the form names a type the executor cannot run");
+    }
+
+    /// Fields the executor reads must be publishable — a form that omits one sends the model
+    /// back to prose for it.
+    #[test]
+    fn the_form_declares_the_fields_the_variants_carry() {
+        let schema = pipeline_param_schema();
+        let props = schema["items"]["properties"].as_object().unwrap();
+        for f in ["path", "tool", "server", "arguments", "inputData", "inputMap", "url", "method",
+                  "body", "headers", "instruction", "model", "field", "op", "value", "slug",
+                  "spec", "allowOverwrite", "items", "steps", "maxItems", "continueOnError"] {
+            assert!(props.contains_key(f), "the form omits `{f}`");
+        }
+    }
+}
+
 impl PipelineStep {
     pub fn step_type(&self) -> &'static str {
         match self {

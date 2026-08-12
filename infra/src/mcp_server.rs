@@ -2274,7 +2274,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
             "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},
             "title": {"type": "string"},
             "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "매 trigger 같은 절차면 pipeline(권장 — 결정적, 런타임 LLM 0회 또는 합성 1회), 매 trigger 런타임 판단 필요하면 agent(매번 LLM 루프)"},
-            "pipeline": {"type": "array", "description": "executionMode=pipeline deterministic steps. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL|FOREACH, ...}. Call a MODULE with TOOL_CALL tool=sysmod_<name>; EXECUTE runs a file path straight in the sandbox and skips input validation, account resolution and cache-key expansion. FOREACH{items,steps} runs its steps once per item of a list an earlier step produced (items: \"$prev.orders\"); inside, $prev is the current item at the first inner step while $stepN still points at the steps before the loop (so a body can combine the item with a value fetched once) — use it when the count is only known at runtime. Cross-step reference: **$stepN counts from zero** ($step0 = the first step; the run log numbers them from 1). $prev IS the previous step's output itself (module {success,data} envelopes auto-unwrap to data) — path from there, e.g. $prev.result[0].accountSeq. Never invent wrappers like .output[]; an unresolved path fails the step. If you already know a value from a lookup this turn, bake the literal instead of a reference. Threshold/rule checks = CONDITION. Synthesis (summary/report) = one LLM_TRANSFORM step (no auto context — put format directives in instruction; optional `model` pins a cheaper worker model for that step — omit for the current main model)", "items": {"type": "object"}},
+            "pipeline": firebat_core::managers::task::pipeline_param_schema(),
             "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 AI 가 매 trigger 받는 자연어 지시문"}
         }))),
         handler: Arc::new(ScheduleTaskHandler { schedule: deps.schedule.clone() }),
@@ -2302,7 +2302,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     state.register(McpTool {
         name: "run_task".into(),
         description: "파이프라인 즉시 실행 (예약 아님). inputSchema: {pipeline: [step, ...]}.".into(),
-        input_schema: core_schema("run_task", schema_object(serde_json::json!({"pipeline": {"type": "array"}}))),
+        input_schema: core_schema("run_task", schema_object(serde_json::json!({"pipeline": firebat_core::managers::task::pipeline_param_schema()}))),
         handler: Arc::new(RunTaskHandler { task: deps.task }),
     }).await;
 
