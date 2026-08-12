@@ -3,7 +3,7 @@
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
 import { compareName } from '../../../lib/util/sort-name';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, FolderOpen, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, ChevronLeft, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, FolderOpen, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText, Download, Loader2 } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { AnchoredMenu } from './Menu';
 import { CronPanel, ScheduleModal } from './CronPanel';
@@ -40,6 +40,15 @@ export type ConversationMeta = {
 };
 
 type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'skills' | 'entities' | 'notes' | 'calendar' | 'library';
+
+// Page → document export. The panel only picks the docs action; the docs sysmod owns block
+// normalization, so the page body travels verbatim (pre-processing here would fork that ownership).
+const EXPORT_FORMATS = [
+  { label: 'PPTX', action: 'make_pptx' },
+  { label: 'XLSX', action: 'make_xlsx' },
+  { label: 'DOCX', action: 'make_docx' },
+  { label: 'PDF', action: 'make_pdf' },
+] as const;
 
 // label·tooltip = i18n: 렌더에서 t(`sidebar.${id}`) 로 해석(한글 워크스페이스/스킬/라이브러리/리콜,
 // 영어 사용자는 Workspace/Skills/Library/Recall). 여기선 id + Icon 만.
@@ -286,6 +295,9 @@ export function Sidebar({
   const [moduleEntries, setModuleEntries] = useState<Record<string, string>>({});
   // ⋯ 더보기 드롭다운 열린 항목 ID
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  // 문서 내보내기 — 같은 ⋯ 메뉴 안에서 포맷 목록으로 전환된 항목 ID / 내보내는 중인 page slug.
+  const [exportMenuFor, setExportMenuFor] = useState<string | null>(null);
+  const [exportingPage, setExportingPage] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   // 비밀번호 입력 모달
   const [pwModal, setPwModal] = useState<{ type: 'page' | 'project'; target: string } | null>(null);
@@ -587,6 +599,107 @@ export function Sidebar({
     setEditingPageSlug(slug);
   };
 
+  // ── 페이지 → 문서 내보내기 ──
+  // 페이지 spec 의 body(= render 블록 배열)를 docs 시스템 모듈에 그대로 넘긴다. 블록 정규화는
+  // 모듈 소유라 여기서는 spec 모양에서 배열만 꺼낸다. 경로 = 다른 패널과 같은 `/api/module/run`.
+  const handleExportPage = useCallback(async (slug: string, action: string, label: string) => {
+    setOpenMenu(null);
+    setExportMenuFor(null);
+    setSelectedItem(null);
+    setExportingPage(slug);
+    try {
+      const page = await apiGet<{ success: boolean; spec?: unknown; error?: string }>(
+        `/api/pages/${encodeURIComponent(slug)}`,
+        { category: 'sidebar' },
+      );
+      if (!page.success) {
+        await alertDialog({ title: '내보내기 실패', message: page.error ?? '페이지를 불러오지 못했습니다.', danger: true });
+        return;
+      }
+      const spec = (page.spec ?? {}) as { head?: Record<string, unknown>; body?: unknown };
+      const blocks = Array.isArray(spec.body) ? spec.body : [];
+      if (blocks.length === 0) {
+        await alertDialog({ title: '내보내기 실패', message: '이 페이지에는 내보낼 블록이 없습니다.', danger: true });
+        return;
+      }
+      const headTitle = typeof spec.head?.title === 'string' ? spec.head.title.trim() : '';
+      const res = await apiPost<{
+        success: boolean;
+        data?: { media?: { url?: string }; notes?: unknown; mediaExportError?: string };
+        error?: string;
+      }>(
+        '/api/module/run',
+        { module: 'docs', data: { action, title: headTitle || slug, blocks } },
+        { category: 'sidebar' },
+      );
+      if (!res.success) {
+        await alertDialog({ title: `${label} 내보내기 실패`, message: res.error ?? '알 수 없는 오류', danger: true });
+        return;
+      }
+      const url = res.data?.media?.url;
+      if (!url) {
+        await alertDialog({
+          title: `${label} 내보내기 실패`,
+          message: res.data?.mediaExportError ?? '파일 주소를 받지 못했습니다.',
+          danger: true,
+        });
+        return;
+      }
+      // 갤러리 카드와 같은 방식 — anchor download (팝업 차단 회피, 파일명은 서버 것 사용).
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Dropped blocks are surfaced, never swallowed — the file is short of what the page shows.
+      const notes = Array.isArray(res.data?.notes)
+        ? (res.data.notes as unknown[]).filter((n): n is string => typeof n === 'string')
+        : [];
+      if (notes.length > 0) {
+        await alertDialog({ title: `${label} 내보내기 완료 — 일부 블록 제외`, message: notes.join('\n') });
+      }
+    } catch (e: any) {
+      await alertDialog({ title: `${label} 내보내기 실패`, message: e?.message ?? String(e), danger: true });
+    } finally {
+      setExportingPage(null);
+    }
+  }, []);
+
+  // ⋯ 메뉴 안 포맷 목록 — 페이지 행 두 곳(단일 페이지 프로젝트 헤더 / 하위 페이지)이 공유.
+  const renderExportItems = (slug: string) => (
+    <>
+      <button
+        onClick={(e) => { e.stopPropagation(); setExportMenuFor(null); }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-400 hover:bg-slate-50 transition-colors border-b border-slate-100"
+      >
+        <ChevronLeft size={10} /> 뒤로
+      </button>
+      {EXPORT_FORMATS.map(f => (
+        <button
+          key={f.action}
+          onClick={(e) => { e.stopPropagation(); handleExportPage(slug, f.action, f.label); }}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          <Download size={10} /> {f.label}
+        </button>
+      ))}
+    </>
+  );
+
+  // ⋯ 메뉴 안 "내보내기" 진입 항목 — 같은 메뉴를 포맷 목록으로 전환.
+  const renderExportEntry = (menuKey: string, slug: string) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); setExportMenuFor(menuKey); }}
+      disabled={exportingPage === slug}
+      className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
+    >
+      <span className="flex items-center gap-2"><Download size={10} /> 내보내기</span>
+      <ChevronRight size={10} className="text-slate-400" />
+    </button>
+  );
+
   // URL 변경 모달 상태 — type: page (단일 slug) / project (일괄 이름 변경)
   const [renameTarget, setRenameTarget] = useState<{ type: 'page' | 'project'; current: string } | null>(null);
   const [renameInput, setRenameInput] = useState('');
@@ -861,6 +974,9 @@ export function Sidebar({
                           >
                             {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                           </button>
+                        ) : mainSlug && exportingPage === mainSlug ? (
+                          // 내보내는 중 — 몇 초 걸리므로 행 아이콘이 상태를 표시합니다.
+                          <Loader2 size={12} className="text-blue-500 shrink-0 animate-spin" />
                         ) : (
                           <Globe size={12} className="text-blue-500 shrink-0" />
                         )}
@@ -903,8 +1019,13 @@ export function Sidebar({
                                 <MoreHorizontal size={11} />
                               </button>
                             </Tooltip>
-                            {openMenu === `proj:${mp.name}` && (
-                              <AnchoredMenu anchorRef={triggerRef} onClose={() => setOpenMenu(null)} minWidth={144}>
+                            {openMenu === `proj:${mp.name}` && exportMenuFor === `proj:${mp.name}` && mainSlug && (
+                              <AnchoredMenu anchorRef={triggerRef} onClose={() => { setOpenMenu(null); setExportMenuFor(null); }} minWidth={144}>
+                                {renderExportItems(mainSlug)}
+                              </AnchoredMenu>
+                            )}
+                            {openMenu === `proj:${mp.name}` && exportMenuFor !== `proj:${mp.name}` && (
+                              <AnchoredMenu anchorRef={triggerRef} onClose={() => { setOpenMenu(null); setExportMenuFor(null); }} minWidth={144}>
                                 {isSingle && mainSlug && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleEditPage(mainSlug); setOpenMenu(null); setSelectedItem(null); }}
@@ -952,6 +1073,8 @@ export function Sidebar({
                                 >
                                   <Clock size={11} /> 스케줄
                                 </button>
+                                {/* 문서 내보내기 — admin 전용(hub 방문자에겐 admin page/module 경로가 없습니다). */}
+                                {isSingle && mainSlug && !hubMode && renderExportEntry(`proj:${mp.name}`, mainSlug)}
                                 <div className="border-t border-slate-100 my-0.5" />
                                 {/* URL 변경 — 단일 페이지는 slug 편집, 프로젝트는 이름 일괄 변경 */}
                                 {isSingle && mainSlug ? (
@@ -1012,7 +1135,9 @@ export function Sidebar({
                                     }
                                   }}
                                 >
-                                  <Globe size={11} className="text-blue-400 shrink-0" />
+                                  {exportingPage === pg.slug
+                                    ? <Loader2 size={11} className="text-blue-500 shrink-0 animate-spin" />
+                                    : <Globe size={11} className="text-blue-400 shrink-0" />}
                                   <Tooltip label={pg.title}>
                                     <span className="flex-1 text-[11px] font-medium text-slate-600 truncate">
                                       {pg.slug}
@@ -1042,8 +1167,13 @@ export function Sidebar({
                                           <MoreHorizontal size={10} />
                                         </button>
                                       </Tooltip>
-                                      {openMenu === `page:${pg.slug}` && (
-                                        <AnchoredMenu anchorRef={triggerRef} onClose={() => setOpenMenu(null)} minWidth={128}>
+                                      {openMenu === `page:${pg.slug}` && exportMenuFor === `page:${pg.slug}` && (
+                                        <AnchoredMenu anchorRef={triggerRef} onClose={() => { setOpenMenu(null); setExportMenuFor(null); }} minWidth={128}>
+                                          {renderExportItems(pg.slug)}
+                                        </AnchoredMenu>
+                                      )}
+                                      {openMenu === `page:${pg.slug}` && exportMenuFor !== `page:${pg.slug}` && (
+                                        <AnchoredMenu anchorRef={triggerRef} onClose={() => { setOpenMenu(null); setExportMenuFor(null); }} minWidth={128}>
                                           <button
                                             onClick={(e) => { e.stopPropagation(); handleEditPage(pg.slug); setOpenMenu(null); setSelectedItem(null); }}
                                             className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
@@ -1069,6 +1199,8 @@ export function Sidebar({
                                               </button>
                                             );
                                           })}
+                                          {/* 문서 내보내기 — admin 전용(hub 방문자에겐 admin page/module 경로가 없습니다). */}
+                                          {!hubMode && renderExportEntry(`page:${pg.slug}`, pg.slug)}
                                           <div className="border-t border-slate-100 my-0.5" />
                                           <button
                                             onClick={(e) => { e.stopPropagation(); handleDeletePage(pg.slug); setOpenMenu(null); setSelectedItem(null); }}
