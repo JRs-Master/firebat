@@ -5662,6 +5662,20 @@ impl AiManager {
 /// 라운드는 불가침(직전 결과는 모델이 지금 읽는 중). 축약한 라운드 수 반환(0 = no-op).
 /// 예산 120K chars ≈ Solar 토크나이저 기준 수만 토큰 — base 프롬프트(~55K tok)+출력 여유를
 /// 남기고 128K 창 안에 들어오는 보수값 (2026-07-13 실측: 133,987 tok 400 재발 방지).
+/// How much of a failed round's error reason survives the trim. Enough to tell the model *why*
+/// the call failed, short enough that the stub stays a stub.
+const TRIM_ERROR_CHARS: usize = 160;
+
+/// Char-safe cap — error text is routinely Korean, so slicing by bytes would split a codepoint.
+fn cap_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
 fn trim_tool_exchanges(exchanges: &mut [crate::ports::ToolExchangeEntry]) -> usize {
     const BUDGET_CHARS: usize = 120_000;
     const KEEP_RECENT: usize = 2;
@@ -5687,22 +5701,53 @@ fn trim_tool_exchanges(exchanges: &mut [crate::ports::ToolExchangeEntry]) -> usi
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             if !is_stub {
-                // The payload leaves, the HANDLE must not. A trimmed result whose data is
-                // still in the sysmod cache used to say only "re-fetch if needed", and the
-                // model re-fetched from the broker while reasoning "the data IS in the cache
-                // though" — it had no key to read with (2026-08-12 실측). Carry the cacheKey
-                // through the stub so recovery is a cache_read, not another round trip.
-                r.result = match crate::ports::extract_cache_key(&r.result) {
-                    Some(key) => serde_json::json!({
-                        "trimmed": true,
-                        "cacheKey": key,
-                        "note": "older round result removed to fit the context window — the full data is still in the result cache; cache_read with cacheKey recovers it (no re-fetch needed)",
-                    }),
-                    None => serde_json::json!({
-                        "trimmed": true,
-                        "note": "older round result removed to fit the context window — re-fetch if needed",
-                    }),
+                // The payload leaves, the HANDLE and the OUTCOME must not.
+                //
+                // 1) A trimmed result whose data is still in the sysmod cache used to say only
+                //    "re-fetch if needed", and the model re-fetched from the broker while
+                //    reasoning "the data IS in the cache though" — it had no key to read with
+                //    (2026-08-12 실측). Carry the cacheKey so recovery is a cache_read.
+                // 2) The stub also erased `success:false` and the error text, so a REJECTED or
+                //    FAILED round came back to the model as a featureless "trimmed" object and
+                //    was re-read as a success: "the earlier call with stk_cd='KRX:000660' DID
+                //    succeed" (it was grounding-rejected) and "make_xlsx 실제 호출은 이미
+                //    했습니다" (it had failed validation) — twice in one turn, ending in a
+                //    fabricated completion claim (2026-08-12 실측). Failure-ness survives the
+                //    trim: the verdict and a capped error reason stay in the stub.
+                let success = r
+                    .result
+                    .get("success")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(r.success);
+                let error_text = if success {
+                    None
+                } else {
+                    r.result
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                        .or_else(|| r.error.clone())
+                        .map(|e| cap_chars(&e, TRIM_ERROR_CHARS))
                 };
+                let cache_key = crate::ports::extract_cache_key(&r.result);
+                let note = if !success {
+                    "older FAILED round result removed to fit the context window — the call did NOT succeed"
+                } else if cache_key.is_some() {
+                    "older round result removed to fit the context window — the full data is still in the result cache; cache_read with cacheKey recovers it (no re-fetch needed)"
+                } else {
+                    "older round result removed to fit the context window — re-fetch if needed"
+                };
+                let mut stub = serde_json::Map::new();
+                stub.insert("trimmed".to_string(), serde_json::json!(true));
+                stub.insert("success".to_string(), serde_json::json!(success));
+                if let Some(err) = error_text {
+                    stub.insert("error".to_string(), serde_json::json!(err));
+                }
+                if let Some(key) = cache_key {
+                    stub.insert("cacheKey".to_string(), serde_json::json!(key));
+                }
+                stub.insert("note".to_string(), serde_json::json!(note));
+                r.result = serde_json::Value::Object(stub);
                 changed = true;
             }
         }
@@ -5724,6 +5769,15 @@ mod trim_tool_exchanges_tests {
     use crate::ports::{ToolCall, ToolExchangeEntry, ToolResult};
 
     fn entry(id: &str, payload: serde_json::Value) -> ToolExchangeEntry {
+        entry_with_outcome(id, payload, true, None)
+    }
+
+    fn entry_with_outcome(
+        id: &str,
+        payload: serde_json::Value,
+        success: bool,
+        error: Option<&str>,
+    ) -> ToolExchangeEntry {
         ToolExchangeEntry {
             tool_calls: vec![ToolCall {
                 id: id.to_string(),
@@ -5734,8 +5788,8 @@ mod trim_tool_exchanges_tests {
                 call_id: id.to_string(),
                 name: "sysmod_yfinance".to_string(),
                 result: payload,
-                success: true,
-                error: None,
+                success,
+                error: error.map(str::to_string),
                 arguments: serde_json::Value::Null,
             }],
             raw_model_parts: None,
@@ -5775,6 +5829,12 @@ mod trim_tool_exchanges_tests {
                 .contains("cache_read"),
             "the note must name the recovery call"
         );
+        assert_eq!(
+            stub.get("success").and_then(|v| v.as_bool()),
+            Some(true),
+            "a successful round must still read as successful after the trim"
+        );
+        assert!(stub.get("error").is_none());
         // Pairing is preserved: the call side of the round is untouched.
         assert_eq!(exchanges[0].tool_calls.len(), 1);
         assert_eq!(exchanges[0].tool_results.len(), 1);
@@ -5796,6 +5856,74 @@ mod trim_tool_exchanges_tests {
         let stub = &exchanges[0].tool_results[0].result;
         assert_eq!(stub.get("trimmed").and_then(|v| v.as_bool()), Some(true));
         assert!(stub.get("cacheKey").is_none());
+        assert_eq!(stub.get("success").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    /// A failed round must not come back from the trim looking like a completed one — the model
+    /// read two erased failures as successes in a single turn and then claimed the work was done
+    /// (2026-08-12 실측).
+    #[test]
+    fn a_trimmed_failure_still_reads_as_a_failure() {
+        let filler = "x".repeat(60_000);
+        let reason = format!("Ungrounded value: 'stk_cd' = 'KRX:000660' {}", "…detail ".repeat(60));
+        let mut exchanges = vec![
+            entry_with_outcome(
+                "call-0",
+                serde_json::json!({ "success": false, "error": reason, "pad": filler.clone() }),
+                false,
+                Some("Ungrounded value: 'stk_cd' = 'KRX:000660'"),
+            ),
+            entry("call-1", serde_json::json!({ "rows": filler.clone() })),
+            entry("call-2", serde_json::json!({ "rows": filler })),
+        ];
+
+        assert_eq!(trim_tool_exchanges(&mut exchanges), 1);
+        let stub = &exchanges[0].tool_results[0].result;
+        assert_eq!(stub.get("trimmed").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            stub.get("success").and_then(|v| v.as_bool()),
+            Some(false),
+            "the verdict must survive the trim"
+        );
+        let err = stub.get("error").and_then(|v| v.as_str()).unwrap_or_default();
+        assert!(err.starts_with("Ungrounded value: 'stk_cd' = 'KRX:000660'"));
+        assert!(
+            err.chars().count() <= super::TRIM_ERROR_CHARS + 1,
+            "the reason is capped so the stub stays a stub (got {} chars)",
+            err.chars().count()
+        );
+        assert!(
+            stub.get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .contains("did NOT succeed"),
+            "the note must say the call failed"
+        );
+    }
+
+    /// The struct-level outcome is the fallback when the payload JSON carries no `success` field
+    /// (synthesized results, adapters that answer with a bare blob).
+    #[test]
+    fn outcome_falls_back_to_the_struct_fields() {
+        let filler = "x".repeat(60_000);
+        let mut exchanges = vec![
+            entry_with_outcome(
+                "call-0",
+                serde_json::json!({ "pad": filler.clone() }),
+                false,
+                Some("모듈 실행이 거부되었습니다"),
+            ),
+            entry("call-1", serde_json::json!({ "rows": filler.clone() })),
+            entry("call-2", serde_json::json!({ "rows": filler })),
+        ];
+
+        assert_eq!(trim_tool_exchanges(&mut exchanges), 1);
+        let stub = &exchanges[0].tool_results[0].result;
+        assert_eq!(stub.get("success").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(
+            stub.get("error").and_then(|v| v.as_str()),
+            Some("모듈 실행이 거부되었습니다")
+        );
     }
 }
 

@@ -18,7 +18,8 @@
 //! (MCP first, FC next) — **both paths, args-based** (task-local alone is a no-op on the FC
 //! path, per the hub-scope lesson).
 //!
-//! Pure / dependency-free — both core and the dispatch layers import it.
+//! Pure / dependency-free (no I/O beyond a tracing line) — both core and the dispatch layers
+//! import it.
 
 /// One grounded-param requirement parsed from a module config's `grounding` object.
 #[derive(Debug, Clone)]
@@ -127,6 +128,47 @@ fn is_grounded(token: &str, observed: &[String]) -> bool {
     observed.iter().any(|o| o.contains(token))
 }
 
+/// Strip a vendor exchange/venue decoration off a token, returning the bare core id.
+///
+/// The decorated forms are the vendor's OWN documented format, not model invention: kiwoom's
+/// `actions.json` (ka10081) declares `stk_cd` as "거래소별 종목코드 (KRX:039490, NXT:039490_NX,
+/// SOR:039490_AL)" and live responses come back decorated (`000660_AL`). A model that follows the
+/// docs sends `KRX:000660`, which is not a substring of the corpus even though the code it carries
+/// was resolved this conversation — the gate rejected the vendor's own dialect (2026-08-12 실측).
+///
+/// Only the core carries provenance, so membership is checked against the core while the argument
+/// itself is passed through **verbatim** — the vendor API expects the decorated form, and rewriting
+/// the arg would change what the module executes.
+///
+/// Shapes stripped: a leading `<alnum, ≤6>:` exchange prefix and/or a trailing `_<alnum, ≤3>` venue
+/// suffix. Deliberately narrow — a wide strip would turn arbitrary text into a "core" and let a
+/// fabricated id borrow provenance from an unrelated substring.
+/// `None` when the token carries no such decoration (nothing was stripped).
+fn strip_vendor_decoration(token: &str) -> Option<String> {
+    const MAX_PREFIX: usize = 6;
+    const MAX_SUFFIX: usize = 3;
+    let is_alnum = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric());
+    let mut core = token;
+    let mut stripped = false;
+    if let Some((prefix, rest)) = core.split_once(':') {
+        if !prefix.is_empty() && prefix.len() <= MAX_PREFIX && is_alnum(prefix) {
+            core = rest;
+            stripped = true;
+        }
+    }
+    if let Some((head, suffix)) = core.rsplit_once('_') {
+        if !suffix.is_empty() && suffix.len() <= MAX_SUFFIX && is_alnum(suffix) {
+            core = head;
+            stripped = true;
+        }
+    }
+    if stripped && !core.is_empty() {
+        Some(core.to_string())
+    } else {
+        None
+    }
+}
+
 /// Default resolve guidance when a grounded param declares no `resolveHint`.
 fn default_hint(param: &str) -> String {
     format!(
@@ -179,14 +221,47 @@ pub fn check_grounding(
             }
         }
         for token in arg_tokens(args, &gp.param) {
+            // The bare id under any vendor decoration — computed once, used by both the shape
+            // test and the membership test so the two cannot disagree about what the token is.
+            let core = strip_vendor_decoration(&token);
             // Overloaded param: only gate tokens matching the declared id shape (e.g. 6-digit
             // stock code). Fixed reference codes (index/sector) that don't match are left alone.
+            //
+            // The core counts for the shape test too, or the decoration becomes an escape hatch:
+            // an anchored `^Q?[0-9]{6}$` never matches `KRX:123456`, so a fabricated code in
+            // vendor dress used to skip the very gate that exists to catch it (absence is not
+            // consent). Dressed-up id → this param's business → gated. A genuinely overloaded
+            // value whose core still fails the shape (a `09:30:00` timestamp, a composite key)
+            // strips to nothing that matches and keeps the old skip.
             if let Some(re) = &gp.pattern {
-                if !re.is_match(&token) {
+                let shape_hit = re.is_match(&token)
+                    || core.as_deref().map(|c| re.is_match(c)).unwrap_or(false);
+                if !shape_hit {
                     continue;
                 }
             }
             if !is_grounded(&token, observed) {
+                // Vendor dialect before verdict: the exchange-qualified / venue-suffixed forms are
+                // the vendor's documented format, so check membership against the bare core before
+                // calling the token invented. The core must ALSO satisfy the declared shape (when
+                // one is declared) and be grounded — a fabricated `KRX:123456` still fails here.
+                if let Some(core) = core.as_deref() {
+                    let shape_ok = gp
+                        .pattern
+                        .as_ref()
+                        .map(|re| re.is_match(core))
+                        .unwrap_or(true);
+                    if shape_ok && is_grounded(core, observed) {
+                        tracing::info!(
+                            target: "grounding",
+                            param = %gp.param,
+                            token = %token,
+                            core = %core,
+                            "vendor-format token accepted: prefix/suffix stripped for membership check"
+                        );
+                        continue;
+                    }
+                }
                 let hint = if gp.hint.is_empty() {
                     default_hint(&gp.param)
                 } else {
@@ -307,6 +382,107 @@ mod tests {
     fn no_grounded_params_never_gates() {
         let args = json!({ "stk_cd": "088390" });
         assert!(check_grounding(&args, &[], &[]).is_ok());
+    }
+
+    /// kiwoom's own docs declare `KRX:039490` / `NXT:039490_NX` / `SOR:039490_AL` as the format,
+    /// and the gate rejected the code it had itself grounded (2026-08-12 실측).
+    #[test]
+    fn vendor_decorated_token_passes_when_core_is_grounded() {
+        let g = parse_grounding(&kiwoom_grounding());
+        let observed = vec![r#"{"종목명":"SK하이닉스","stock_code":"000660"}"#.to_string()];
+        // exchange prefix
+        let prefixed = json!({ "action": "ka10081", "stk_cd": "KRX:000660" });
+        assert!(check_grounding(&prefixed, &g, &observed).is_ok());
+        // venue suffix (the shape live responses come back in)
+        let suffixed = json!({ "action": "ka10081", "stk_cd": "000660_AL" });
+        assert!(check_grounding(&suffixed, &g, &observed).is_ok());
+        // both at once
+        let both = json!({ "action": "ka10081", "params": { "stk_cd": "SOR:000660_AL" } });
+        assert!(check_grounding(&both, &g, &observed).is_ok());
+    }
+
+    #[test]
+    fn vendor_decoration_does_not_launder_a_fabricated_code() {
+        let g = parse_grounding(&kiwoom_grounding());
+        let observed = vec![r#"{"종목명":"SK하이닉스","stock_code":"000660"}"#.to_string()];
+        // the core was never resolved — decoration must not buy provenance.
+        let fake = json!({ "action": "ka10081", "stk_cd": "KRX:123456" });
+        assert!(check_grounding(&fake, &g, &observed).is_err());
+        let fake_suffix = json!({ "action": "ka10081", "stk_cd": "123456_NX" });
+        assert!(check_grounding(&fake_suffix, &g, &observed).is_err());
+    }
+
+    #[test]
+    fn plain_token_behavior_unchanged_by_decoration_rule() {
+        let g = parse_grounding(&kiwoom_grounding());
+        let observed = vec!["000660 SK하이닉스".to_string()];
+        // undecorated grounded → pass, undecorated invented → reject (as before).
+        assert!(check_grounding(&json!({ "stk_cd": "000660" }), &g, &observed).is_ok());
+        assert!(check_grounding(&json!({ "stk_cd": "123456" }), &g, &observed).is_err());
+    }
+
+    #[test]
+    fn decorated_token_under_a_declared_shape() {
+        // An unanchored shape still gates the decorated token (an anchored `^[0-9]{6}$` never
+        // matches a decorated one, so the shape gate skips it long before this path).
+        let g = parse_grounding(&json!({ "grounding": { "stk_cd": {
+            "resolveHint": "resolve via stock-lookup first.",
+            "pattern": "[0-9]{6}"
+        } } }));
+        let observed = vec!["005930 삼성전자".to_string()];
+        // core grounded and shaped → pass
+        let ok = json!({ "action": "ka10081", "stk_cd": "KRX:005930" });
+        assert!(check_grounding(&ok, &g, &observed).is_ok());
+        // core ungrounded → still rejected
+        let bad = json!({ "action": "ka10081", "stk_cd": "KRX:005931" });
+        assert!(check_grounding(&bad, &g, &observed).is_err());
+    }
+
+    /// The inverse hole: with an ANCHORED shape (`^Q?[0-9]{6}$`) a decorated token matches
+    /// nothing, so a fabricated code in vendor dress used to skip the gate entirely. The core
+    /// decides membership in the param, so the dressed-up code is gated like a bare one.
+    #[test]
+    fn decorated_token_under_an_anchored_shape_is_gated_not_skipped() {
+        let g = parse_grounding(&kis_grounding());
+        let observed = vec!["005930 삼성전자".to_string()];
+        // grounded core in vendor dress → passes
+        let ok = json!({ "action": "v1_국내주식-008", "FID_INPUT_ISCD": "KRX:005930" });
+        assert!(check_grounding(&ok, &g, &observed).is_ok());
+        let ok_suffix = json!({ "action": "v1_국내주식-008", "FID_INPUT_ISCD": "005930_AL" });
+        assert!(check_grounding(&ok_suffix, &g, &observed).is_ok());
+        // fabricated core in the same dress → rejected (this is the hole)
+        let fake = json!({ "action": "v1_국내주식-008", "FID_INPUT_ISCD": "KRX:123456" });
+        let err = check_grounding(&fake, &g, &observed).unwrap_err();
+        assert!(err.contains("KRX:123456"), "the error names the token as sent");
+        assert!(err.contains("dart lookup")); // hint surfaced
+    }
+
+    /// Overloaded values that merely contain a delimiter must keep the old skip — the shape test
+    /// is what protects index codes, timestamps and composite keys from the gate.
+    #[test]
+    fn overloaded_value_with_a_delimiter_is_still_skipped() {
+        let g = parse_grounding(&kis_grounding());
+        // a clock value: strips to "30:00", which is not a 6-digit code → not this param's id
+        let ts = json!({ "action": "v1_국내주식-063", "FID_INPUT_ISCD": "09:30:00" });
+        assert!(check_grounding(&ts, &g, &[]).is_ok());
+        // an index code in exchange dress: core "0001" is not a 6-digit stock code → skipped
+        let index = json!({ "action": "v1_국내주식-063", "FID_INPUT_ISCD": "KRX:0001" });
+        assert!(check_grounding(&index, &g, &[]).is_ok());
+        // a composite key: nothing strippable → skipped
+        let composite = json!({ "action": "v1_국내주식-063", "FID_INPUT_ISCD": "SECTOR-KOSPI-LARGE" });
+        assert!(check_grounding(&composite, &g, &[]).is_ok());
+    }
+
+    #[test]
+    fn oversized_prefix_is_not_treated_as_a_venue() {
+        // A 7-char prefix is not an exchange mnemonic — no strip, so no borrowed provenance.
+        assert!(strip_vendor_decoration("SEVENCH:000660").is_none());
+        assert!(strip_vendor_decoration("000660_LONG").is_none());
+        assert!(strip_vendor_decoration("000660").is_none());
+        assert_eq!(
+            strip_vendor_decoration("SOR:039490_AL").as_deref(),
+            Some("039490")
+        );
     }
 
     fn kis_grounding() -> serde_json::Value {

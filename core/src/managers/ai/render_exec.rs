@@ -107,6 +107,67 @@ pub(crate) fn apply_data_slice(records: Vec<Value>, props: &Value) -> Vec<Value>
     rows
 }
 
+/// Alphanumeric-only lowercase key, so "Candle_Stick" / "OHLCV" / "candlestick" all compare.
+fn chart_style_key(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+/// Next-step pointers for a props-validation failure — the rejected block vanishes from the
+/// answer, so this error string is the model's ONLY teacher and has to name the component that
+/// CAN draw what it asked for (2026-08-12 실측: a `chart` block with chartType:"candlestick" plus
+/// two charts missing `labels` all failed validation, disappeared silently, and the reply still
+/// told the user "차트 3종").
+///
+/// `validate_value` hands back a flat String (no path / keyword / instance), so the offending
+/// value is read from the PROPS the validator just rejected instead of being regexed out of the
+/// message — the props are the same structured source the error was derived from, and they stay
+/// correct if the message wording changes. Both checks are schema-driven, not component-name
+/// driven: whichever component declares an enum'd `chartType` or a required `labels` gets them.
+fn validation_next_steps(props: &Value, schema: &Value) -> Vec<String> {
+    let mut steps = Vec::new();
+    let properties = schema.get("properties").and_then(|v| v.as_object());
+
+    // 1. A candle/OHLC style asked of a component whose chartType enum does not offer one:
+    //    the model picked the wrong component, not the wrong string.
+    if let Some(enum_values) = properties
+        .and_then(|p| p.get("chartType"))
+        .and_then(|c| c.get("enum"))
+        .and_then(|e| e.as_array())
+    {
+        if let Some(got) = props.get("chartType").and_then(|v| v.as_str()) {
+            let key = chart_style_key(got);
+            let candle_asked = key.contains("candle") || key.contains("ohlc");
+            let legal = enum_values.iter().any(|v| v.as_str() == Some(got));
+            if candle_asked && !legal {
+                steps.push(
+                    "candlestick/OHLC charts are a different component — use `stock_chart` \
+                     (rows or dataCacheKey), see get_component_schema(\"stock_chart\")."
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    // 2. Required `labels` absent — the model is treating the component as a rows-in chart.
+    let requires_labels = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().any(|x| x.as_str() == Some("labels")))
+        .unwrap_or(false);
+    if requires_labels && props.get("labels").is_none() {
+        steps.push(
+            "chart needs `labels` + `series` (`datasets` is accepted as a synonym); for cached \
+             rows use `stock_chart` or pass labels explicitly."
+                .to_string(),
+        );
+    }
+
+    steps
+}
+
 /// `render` 도구 인자(`{blocks: [...]}` 또는 stringified / 배열 직접)를 검증·정규화해
 /// `{success, blocks, failed}` 반환. ToolManager + MCP 공용.
 ///
@@ -322,10 +383,17 @@ pub fn render_blocks(
             if original_keys.is_empty() {
                 continue;
             }
+            // Every error is a next-step pointer: name the component that CAN draw this before
+            // the block disappears from the answer.
+            let mut error = format!("props 검증 실패: {}", e);
+            for step in validation_next_steps(&props, &comp.props_schema) {
+                error.push(' ');
+                error.push_str(&step);
+            }
             failed.push(serde_json::json!({
                 "idx": idx,
                 "type": block_type,
-                "error": format!("props 검증 실패: {}", e),
+                "error": error,
                 "gotKeys": original_keys,
             }));
             continue;
@@ -1155,6 +1223,53 @@ mod tests {
         let arr = blocks.as_array().expect("blocks array");
         assert_eq!(arr.len(), 3);
         assert!(stored.starts_with('['), "canonical fence is the rebuilt array");
+    }
+
+    /// The failed entry for the first block, with a `divider` alongside so `render_blocks`
+    /// returns the per-block report instead of the all-failed Err.
+    fn first_failure(props: Value) -> String {
+        let args = serde_json::json!({
+            "blocks": [{"type": "chart", "props": props}, {"type": "divider"}]
+        });
+        let out = render_blocks(&args, false, None).expect("the divider keeps the call alive");
+        let failed = out["failed"].as_array().expect("failed array");
+        assert_eq!(failed.len(), 1, "only the chart block fails");
+        failed[0]["error"].as_str().unwrap().to_string()
+    }
+
+    /// 2026-08-12 실측: chartType:"candlestick" failed validation, the block vanished, and the
+    /// reply still claimed three charts. The error now names the component that draws candles.
+    #[test]
+    fn candlestick_chart_type_points_at_stock_chart() {
+        let err = first_failure(serde_json::json!({
+            "chartType": "Candlestick", "labels": ["1일", "2일"]
+        }));
+        assert!(err.contains("props 검증 실패"), "{err}");
+        assert!(err.contains("get_component_schema(\"stock_chart\")"), "{err}");
+        assert!(
+            !err.contains("chart needs `labels`"),
+            "labels were supplied — no labels pointer: {err}"
+        );
+        // Case-insensitive on the offending value, and "ohlc" counts as the same ask.
+        let err = first_failure(serde_json::json!({ "chartType": "OHLC", "labels": ["a"] }));
+        assert!(err.contains("use `stock_chart`"), "{err}");
+    }
+
+    /// A chartType that is merely wrong (not a candle ask) keeps the plain enum error — the
+    /// pointer must not fire on every rejected value.
+    #[test]
+    fn non_candle_chart_type_gets_no_stock_chart_pointer() {
+        let err = first_failure(serde_json::json!({ "chartType": "barr", "labels": ["a"] }));
+        assert!(err.contains("props 검증 실패"), "{err}");
+        assert!(!err.contains("stock_chart"), "{err}");
+    }
+
+    /// Missing `labels` — the model treated `chart` as a rows-in component.
+    #[test]
+    fn missing_labels_names_the_chart_shape() {
+        let err = first_failure(serde_json::json!({ "chartType": "line" }));
+        assert!(err.contains("chart needs `labels` + `datasets`"), "{err}");
+        assert!(err.contains("use `stock_chart` or pass labels explicitly"), "{err}");
     }
 
     fn ohlcv_rows(n: usize) -> Vec<Value> {
