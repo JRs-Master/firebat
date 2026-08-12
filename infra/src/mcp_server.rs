@@ -2208,7 +2208,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         description: "페이지 spec 저장 (생성/덮어쓰기). inputSchema: {slug, spec, status?, project?, visibility?, password?}. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 선언된 모듈만)을 실행해 결과 블록을 _baked 로 채운다 — 정기 갱신 페이지는 이 블록 + 크론 targetPath 'rebake:<slug>' 가 표준(SAVE_PAGE 파이프라인 재발행·agent 재발행 불필요). props 의 dataCacheKey 도 저장 시 실제 데이터로 구워진다(1회 스냅샷 — 갱신은 안 됨).".into(),
         input_schema: core_schema("save_page", schema_object(serde_json::json!({
             "slug": {"type": "string"},
-            "spec": {"type": "object"},
+            "spec": firebat_core::managers::page::PageManager::page_spec_schema(),
             "status": {"type": "string"},
             "project": {"type": "string"},
             "visibility": {"type": "string"},

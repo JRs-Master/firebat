@@ -334,3 +334,118 @@ async fn dispatch_list_user_modules_returns_array() {
         .unwrap();
     assert!(result.is_array());
 }
+
+// ── Form audit ────────────────────────────────────────────────────────────────────────────────
+// A schema is the FORM the model fills, and the standard procedure is: pick the tool, pick the
+// action, supply the parameters. Steps one and two always had their forms; step three often did
+// not — a complex slot declared as a bare `object` or a shapeless `array` teaches nothing, and the
+// model fills it from memory. Measured against the live model 2026-08-12: same prompt, same
+// payload, thin schema → the container arrives as a STRING (twice); typed schema → a real array.
+//
+// So every formless slot in a published tool is either a gap to close or a deliberate free-form
+// slot with a reason. This walks EVERY registered tool's schema recursively — nested objects,
+// array items, the lot — and fails on anything not named below. The allowlist IS the audit: to
+// add one you must write down why the shape cannot be known.
+
+/// `tool.property.path` → why it has no form. Free-form means the value's shape belongs to
+/// somebody else (another tool's arguments, a user-authored schema, an arbitrary header map),
+/// so declaring one would be a lie rather than a service.
+const FORMLESS_BY_DESIGN: &[(&str, &str)] = &[
+    ("execute.inputData", "input for an arbitrary user script — the script defines its own shape"),
+    ("mcp_call.arguments", "arguments for a tool on ANOTHER server; its schema is not ours"),
+    ("stream_watch_start.args", "per-module stream args, declared in that module's config"),
+    ("library_extract_structured.schema", "the caller AUTHORS this schema — it is the payload"),
+    ("save_entity.metadata", "open per-entity bag; typing it would fence off what it exists for"),
+    ("network_request.headers", "an arbitrary header map"),
+    ("network_request.body", "an arbitrary request body"),
+    ("run_ui_action.args", "per-action screen payload, owned by the module that declares the action"),
+    // An open metadata bag: whatever the page wants search engines and cards to carry.
+    ("save_page.spec.head.seo", "open SEO bag — the renderer passes unknown keys through"),
+    ("save_template.config.spec.head.seo", "open SEO bag"),
+    ("schedule_task.pipeline.spec.head.seo", "open SEO bag"),
+    ("run_task.pipeline.spec.head.seo", "open SEO bag"),
+    // A page block's props are per-component; the catalog hands those over one at a time
+    // (search_components → get_component_schema). Inlining 40+ component schemas into every tool
+    // list would cost more context than the whole tool surface.
+    ("save_page.spec.body.props", "per-component props — the component catalog carries those forms"),
+    ("save_template.config.spec.body.props", "same per-component props as save_page"),
+    ("render.blocks.props", "same, for the three fence-exempt components (code/math/diagram)"),
+    // Pipeline step slots whose value belongs to whatever the step calls.
+    ("schedule_task.pipeline.arguments", "arguments for a tool on ANOTHER server"),
+    ("run_task.pipeline.arguments", "arguments for a tool on ANOTHER server"),
+    ("schedule_task.pipeline.body", "arbitrary request body (NETWORK_REQUEST)"),
+    ("run_task.pipeline.body", "arbitrary request body (NETWORK_REQUEST)"),
+    ("schedule_task.pipeline.headers", "arbitrary header map (NETWORK_REQUEST)"),
+    ("run_task.pipeline.headers", "arbitrary header map (NETWORK_REQUEST)"),
+    ("schedule_task.pipeline.inputData", "a literal of any shape, or a $ref string"),
+    ("run_task.pipeline.inputData", "a literal of any shape, or a $ref string"),
+    ("schedule_task.pipeline.items", "FOREACH list: a literal array of anything, or a $ref string"),
+    ("run_task.pipeline.items", "FOREACH list: a literal array of anything, or a $ref string"),
+    // Nested steps are the same shape as their parent, but a self-referencing schema is rejected
+    // outright by some providers — and a tool schema that fails to load teaches nothing at all.
+    ("schedule_task.pipeline.steps", "nested steps: same shape, declared flat to avoid a recursive $ref"),
+    ("run_task.pipeline.steps", "nested steps: same shape, declared flat to avoid a recursive $ref"),
+    ("schedule_task.pipeline.spec.body.props", "per-component props (SAVE_PAGE step)"),
+    ("run_task.pipeline.spec.body.props", "per-component props (SAVE_PAGE step)"),
+];
+
+fn formless_slots(schema: &serde_json::Value, path: &str, out: &mut Vec<String>) {
+    let Some(obj) = schema.as_object() else { return };
+    let types: Vec<&str> = match obj.get("type") {
+        Some(serde_json::Value::String(s)) => vec![s.as_str()],
+        Some(serde_json::Value::Array(a)) => a.iter().filter_map(|v| v.as_str()).collect(),
+        _ => vec![],
+    };
+    let has_shape = obj.contains_key("properties")
+        || obj.contains_key("enum")
+        || obj.contains_key("oneOf")
+        || obj.contains_key("anyOf")
+        || obj.get("additionalProperties").is_some_and(|v| v.is_object());
+    if types.contains(&"object") && !has_shape && !path.is_empty() {
+        out.push(path.to_string());
+    }
+    if types.contains(&"array") {
+        match obj.get("items") {
+            Some(items) => formless_slots(items, path, out),
+            // An array with no item shape at all says even less than a bare object.
+            None if !path.is_empty() => out.push(path.to_string()),
+            None => {}
+        }
+    }
+    if let Some(props) = obj.get("properties").and_then(|p| p.as_object()) {
+        for (k, v) in props {
+            let child = if path.is_empty() { k.clone() } else { format!("{path}.{k}") };
+            formless_slots(v, &child, out);
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_published_tool_hands_over_a_form() {
+    let (tools, _dir) = make_setup().await;
+    let allowed: std::collections::HashMap<&str, &str> =
+        FORMLESS_BY_DESIGN.iter().copied().collect();
+    let mut gaps: Vec<String> = Vec::new();
+    let mut audited = 0usize;
+
+    for def in tools.list(&firebat_core::managers::tool::ToolListFilter::default()) {
+        audited += 1;
+        let mut slots = Vec::new();
+        formless_slots(&def.parameters, "", &mut slots);
+        for slot in slots {
+            let key = format!("{}.{}", def.name, slot);
+            if !allowed.contains_key(key.as_str()) {
+                gaps.push(key);
+            }
+        }
+    }
+    gaps.sort();
+    assert!(audited > 40, "the audit ran against too few tools ({audited}) — setup drifted");
+    assert!(
+        gaps.is_empty(),
+        "{} slot(s) publish no form. Give each a shape, or add it to FORMLESS_BY_DESIGN with the \
+         reason its shape cannot be known:\n  {}",
+        gaps.len(),
+        gaps.join("\n  ")
+    );
+}

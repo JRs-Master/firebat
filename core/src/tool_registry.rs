@@ -1342,7 +1342,18 @@ fn register_template_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 "type": "object",
                 "properties": {
                     "slug": { "type": "string" },
-                    "config": { "type": "object" },
+                    "config": serde_json::json!({
+                        "type": "object",
+                        "description": "Template config — {name, description?, tags?, spec}. `spec` is the same PageSpec skeleton save_page takes; {date}/{time} placeholders in it are substituted at publish time.",
+                        "required": ["name", "spec"],
+                        "additionalProperties": true,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                            "spec": crate::managers::page::PageManager::page_spec_schema()
+                        }
+                    }),
                     "owner": { "type": "string" }
                 },
                 "required": ["slug", "config"]
@@ -1873,7 +1884,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             "type": "object",
             "properties": {
                 "slug": {"type": "string"},
-                "spec": {"type": "object"},
+                "spec": crate::managers::page::PageManager::page_spec_schema(),
                 "status": {"type": "string", "enum": ["published", "draft"]},
                 "project": {"type": "string"},
                 "visibility": {"type": "string", "enum": ["public", "password", "private"]},

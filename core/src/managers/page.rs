@@ -132,6 +132,63 @@ impl PageManager {
     }
 
     /// PageSpec schema 검증 — body 가 Component 배열인지 확인.
+    /// The PageSpec skeleton as the model sees it — the form for `spec`, published instead of
+    /// described.
+    ///
+    /// `spec` was declared as a bare `{"type": "object"}` on every surface that takes one
+    /// (save_page, save_template, the SAVE_PAGE pipeline step) while the shape lived in prose and
+    /// in PAGESPEC_BIBLE. `validate_spec` below has always known the two rules that matter — it is
+    /// an object, and `body` is an array of components — so the model was left to infer exactly
+    /// what the validator would later refuse it for (the measured shape: a body handed over as a
+    /// string).
+    ///
+    /// Only the skeleton is publishable: a block's `props` are per-component and live in the
+    /// component catalog, which `search_components` / `get_component_schema` hand over one at a
+    /// time. Naming the skeleton is still most of the value — it is where "is body a list?" is
+    /// answered.
+    pub fn page_spec_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "description": "PageSpec — {head?, body}. `body` is the component list; a block's props come from the component catalog (search_components → get_component_schema), not from here.",
+            "properties": {
+                "head": {
+                    "type": "object",
+                    "description": "Page metadata. Extra keys are kept as-is; these are the ones the renderer and the feeds read.",
+                    "additionalProperties": true,
+                    "properties": {
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "og": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "properties": {
+                                "image": {"type": "string", "description": "media url — /user/media/<slug>.<ext>"},
+                                "title": {"type": "string"},
+                                "description": {"type": "string"}
+                            }
+                        },
+                        "seo": {"type": "object", "additionalProperties": true}
+                    }
+                },
+                "body": {
+                    "type": "array",
+                    "description": "Components in render order. NEVER a string — HTML goes in a block: [{type:\"Html\", props:{content:\"…\"}}].",
+                    "items": {
+                        "type": "object",
+                        "required": ["type"],
+                        "additionalProperties": true,
+                        "properties": {
+                            "type": {"type": "string", "description": "component name (Header, Table, Image, Html, module …)"},
+                            "props": {"type": "object", "additionalProperties": true,
+                                      "description": "that component's props — get_component_schema(name)"}
+                        }
+                    }
+                }
+            },
+            "additionalProperties": true
+        })
+    }
+
     /// JSON 파싱 실패 또는 body 가 string / 객체 등 잘못된 type 이면 명확한 에러 메시지 반환.
     fn validate_spec(spec: &str) -> InfraResult<()> {
         let v: serde_json::Value = serde_json::from_str(spec).map_err(|e| {
