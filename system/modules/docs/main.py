@@ -2874,19 +2874,15 @@ RPT_CALLOUT_EDGE = "BFDBFE"
 
 
 def _today_line():
-    """The cover's date, in the operator's timezone. FIREBAT_TZ is what the framework injects —
-    a report dated in UTC is dated wrong for half of every day."""
-    import datetime
-    tz = None
-    name = str(os.environ.get("FIREBAT_TZ") or "").strip()
-    if name:
-        try:
-            from zoneinfo import ZoneInfo
-            tz = ZoneInfo(name)
-        except Exception:  # noqa: BLE001 — an unknown zone name falls back to host local time
-            tz = None
-    now = datetime.datetime.now(tz) if tz else datetime.datetime.now()
-    return now.strftime("%Y. %m. %d.")
+    """The cover's date on the OWNER's wall clock — `_runtime/tz.local()`, the one entry point
+    for it. Hand-rolling FIREBAT_TZ here fell back to the host's clock when the zone was
+    unset, and the host's zone is an accident of deployment (CI's clock-discipline test
+    caught exactly that fallback)."""
+    rt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_runtime")
+    if rt not in sys.path:
+        sys.path.insert(0, rt)
+    import tz as clock
+    return clock.local().strftime("%Y. %m. %d.")
 
 
 def _chart_table_block(b):
