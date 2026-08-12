@@ -5,7 +5,7 @@ import { compareName } from '../../../lib/util/sort-name';
 import { useQueryClient } from '@tanstack/react-query';
 import { FolderTree, MessageSquare, ChevronRight, ChevronDown, ChevronLeft, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, FolderOpen, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText, Download, Loader2 } from 'lucide-react';
 import { FileEditor } from './FileEditor';
-import { AnchoredMenu } from './Menu';
+import { AnchoredMenu, CascadeMenuItem } from './Menu';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
 import { EntitiesPanel } from './EntitiesPanel';
@@ -668,14 +668,17 @@ export function Sidebar({
   }, []);
 
   // ⋯ 메뉴 안 포맷 목록 — 페이지 행 두 곳(단일 페이지 프로젝트 헤더 / 하위 페이지)이 공유.
-  const renderExportItems = (slug: string) => (
+  // withBack = 터치 flip 변형 전용 헤더. 캐스케이드는 마우스가 나가면 닫히므로 "뒤로"가 필요 없다.
+  const renderExportItems = (slug: string, withBack: boolean) => (
     <>
-      <button
-        onClick={(e) => { e.stopPropagation(); setExportMenuFor(null); }}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-400 hover:bg-slate-50 transition-colors border-b border-slate-100"
-      >
-        <ChevronLeft size={10} /> 뒤로
-      </button>
+      {withBack && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setExportMenuFor(null); }}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-400 hover:bg-slate-50 transition-colors border-b border-slate-100"
+        >
+          <ChevronLeft size={10} /> 뒤로
+        </button>
+      )}
       {EXPORT_FORMATS.map(f => (
         <button
           key={f.action}
@@ -688,17 +691,28 @@ export function Sidebar({
     </>
   );
 
-  // ⋯ 메뉴 안 "내보내기" 진입 항목 — 같은 메뉴를 포맷 목록으로 전환.
-  const renderExportEntry = (menuKey: string, slug: string) => (
-    <button
-      onClick={(e) => { e.stopPropagation(); setExportMenuFor(menuKey); }}
-      disabled={exportingPage === slug}
-      className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
-    >
-      <span className="flex items-center gap-2"><Download size={10} /> 내보내기</span>
-      <ChevronRight size={10} className="text-slate-400" />
-    </button>
-  );
+  // ⋯ 메뉴 안 "내보내기" 진입 항목 — 두 경로가 같은 포맷 목록을 쓴다.
+  //  · hover 기기 = CascadeMenuItem(표준, Menu.tsx) — 항목 옆에 서브메뉴, 호버로 열고 마우스로 닫힘.
+  //  · hover 없는 기기 = 같은 메뉴를 포맷 목록으로 뒤집는 flip(터치에선 hover 가 발화하지 않는다).
+  const renderExportEntry = (menuKey: string, slug: string) => {
+    if (hoverNone) {
+      return (
+        <button
+          onClick={(e) => { e.stopPropagation(); setExportMenuFor(menuKey); }}
+          disabled={exportingPage === slug}
+          className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
+        >
+          <span className="flex items-center gap-2"><Download size={10} /> 내보내기</span>
+          <ChevronRight size={10} className="text-slate-400" />
+        </button>
+      );
+    }
+    return (
+      <CascadeMenuItem label="내보내기" icon={<Download size={10} />} disabled={exportingPage === slug} minWidth={128}>
+        {renderExportItems(slug, false)}
+      </CascadeMenuItem>
+    );
+  };
 
   // URL 변경 모달 상태 — type: page (단일 slug) / project (일괄 이름 변경)
   const [renameTarget, setRenameTarget] = useState<{ type: 'page' | 'project'; current: string } | null>(null);
@@ -1021,7 +1035,7 @@ export function Sidebar({
                             </Tooltip>
                             {openMenu === `proj:${mp.name}` && exportMenuFor === `proj:${mp.name}` && mainSlug && (
                               <AnchoredMenu anchorRef={triggerRef} onClose={() => { setOpenMenu(null); setExportMenuFor(null); }} minWidth={144}>
-                                {renderExportItems(mainSlug)}
+                                {renderExportItems(mainSlug, true)}
                               </AnchoredMenu>
                             )}
                             {openMenu === `proj:${mp.name}` && exportMenuFor !== `proj:${mp.name}` && (
@@ -1169,7 +1183,7 @@ export function Sidebar({
                                       </Tooltip>
                                       {openMenu === `page:${pg.slug}` && exportMenuFor === `page:${pg.slug}` && (
                                         <AnchoredMenu anchorRef={triggerRef} onClose={() => { setOpenMenu(null); setExportMenuFor(null); }} minWidth={128}>
-                                          {renderExportItems(pg.slug)}
+                                          {renderExportItems(pg.slug, true)}
                                         </AnchoredMenu>
                                       )}
                                       {openMenu === `page:${pg.slug}` && exportMenuFor !== `page:${pg.slug}` && (
