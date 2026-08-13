@@ -48,10 +48,21 @@ station so another one may answer.
 
 Station, exit and exit-facility lookups cover the whole country — only the timetable is patchy.
 
-⚠️ **These counts are one reading, not a permanent property.** On the same day, tago.go.kr's own site
-also showed nothing for 노량진 1호선, which is consistent with a standing gap but does not rule out an
-outage. Re-measure before treating any line as permanently absent; the module says "came back empty"
-rather than "TAGO does not have it" for exactly this reason.
+⚠️ **Read twice, hours apart, across an outage on the vendor's own site.** The first time,
+tago.go.kr showed nothing for 노량진 1호선 either — consistent with a shared outage. Later the site
+recovered and showed the timetable, and the open API still returned zero rows for the same station
+id, while every line that had answered still answered with identical counts. So the site has data
+the open API does not publish; it is a publishing gap, not an outage.
+
+That is a concrete, demonstrable discrepancy — the same organisation serving a timetable on its own
+site and an empty list through the API we are licensed against — which makes asking the provider
+the sensible route. The guide's last page carries the 교통빅데이터센터 contact. Scraping the site
+instead would mean reverse-engineering an undocumented SPA endpoint belonging to the same body whose
+documented API we already use.
+
+Still re-measure before treating any line as permanently absent: two readings on one day is evidence,
+not a guarantee. The module says "came back empty" rather than "TAGO does not have it" for that
+reason.
 
 Two id caveats. The guide's own sample `MTRS11133` (서울역) **no longer exists**; the current 서울역
 1호선 id is `MTRS11150`, so sample ids in these documents are not safe to test against. And the id
