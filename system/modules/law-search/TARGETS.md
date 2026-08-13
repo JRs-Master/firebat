@@ -65,7 +65,8 @@
 |---|---|---|---|---|
 | `prec` | 판례 | `search·org(400201대법원/400202하위)·curt·**JO**·date·prncYd·nb·datSrcNm` | **`ID` 필수** + `LM` | ✅ |
 | `detc` | 헌재결정례 | `search·date·edYd·nb` | **`ID` 필수** + `LM` | ✅ |
-| `expc` | 법령해석례 | `search·inq·rpl·itmno·regYd·explYd` | **`ID` 필수** + `LM` | ✅ |
+| `expc` | 법령해석례 (법제처) | `search·inq·rpl·itmno·regYd·explYd` | **`ID` 필수** + `LM` | ✅ |
+| `<부처>CgmExpc` | 법령해석 (**부처별**) — `moel` 고용노동부 · `molit` 국토교통부 · `moef` 재정경제부 · `mof` 해양수산부 · `mois` 행정안전부 · `me` 기후에너지환경부 (같은 규칙의 접두사 가족 — 부처가 늘면 접두사만 는다) | `search·inq·rpl·itmno·explYd` + **`fields`** (`regYd` 없음). ⚠️ **`itmno` 를 주면 `query` 는 무시된다**(문서 명시 — 다른 target 엔 없는 우선순위) | **`ID` 필수** + `LM` + `fields`. 공통 = `질의요지·회답·이유·관련법령`, 부처별로 필드가 더 붙는다(molit 은 대/중/소분류) — 파서는 공통만 잡고 나머지는 통과시킬 것 | ⬜ |
 | `decc` | 행정심판례 | `search·cls·date·dpaYd·rslYd` | **`ID` 필수** + `LM` | ⬜ |
 | `*SpecialDecc` | 특별행정심판재결례 **4종** (아래 별도 절) | `search·cls·date·dpaYd·rslYd` + **`fields`** | **`ID` 필수** + `LM` + **`fields`** | ⬜ |
 | `trty` | 조약 | `search·eftYd·concYd·cls(1양자/2다자)·natCd` (정렬에 `rasc/rdes` 관보게재일 추가) | **`ID` 만** (MST 없음) + `chrClsCd`(010202 한글/010203 영문) | ✅ |
