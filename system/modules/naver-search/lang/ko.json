@@ -1,7 +1,7 @@
 {
   "error": {
-    "api_key_missing": "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET이 설정되지 않았습니다.",
-    "query_required": "data.query 필드가 필요합니다.",
+    "api_key_missing": "NAVER_APIHUB_CLIENT_ID / NAVER_APIHUB_CLIENT_SECRET 이 설정되지 않았습니다. 네이버 개발자센터 키가 아니라 네이버 클라우드 플랫폼 콘솔의 NAVER API HUB 에서 발급한 키입니다.",
+    "query_required": "data.query 필드가 필요합니다. (search 액션에만 필요하고 데이터랩 액션에는 쓰이지 않습니다)",
     "search_api_status": "네이버 검색 API {{status}}: {{body}}",
     "utility_api_status": "네이버 API {{status}}: {{body}}",
     "datalab_api_status": "네이버 데이터랩 API {{status}}: {{body}}",
@@ -11,6 +11,7 @@
     "category_code_required_breakdown": "categoryCode 필드가 필요합니다 (필드명은 \"categoryCode\"). 주요 코드: 50000000=패션의류, 50000003=디지털가전, 50000006=식품.",
     "keyword_array_required": "keyword 배열이 필요합니다. [{name, param:[\"키워드\"]}] 형식.",
     "keyword_text_required": "keywordText(문자열)가 필요합니다.",
-    "runtime": "{{message}}"
+    "runtime": "{{message}}",
+    "search_type_retired": "\"{{type}}\"({{label}}) 검색은 2026-07-31 에 종료됐습니다. NAVER API HUB 이관 대상이 아니었고 대체 API 도 없어서, 기존 키로도 호출되지 않습니다. 쇼핑 수요를 보시려면 shopping-categories · shopping-keywords(쇼핑 인사이트) 또는 naver-ads 의 keyword-tool 을 쓰십시오."
   }
 }

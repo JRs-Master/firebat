@@ -1,7 +1,7 @@
 {
   "error": {
-    "api_key_missing": "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET are not configured.",
-    "query_required": "data.query field is required.",
+    "api_key_missing": "NAVER_APIHUB_CLIENT_ID / NAVER_APIHUB_CLIENT_SECRET are not configured. These are the NAVER API HUB keys from the NAVER Cloud Platform console, not the older developer-centre keys.",
+    "query_required": "data.query field is required. (Only the search action needs it; the DataLab actions ignore it.)",
     "search_api_status": "Naver Search API {{status}}: {{body}}",
     "utility_api_status": "Naver API {{status}}: {{body}}",
     "datalab_api_status": "Naver DataLab API {{status}}: {{body}}",
@@ -11,6 +11,7 @@
     "category_code_required_breakdown": "categoryCode field is required (field name is \"categoryCode\"). Main codes: 50000000=Fashion, 50000003=Digital, 50000006=Food.",
     "keyword_array_required": "keyword array is required. Format: [{name, param:[\"keyword\"]}].",
     "keyword_text_required": "keywordText (string) is required.",
-    "runtime": "{{message}}"
+    "runtime": "{{message}}",
+    "search_type_retired": "\"{{type}}\" ({{label}}) search was retired on 2026-07-31. It was excluded from the NAVER API HUB migration and has no replacement, so even existing keys cannot call it. For shopping demand use shopping-categories / shopping-keywords (shopping insight), or naver-ads keyword-tool."
   }
 }

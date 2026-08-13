@@ -3,23 +3,178 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "네이버 검색 + 데이터랩 API — **텍스트·뉴스·해석** 용도 (주가 뉴스·시장 이슈·배경·리뷰·블로그·쇼핑 키워드·지식iN·지역 등). 검색(search): webkr/blog/news/image/shop/cafearticle/kin/encyc/book/doc/local/adult/errata. 데이터랩: search-trend, shopping-categories/keywords/by-device/gender/age. **주가·PER·재무 같은 정확한 수치 파싱 금지** — 수치는 kiwoom/korea_invest 전용 (블로그·뉴스 혼재로 숫자 파싱 불안정).",
+  "description": "네이버 검색 + 데이터랩 API (NAVER API HUB) — **텍스트·뉴스·해석** 용도 (시장 이슈·배경·리뷰·블로그·지식iN·백과사전·지역 등). 검색(search): webkr/news/blog/image/cafearticle/kin/encyc/local/adult/errata. 데이터랩: search-trend(검색어 트렌드), shopping-categories(쇼핑 분야별), shopping-category-by-device/gender/age(분야를 기기·성별·연령으로 쪼갬), shopping-keywords(분야 안 키워드), shopping-by-device/gender/age(키워드를 기기·성별·연령으로 쪼갬). ⚠️ 쇼핑·도서·전문자료 검색은 2026-07-31 종료돼 대체가 없습니다. **주가·PER·재무 같은 정확한 수치 파싱 금지** — 수치는 kiwoom/korea_invest 전용.",
   "aliases": [
     "네이버",
     "Naver"
+  ],
+  "tags": [
+    "검색",
+    "뉴스",
+    "블로그",
+    "카페",
+    "지식인",
+    "백과사전",
+    "이미지검색",
+    "지역검색",
+    "맛집",
+    "검색어트렌드",
+    "쇼핑인사이트",
+    "트렌드",
+    "연령별",
+    "성별",
+    "데이터랩"
   ],
   "runtime": "node",
   "capability": "web-search",
   "providerType": "api",
   "secrets": [
-    "NAVER_CLIENT_ID",
-    "NAVER_CLIENT_SECRET"
+    "NAVER_APIHUB_CLIENT_ID",
+    "NAVER_APIHUB_CLIENT_SECRET"
   ],
+  "actionCatalog": {
+    "actions": [
+      {
+        "id": "search",
+        "name": "네이버 검색 (뉴스·블로그·카페·웹문서·지식iN·백과·이미지·지역)",
+        "description": "One search endpoint per `type`. Returns title / link / description plus per-type extras. Sort vocabulary differs by type and an inapplicable value is dropped with a note rather than sent. Shopping, book and specialist-document search were shut down on 2026-07-31 with no replacement — asking for them names that instead of failing vaguely.",
+        "params": {
+          "query": "Search term, required",
+          "type": "webkr | news | blog | image | cafearticle | kin | encyc | local | adult | errata",
+          "display": "Results per page (1-100; local is 1-5 and defaults to 1)",
+          "start": "Paging offset (1-1000; local is fixed at 1)",
+          "sort": "news/blog/image/cafearticle: sim|date. kin: sim|date|point. local: random|comment",
+          "filter": "image only: all | large | medium | small"
+        }
+      },
+      {
+        "id": "search-trend",
+        "name": "검색어 트렌드 (주제어별 통합검색 추이)",
+        "description": "Relative search interest over time for up to 5 keyword groups, each bundling up to 20 terms that are summed. Data starts 2016-01-01. ratio is scaled so the largest value in the window is 100 — it is not a search count, and two separate calls are not comparable. NOTE the `ages` vocabulary here is band numbers 1-11, which is NOT the decade scheme shopping insight uses.",
+        "params": {
+          "keywordGroups": "[{groupName, keywords[]}] — up to 5 groups, 20 terms each",
+          "startDate": "yyyy-mm-dd, 2016-01-01 or later",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "device": "pc | mo",
+          "gender": "m | f",
+          "ages": "1-11 band numbers (1=0-12, 2=13-18, 3=19-24 ... 11=60+)"
+        }
+      },
+      {
+        "id": "shopping-categories",
+        "name": "쇼핑 분야별 클릭 추이",
+        "description": "Relative shopping click trend for up to 3 category codes compared against each other. Data starts 2017-08-01. Category codes are the cat_id in a Naver Shopping category URL. NOTE the cap is 3 here, not the 5 that search trend allows, and `ages` is the decade scheme (10/20/.../60).",
+        "params": {
+          "category": "[{name, param[]}] — up to 3 pairs",
+          "startDate": "yyyy-mm-dd, 2017-08-01 or later",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "device": "pc | mo",
+          "gender": "m | f",
+          "ages": "10 | 20 | 30 | 40 | 50 | 60"
+        }
+      },
+      {
+        "id": "shopping-category-by-device",
+        "name": "쇼핑 분야 클릭 추이 — 기기별 분해",
+        "description": "One category's click trend split into PC and mobile series. Answers who shops this category, with no keyword involved. Each data row carries `group` (pc|mo), so rows repeat per period.",
+        "params": {
+          "categoryCode": "A single category code",
+          "startDate": "yyyy-mm-dd",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "gender": "m | f (a device filter would collapse the split)",
+          "ages": "10 | 20 | 30 | 40 | 50 | 60"
+        }
+      },
+      {
+        "id": "shopping-category-by-gender",
+        "name": "쇼핑 분야 클릭 추이 — 성별 분해",
+        "description": "One category's click trend split into male and female series. Each data row carries `group` (m|f).",
+        "params": {
+          "categoryCode": "A single category code",
+          "startDate": "yyyy-mm-dd",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "device": "pc | mo",
+          "ages": "10 | 20 | 30 | 40 | 50 | 60"
+        }
+      },
+      {
+        "id": "shopping-category-by-age",
+        "name": "쇼핑 분야 클릭 추이 — 연령별 분해",
+        "description": "One category's click trend split by age decade. Each data row carries `group` (10|20|...|60).",
+        "params": {
+          "categoryCode": "A single category code",
+          "startDate": "yyyy-mm-dd",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "device": "pc | mo",
+          "gender": "m | f"
+        }
+      },
+      {
+        "id": "shopping-keywords",
+        "name": "쇼핑 분야 안 키워드별 클릭 추이",
+        "description": "Click trend for up to 5 search terms inside one shopping category, compared against each other. Unlike search trend, each group holds exactly ONE term — a second term in `param` is dropped. ratio is relative within each series, so a keyword at 100 is at its own peak, not the most searched keyword.",
+        "params": {
+          "categoryCode": "A single category code",
+          "keyword": "[{name, param:[oneTerm]}] — up to 5 groups, one term each",
+          "startDate": "yyyy-mm-dd",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "device": "pc | mo",
+          "gender": "m | f",
+          "ages": "10 | 20 | 30 | 40 | 50 | 60"
+        }
+      },
+      {
+        "id": "shopping-by-device",
+        "name": "쇼핑 키워드 클릭 추이 — 기기별 분해",
+        "description": "One keyword inside one category, split into PC and mobile series. Distinct from shopping-category-by-device, which splits the whole category with no keyword.",
+        "params": {
+          "categoryCode": "A single category code",
+          "keywordText": "The single keyword to analyze",
+          "startDate": "yyyy-mm-dd",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "gender": "m | f",
+          "ages": "10 | 20 | 30 | 40 | 50 | 60"
+        }
+      },
+      {
+        "id": "shopping-by-gender",
+        "name": "쇼핑 키워드 클릭 추이 — 성별 분해",
+        "description": "One keyword inside one category, split into male and female series.",
+        "params": {
+          "categoryCode": "A single category code",
+          "keywordText": "The single keyword to analyze",
+          "startDate": "yyyy-mm-dd",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "device": "pc | mo",
+          "ages": "10 | 20 | 30 | 40 | 50 | 60"
+        }
+      },
+      {
+        "id": "shopping-by-age",
+        "name": "쇼핑 키워드 클릭 추이 — 연령별 분해",
+        "description": "One keyword inside one category, split by age decade.",
+        "params": {
+          "categoryCode": "A single category code",
+          "keywordText": "The single keyword to analyze",
+          "startDate": "yyyy-mm-dd",
+          "endDate": "yyyy-mm-dd",
+          "timeUnit": "date | week | month",
+          "device": "pc | mo",
+          "gender": "m | f"
+        }
+      }
+    ]
+  },
   "input": {
     "type": "object",
-    "required": [
-      "query"
-    ],
     "properties": {
       "action": {
         "type": "string",
@@ -27,17 +182,20 @@
           "search",
           "search-trend",
           "shopping-categories",
+          "shopping-category-by-device",
+          "shopping-category-by-gender",
+          "shopping-category-by-age",
           "shopping-keywords",
           "shopping-by-device",
           "shopping-by-gender",
           "shopping-by-age"
         ],
         "default": "search",
-        "description": "API 액션. search=네이버 검색, search-trend=검색어 트렌드, shopping-*=쇼핑인사이트"
+        "description": "API action. search=Naver search, search-trend=search interest over time, shopping-categories=category click trend, shopping-category-by-*=that category split by one axis, shopping-keywords=keywords inside a category, shopping-by-*=one keyword split by one axis"
       },
       "query": {
         "type": "string",
-        "description": "[search 필수] 검색 키워드 (UTF-8). 데이터랩 액션(search-trend/shopping-*)에서는 실제로 사용되지 않지만 스키마상 필수이므로 빈 문자열 전달 가능."
+        "description": "[search] Search term, UTF-8. Required for `search`; the DataLab actions ignore it"
       },
       "type": {
         "type": "string",
@@ -46,91 +204,58 @@
           "news",
           "blog",
           "image",
-          "shop",
           "cafearticle",
           "kin",
           "encyc",
-          "book",
-          "book_adv",
-          "doc",
           "local",
           "adult",
           "errata"
         ],
         "default": "webkr",
-        "description": "[search] 검색 유형. webkr=웹문서, news=뉴스, blog=블로그, image=이미지, shop=쇼핑, cafearticle=카페, kin=지식iN, encyc=백과사전, book=도서, book_adv=도서 상세검색, doc=전문자료, local=지역(max 5건), adult=성인검색어 판별, errata=오타변환"
+        "description": "[search] webkr=web documents, news, blog, image, cafearticle=Naver Cafe posts, kin=Q&A, encyc=encyclopedia, local=places (max 5 results, WGS84 coordinates), adult=is this an adult term, errata=fix a keyboard-layout typo. Shopping / book / specialist-document search were retired on 2026-07-31 with no replacement"
       },
       "display": {
         "type": "integer",
         "minimum": 1,
         "maximum": 100,
         "default": 10,
-        "description": "[search] 결과 수. 대부분 최대 100, local은 최대 5"
+        "description": "[search] Results per page. Most types allow 100; local allows 5 and defaults to 1"
       },
       "start": {
         "type": "integer",
         "minimum": 1,
         "maximum": 1000,
         "default": 1,
-        "description": "[search] 시작 위치. 대부분 최대 1000, local은 1 고정"
+        "description": "[search] Paging offset. Most types allow 1000; local is fixed at 1"
       },
       "sort": {
         "type": "string",
         "enum": [
           "sim",
           "date",
-          "asc",
-          "dsc",
           "point",
           "random",
           "comment"
         ],
-        "default": "sim",
-        "description": "[search] 정렬. sim=정확도, date=최신순. shop: asc=가격오름/dsc=가격내림. kin: point=평점순. local: random=정확도/comment=리뷰순"
+        "description": "[search] Sort order, and the vocabulary differs by type: news/blog/image/cafearticle take sim|date, kin adds point (rating), local takes random|comment (review count). webkr and encyc take none. A value the type does not accept is dropped and reported rather than sent"
       },
       "filter": {
         "type": "string",
-        "description": "[search:image] all/large/medium/small. [search:shop] naverpay=네이버페이 상품만"
-      },
-      "exclude": {
-        "type": "string",
-        "description": "[search:shop] 제외 조건. 콜론 구분: used(중고), rental(렌탈), cbshop(해외직구). 예: used:cbshop"
-      },
-      "d_titl": {
-        "type": "string",
-        "description": "[search:book_adv] 제목 검색"
-      },
-      "d_auth": {
-        "type": "string",
-        "description": "[search:book_adv] 저자 검색"
-      },
-      "d_cont": {
-        "type": "string",
-        "description": "[search:book_adv] 목차 검색"
-      },
-      "d_isbn": {
-        "type": "string",
-        "description": "[search:book_adv] ISBN 검색"
-      },
-      "d_publ": {
-        "type": "string",
-        "description": "[search:book_adv] 출판사 검색"
-      },
-      "d_dafr": {
-        "type": "string",
-        "description": "[search:book_adv] 출간일 시작 (YYYYMMDD)"
-      },
-      "d_dato": {
-        "type": "string",
-        "description": "[search:book_adv] 출간일 끝 (YYYYMMDD)"
+        "enum": [
+          "all",
+          "large",
+          "medium",
+          "small"
+        ],
+        "description": "[search:image] Filter by image size"
       },
       "startDate": {
         "type": "string",
-        "description": "[데이터랩] 시작일 YYYY-MM-DD (검색 트렌드: 2016-01-01 이후, 쇼핑: 2017-08-01 이후. 기본 3개월 전)"
+        "description": "[DataLab] Start date yyyy-mm-dd. Search trend goes back to 2016-01-01, shopping insight to 2017-08-01. Defaults to 90 days ago"
       },
       "endDate": {
         "type": "string",
-        "description": "[데이터랩] 종료일 YYYY-MM-DD (기본 오늘)"
+        "description": "[DataLab] End date yyyy-mm-dd. Defaults to today"
       },
       "timeUnit": {
         "type": "string",
@@ -140,7 +265,7 @@
           "month"
         ],
         "default": "week",
-        "description": "[데이터랩] 집계 단위. date=일별(최대1년), week=주별(최대2년), month=월별(최대5년)"
+        "description": "[DataLab] Bucket size. date=daily (up to 1 year), week=weekly (up to 2 years), month=monthly (up to 5 years)"
       },
       "keywordGroups": {
         "type": "array",
@@ -154,7 +279,7 @@
           "properties": {
             "groupName": {
               "type": "string",
-              "description": "그룹 이름 (레이블)"
+              "description": "Label for the group"
             },
             "keywords": {
               "type": "array",
@@ -162,15 +287,15 @@
               "items": {
                 "type": "string"
               },
-              "description": "검색어 목록 (그룹당 최대 20개)"
+              "description": "Terms in this group, up to 20; their searches are summed"
             }
           }
         },
-        "description": "[search-trend] 키워드 그룹 (최대 5그룹). 같은 그룹의 키워드는 합산 비교"
+        "description": "[search-trend] Up to 5 keyword groups compared against each other"
       },
       "category": {
         "type": "array",
-        "maxItems": 5,
+        "maxItems": 3,
         "items": {
           "type": "object",
           "required": [
@@ -180,7 +305,7 @@
           "properties": {
             "name": {
               "type": "string",
-              "description": "분야 이름 (레이블)"
+              "description": "Label for the category"
             },
             "param": {
               "type": "array",
@@ -188,15 +313,15 @@
               "items": {
                 "type": "string"
               },
-              "description": "카테고리 코드 (50000000=패션의류, 50000001=패션잡화, 50000002=화장품, 50000003=디지털가전, 50000004=가구인테리어, 50000005=출산육아, 50000006=식품, 50000007=스포츠레저, 50000008=생활건강)"
+              "description": "Category codes — the cat_id in a Naver Shopping category URL (50000000=패션의류, 50000001=패션잡화, 50000002=화장품/미용, 50000003=디지털/가전, 50000004=가구/인테리어, 50000005=출산/육아, 50000006=식품, 50000007=스포츠/레저, 50000008=생활/건강)"
             }
           }
         },
-        "description": "[shopping-categories] 쇼핑 분야 그룹 (최대 5개)"
+        "description": "[shopping-categories] Up to 3 category groups. This cap is 3, not the 5 that search-trend allows"
       },
       "categoryCode": {
         "type": "string",
-        "description": "[shopping-keywords/by-device/by-gender/by-age] 단일 카테고리 코드 (예: 50000000)"
+        "description": "[shopping-keywords / shopping-category-by-* / shopping-by-*] A single category code, e.g. 50000000"
       },
       "keyword": {
         "type": "array",
@@ -210,23 +335,23 @@
           "properties": {
             "name": {
               "type": "string",
-              "description": "키워드 그룹명"
+              "description": "Label for the keyword group"
             },
             "param": {
               "type": "array",
-              "maxItems": 5,
+              "maxItems": 1,
               "items": {
                 "type": "string"
               },
-              "description": "키워드 목록 (최대 5개)"
+              "description": "Exactly one search term. Unlike search-trend, this endpoint does not bundle terms"
             }
           }
         },
-        "description": "[shopping-keywords] 키워드 그룹 배열 (최대 5그룹)"
+        "description": "[shopping-keywords] Up to 5 keyword groups, one term each"
       },
       "keywordText": {
         "type": "string",
-        "description": "[shopping-by-device/by-gender/by-age] 분석할 단일 키워드"
+        "description": "[shopping-by-device / shopping-by-gender / shopping-by-age] The single keyword to split"
       },
       "device": {
         "type": "string",
@@ -234,7 +359,7 @@
           "pc",
           "mo"
         ],
-        "description": "[데이터랩] 기기 필터. pc=PC, mo=모바일 (생략 시 전체)"
+        "description": "[DataLab] Device filter. Omit for all devices. On shopping-*-by-device this would collapse the split, so it is ignored there"
       },
       "gender": {
         "type": "string",
@@ -242,7 +367,7 @@
           "m",
           "f"
         ],
-        "description": "[데이터랩] 성별 필터. m=남성, f=여성 (생략 시 전체)"
+        "description": "[DataLab] Gender filter. Omit for all. On shopping-*-by-gender this would collapse the split, so it is ignored there"
       },
       "ages": {
         "type": "array",
@@ -259,10 +384,15 @@
             "8",
             "9",
             "10",
-            "11"
+            "11",
+            "20",
+            "30",
+            "40",
+            "50",
+            "60"
           ]
         },
-        "description": "[데이터랩] 연령 필터. 1=0-12, 2=13-18, 3=19-24, 4=25-29, 5=30-34, 6=35-39, 7=40-44, 8=45-49, 9=50-54, 10=55-59, 11=60+"
+        "description": "[DataLab] Age filter — TWO DIFFERENT VOCABULARIES share this field name. search-trend uses bands 1-11 (1=0-12, 2=13-18, 3=19-24, 4=25-29, 5=30-34, 6=35-39, 7=40-44, 8=45-49, 9=50-54, 10=55-59, 11=60+). Every shopping-* action uses decades 10/20/30/40/50/60 (10=10-19 ... 60=60+). \"10\" is valid in both and means 55-59 in one and 10-19 in the other, so a value carried across gives a plausible wrong answer; values that do not belong to the action are dropped and reported"
       }
     },
     "additionalProperties": false
@@ -272,15 +402,15 @@
     "properties": {
       "total": {
         "type": "integer",
-        "description": "[search] 전체 검색 결과 수"
+        "description": "[search] Total number of matches"
       },
       "start": {
         "type": "integer",
-        "description": "[search] 시작 위치"
+        "description": "[search] Paging offset"
       },
       "display": {
         "type": "integer",
-        "description": "[search] 반환된 결과 수"
+        "description": "[search] Results returned"
       },
       "items": {
         "type": "array",
@@ -298,27 +428,27 @@
             }
           }
         },
-        "description": "[search] 검색 결과. 유형별 필드가 다름"
+        "description": "[search] Results; extra fields vary by type (news adds originallink/pubDate, blog adds bloggername/postdate, local adds address/mapx/mapy in WGS84)"
       },
       "adult": {
         "type": "boolean",
-        "description": "[adult] 성인검색어 여부"
+        "description": "[type=adult] Whether the term is an adult search term"
       },
       "errata": {
         "type": "string",
-        "description": "[errata] 교정된 검색어"
+        "description": "[type=errata] The corrected term, empty when there was no typo"
       },
       "startDate": {
         "type": "string",
-        "description": "[데이터랩] 조회 시작일"
+        "description": "[DataLab] Window start"
       },
       "endDate": {
         "type": "string",
-        "description": "[데이터랩] 조회 종료일"
+        "description": "[DataLab] Window end"
       },
       "timeUnit": {
         "type": "string",
-        "description": "[데이터랩] 집계 단위"
+        "description": "[DataLab] Bucket size"
       },
       "results": {
         "type": "array",
@@ -327,7 +457,7 @@
           "properties": {
             "title": {
               "type": "string",
-              "description": "그룹명"
+              "description": "Group name"
             },
             "data": {
               "type": "array",
@@ -336,22 +466,22 @@
                 "properties": {
                   "period": {
                     "type": "string",
-                    "description": "집계 시작일"
+                    "description": "Bucket start date"
                   },
                   "ratio": {
                     "type": "number",
-                    "description": "상대 비율 (0~100)"
+                    "description": "Relative share, 0-100, where 100 is the largest value in this window. Not a count"
                   },
                   "group": {
                     "type": "string",
-                    "description": "[by-device/by-gender/by-age] 분류값"
+                    "description": "[*-by-device/gender/age] Which split this row belongs to; rows repeat per period, one per group"
                   }
                 }
               }
             }
           }
         },
-        "description": "[데이터랩] 그룹별 트렌드 결과"
+        "description": "[DataLab] Trend series per group"
       }
     }
   }
