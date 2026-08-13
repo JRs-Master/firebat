@@ -218,9 +218,10 @@ pub fn typed_parameters(form: &ActionForm, actions: &[String]) -> Option<serde_j
         "description": format!(
             "Parameters below are the form for the action(s) whose schema this conversation \
              already fetched ({discovered}) — send them as declared, at the top level, with \
-             \"action\". Any OTHER action of this module still needs get_action_schema first: a \
-             multi-action call whose schema was not fetched within the last 30 minutes in this \
-             conversation is rejected before dispatch."
+             \"action\". Any OTHER action of this module starts the order again: \
+             search_module_actions → get_action_schema → call. A call whose schema was not \
+             fetched within the last 30 minutes in this conversation is DENIED — rejected \
+             before dispatch."
         ),
     }))
 }

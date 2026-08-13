@@ -1088,9 +1088,15 @@ impl ModuleActionCatalog {
                 if !param_names.is_empty() {
                     const PARAM_CAP: usize = 12;
                     let shown: Vec<String> = param_names.iter().take(PARAM_CAP).cloned().collect();
-                    row["params"] = serde_json::json!(shown);
+                    // `paramNames`, not `params`: the field name has to say what it is, because a
+                    // bare `params` list reads as THE FORM. Measured 2026-08-13 (turn 57): the row
+                    // showed `limit`/`tmFc`, the model reasoned "I already have enough info" and
+                    // skipped get_action_schema, and the gate spent a round teaching it otherwise.
+                    // The response-level `next` already said to fetch the schema; an instruction
+                    // one level away does not survive a field that looks complete.
+                    row["paramNames"] = serde_json::json!(shown);
                     if param_names.len() > PARAM_CAP {
-                        row["paramsMore"] = serde_json::json!(param_names.len() - PARAM_CAP);
+                        row["paramNamesMore"] = serde_json::json!(param_names.len() - PARAM_CAP);
                     }
                 }
                 if let Some(req) = m.extra.get("required") {
