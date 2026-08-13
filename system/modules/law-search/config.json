@@ -63,11 +63,11 @@
       },
       "ID": {
         "type": "string",
-        "description": "[detail/article] 법령ID, 판례일련번호, 행정규칙일련번호 등 (검색 결과에서 획득)"
+        "description": "[detail/article] 법령ID / 판례일련번호 / 행정규칙일련번호 — 검색 결과의 `법령ID` 필드. 법령의 `법령일련번호`는 ID 가 아니라 MST 다(둘은 같은 행에 나란히 있고 서로 대체 불가)."
       },
       "MST": {
         "type": "string",
-        "description": "[detail/article] 법령일련번호. ID 대신 사용 가능 (법령 전용)"
+        "description": "[detail/article] 법령일련번호(lsi_seq) — 검색 결과의 `법령일련번호` 필드. ID 대신 사용 가능(법령 전용). target=eflaw 와 함께 쓰면 efYd(시행일자)가 필수이고, target=law 는 MST 만으로 조회된다."
       },
       "LM": {
         "type": "string",
@@ -117,7 +117,7 @@
       },
       "efYd": {
         "type": "string",
-        "description": "[search:law/ordin] 시행일자 범위 (20090101~20090130)"
+        "description": "[search:law/ordin] 시행일자 범위 (20090101~20090130). [detail:eflaw] MST 로 시행일 본문을 조회할 때는 단일 시행일자(YYYYMMDD)로 필수."
       },
       "ancYd": {
         "type": "string",
@@ -229,15 +229,15 @@
       },
       "JO": {
         "type": "string",
-        "description": "[detail:law/article] 조문번호 6자리. 제2조=000200, 제10조=001000, 제100조=010000"
+        "description": "[detail/article] 조번호 6자리 = **조번호 4자리 + 조가지번호 2자리** (왼쪽부터 채운다). 제2조=000200 · 제10조=001000 · 제100조=010000 · 제840조=084000 · 제10조의2=001002. 오른쪽 정렬로 읽어 제840조를 008400 으로 쓰면 제84조가 조회된다(2026-08-13 실측)."
       },
       "HANG": {
         "type": "string",
-        "description": "[article] 항번호 6자리. 제2항=000200"
+        "description": "[article] 항번호 6자리, 조번호와 같은 규칙. 제2항=000200"
       },
       "HO": {
         "type": "string",
-        "description": "[article] 호번호 6자리. 제2호=000200"
+        "description": "[article] 호번호 6자리, 같은 규칙. 제2호=000200 · 제10호의2=001002"
       },
       "MOK": {
         "type": "string",

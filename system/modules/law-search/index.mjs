@@ -242,11 +242,22 @@ async function handleSearch(OC, data) {
 //  2. detail — 본문 조회 (lawService.do)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleDetail(OC, data) {
-  // target=law → eflaw 자동 전환 (시행법령: 조문 내용이 더 완전하게 반환됨)
-  const rawTarget = data.target || 'law';
-  const target = rawTarget === 'law' ? 'eflaw' : rawTarget;
+  // `law` stays `law`. It used to be rewritten to `eflaw` ("시행법령이 더 완전"), but the DRF spec
+  // makes `efYd` REQUIRED for eflaw+MST — and MST (법령일련번호) is exactly what a search row
+  // gives you. So the rewrite turned the one id the caller holds into "일치하는 법령이 없습니다"
+  // (measured 2026-08-13, turns 56·58: 민법 제840조 was never fetched, and the turn ended after
+  // paging 1,337 cached rows by hand). `target=law` takes ID or MST, needs no efYd, and honours
+  // JO — everything this path wanted.
+  const target = data.target || 'law';
   const id = data.ID || data.id;
   const mst = data.MST || data.mst;
+  // eflaw is still reachable when asked for by name, and then efYd is not optional.
+  if (target === 'eflaw' && mst && !data.efYd) {
+    return outErr('error.detail_id_required', {
+      detail: 'target "eflaw" with MST requires efYd (시행일자, YYYYMMDD) — or drop efYd and use '
+        + 'target "law", which reads the same body by ID or MST alone.',
+    });
+  }
 
   // query를 LM으로 폴백 (AI가 query로 보내는 경우 대응)
   if (!data.LM && data.query) data.LM = data.query;
@@ -261,6 +272,7 @@ async function handleDetail(OC, data) {
 
   // target별 고유 파라미터
   if (target === 'eflaw' || target === 'law') {
+    if (data.efYd) p.set('efYd', String(data.efYd));
     if (data.LM) p.set('LM', data.LM);
     if (data.LD) p.set('LD', String(data.LD));
     if (data.LN) p.set('LN', String(data.LN));
@@ -292,8 +304,17 @@ async function handleDetail(OC, data) {
     return out(true, {
       found: false,
       requested: { target, ID: id ?? null, MST: mst ?? null },
-      note: 'the API returned an empty body for this id — do NOT treat this as content. Re-check the id against the search result field (판례일련번호 / 법령일련번호 of THAT target), or open 판례상세링크 from the search item.',
+      note: 'the API returned an empty body for this id — do NOT treat this as content. For a 법령: the search row carries BOTH `법령ID` and `법령일련번호`, and they are not interchangeable — 법령ID goes in `ID`, 법령일련번호 goes in `MST`. If you sent one as the other, retry with the other field before changing anything else. For 판례/행정규칙: use 그 target 의 일련번호, or open 판례상세링크 from the search item.',
     });
+  }
+  // A whole code comes back as a thousand-plus 조문 rows, of which the caller wanted one. Naming
+  // the door here is the difference between one call and nine: turn 58 paged the cache by hand
+  // from offset 0 and hit the tool budget at 제840조.
+  const jo = Array.isArray(result?.조문) ? result.조문 : null;
+  if (jo && jo.length > 50 && !data.JO) {
+    result._note = `${jo.length} 조문 returned — the WHOLE law. For one article add JO: `
+      + '6 digits = 조번호(4) + 조가지번호(2), left-aligned — 제840조 → "084000", 제10조의2 → "001002". '
+      + 'Same call, same id, one row back.';
   }
   // 조문이 빈 경우 디버그용 키 목록 포함
   if ((target === 'law' || target === 'eflaw') && result && !result.조문) {
