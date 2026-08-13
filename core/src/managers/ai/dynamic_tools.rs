@@ -84,11 +84,8 @@ impl DynamicToolRegistry {
         module: &str,
         actions: &[String],
     ) -> Option<serde_json::Value> {
-        if actions.is_empty() {
-            return None;
-        }
         let forms = self.forms.read().await;
-        crate::managers::ai::sysmod_surface::typed_parameters(forms.get(module)?, actions)
+        crate::managers::ai::sysmod_surface::parameters_for(forms.get(module)?, actions)
     }
 
     /// Whether this tool's module really has an action selector — the discovery gate's

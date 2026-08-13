@@ -44,6 +44,11 @@ pub struct ActionForm {
     /// The key/window siblings are framework convention, so nobody declares them and the form
     /// has to derive them (see `cache_inputs::sibling_schemas`).
     pub cache_params: Vec<String>,
+    /// Whether the module declares an `action` selector — carried HERE rather than looked up in a
+    /// separate set, because the two would be populated by two writes and "missing from the set"
+    /// silently means "no gate, publish everything". A fact that decides how much to disclose
+    /// must not be inferable from an absence ([[feedback_absence_is_not_consent]]).
+    pub has_selector: bool,
 }
 
 /// Everything a transport needs to expose one system module as one tool.
@@ -92,7 +97,12 @@ pub fn build_action_form(config: &serde_json::Value) -> ActionForm {
             per_action.insert(id.to_string(), params.keys().cloned().collect());
         }
     }
-    ActionForm { props, per_action, cache_params: crate::utils::cache_inputs::declared(config) }
+    ActionForm {
+        props,
+        per_action,
+        cache_params: crate::utils::cache_inputs::declared(config),
+        has_selector: declares_action_selector(config),
+    }
 }
 
 /// Adds the cache-key vocabulary to a published property set.
@@ -150,6 +160,40 @@ pub fn thin_parameters() -> serde_json::Value {
         "additionalProperties": true,
         "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a multi-action call whose schema was not fetched via get_action_schema within the last 30 minutes in this conversation is rejected before dispatch — fetch schemas first, several in one round is fine, and a schema you keep using stays valid."
     })
+}
+
+/// The parameters to publish for one module right now — the single decision both transports make.
+///
+/// Two transports asking the same question two ways is how the surfaces drifted before; this is
+/// the question, asked once.
+pub fn parameters_for(form: &ActionForm, discovered: &[String]) -> Option<serde_json::Value> {
+    if form.has_selector {
+        typed_parameters(form, discovered)
+    } else {
+        full_parameters(form)
+    }
+}
+
+/// The whole form, for a module with no action selector.
+///
+/// Nothing to enforce, so nothing to withhold. The thin schema exists to make the ladder
+/// unskippable — but a single-action module is exempt from the gate by design (a volunteered
+/// `action` there is not a multi-action call), which left it in the one state the 2026-08-12
+/// measurement condemns: a call dispatched against a schema the model never saw, guessing the
+/// shape from memory. Discovery still works and still helps; it is simply no longer the price of
+/// admission to a form nobody was gating.
+pub fn full_parameters(form: &ActionForm) -> Option<serde_json::Value> {
+    if form.props.is_empty() {
+        return None;
+    }
+    let mut out = form.props.clone();
+    add_cache_siblings(&mut out, &form.props, &form.cache_params);
+    Some(serde_json::json!({
+        "type": "object",
+        "additionalProperties": true,
+        "properties": out,
+        "description": "This module runs ONE operation, so there is no action to pick — send the                         parameters below at the top level. They are its declared form; validation                         still happens server-side against the same schema.",
+    }))
 }
 
 /// The filled-in form for the actions this conversation has already discovered.
@@ -429,6 +473,32 @@ mod tests {
         assert!(build_surface("stock-lookup", &single_action_config())
             .grounding
             .is_empty());
+    }
+
+    /// A single-action module has no gate, so the thin schema bought nothing there — it only
+    /// left the one measured failure condition in place: a dispatched call whose shape the model
+    /// never saw.
+    #[test]
+    fn a_module_without_a_selector_publishes_its_whole_form() {
+        let cfg = json!({
+            "name": "stock-lookup",
+            "description": "종목명 → 종목코드 조회",
+            "input": {"properties": {
+                "name": {"type": "string", "description": "회사명"},
+                "market": {"type": "string", "enum": ["KR", "US"]}
+            }}
+        });
+        let surface = build_surface("stock-lookup", &cfg);
+        assert!(!surface.has_action_selector);
+        let published = full_parameters(&surface.form).expect("a form, with no ladder to walk");
+        let props = published["properties"].as_object().unwrap();
+        assert!(props.contains_key("name") && props.contains_key("market"));
+        assert!(published.get("required").is_none(), "no action to require: {published}");
+        assert_eq!(published["additionalProperties"], true);
+        // …and a module that DOES have a selector still starts thin.
+        let multi = build_surface("kiwoom", &multi_action_config());
+        assert!(multi.has_action_selector);
+        assert!(typed_parameters(&multi.form, &[]).is_none(), "the gate keeps its teeth");
     }
 
     /// The form has to carry the vocabulary the expander accepts. fa declared

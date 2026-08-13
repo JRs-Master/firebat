@@ -542,7 +542,7 @@ async fn schema_for_scope(state: &Arc<McpServerState>, tool: &McpTool, scope: &s
     let forms = state.forms.read().await;
     let Some((module, form)) = forms.get(&tool.name) else { return tool.input_schema.clone() };
     let discovered = conversation_scope::discovered_actions(scope, module);
-    firebat_core::managers::ai::sysmod_surface::typed_parameters(form, &discovered)
+    firebat_core::managers::ai::sysmod_surface::parameters_for(form, &discovered)
         .unwrap_or_else(|| tool.input_schema.clone())
 }
 
@@ -2850,7 +2850,7 @@ mod parity_tests {
             "the CLI surface must name the key the server accepts: {after}"
         );
         // …and the FC path derives byte-for-byte the same thing from the same material.
-        let fc = sysmod_surface::typed_parameters(&surface.form, &["ratios".to_string()]).unwrap();
+        let fc = sysmod_surface::parameters_for(&surface.form, &["ratios".to_string()]).unwrap();
         assert_eq!(after, fc, "the two transports must publish one form");
     }
 
