@@ -296,6 +296,31 @@ impl FormatHandler for OpenAiResponsesHandler {
             serde_json::Value::Array(arr)
         };
 
+        // The round brief rides at the very end of `input`, after the outputs of the round that
+        // just finished. On the previous_response_id path that is doubly right: the server holds
+        // everything before it, so the brief is the only text this request adds.
+        //
+        // A first round has no tool outputs and `input` is still the bare prompt string, so the
+        // string is promoted to an item array to make room for the trailing turn.
+        let input = match opts.round_brief.as_deref().filter(|s| !s.trim().is_empty()) {
+            None => input,
+            Some(brief) => {
+                let mut arr = match input {
+                    serde_json::Value::Array(a) => a,
+                    serde_json::Value::String(s) => vec![serde_json::json!({
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": s}]
+                    })],
+                    other => vec![other],
+                };
+                arr.push(serde_json::json!({
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": brief}]
+                }));
+                serde_json::Value::Array(arr)
+            }
+        };
+
         let mut body = serde_json::json!({
             "model": config.id,
             "input": input,

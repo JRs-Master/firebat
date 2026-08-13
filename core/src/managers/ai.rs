@@ -12,6 +12,7 @@
 //! - LLM 8 format 어댑터 와이어링
 
 pub mod prompt_builder;
+pub mod round_brief;
 pub mod system_context;
 pub mod history_resolver;
 pub mod data_on_hand;
@@ -3026,12 +3027,11 @@ impl AiManager {
         // Accepted no-action finish (banner-stamped below) — must also fail the unattended
         // (cron) verdict: an action-task run that executed nothing is a missed run.
         let mut no_action_final = false;
-        // Pre-cap warning — the round budget closes without notice, so the model plans a next
-        // call that never runs and then narrates it as done (2026-08-12 실측: r19 still planning
-        // make_xlsx, force_final dropped the call, and the final text described a full dashboard
-        // while the tool response it had already read said dashboard:false, kpis:0, charts:0).
-        // One notice attached to the results the model reads at the START of its LAST tool round.
-        let mut precap_warning_used = false;
+        // (The pre-cap warning this used to track now lives in the round brief, which states the
+        // budget every round instead of once. The symptom it was built for — 2026-08-12 실측: r19
+        // still planning make_xlsx, force_final dropped the call, and the final text described a
+        // full dashboard while the tool response it had already read said dashboard:false —
+        // needed the model to know how many rounds were left, which is now simply always said.)
         // Turn ledger — "cards in hand" harvested from THIS turn's successes: ready-to-call
         // envelopes (schemas fetched), stream/action candidates (top search hits), and receipts
         // of completed actions. A weak model re-derives its plan from scratch every round and,
@@ -3250,93 +3250,52 @@ impl AiManager {
             //  (b) one closing instruction appended to the prompt — the model otherwise doesn't
             //      know why its tools vanished and hallucinates tool-call tokens instead of
             //      answering (r11 re-call after strip, 실측).
-            let force_final_prompt: String;
-            let nudge_prompt: String;
-            let empty_final_prompt: String;
-            let missing_fence_prompt: String;
-            let llm_prompt: &str = if !force_final
+            // Which correction, if any, this round is. The branches are the ones that used to
+            // splice their own paragraph onto the user prompt; they now name a variant and the
+            // wording lives in one renderer. Order and the `!force_final &&` short-circuits are
+            // unchanged — a closed round is a closed round no matter which flag is also set.
+            let correction = if !force_final
                 && std::mem::take(&mut missing_fence_nudge_this_round)
             {
                 // The render redirect promised the reader a visualization; an answer without
                 // the fence quietly breaks that promise. One rewrite round, no tools.
-                missing_fence_prompt = format!(
-                    "{llm_prompt}\n\n[system] Earlier this turn the render tool redirected you: \
-                     those components must be EMITTED as a ```firebat-render``` fenced block \
-                     inside your answer text. Your answer contains NO such fence, so the \
-                     visualization the user asked for is missing. Write the final answer again \
-                     now and INCLUDE the ```firebat-render``` fence with the prepared blocks \
-                     (reference cached data via dataCacheKey instead of retyping rows). Do not \
-                     call tools.{}",
-                    ledger_note(&turn_ledger)
-                );
-                &missing_fence_prompt
-            } else if !force_final
-                && std::mem::take(&mut empty_final_nudge_this_round)
-            {
+                Some(round_brief::Correction::MissingFence)
+            } else if !force_final && std::mem::take(&mut empty_final_nudge_this_round) {
                 // The model returned nothing. Reasoning gets pulled down to `low` for this round:
                 // an empty answer after a looping CoT means the output budget went into thinking,
                 // and what is needed now is prose, not more deliberation.
                 turn_opts.thinking_level = Some("low".to_string());
-                // What to write FROM differs with the ledger. Pointing at "the results below" when
-                // no tool ran describes results that are not there, which is the kind of sentence
-                // that sends a model looking for them.
-                let source = if turn_ledger.is_empty() {
-                    "Answer from this conversation and what you already know. If two figures in it \
-                     disagree, say so plainly in one line and answer with the one you trust, rather \
-                     than re-deriving the discrepancy."
-                } else {
-                    "The tool results below are already in hand — write the answer using only what \
-                     they actually show."
-                };
-                empty_final_prompt = format!(
-                    "{llm_prompt}\n\n[system] Your last round returned no answer text at all. Do \
-                     NOT call tools and do NOT re-plan. Write the answer for the user now, in \
-                     their language. {source}{}",
-                    ledger_note(&turn_ledger)
-                );
-                &empty_final_prompt
+                Some(round_brief::Correction::EmptyAnswer)
             } else if !force_final && std::mem::take(&mut nudge_this_round) {
                 // No-silent-exit corrective round (19차): the model tried to end the turn with
-                // a text-only "plan" after pure discovery. One firm instruction + the ledger.
-                nudge_prompt = format!(
-                    "{llm_prompt}\n\n[system] You gathered information but EXECUTED nothing — \
-                     this turn cannot end as if the work happened. A plan written as text has \
-                     NO Run button: the ONLY way to create an approvable plan is calling the \
-                     propose_plan TOOL. Do ONE of these right now: (1) call the READY/STREAM \
-                     entries below exactly as written, (2) call propose_plan with your plan as \
-                     tool arguments (verified steps compiled with tool+args, unverified parts \
-                     as discovery steps), or (3) if you truly cannot proceed, state plainly \
-                     that nothing was executed.{}",
-                    ledger_note(&turn_ledger)
-                );
-                &nudge_prompt
+                // a text-only "plan" after pure discovery.
+                Some(round_brief::Correction::NothingExecuted)
             } else if force_final {
                 turn_opts.thinking_level = Some("low".to_string());
-                // The ledger pins the final text to what actually happened — without it the
-                // model binds values to wrong labels and reports unexecuted steps as done
-                // (10차: 373220 을 "LG전자"로, 어제를 한 달 전 날짜로).
-                let verified = if turn_ledger.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        "\nVerified this turn (ONLY these happened — anything else was NOT executed):\n{}",
-                        turn_ledger.join("\n")
-                    )
-                };
-                // "There is no other executor" — 16차 실측: force_final 답변이 "위 파라미터를
-                // 그대로 호출해 주세요"라며 실행을 제3자에게 요청(자신을 플래너로 착각).
-                force_final_prompt = format!(
-                    "{llm_prompt}\n\n[system] Tool calls are closed for this turn. Using the \
-                     tool results you already have, write your final answer to the user NOW as \
-                     normal text (render fences allowed). You are the ONLY executor — never ask \
-                     the user or \"the system\" to run a tool or API call for you; anything you \
-                     did not run simply did not happen. If something could not be completed, \
-                     say so honestly in one line. Do not emit tool-call syntax.{verified}"
-                );
-                &force_final_prompt
+                Some(round_brief::Correction::ToolsClosed)
             } else {
-                llm_prompt
+                None
             };
+            // The brief carries the ledger for every one of those branches (it used to be pasted
+            // by four of them separately), plus the two facts none of them said: which round this
+            // is, and which tools were withdrawn. It rides at the TAIL of the request, so the
+            // prompt itself goes back to being just the user's message — which is what keeps the
+            // cached prefix identical from one round to the next.
+            let brief = round_brief::RoundBrief {
+                round: turn + 1,
+                max_rounds: max_turns,
+                tools_open: !force_final,
+                schemas_ready: crate::utils::conversation_scope::discovered_all(&tool_scope),
+                schema_window_min: crate::utils::conversation_scope::SCOPE_TTL.as_secs() / 60,
+                executed: turn_ledger.clone(),
+                withdrawn: {
+                    let mut w: Vec<String> = capped_strip.iter().cloned().collect();
+                    w.sort();
+                    w
+                },
+                correction,
+            };
+            turn_opts.round_brief = brief.render();
             // Plan compiled replay — synthetic round-0: the approved plan's verified calls run
             // through the dispatch below WITHOUT an LLM round. The next iteration's LLM call
             // then synthesizes with all results in prior_results (and handles any failures —
@@ -4973,45 +4932,13 @@ impl AiManager {
                 }
             }
 
-            // Pre-cap warning. The budget-exhaustion forced final fires at the top of round
-            // `max_turns - 1`, so the last round that can still EXECUTE tools is `max_turns - 2`,
-            // and the results the model reads entering that round are the ones produced here at
-            // `max_turns - 3`. Warning any later reaches the model only after tools are already
-            // closed, which is exactly the silent cut-off this exists to remove.
-            // Pairing-safe by construction: this mutates the payload of a result that already has
-            // its matching call, so the assistant tool_calls ↔ tool results 1:1 mapping every FC
-            // adapter replays stays intact — a synthetic extra result would carry a call_id no
-            // assistant message declares and openai-chat/anthropic would reject the next round.
-            if !force_final
-                && !precap_warning_used
-                && max_turns >= 3
-                && turn == max_turns - 3
-            {
-                if let Some((_, last)) = turn_results
-                    .iter_mut()
-                    .rev()
-                    .find(|(_, r)| r.result.is_object())
-                {
-                    if let serde_json::Value::Object(map) = &mut last.result {
-                        map.insert(
-                            "toolBudget".to_string(),
-                            serde_json::Value::String(
-                                "Tool budget: next round is the last — no further tool calls \
-                                 will execute after it. Finish now and, in the final answer, \
-                                 state plainly what was completed and what was not; do not \
-                                 describe work that did not run."
-                                    .to_string(),
-                            ),
-                        );
-                        precap_warning_used = true;
-                        self.log.warn(&format!(
-                            "[AiManager] pre-cap warning attached at round {} — one tool round left of {}",
-                            turn + 1,
-                            max_turns
-                        ));
-                    }
-                }
-            }
+            // The pre-cap warning that used to be spliced into the last tool result's payload is
+            // gone: the round brief states the budget every round, exactly, at the same tail
+            // position. That splice was this file's one working tail-delivery — it hijacked a
+            // result object because there was nowhere else to put a message that had to be read
+            // last. Now that a tail slot exists, keeping both would mean two budget statements in
+            // different words that can disagree, and a tool result that carries text no tool
+            // returned.
 
             // prior_results 누적 — 다음 turn 의 toolExchanges 로 LLM 에 전달.
             // 학습 로그용 + Gemini thought_signature echo 용 — turn 별 entry 보존.

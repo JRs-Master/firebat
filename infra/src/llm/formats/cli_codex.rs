@@ -1000,6 +1000,10 @@ impl FormatHandler for CodexCliHandler {
         opts: &LlmCallOpts,
         emit: Option<LlmStreamSink>,
     ) -> InfraResult<LlmToolResponse> {
+        // One text blob per CLI turn — the brief folds into its tail. See
+        // `common::prompt_with_round_brief` for why that is the weaker placement.
+        let prompt_owned = super::common::prompt_with_round_brief(prompt, opts);
+        let prompt: &str = &prompt_owned;
         // hosted MCP / CLI 자체 loop 모델 (features.mcp_connector=true) 은 빈 tools 여도
         // MCP config 가 필요하므로 ask_text 위임 금지.
         if tools.is_empty() && !config.features.mcp_connector {

@@ -180,6 +180,46 @@ pub fn discovered_actions(scope_key: &str, module: &str) -> Vec<String> {
     out
 }
 
+/// Every `(module, actions)` pair whose schema this scope holds, module-sorted.
+///
+/// [`discovered_actions`] answers for a module the caller already named, which is the shape the
+/// tool-definition publisher needs. The round brief needs the other shape: it has no module in
+/// mind and is reporting what is callable *right now*, so that a model holding a form does not
+/// spend a round fetching it again. Read-only, like its sibling — publishing the list is not using
+/// the entries, so the window does not slide and no scope is created.
+pub fn discovered_all(scope_key: &str) -> Vec<(String, Vec<String>)> {
+    let now = Instant::now();
+    let mut map = store();
+    let Some(state) = map.get_mut(scope_key) else {
+        return Vec::new();
+    };
+    evict_schema(&mut state.schema_seen, now);
+    let mut by_module: HashMap<String, Vec<String>> = HashMap::new();
+    for key in state.schema_seen.keys() {
+        // Keys are built by `gate_key` as `module:action`; a module name never contains ':' after
+        // canonicalization, so the first separator is the right split point.
+        let Some((module, action)) = key.split_once(':') else {
+            continue;
+        };
+        if module.is_empty() || action.is_empty() {
+            continue;
+        }
+        by_module
+            .entry(module.to_string())
+            .or_default()
+            .push(action.to_string());
+    }
+    let mut out: Vec<(String, Vec<String>)> = by_module
+        .into_iter()
+        .map(|(m, mut actions)| {
+            actions.sort();
+            (m, actions)
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
 // ── grounding corpus ─────────────────────────────────────────────────────────
 
 /// Append text the model legitimately observed (the user's prompt, an approved plan, a
@@ -474,6 +514,48 @@ mod tests {
         assert!(schema_ok_at(k, "kiwoom", "ka10081", t0 + mins(58)));
         // …and it keeps going as long as it keeps being used.
         assert!(schema_ok_at(k, "kiwoom", "ka10081", t0 + mins(87)));
+        forget(k);
+    }
+
+    /// What the round brief publishes: everything callable right now, grouped and sorted, so a
+    /// model holding a form does not spend a round fetching it again.
+    #[test]
+    fn discovered_all_groups_every_module_the_scope_holds() {
+        let _g = lock();
+        let k = "test:discovered-all";
+        forget(k);
+        let t0 = Instant::now();
+
+        record_schema_at(k, "docs", "make_xlsx", t0);
+        record_schema_at(k, "docs", "make_pdf", t0);
+        // The dialect the gate canonicalizes — it must not surface as a second module.
+        record_schema_at(k, "sysmod_kakao_map", "search-keyword", t0);
+
+        let all = discovered_all(k);
+        assert_eq!(
+            all,
+            vec![
+                ("docs".to_string(), vec!["make_pdf".to_string(), "make_xlsx".to_string()]),
+                ("kakao-map".to_string(), vec!["search-keyword".to_string()]),
+            ]
+        );
+        forget(k);
+    }
+
+    /// Publishing the list is not using the entries — a form nobody called still ages out, or the
+    /// brief would advertise a schema the gate has already forgotten.
+    #[test]
+    fn discovered_all_does_not_slide_the_window() {
+        let _g = lock();
+        let k = "test:discovered-all-ttl";
+        forget(k);
+        let t0 = Instant::now();
+
+        record_schema_at(k, "docs", "make_xlsx", t0);
+        assert_eq!(discovered_all(k).len(), 1);
+        // Reading it repeatedly changes nothing about when it expires.
+        assert_eq!(discovered_all(k).len(), 1);
+        assert!(!schema_ok_at(k, "docs", "make_xlsx", t0 + mins(31)));
         forget(k);
     }
 

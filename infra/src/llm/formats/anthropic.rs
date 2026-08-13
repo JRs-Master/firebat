@@ -438,6 +438,13 @@ impl FormatHandler for AnthropicMessagesHandler {
             }));
         }
 
+        // The round brief goes at the tail, as a text block appended to the LAST user message —
+        // the one carrying this round's tool_result blocks. It is not pushed as its own message:
+        // tool_result blocks have to open the user turn they belong to, and a second consecutive
+        // user turn is the shape this API is least forgiving about. Appending a block keeps the
+        // brief last within the last turn, which is the placement that matters.
+        super::common::push_round_brief_blocks(&mut messages, opts);
+
         let mut body = serde_json::json!({
             "model": config.id,
             "max_tokens": opts.max_tokens.or(config.max_output).unwrap_or(8192),

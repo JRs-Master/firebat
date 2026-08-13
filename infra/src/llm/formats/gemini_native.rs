@@ -230,6 +230,7 @@ impl GeminiNativeHandler {
                 .collect();
             contents.push(serde_json::json!({ "role": "user", "parts": user_parts }));
         }
+        super::common::push_round_brief_contents(&mut contents, opts);
         contents
     }
 
@@ -507,6 +508,88 @@ mod tests {
         let resp = &contents[2]["parts"][0]["functionResponse"];
         assert_eq!(resp["name"], "save_page");
         assert_eq!(resp["response"]["success"], true);
+    }
+
+    /// One exchange with a tool result, so the tail is a user turn carrying functionResponse.
+    fn opts_with_one_exchange() -> LlmCallOpts {
+        let mut opts = LlmCallOpts::default();
+        opts.tool_exchanges = vec![ToolExchangeEntry {
+            tool_calls: vec![ToolCall {
+                id: "c1".to_string(),
+                name: "save_page".to_string(),
+                arguments: serde_json::json!({"slug": "x"}),
+            }],
+            tool_results: vec![ToolResult {
+                call_id: "c1".to_string(),
+                name: "save_page".to_string(),
+                result: serde_json::json!({"success": true}),
+                success: true,
+                error: None,
+                ..Default::default()
+            }],
+            raw_model_parts: None,
+        }];
+        opts
+    }
+
+    #[test]
+    fn the_round_brief_is_the_last_thing_the_model_reads() {
+        // The whole point of the brief's placement: it must sit AFTER every tool response, or it
+        // is buried behind the round's output the way the old prompt-append was.
+        let mut opts = opts_with_one_exchange();
+        opts.round_brief = Some("[turn status]\nround 3 of 25".to_string());
+        let contents = GeminiNativeHandler::build_contents("go", &opts, &[]);
+        let last = contents.last().unwrap();
+        assert_eq!(last["role"], "user");
+        let parts = last["parts"].as_array().unwrap();
+        // Appended to the turn that carries this round's functionResponse, not a second user turn.
+        assert_eq!(parts.len(), 2);
+        assert!(parts[0].get("functionResponse").is_some());
+        assert_eq!(parts[1]["text"], "[turn status]\nround 3 of 25");
+    }
+
+    #[test]
+    fn everything_before_the_brief_is_identical_between_rounds() {
+        // The cache property. The brief is the only per-round text in the request; if anything
+        // ahead of it moved, the prefix would miss and a corrective round would re-bill the whole
+        // accumulated tool history — which is exactly what appending to the user prompt did.
+        let opts = opts_with_one_exchange();
+        let without = GeminiNativeHandler::build_contents("go", &opts, &[]);
+
+        let mut with_brief = opts.clone();
+        with_brief.round_brief = Some("[turn status]\nround 4 of 25".to_string());
+        let with = GeminiNativeHandler::build_contents("go", &with_brief, &[]);
+
+        assert_eq!(with.len(), without.len(), "no extra turn is introduced");
+        // Every turn but the last is byte-identical...
+        assert_eq!(with[..with.len() - 1], without[..without.len() - 1]);
+        // ...and in the last turn, only a part was appended after the existing ones.
+        let (a, b) = (
+            without.last().unwrap()["parts"].as_array().unwrap(),
+            with.last().unwrap()["parts"].as_array().unwrap(),
+        );
+        assert_eq!(&b[..a.len()], &a[..]);
+    }
+
+    #[test]
+    fn no_brief_leaves_the_request_exactly_as_it_was() {
+        let opts = opts_with_one_exchange();
+        let contents = GeminiNativeHandler::build_contents("go", &opts, &[]);
+        assert_eq!(contents.len(), 3);
+        assert_eq!(contents[2]["parts"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_first_round_brief_gets_its_own_turn() {
+        // Round one has no tool responses, so the tail is the user prompt itself — a model turn
+        // never follows, and folding the brief into the prompt would put it back where it was.
+        let mut opts = LlmCallOpts::default();
+        opts.round_brief = Some("[turn status]\nround 1 of 25".to_string());
+        let contents = GeminiNativeHandler::build_contents("go", &opts, &[]);
+        assert_eq!(contents.len(), 1, "appended to the user turn, not a new one");
+        let parts = contents[0]["parts"].as_array().unwrap();
+        assert_eq!(parts[0]["text"], "go");
+        assert_eq!(parts[1]["text"], "[turn status]\nround 1 of 25");
     }
 
     #[test]

@@ -807,6 +807,11 @@ impl FormatHandler for ClaudeCodeCliHandler {
         opts: &LlmCallOpts,
         emit: Option<LlmStreamSink>,
     ) -> InfraResult<LlmToolResponse> {
+        // A CLI turn is one text blob, so the round brief folds into the tail of the prompt — the
+        // closest this transport gets to a trailing message. Weaker than the API path's real
+        // trailing turn, and named as such in `prompt_with_round_brief`.
+        let prompt_owned = super::common::prompt_with_round_brief(prompt, opts);
+        let prompt: &str = &prompt_owned;
         // 도구 0건 (단순 텍스트) — ask_text 위임. 단 hosted MCP / CLI 자체 loop 모델
         // (features.mcp_connector=true) 은 빈 tools 여도 MCP config + 권한 모드가 필요하므로
         // ask_text 위임 금지 (ai.rs 가 hosted MCP 모델은 effective_tools 빈 배열로 호출).

@@ -1684,6 +1684,18 @@ pub struct LlmCallOpts {
     /// 옛 TS `LlmCallOpts.imageMimeType` 1:1.
     #[serde(rename = "imageMimeType", default, skip_serializing_if = "Option::is_none")]
     pub image_mime_type: Option<String>,
+    /// The round brief — where the turn stands, delivered AFTER the last tool result.
+    ///
+    /// Rendered by `managers::ai::round_brief`; each transport places it as the final message of
+    /// the request (see that module for why the tail and not the user prompt). Two properties the
+    /// handlers have to preserve: it is the LAST thing before generation, and it is the ONLY part
+    /// of the request that changes between rounds — everything ahead of it stays byte-identical
+    /// so the prefix cache keeps holding across a corrective round.
+    ///
+    /// `None` on turns with nothing to report (round one of a plain turn), and on the transports
+    /// that have no message array to append to — a CLI adapter folds it into the prompt instead.
+    #[serde(rename = "roundBrief", default, skip_serializing_if = "Option::is_none")]
+    pub round_brief: Option<String>,
     /// 멀티턴 도구 교환 누적 — 옛 TS `LlmCallOpts.toolExchanges` 1:1.
     ///
     /// Gemini API (native + Vertex) 가 thought_signature 보존을 위해 매 turn `rawModelParts` echo 필요.

@@ -109,6 +109,91 @@ pub fn build_messages(opts: &LlmCallOpts, user_prompt: &str) -> serde_json::Valu
     serde_json::Value::Array(messages)
 }
 
+/// Append the round brief as the final message, after every tool exchange.
+///
+/// The brief is the only part of a round's request that differs from the last round's, and it has
+/// to be the last thing read before generation — both properties come from *where* it sits, so
+/// each transport calls this (or its own equivalent) after it has finished pushing tool results,
+/// never before. Appending it to the user prompt instead, as the round loop used to, buries it
+/// behind every tool block and invalidates the cached prefix from the user message onward.
+///
+/// `role` differs by transport: OpenAI-compatible endpoints accept a trailing `user` turn after
+/// tool messages, which is the shape with the widest support.
+pub fn push_round_brief(messages: &mut Vec<serde_json::Value>, opts: &LlmCallOpts, role: &str) {
+    let Some(brief) = opts.round_brief.as_deref().filter(|s| !s.trim().is_empty()) else {
+        return;
+    };
+    messages.push(serde_json::json!({ "role": role, "content": brief }));
+}
+
+/// Append the round brief to an Anthropic `messages` array, as the last block of the last message.
+///
+/// Not pushed as its own message: `tool_result` blocks have to open the user turn they belong to,
+/// and a second consecutive user turn is the shape this API is least forgiving about. Appending a
+/// text block keeps the brief last within the last turn, which is the placement that matters.
+pub fn push_round_brief_blocks(messages: &mut [serde_json::Value], opts: &LlmCallOpts) {
+    let Some(brief) = opts.round_brief.as_deref().filter(|s| !s.trim().is_empty()) else {
+        return;
+    };
+    let Some(last) = messages.last_mut() else {
+        return;
+    };
+    let block = serde_json::json!({ "type": "text", "text": brief });
+    match last.get_mut("content") {
+        Some(serde_json::Value::Array(blocks)) => blocks.push(block),
+        // A plain-string content (the first round, no tools yet) becomes a two-block array.
+        Some(slot) => {
+            let text = slot.as_str().unwrap_or_default().to_string();
+            *slot = serde_json::json!([{"type": "text", "text": text}, block]);
+        }
+        None => {}
+    }
+}
+
+/// Append the round brief to a Gemini `contents` array, as the last part of the last user turn.
+///
+/// Gemini turns hold a `parts` list, and a user turn may mix `functionResponse` parts with text —
+/// so the brief becomes a trailing text part of the turn that carries this round's tool responses,
+/// rather than a second consecutive user turn. Same reasoning as the Anthropic path: last within
+/// the last turn is the placement that matters, and the transports differ only in how a turn is
+/// spelled. When the last turn belongs to the model (no tool responses yet), a new user turn is
+/// the only option and is appended instead.
+pub fn push_round_brief_contents(contents: &mut Vec<serde_json::Value>, opts: &LlmCallOpts) {
+    let Some(brief) = opts.round_brief.as_deref().filter(|s| !s.trim().is_empty()) else {
+        return;
+    };
+    let part = serde_json::json!({ "text": brief });
+    let can_extend = contents
+        .last()
+        .and_then(|c| c.get("role"))
+        .and_then(|r| r.as_str())
+        == Some("user");
+    if can_extend {
+        if let Some(parts) = contents
+            .last_mut()
+            .and_then(|c| c.get_mut("parts"))
+            .and_then(|p| p.as_array_mut())
+        {
+            parts.push(part);
+            return;
+        }
+    }
+    contents.push(serde_json::json!({ "role": "user", "parts": [part] }));
+}
+
+/// Fold the round brief into a prompt string, for transports with no message array of their own.
+///
+/// The CLI adapters hand the model one text blob, so the tail of that blob is the closest thing
+/// they have to the tail of a request. It is a weaker placement than a real trailing message —
+/// stated here rather than hidden, so the difference is visible when a CLI turn behaves unlike an
+/// API turn.
+pub fn prompt_with_round_brief(prompt: &str, opts: &LlmCallOpts) -> String {
+    match opts.round_brief.as_deref().filter(|s| !s.trim().is_empty()) {
+        Some(brief) => format!("{prompt}\n\n{brief}"),
+        None => prompt.to_string(),
+    }
+}
+
 /// Normalize an image argument to a `data:` URL. ai.rs already converts slug URLs to base64, so
 /// this only has to pass a data URL through and wrap bare base64 (the older opts shape).
 pub fn image_data_url(image: &str, mime: Option<&str>) -> String {
@@ -128,4 +213,98 @@ pub fn image_media_and_data(image: &str, mime: Option<&str>) -> (String, String)
         }
     }
     (mime.unwrap_or("image/png").to_string(), image.to_string())
+}
+
+#[cfg(test)]
+mod round_brief_placement_tests {
+    use super::*;
+
+    fn with_brief(brief: &str) -> LlmCallOpts {
+        LlmCallOpts {
+            round_brief: Some(brief.to_string()),
+            ..Default::default()
+        }
+    }
+
+    // ── the shape each transport speaks ──────────────────────────────────────
+
+    #[test]
+    fn openai_gets_a_trailing_turn_after_the_tool_messages() {
+        let mut msgs = vec![
+            serde_json::json!({"role": "user", "content": "go"}),
+            serde_json::json!({"role": "tool", "tool_call_id": "c1", "content": "{}"}),
+        ];
+        push_round_brief(&mut msgs, &with_brief("status"), "user");
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[2], serde_json::json!({"role": "user", "content": "status"}));
+    }
+
+    #[test]
+    fn anthropic_appends_a_block_rather_than_a_second_user_turn() {
+        // tool_result blocks must open the turn they belong to, so the brief joins that turn.
+        let mut msgs = vec![serde_json::json!({
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "{}"}],
+        })];
+        push_round_brief_blocks(&mut msgs, &with_brief("status"), );
+        assert_eq!(msgs.len(), 1, "no second user turn");
+        let blocks = msgs[0]["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "tool_result", "tool_result still opens the turn");
+        assert_eq!(blocks[1]["text"], "status");
+    }
+
+    #[test]
+    fn anthropic_promotes_a_string_content_to_blocks() {
+        let mut msgs = vec![serde_json::json!({"role": "user", "content": "go"})];
+        push_round_brief_blocks(&mut msgs, &with_brief("status"));
+        let blocks = msgs[0]["content"].as_array().unwrap();
+        assert_eq!(blocks[0]["text"], "go");
+        assert_eq!(blocks[1]["text"], "status");
+    }
+
+    #[test]
+    fn gemini_extends_the_last_user_turn_but_never_a_model_turn() {
+        let mut contents = vec![
+            serde_json::json!({"role": "user", "parts": [{"text": "go"}]}),
+            serde_json::json!({"role": "model", "parts": [{"functionCall": {"name": "f"}}]}),
+        ];
+        push_round_brief_contents(&mut contents, &with_brief("status"));
+        assert_eq!(contents.len(), 3, "a model turn cannot absorb a user message");
+        assert_eq!(contents[2]["role"], "user");
+        assert_eq!(contents[2]["parts"][0]["text"], "status");
+    }
+
+    #[test]
+    fn a_cli_prompt_carries_the_brief_at_its_tail() {
+        let out = prompt_with_round_brief("go", &with_brief("status"));
+        assert!(out.ends_with("status"), "{out}");
+        assert!(out.starts_with("go"), "{out}");
+    }
+
+    // ── absence is a no-op on every path ─────────────────────────────────────
+
+    #[test]
+    fn nothing_is_touched_when_there_is_no_brief() {
+        // A blank brief is the common case (round one of a plain turn) and it must not add an
+        // empty turn — an empty trailing message is a prompt the model tries to answer.
+        for opts in [LlmCallOpts::default(), with_brief("   ")] {
+            let mut msgs = vec![serde_json::json!({"role": "user", "content": "go"})];
+            let before = msgs.clone();
+            push_round_brief(&mut msgs, &opts, "user");
+            assert_eq!(msgs, before);
+
+            let mut blocks = vec![serde_json::json!({"role": "user", "content": "go"})];
+            let before_blocks = blocks.clone();
+            push_round_brief_blocks(&mut blocks, &opts);
+            assert_eq!(blocks, before_blocks);
+
+            let mut contents = vec![serde_json::json!({"role": "user", "parts": [{"text": "go"}]})];
+            let before_contents = contents.clone();
+            push_round_brief_contents(&mut contents, &opts);
+            assert_eq!(contents, before_contents);
+
+            assert_eq!(prompt_with_round_brief("go", &opts), "go");
+        }
+    }
 }

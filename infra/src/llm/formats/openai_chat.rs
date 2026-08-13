@@ -693,6 +693,10 @@ impl OpenAiChatHandler {
             }
         }
 
+        // The round brief goes last, after every tool message: it is the only per-round text in
+        // the request, so keeping it here leaves the whole prefix above byte-stable.
+        super::common::push_round_brief(&mut messages, opts, "user");
+
         // NOTE: no `parallel_tool_calls` — Upstage's live API rejects it (400 "Unrecognized
         // request arguments") despite its docs, and this handler is shared with Ollama/OpenRouter/
         // LM Studio which also may not accept it. The model can still return multiple tool_calls;

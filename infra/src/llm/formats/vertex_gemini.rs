@@ -339,6 +339,7 @@ impl VertexGeminiHandler {
                 .collect();
             contents.push(serde_json::json!({ "role": "user", "parts": user_parts }));
         }
+        super::common::push_round_brief_contents(&mut contents, opts);
         contents
     }
 
