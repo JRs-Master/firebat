@@ -88,6 +88,59 @@ fn schema_allows_type(schema: &serde_json::Value, type_name: &str) -> bool {
 /// required prop 은 위반이어도 drop 하지 않는다 (drop 하면 "없음"이 되어 어차피 실패 — 차이 없고,
 /// gotKeys 진단으로 synonym 여부 보려면 원본 유지가 낫다). default/null 도 없는 필수 누락만 실패
 /// 유지.
+/// The props form for a fixed set of components, merged into one object schema.
+///
+/// The `render` tool takes only three component types, and its `props` slot was declared as a
+/// bare object — the one form gap the tool audit could not close by allowlisting, because here
+/// the shape IS knowable: three schemas, already written, already served one at a time by
+/// `get_component_schema`. Publishing them costs a few hundred tokens and removes the guess.
+///
+/// A union rather than a `oneOf`: which props belong to which type is stated in the description,
+/// and nested `oneOf`/`anyOf` is the construct providers handle least consistently — a tool
+/// schema that fails to load teaches nothing at all. Conflicting names across the set are dropped
+/// rather than guessed (none today: code/math/diagram share only `code`, and identically).
+pub fn merged_props_schema(names: &[&str]) -> serde_json::Value {
+    let mut props = serde_json::Map::new();
+    let mut conflicts: Vec<String> = Vec::new();
+    let mut owners: Vec<String> = Vec::new();
+    for name in names {
+        let Some(def) = find_component(name) else { continue };
+        let Some(p) = def.props_schema.get("properties").and_then(|v| v.as_object()) else {
+            continue;
+        };
+        let required: Vec<&str> = def
+            .props_schema
+            .get("required")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        owners.push(format!("{name}{{{}}}", required.join(", ")));
+        for (k, v) in p {
+            match props.get(k) {
+                Some(existing) if existing != v => {
+                    conflicts.push(k.clone());
+                }
+                Some(_) => {}
+                None => {
+                    props.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+    for k in conflicts {
+        props.remove(&k);
+    }
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": true,
+        "description": format!(
+            "Props for the block's `type`. Required per type — {}. Fields below are the union of              those three schemas; send the ones your type declares.",
+            owners.join(" · ")
+        ),
+        "properties": props,
+    })
+}
+
 pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Value) {
     if schema_allows_type(schema, "object") {
         let Some(obj) = value.as_object_mut() else {

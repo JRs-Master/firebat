@@ -1133,7 +1133,11 @@ pub async fn register_render_tools(state: &Arc<McpServerState>) {
                     "type": "object",
                     "properties": {
                         "type": { "type": "string", "enum": names },
-                        "props": { "type": "object" }
+                        // Same three schemas the FC path publishes — the form exists, so hand it
+                        // over rather than making the model recall it.
+                        "props": firebat_core::managers::ai::component_registry::merged_props_schema(
+                            firebat_core::managers::ai::render_exec::TOOL_ALLOWED_TYPES,
+                        )
                     },
                     "required": ["type", "props"],
                     "additionalProperties": false

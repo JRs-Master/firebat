@@ -1564,7 +1564,7 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
                             "type": "object",
                             "properties": {
                                 "type": { "type": "string", "enum": names },
-                                "props": { "type": "object" }
+                                "props": crate::managers::ai::component_registry::merged_props_schema(render_exec::TOOL_ALLOWED_TYPES)
                             },
                             "required": ["type", "props"],
                             "additionalProperties": false

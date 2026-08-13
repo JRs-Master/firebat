@@ -369,7 +369,6 @@ const FORMLESS_BY_DESIGN: &[(&str, &str)] = &[
     // list would cost more context than the whole tool surface.
     ("save_page.spec.body.props", "per-component props — the component catalog carries those forms"),
     ("save_template.config.spec.body.props", "same per-component props as save_page"),
-    ("render.blocks.props", "same, for the three fence-exempt components (code/math/diagram)"),
     // Pipeline step slots whose value belongs to whatever the step calls.
     ("schedule_task.pipeline.arguments", "arguments for a tool on ANOTHER server"),
     ("run_task.pipeline.arguments", "arguments for a tool on ANOTHER server"),
