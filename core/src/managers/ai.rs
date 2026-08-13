@@ -3273,15 +3273,25 @@ impl AiManager {
             } else if !force_final
                 && std::mem::take(&mut empty_final_nudge_this_round)
             {
-                // Tools ran, the model returned nothing. Reasoning gets pulled down to `low` for
-                // this round: an empty answer after a looping CoT means the output budget went
-                // into thinking, and what is needed now is prose, not more deliberation.
+                // The model returned nothing. Reasoning gets pulled down to `low` for this round:
+                // an empty answer after a looping CoT means the output budget went into thinking,
+                // and what is needed now is prose, not more deliberation.
                 turn_opts.thinking_level = Some("low".to_string());
+                // What to write FROM differs with the ledger. Pointing at "the results below" when
+                // no tool ran describes results that are not there, which is the kind of sentence
+                // that sends a model looking for them.
+                let source = if turn_ledger.is_empty() {
+                    "Answer from this conversation and what you already know. If two figures in it \
+                     disagree, say so plainly in one line and answer with the one you trust, rather \
+                     than re-deriving the discrepancy."
+                } else {
+                    "The tool results below are already in hand — write the answer using only what \
+                     they actually show."
+                };
                 empty_final_prompt = format!(
-                    "{llm_prompt}\n\n[system] Your last round returned no answer text at all. \
-                     The tool results below are already in hand — do NOT call more tools and do \
-                     NOT re-plan. Write the answer for the user now, in their language, using \
-                     only what the results below actually show.{}",
+                    "{llm_prompt}\n\n[system] Your last round returned no answer text at all. Do \
+                     NOT call tools and do NOT re-plan. Write the answer for the user now, in \
+                     their language. {source}{}",
                     ledger_note(&turn_ledger)
                 );
                 &empty_final_prompt
@@ -3472,12 +3482,19 @@ impl AiManager {
                 && !no_action_nudge_used
                 && !turn_grounded_success
                 && !turn_ledger.is_empty();
+            // Deliberately NOT gated on the ledger. An empty answer is equally broken whether or
+            // not tools ran, and a turn that needs none is exactly where the recovery was missing:
+            // measured 2026-08-14, a question answerable from the conversation alone (the user
+            // supplied a PER and a market cap) produced 6,227 characters of reasoning — the last
+            // 1,200 of which were one paragraph repeated three times and cut mid-sentence — and no
+            // answer at all. Zero rounds, so the ledger was empty, so this never fired and the user
+            // got the failure string. The `low` reasoning effort below is the treatment for exactly
+            // that: the output budget went into thinking and the content channel starved.
             let will_nudge_empty_final = no_tools_round
                 && !force_final
                 && !empty_final_nudge_used
                 && last_text.trim().is_empty()
-                && blocks.is_empty()
-                && !turn_ledger.is_empty();
+                && blocks.is_empty();
             // A redirected render with no fence in the closing text = the visualization
             // silently vanished (2026-08-11 삼성전자 차트 실측). One corrective round.
             let will_nudge_missing_fence = no_tools_round
