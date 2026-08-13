@@ -3980,7 +3980,29 @@ impl AiManager {
                                 ))
                             }
                         }
-                        _ => None,
+                        // No action at all, on a module that HAS a selector. The gate used to wave
+                        // this through — it keyed on the action it could not find — so the one
+                        // call shape that skips step two of the procedure was the one shape it
+                        // never checked. Measured 2026-08-13 (turn 56): law-search was called as
+                        // `{query, limit}` with no action, and the turn learned nothing about the
+                        // ladder — only that `limit` was unexpected. The refusal names the choice,
+                        // because choosing is step two.
+                        _ => {
+                            let module = effective_call.name.trim_start_matches("sysmod_");
+                            let choices = match &self.dynamic_tools {
+                                Some(reg) => reg.action_choices(&effective_call.name).await,
+                                None => Vec::new(),
+                            };
+                            let module = module.replace('_', "-");
+                            let names = if choices.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" Its actions: {}.", choices.join(", "))
+                            };
+                            Some(format!(
+                                "This module runs one ACTION per call and none was given.{names} Standard procedure: search_module_actions to pick one, then get_action_schema(\"{module}\", \"<action>\") for its exact parameters — that schema counts for the next 30 minutes of this conversation — then call with `action` plus those parameters."
+                            ))
+                        }
                     }
                 } else {
                     None

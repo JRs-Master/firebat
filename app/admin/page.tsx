@@ -30,7 +30,7 @@ import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, esc
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, PendingAction, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
-import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, FileCard, ProducedFileStrip, type ProducedFile } from '../../lib/file-card';
+import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, FileCard, ProducedFileStrip, ProducedNames, useProducedName, fileAddressKey, type ProducedFile } from '../../lib/file-card';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
 import { parseSkillMd, skillToMd } from '../../lib/util/skill-md';
@@ -105,8 +105,12 @@ const MEDIA_LINK_RE = /^\/(?:user|system)\/(?:hub\/[^?#]+\/)?media\/([^/?#]+)\.(
 function MdMediaLink({ href, children, ...props }: any) {
   const m = typeof href === 'string' ? href.match(MEDIA_LINK_RE) : null;
   const ext = m?.[2]?.toLowerCase() ?? '';
+  // The name the backend recorded for this address wins over the one in the url: the slug carries
+  // a uniquifying hash that is storage's business, not the reader's, and this label is also the
+  // browser's download name (FileCard sets `download` from it).
+  const recorded = useProducedName(typeof href === 'string' ? href : '');
   if (m && (FILE_CARD_EXTS[ext] || AUDIO_PLAYER_EXTS.has(ext))) {
-    const name = (() => {
+    const name = recorded ? recorded.replace(new RegExp(`\.${ext}$`, 'i'), '') : (() => {
       try { return decodeURIComponent(m[1]); } catch { return m[1]; }
     })();
     if (AUDIO_PLAYER_EXTS.has(ext)) {
@@ -1350,7 +1354,30 @@ function blockFileAddresses(msg: Message): string[] {
   return out;
 }
 
-function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building, buildStatus, liveStep }: {
+/** The bubble, wrapped in its own produced-file names.
+ *
+ *  Scoped to the message on purpose: the names are a property of the turn that made the files, so
+ *  one bubble can never label another's link. Costs nothing when a turn produced no files — the
+ *  provider is skipped and every card names itself from the url exactly as before.
+ */
+function MessageBubble(props: Parameters<typeof MessageBubbleInner>[0]) {
+  const names = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of producedFilesOf(props.msg)) {
+      const key = fileAddressKey(f.url);
+      if (key && f.name) m.set(key, f.name);
+    }
+    return m;
+  }, [props.msg]);
+  if (!names.size) return <MessageBubbleInner {...props} />;
+  return (
+    <ProducedNames.Provider value={names}>
+      <MessageBubbleInner {...props} />
+    </ProducedNames.Provider>
+  );
+}
+
+function MessageBubbleInner({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building, buildStatus, liveStep }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;

@@ -1,5 +1,6 @@
 'use client';
 
+import { createContext, useContext } from 'react';
 import React from 'react';
 import { Download, FileText } from 'lucide-react';
 
@@ -49,6 +50,22 @@ export function documentTarget(src?: string | null): { name: string; ext: string
   const { name, ext } = splitExt(baseNameOf(src));
   if (!ext || !FILE_CARD_EXTS[ext]) return null;
   return { name, ext };
+}
+
+/** Names the backend recorded for the files a turn produced, keyed by `fileAddressKey`.
+ *
+ *  A markdown link renders as a card too, and that card used to name itself from the URL — so the
+ *  label AND the browser's download name were the storage slug (`…-f834.xlsx`) while the real
+ *  name sat unused in `producedFiles` (2026-08-13 사용자 보고). The address is the join key; the
+ *  provider is the message, so one bubble's files never name another's.
+ */
+export const ProducedNames = createContext<Map<string, string>>(new Map());
+
+/** The recorded name for an address, or `null` when this turn produced no such file. */
+export function useProducedName(href: string): string | null {
+  const names = useContext(ProducedNames);
+  if (!names.size) return null;
+  return names.get(fileAddressKey(href)) ?? null;
 }
 
 /** Download card — one look for markdown file links and for document-pointing Image blocks. */

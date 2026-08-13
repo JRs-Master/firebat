@@ -1103,6 +1103,15 @@ impl ModuleManager {
                 if norm.starts_with("data/") {
                     let _ = self.storage.delete(&norm).await;
                 }
+                // The one name this file should be called everywhere: the module's hint plus the
+                // real extension, falling back to the address when there is no hint.
+                let ext = saved.url.rsplit('.').next().unwrap_or("").to_string();
+                let link_text = match (&filename_hint, ext.is_empty()) {
+                    (Some(h), false) => format!("{h}.{ext}"),
+                    (Some(h), true) => h.clone(),
+                    (None, _) => saved.url.rsplit('/').next().unwrap_or(&saved.url).to_string(),
+                };
+                let url_for_note = saved.url.clone();
                 obj.insert(
                     "media".to_string(),
                     serde_json::json!({
@@ -1120,7 +1129,20 @@ impl ModuleManager {
                         // DO with this url, so it improvised an Image block around an .xlsx and
                         // the UI spun on "generating image" forever (2026-08-12 실측). The note
                         // arrives exactly when the model holds the url; zero resident prompt.
-                        "note": "Attach this in your answer as a markdown link — [파일명](url) — it renders as a downloadable file card. Never put a document url in an Image/image block (images only).",
+                        // The link TEXT is dictated, not left to the model, because that text is
+                        // the file's name in three places at once: the card label, the browser's
+                        // download name (the card sets `download` from it), and the only name the
+                        // NEXT turn can see — history carries the answer's prose, not this
+                        // record. Left free, the model typed the slug: the user downloaded
+                        // "…-f834.xlsx" while the gallery showed the real name (2026-08-13 실측).
+                        "note": format!(
+                            "Attach this in your answer as exactly this markdown link — [{}]({}) \
+                             — it renders as a downloadable file card, and that link text is the \
+                             filename the user gets. Do not substitute the url or the slug for \
+                             the text. Never put a document url in an Image/image block (images \
+                             only).",
+                            link_text, url_for_note
+                        ),
                     }),
                 );
             }
@@ -3379,6 +3401,7 @@ pub fn validate_value(
     if let Err(errors) = compiled.validate(value) {
         let mut suggestion: Option<String> = None;
         let mut excerpt: Option<String> = None;
+        let mut accepted: Option<String> = None;
         let first = errors
             .into_iter()
             .next()
@@ -3395,6 +3418,29 @@ pub fn validate_value(
                         .map(str::to_string)
                         .unwrap_or_else(|| e.instance.to_string());
                     suggestion = options.as_array().and_then(|arr| nearest_enum_value(&got, arr));
+                }
+                // A refused EXTRA property is the same near-miss in the other direction: the
+                // model asked for a real capability under a plausible generic name. Measured
+                // 2026-08-13 (turn 56): law-search was called with `limit: "5"` and refused —
+                // it declares `display`, and the message said only that `limit` was unexpected,
+                // so the ask was dropped rather than renamed. Name the nearest declared property.
+                if let jsonschema::error::ValidationErrorKind::AdditionalProperties { unexpected } =
+                    &e.kind
+                {
+                    let declared: Vec<serde_json::Value> = schema
+                        .get("properties")
+                        .and_then(|p| p.as_object())
+                        .map(|o| o.keys().map(|k| serde_json::json!(k)).collect())
+                        .unwrap_or_default();
+                    suggestion = unexpected
+                        .first()
+                        .and_then(|got| nearest_enum_value(got, &declared));
+                    // A lexical near-miss only catches typos, and this was not one: `limit` and
+                    // `display` mean the same thing and share no letters. So the message also
+                    // NAMES what this action accepts — scoped by the `[action]` tag the
+                    // descriptions already carry, because 47 params on one module is a list
+                    // nobody reads.
+                    accepted = accepted_property_list(schema, value);
                 }
                 // A big instance is lifted OUT of the reason and kept as an excerpt; a small one
                 // stays inline, where jsonschema's own wording reads best ("\"forecast_short\" is
@@ -3439,6 +3485,9 @@ pub fn validate_value(
         if let Some(s) = suggestion {
             msg.push_str(&format!(" — did you mean \"{s}\"?"));
         }
+        if let Some(list) = accepted {
+            msg.push_str(&format!(" — this action accepts: {list}."));
+        }
         if let Some(v) = excerpt {
             msg.push_str(&format!(
                 " offending value (first {MAX_VALUE_CHARS} chars): {v}…"
@@ -3447,6 +3496,51 @@ pub fn validate_value(
         return Err(msg);
     }
     Ok(())
+}
+
+/// The properties this call may carry, as a readable list.
+///
+/// Scoped by the `[action]` tag convention the descriptions already use (`"[search] 결과 수"`), so
+/// a 47-parameter module answers with the dozen that apply instead of everything it has. An
+/// untagged property is module-wide and always listed. Capped, because a list too long to read is
+/// the same dead end as no list at all.
+fn accepted_property_list(
+    schema: &serde_json::Value,
+    value: &serde_json::Value,
+) -> Option<String> {
+    const MAX_NAMED: usize = 20;
+    let props = schema.get("properties")?.as_object()?;
+    let action = value.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    let mut names: Vec<&String> = props
+        .iter()
+        .filter(|(name, sub)| {
+            if name.as_str() == "action" {
+                return false;
+            }
+            if action.is_empty() {
+                return true;
+            }
+            let desc = sub.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            match desc.strip_prefix('[').and_then(|rest| rest.split_once(']')) {
+                // A tag group counts only when it names actions at all; `[필수]` is not a scope.
+                Some((tag, _)) if tag.contains(action) => true,
+                Some((tag, _)) => !tag.chars().any(|c| c.is_ascii_alphabetic()),
+                None => true,
+            }
+        })
+        .map(|(name, _)| name)
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    names.sort();
+    let more = names.len().saturating_sub(MAX_NAMED);
+    let shown: Vec<&str> = names.iter().take(MAX_NAMED).map(|s| s.as_str()).collect();
+    Some(if more > 0 {
+        format!("{} (+{more} more)", shown.join(", "))
+    } else {
+        shown.join(", ")
+    })
 }
 
 /// The closest legal enum value to a wrong one — only when it is a clear winner.
@@ -3673,6 +3767,29 @@ mod coercion_tests {
     }
 
     /// Flat params relocate into the single declared object container — and ONLY under
+    /// A refused extra property must leave the caller knowing what to send instead. `limit` and
+    /// `display` mean the same thing and share no letters, so a lexical did-you-mean cannot save
+    /// this one — the list can (2026-08-13, law-search).
+    #[test]
+    fn a_refused_extra_property_names_what_the_action_accepts() {
+        let schema = serde_json::json!({
+            "type": "object", "additionalProperties": false,
+            "properties": {
+                "action": {"type": "string", "enum": ["search", "detail"]},
+                "query": {"type": "string", "description": "[search] 검색 키워드"},
+                "display": {"type": "integer", "description": "[search] 결과 수 (최대 100)"},
+                "ID": {"type": "string", "description": "[detail] 법령ID"},
+                "target": {"type": "string", "description": "검색 대상"}
+            }
+        });
+        let call = serde_json::json!({"action": "search", "query": "이혼", "limit": "5"});
+        let err = validate_value(&call, &schema).unwrap_err();
+        assert!(err.contains("this action accepts"), "{err}");
+        assert!(err.contains("display"), "the capability it asked for, by its real name: {err}");
+        assert!(err.contains("target"), "an untagged param applies to every action: {err}");
+        assert!(!err.contains("ID"), "another action's params are noise here: {err}");
+    }
+
     /// additionalProperties:false with exactly one container (2026-08-12: kiwoom opened
     /// three turns in a row with base_dt/stk_cd at the top level).
     #[test]

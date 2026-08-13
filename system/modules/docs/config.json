@@ -164,7 +164,55 @@
           "null"
         ],
         "items": {
-          "type": "object"
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Sheet tab name."
+            },
+            "headers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Display column titles, in order. With rowsCacheKey these are labels only — name the DATA with rowsColumns."
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "array",
+                  "object"
+                ]
+              },
+              "description": "Row data: [[cell, ...], ...] positional, or [{field: value}, ...] keyed by the headers. Long row sets belong in rowsCacheKey instead."
+            },
+            "style": {
+              "type": "string",
+              "enum": [
+                "ledger"
+              ],
+              "description": "`ledger` renders the bookkeeping layout (live =SUM month/running subtotals). Omit for a plain data sheet."
+            },
+            "docTitle": {
+              "type": "string",
+              "description": "[ledger] Title printed above the table."
+            },
+            "period": {
+              "type": "string",
+              "description": "[ledger] Period line printed under the title."
+            },
+            "subtotalBy": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "description": "[ledger] Column (header name or 0-based index) whose changes start a new subtotal group."
+            }
+          }
         },
         "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula. NEVER retype a long row set: a tool result you saw only as a truncated preview carries a `_cacheKey`, so send that sheet as {name, headers, rowsCacheKey: \"<that _cacheKey>\"} and the server expands the cached rows into it — a 120-day candle sheet then holds 120 real rows instead of the 5 preview rows. Only part of the table? Keep the key and add rowsLimit:N (the most-recent N rows) or rowsRange:{from,to} (a date window) beside it — retyping rows to trim them is what breaks the call, not what fixes it. Inline rows win if both are given. Add style:\"ledger\" (+ docTitle, period, subtotalBy) to render that sheet as a 총계정원장-style document instead: gridlines off, centered docTitle over a centered period line, every cell thin-ruled, gray bold header, numbers right-aligned — and subtotalBy (a date column's header name or 0-based index) groups consecutive rows by YYYY-MM and inserts a live [월 계] band (=SUM over that month) plus a [누 계] band (=SUM from the first data row) after each month. A ledger sheet gets no data bars or color scales — it is a document, not a heatmap."
       },

@@ -332,11 +332,44 @@ impl SysmodCacheAdapter {
                 }
             })
             .collect();
-        Ok(serde_json::json!({
+        let mut out = serde_json::json!({
             "success": true,
             "matched": matched.len(),
             "records": matched,
-        }))
+        });
+        // Zero matches has two very different causes and they used to look identical: nothing
+        // matched, or the FIELD does not exist in these rows. Measured 2026-08-13 (turn 56): the
+        // full 민법 was cached, 1,337 articles deep, and the answer shipped without 제840조
+        // because a grep for it came back "0" — the last thing the turn did. A field nobody has
+        // is a typo, not an absence, so it says which fields the rows really carry.
+        if matched.is_empty() {
+            if let Ok(records) = self.read_records(key) {
+                let head = &records[..records.len().min(20)];
+                let present = head.iter().any(|r| {
+                    crate::utils::path_resolve::resolve_field_path(r, field).is_some()
+                });
+                if !present {
+                    let mut fields: Vec<String> = Vec::new();
+                    for r in head {
+                        if let Some(obj) = r.as_object() {
+                            for k in obj.keys() {
+                                if !fields.contains(k) {
+                                    fields.push(k.clone());
+                                }
+                            }
+                        }
+                    }
+                    fields.truncate(24);
+                    out["note"] = serde_json::json!(format!(
+                        "no row carries the field `{field}` — this is a name mismatch, not an \
+                         empty result. These rows have: {}. Re-run with one of those (dot \
+                         notation for nested fields).",
+                        fields.join(", ")
+                    ));
+                }
+            }
+        }
+        Ok(out)
     }
 
     pub fn aggregate(

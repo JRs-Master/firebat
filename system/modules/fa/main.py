@@ -128,15 +128,28 @@ def parse_estimates(raw):
         "revenue": row(o2, 0), "revenueYoYPct": row(o2, 1, 0.1),
         "opIncome": row(o2, 2), "opYoYPct": row(o2, 3, 0.1),
         "netIncome": row(o2, 4), "netYoYPct": row(o2, 5, 0.1),
-        "eps": row(o3, 1, 0.1), "per": row(o3, 3, 0.1), "roePct": row(o3, 5, 0.1),
     }
+    # output3's row ORDER was verified on one symbol (005930, six rows: EPS/PER/ROE at 1/3/5).
+    # A symbol whose block is shorter is not the same table with rows missing — index 5 simply
+    # is not ROE there, and reading it anyway returns silent nulls that look like "no coverage".
+    # Measured 2026-08-13 (000660): three rows, so every indicator came back empty and a
+    # dashboard drew ROE as zero for the forecast years. Label only the verified shape; say why
+    # when it does not hold, because an unexplained blank is what invites hand-decoding.
+    o3_note = None
+    if len(o3) >= 6:
+        series.update({"eps": row(o3, 1, 0.1), "per": row(o3, 3, 0.1), "roePct": row(o3, 5, 0.1)})
+    else:
+        o3_note = (f"estimates: indicator rows (EPS/PER/ROE) not labeled — this symbol's output3 "
+                   f"has {len(o3)} rows, and the verified layout is 6 (EPS/PER/ROE at 1/3/5). "
+                   f"Positions are not portable across symbols, so they are dropped rather than "
+                   f"guessed; the amount rows above are unaffected.")
     cols = []
     for i, p in enumerate(periods):
         entry = {"period": p.rstrip("E"), "isEstimate": p.endswith("E")}
         for k, vals in series.items():
             entry[k] = vals[i]
         cols.append(entry)
-    return {
+    out = {
         "symbol": str(o1.get("sht_cd") or "").lstrip("A"),
         "name": str(o1.get("item_kor_nm") or ""),
         "analyst": str(o1.get("name1") or ""),
@@ -144,7 +157,10 @@ def parse_estimates(raw):
         "asOf": str(o1.get("estdate") or ""),
         "unit": "억원 (amounts) / % · 배 (rates, x10 convention undone)",
         "periods": cols,
-    }, None
+    }
+    if o3_note:
+        out["note"] = o3_note
+    return out, None
 
 
 def action_ratios(inp):

@@ -113,7 +113,7 @@ fn add_cache_siblings(
                 if !out.contains_key(entry) {
                     continue; // not part of this action's form
                 }
-                for (name, schema) in sibling_schemas(entry) {
+                for (name, schema) in sibling_schemas(entry, false) {
                     let schema = declared_props.get(&name).cloned().unwrap_or(schema);
                     out.entry(name).or_insert(schema);
                 }
@@ -128,7 +128,7 @@ fn add_cache_siblings(
                 if !props.contains_key(&spec.field) {
                     continue;
                 }
-                for (name, schema) in sibling_schemas(&spec.field) {
+                for (name, schema) in sibling_schemas(&spec.field, true) {
                     props.entry(name).or_insert(schema);
                 }
             }

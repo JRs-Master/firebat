@@ -480,14 +480,14 @@ fn add_cache_key_params(extra: &mut serde_json::Value, config: &serde_json::Valu
         return;
     };
     for entry in &declared {
-        let (listed, param) = match parse_nested(entry) {
-            None => (entry.clone(), entry.clone()),
-            Some(spec) => (spec.list.clone(), spec.field.clone()),
+        let (listed, param, nested) = match parse_nested(entry) {
+            None => (entry.clone(), entry.clone(), false),
+            Some(spec) => (spec.list.clone(), spec.field.clone(), true),
         };
         if !params.contains_key(&listed) {
             continue;
         }
-        for (name, schema) in sibling_schemas(&param) {
+        for (name, schema) in sibling_schemas(&param, nested) {
             let Some(desc) = schema.get("description").and_then(|d| d.as_str()) else { continue };
             params
                 .entry(name)

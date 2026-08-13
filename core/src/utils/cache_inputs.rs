@@ -60,6 +60,37 @@ pub fn range_field(param: &str) -> String {
     format!("{param}Range")
 }
 
+/// `rows` → `rowsColumns`: which record fields to take, in column order.
+///
+/// Only nested declarations (`<list>.*.<field>`) get this. A nested row set lands in a TABLE whose
+/// columns are positional and paired with the caller's `headers`; a flat row set goes to a module
+/// that reads its fields BY NAME, where choosing columns means nothing and reordering them cannot
+/// be expressed (a JSON object has no order here). Measured 2026-08-13: a candle sheet asked for
+/// six Korean headers, the expansion delivered the cache's THIRTEEN raw API fields, the headers
+/// matched none of them, and after two repair attempts the model dropped its headers entirely —
+/// shipping `acml_tr_pbmn` and `flng_cls_code` as column titles and a chart that plotted volume
+/// against price on one axis.
+pub fn columns_field(param: &str) -> String {
+    format!("{param}Columns")
+}
+
+/// Projects records onto the named fields, in order. A field a record does not carry becomes
+/// `null` — a hole, never a zero: a missing number drawn as 0 invents a trend (measured the same
+/// day, an ROE line that "collapsed" was two empty forecast cells).
+fn project_records(records: Vec<serde_json::Value>, columns: &[String]) -> Vec<serde_json::Value> {
+    records
+        .into_iter()
+        .map(|rec| {
+            serde_json::Value::Array(
+                columns
+                    .iter()
+                    .map(|c| rec.get(c).cloned().unwrap_or(serde_json::Value::Null))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
 /// The three siblings as PUBLISHABLE properties — the form for this vocabulary.
 ///
 /// The names above are framework convention, which means no author declares them and no schema
@@ -76,8 +107,10 @@ pub fn range_field(param: &str) -> String {
 ///
 /// So the convention publishes itself. Every surface that lists a cacheInputs param lists these
 /// beside it, derived from the same declaration the expander reads — one derivation, no drift.
-pub fn sibling_schemas(param: &str) -> Vec<(String, serde_json::Value)> {
-    vec![
+/// `nested` = this param is a `<list>.*.<field>` entry, whose rows land in a positional table —
+/// only those get the column projection (see `columns_field`).
+pub fn sibling_schemas(param: &str, nested: bool) -> Vec<(String, serde_json::Value)> {
+    let mut out = vec![
         (
             key_field(param),
             serde_json::json!({
@@ -118,7 +151,20 @@ pub fn sibling_schemas(param: &str) -> Vec<(String, serde_json::Value)> {
                 ),
             }),
         ),
-    ]
+    ];
+    if nested {
+        out.push((
+            columns_field(param),
+            serde_json::json!({
+                "type": "array",
+                "items": {"type": "string"},
+                "description": format!(
+                    "Which record fields to take, in column order — e.g.                      [\"date\",\"open\",\"close\"]. Without it the sheet gets EVERY field the                      cached rows carry, raw vendor names included, and `headers` that name                      something else match nothing. `headers` stays the display text; this names                      the data. A field a record lacks becomes an empty cell, never a zero."
+                ),
+            }),
+        ));
+    }
+    out
 }
 
 /// Every key in an argument that is meant to name cached rows.
@@ -135,6 +181,24 @@ fn keys_in(value: &serde_json::Value) -> Vec<String> {
             let t = s.trim();
             if t.is_empty() {
                 return Vec::new();
+            }
+            // A hand-serialized LIST of keys. The form says several keys may be sent as a list,
+            // and the model sent one — as a JSON string (measured 2026-08-13, turn 51: its own
+            // reasoning reads "the entire list was passed as a single string"). Parsing it is
+            // lossless; refusing it cost a round.
+            if t.starts_with('[') {
+                if let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(t) {
+                    let keys: Vec<String> = items
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect();
+                    if keys.len() == items.len() && !keys.is_empty() {
+                        return keys;
+                    }
+                }
             }
             if !t.contains(',') {
                 return vec![t.to_string()];
@@ -385,7 +449,11 @@ fn expand_nested(
                  module-action:rowsField-…), from the call that actually returned the rows."
             ));
         }
-        let slice_keys = (limit_field(&spec.field), range_field(&spec.field));
+        let slice_keys = (
+            limit_field(&spec.field),
+            range_field(&spec.field),
+            columns_field(&spec.field),
+        );
         let items = out.get_or_insert_with(|| list.to_vec());
         let target = items[i].as_object_mut().expect("checked above");
         // Inline wins: the element already carries the real rows, so the stray key — and any
@@ -395,6 +463,7 @@ fn expand_nested(
             target.remove(&field);
             target.remove(&slice_keys.0);
             target.remove(&slice_keys.1);
+            target.remove(&slice_keys.2);
             continue;
         }
         let Some(cache) = cache else {
@@ -409,12 +478,22 @@ fn expand_nested(
             records.extend(read_records(cache, key, &at)?);
         }
         let records = sliced_records(&spec.field, item_obj, records, &at)?;
+        // Column projection — the caller names the fields, so nothing is guessed and the sheet
+        // holds what its headers say it holds.
+        let columns: Vec<String> = item_obj
+            .get(&columns_field(&spec.field))
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let records =
+            if columns.is_empty() { records } else { project_records(records, &columns) };
         let count = records.len();
         let key = keys.join(", ");
         target.insert(spec.field.clone(), serde_json::Value::Array(records));
         target.remove(&field);
         target.remove(&slice_keys.0);
         target.remove(&slice_keys.1);
+        target.remove(&slice_keys.2);
         tracing::info!(
             target: "module",
             module,

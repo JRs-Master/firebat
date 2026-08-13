@@ -98,6 +98,23 @@ impl DynamicToolRegistry {
         self.action_selectors.read().await.contains(tool)
     }
 
+    /// The actions this module declares, for a refusal that names the choice instead of just
+    /// withholding it. Read from the form's own `action` enum — the same declaration the gate and
+    /// the published schema use, so a renamed action can never be advertised here alone.
+    pub async fn action_choices(&self, tool: &str) -> Vec<String> {
+        let module = tool.trim_start_matches("sysmod_");
+        let forms = self.forms.read().await;
+        let Some(form) = forms.get(module).or_else(|| forms.get(&module.replace('_', "-"))) else {
+            return Vec::new();
+        };
+        form.props
+            .get("action")
+            .and_then(|a| a.get("enum"))
+            .and_then(|e| e.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default()
+    }
+
     /// FC 경로가 dispatch 전 조회 — 이 도구에 선언된 grounded params (없으면 None).
     pub async fn grounding_for(&self, tool: &str) -> Option<Vec<GroundedParam>> {
         let map = self.grounding.read().await;

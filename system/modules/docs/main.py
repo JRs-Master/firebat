@@ -1829,7 +1829,16 @@ def _coerce_row(row):
     cells = []
     for v in row:
         num = parse_number(v)
-        cells.append(num if num is not None else ("" if v is None else str(v)))
+        if num is not None:
+            cells.append(num)
+        elif v is None:
+            # None writes an EMPTY cell, not "". A chart reads a blank as a gap and an empty
+            # string as text-worth-zero, so the difference is a line that stops versus a line
+            # that dives to the axis — measured 2026-08-13: two forecast periods with no ROE
+            # drew a collapse that no data claimed.
+            cells.append(None)
+        else:
+            cells.append(str(v))
     return cells
 
 
@@ -1871,7 +1880,7 @@ def _fit_column_widths(ws, headers, body, ncols):
     for ci in range(ncols):
         texts = ([headers[ci]] if ci < len(headers) else []) + [
             (f"{r[ci]:,}" if isinstance(r[ci], (int, float)) and not isinstance(r[ci], bool)
-             else str(r[ci]))
+             else "" if r[ci] is None else str(r[ci]))
             for r in body if ci < len(r)]
         ws.column_dimensions[get_column_letter(ci + 1)].width = min(
             40, max(10, max([len(t) for t in texts] + [0]) + 2))
@@ -2535,7 +2544,15 @@ def _build_chart(wb, spec, sheet_map, notes):
         col = _resolve_column(headers, ref)
         (vcols if col else bad).append(col if col else ref)
     if bad:
-        notes.append(f"chart '{who}': columns not found in '{target}': {bad}")
+        # Naming what IS there turns a dead end into the next call. Measured 2026-08-13: a sheet
+        # filled from rowsCacheKey carried the cache's own field names while valueCols asked for
+        # the Korean headers (or the reverse) — two repair rounds and a third file, because the
+        # note said only which names failed.
+        have = [str(h) for h in headers if str(h or "").strip()]
+        notes.append(f"chart '{who}': columns not found in '{target}': {bad} — "
+                     f"this sheet's columns are {have}. Use those names (or 0-based indexes); "
+                     f"with rowsCacheKey, `rowsColumns` decides which fields become columns "
+                     f"and `headers` only renames them.")
     if not vcols:
         notes.append(f"chart '{who}' skipped: no value column resolved in '{target}'")
         return None
@@ -2573,6 +2590,11 @@ def _build_chart(wb, spec, sheet_map, notes):
         _style_chart_title(chart)
     if ctype not in _ROUND_CHARTS:
         _show_axes(chart)
+        # An empty cell is a GAP, not a zero. The OOXML default for c:dispBlanksAs is "zero",
+        # so a series with two blank forecast periods draws a cliff to the axis and the reader
+        # sees a forecast nobody made (2026-08-13 실측: ROE). Another member of the
+        # "omitted = the schema's default, not the sensible one" family — say it out loud.
+        chart.dispBlanksAs = "gap"
     if len(vcols) < 2 and ctype not in _ROUND_CHARTS:
         chart.legend = None  # a one-series legend is noise
         # One series = one color. Excel's default palette exists to tell series apart; with
