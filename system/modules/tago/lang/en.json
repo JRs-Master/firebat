@@ -1,0 +1,14 @@
+{
+  "error": {
+    "api_key_missing": "DATA_GO_KR_API_KEY is not configured. It is the data.go.kr service key — the same one molit-realestate and kma-weather use.",
+    "action_required": "action is required.",
+    "unknown_action": "Unknown action \"{{action}}\". Available: {{actions}}",
+    "params_required": "{{action}} is missing required values: {{missing}}",
+    "city_code_service_unknown": "Unknown service \"{{service}}\". Available: {{services}}. Each TAGO service publishes its own 도시코드 list, so read the one belonging to the service you are about to call.",
+    "auth_rejected": "data.go.kr rejected the key: {{message}}. Check that this particular API was applied for, and that the stored key is the DECODED form — an already-encoded key gets double-encoded and fails.",
+    "api_error": "TAGO API error {{code}}: {{message}}",
+    "http_status": "TAGO API HTTP {{status}}",
+    "network": "Could not reach the TAGO API: {{message}}",
+    "runtime": "{{message}}"
+  }
+}

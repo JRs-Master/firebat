@@ -1,0 +1,329 @@
+{
+  "actions": [
+    {
+      "id": "city-codes",
+      "name": "도시코드 목록 (버스·고속·시외·열차)",
+      "description": "The 도시코드 every bus, express, suburbs and train action needs. Each service publishes its own list under its own base, so `service` names which one to read; they have not been measured against each other. The scooter service is NOT here — its cityCode is a 지역번호 from scooter-providers.",
+      "params": {
+        "service": "Which service's list: bus-route | bus-arrival | bus-location | bus-stop | express | suburbs | train"
+      }
+    },
+    {
+      "id": "bus-stop-search",
+      "name": "버스정류소 검색 (이름·번호)",
+      "description": "Find bus stops in a city by name or by the number posted on the sign. Returns nodeid, which every arrival and position action needs, plus the stop coordinates.",
+      "params": {
+        "cityCode": "From city-codes",
+        "nodeNm": "Stop name",
+        "nodeNo": "Number on the sign"
+      }
+    },
+    {
+      "id": "bus-stop-nearby",
+      "name": "좌표 근처 버스정류소",
+      "description": "Bus stops near a WGS84 coordinate. The way in when you have a location but no city code — the result carries citycode as well as nodeid.",
+      "params": {
+        "gpsLati": "Latitude",
+        "gpsLong": "Longitude"
+      }
+    },
+    {
+      "id": "bus-stop-routes",
+      "name": "정류소 경유 노선 목록",
+      "description": "Which bus routes pass a given stop, with first and last stop names. Answers \"what can I catch here\".",
+      "params": {
+        "cityCode": "From city-codes",
+        "nodeId": "From bus-stop-search or bus-stop-nearby"
+      }
+    },
+    {
+      "id": "bus-route-search",
+      "name": "버스노선 검색 (노선번호)",
+      "description": "Find routes in a city, optionally by the number on the front of the bus. Returns routeid, plus first and last departure times and the terminus names.",
+      "params": {
+        "cityCode": "From city-codes",
+        "routeNo": "Route number"
+      }
+    },
+    {
+      "id": "bus-route-stops",
+      "name": "노선 경유 정류소 목록 (순서·좌표)",
+      "description": "Every stop on a route in running order, with coordinates and an up/down direction code. This is the route drawn as a line — the stop sequence a position or an arrival estimate is measured against.",
+      "params": {
+        "cityCode": "From city-codes",
+        "routeId": "From bus-route-search"
+      }
+    },
+    {
+      "id": "bus-route-info",
+      "name": "노선 상세 (배차간격·첫차·막차)",
+      "description": "One route's details: first and last departure, and the headway for weekdays, Saturdays and Sundays separately.",
+      "params": {
+        "cityCode": "From city-codes",
+        "routeId": "From bus-route-search"
+      }
+    },
+    {
+      "id": "bus-arrivals",
+      "name": "정류소 실시간 도착정보 (전 노선)",
+      "description": "Live arrivals at one stop: for each approaching bus, how many stops away it is and the estimated seconds until it arrives. Refreshed every 10-20 seconds. This is the one to ask \"when is my bus\".",
+      "params": {
+        "cityCode": "From city-codes",
+        "nodeId": "From bus-stop-search or bus-stop-nearby"
+      }
+    },
+    {
+      "id": "bus-arrival-route",
+      "name": "정류소 실시간 도착정보 (특정 노선)",
+      "description": "The same live arrival estimate narrowed to one route, for when a stop serves many and only one matters.",
+      "params": {
+        "cityCode": "From city-codes",
+        "nodeId": "Stop id",
+        "routeId": "Route id"
+      }
+    },
+    {
+      "id": "bus-positions",
+      "name": "노선 운행버스 실시간 위치",
+      "description": "Where every bus on a route is right now: map-matched coordinates, the stop it is at and its sequence number, and the vehicle number. Refreshed every 10-20 seconds — these are the points to put on a map.",
+      "params": {
+        "cityCode": "From city-codes",
+        "routeId": "From bus-route-search"
+      }
+    },
+    {
+      "id": "bus-position-at-stop",
+      "name": "노선의 특정 정류소 접근 버스 위치",
+      "description": "The position of buses on a route as they approach one particular stop.",
+      "params": {
+        "cityCode": "From city-codes",
+        "nodeId": "Stop id",
+        "routeId": "Route id"
+      }
+    },
+    {
+      "id": "express-terminals-arr",
+      "name": "고속버스 터미널 목록 (도착정보용 코드)",
+      "description": "Express bus terminals, returning tmnCd — the BARE number (010) used by the arrival actions. Note this is a different identifier from the prefixed terminalId (NAEK010) that express-schedule takes, for the same terminals.",
+      "params": {
+        "tmnNm": "Terminal name"
+      }
+    },
+    {
+      "id": "express-destinations",
+      "name": "출발터미널 기준 도착지 목록",
+      "description": "Which terminals you can reach from one departure terminal. Narrows the pair before asking for arrivals.",
+      "params": {
+        "depTmnCd": "From express-terminals-arr"
+      }
+    },
+    {
+      "id": "express-arrivals",
+      "name": "고속버스 도착예정정보 (현위치·남은시간)",
+      "description": "Express buses running between two terminals right now: departure time, operator, grade, current location name, minutes remaining and estimated arrival. Refreshed every 20 minutes.",
+      "params": {
+        "arrTmnCd": "From express-destinations",
+        "depTmnCd": "From express-terminals-arr"
+      }
+    },
+    {
+      "id": "express-terminals",
+      "name": "고속버스 터미널 목록 (시간표용 ID)",
+      "description": "Express bus terminals, returning terminalId — the PREFIXED id (NAEK010) that express-schedule takes. Not interchangeable with tmnCd from express-terminals-arr.",
+      "params": {
+        "terminalNm": "Terminal name"
+      }
+    },
+    {
+      "id": "express-grades",
+      "name": "고속버스 등급 목록",
+      "description": "Express bus grades (일반, 우등 and so on) with their ids."
+    },
+    {
+      "id": "express-schedule",
+      "name": "고속버스 시간표·운임",
+      "description": "Scheduled express services between two terminals on a date, with departure and arrival times, grade and fare. A timetable, not live running.",
+      "params": {
+        "arrTerminalId": "From express-terminals",
+        "busGradeId": "From express-grades",
+        "depPlandTime": "YYYYMMDD",
+        "depTerminalId": "From express-terminals"
+      }
+    },
+    {
+      "id": "suburbs-terminals",
+      "name": "시외버스 터미널 목록",
+      "description": "Intercity (시외) bus terminals by name or city, returning terminalId.",
+      "params": {
+        "cityCode": "From city-codes",
+        "terminalNm": "Terminal name"
+      }
+    },
+    {
+      "id": "suburbs-grades",
+      "name": "시외버스 등급 목록",
+      "description": "Intercity bus grades with their ids."
+    },
+    {
+      "id": "suburbs-schedule",
+      "name": "시외버스 시간표·운임",
+      "description": "Scheduled intercity services between two terminals on a date, with times, grade and fare.",
+      "params": {
+        "arrTerminalId": "From suburbs-terminals",
+        "busGradeId": "From suburbs-grades",
+        "depPlandTime": "YYYYMMDD",
+        "depTerminalId": "From suburbs-terminals"
+      }
+    },
+    {
+      "id": "train-stations",
+      "name": "시/도별 기차역 목록",
+      "description": "Train stations in one province or metropolitan city, returning the station id that train-schedule takes.",
+      "params": {
+        "cityCode": "From city-codes (service: train)"
+      }
+    },
+    {
+      "id": "train-grades",
+      "name": "열차 종류 목록",
+      "description": "Train types (KTX, ITX and so on) with their codes."
+    },
+    {
+      "id": "train-schedule",
+      "name": "기차 시간표 (출발역·도착역)",
+      "description": "Trains between two stations, optionally on a date and of one type. Omitting the date reads today.",
+      "params": {
+        "arrPlaceId": "From train-stations",
+        "depPlaceId": "From train-stations",
+        "depPlandTime": "YYYYMMDD, today when omitted",
+        "trainGradeCode": "From train-grades"
+      }
+    },
+    {
+      "id": "subway-stations",
+      "name": "지하철역 검색 (역명)",
+      "description": "Subway stations by name, returning the station id and which line it is on. A station served by several lines comes back once per line.",
+      "params": {
+        "subwayStationName": "Station name"
+      }
+    },
+    {
+      "id": "subway-exit-buses",
+      "name": "지하철역 출구별 버스노선",
+      "description": "Which bus routes are reachable from each numbered exit of a station.",
+      "params": {
+        "subwayStationId": "From subway-stations"
+      }
+    },
+    {
+      "id": "subway-exit-facilities",
+      "name": "지하철역 출구별 주변 시설",
+      "description": "What is near each numbered exit of a station.",
+      "params": {
+        "subwayStationId": "From subway-stations"
+      }
+    },
+    {
+      "id": "subway-timetable",
+      "name": "지하철역 시간표 (요일·방향별)",
+      "description": "Departure and arrival times at one station for a day type and a direction, with the terminus of each train. Subways run to schedule, so the next train is this table plus the current time — there is no live subway arrival feed in TAGO, and none is needed.",
+      "params": {
+        "dailyTypeCode": "01=평일, 02=토요일, 03=일요일",
+        "subwayStationId": "From subway-stations",
+        "upDownTypeCode": "U=상행, D=하행"
+      }
+    },
+    {
+      "id": "airports",
+      "name": "공항 목록",
+      "description": "Domestic airports with their ids."
+    },
+    {
+      "id": "airlines",
+      "name": "항공사 목록",
+      "description": "Airlines with their ids."
+    },
+    {
+      "id": "flight-schedule",
+      "name": "국내선 항공편 (시간·운임)",
+      "description": "Domestic flights between two airports on a date: flight number, airline, times, and economy and business fares.",
+      "params": {
+        "airlineId": "From airlines",
+        "arrAirportId": "From airports",
+        "depAirportId": "From airports",
+        "depPlandTime": "YYYYMMDD"
+      }
+    },
+    {
+      "id": "ports",
+      "name": "항구 목록 (이름 검색)",
+      "description": "Ports whose name contains the given text, returning the port id.",
+      "params": {
+        "nodeNm": "Port name"
+      }
+    },
+    {
+      "id": "ship-terminals",
+      "name": "여객선터미널 목록",
+      "description": "Passenger ferry terminals."
+    },
+    {
+      "id": "ship-kinds",
+      "name": "선박 종류 목록",
+      "description": "Vessel types."
+    },
+    {
+      "id": "ship-schedule",
+      "name": "선박 운항정보 (출발지 기준)",
+      "description": "Sailings from a port on a date.",
+      "params": {
+        "depNodeId": "From ports",
+        "depPlandTime": "YYYYMMDD"
+      }
+    },
+    {
+      "id": "carshare-by-name",
+      "name": "카셰어링 차고지 검색 (이름)",
+      "description": "Car-sharing zones whose name matches, with address, coordinates and zone type.",
+      "params": {
+        "zoneName": "Zone name"
+      }
+    },
+    {
+      "id": "carshare-by-address",
+      "name": "카셰어링 차고지 검색 (주소)",
+      "description": "Car-sharing zones by address text.",
+      "params": {
+        "zoneAddr": "Address, e.g. 서울 중구"
+      }
+    },
+    {
+      "id": "carshare-nearby",
+      "name": "좌표 근처 카셰어링 차고지",
+      "description": "Car-sharing zones within a radius of a coordinate.",
+      "params": {
+        "latitude": "WGS84 latitude",
+        "longitude": "WGS84 longitude",
+        "radius": "km, default 2, max 10"
+      }
+    },
+    {
+      "id": "scooter-providers",
+      "name": "공유킥보드 운영사·지역 목록",
+      "description": "Which scooter operators serve which regions. This is also the ONLY source of the cityCode that `scooters` takes — a 지역번호, not the 도시코드 the bus actions use.",
+      "params": {
+        "cityName": "Region name, omit for all",
+        "providerName": "Operator name, omit for all"
+      }
+    },
+    {
+      "id": "scooters",
+      "name": "탑승 가능 공유킥보드 (좌표·배터리)",
+      "description": "Rideable scooters for one operator in one region: device id, battery level and coordinates. Refreshed every 10 seconds.",
+      "params": {
+        "cityCode": "지역번호 from scooter-providers — NOT the city-codes list",
+        "providerName": "From scooter-providers"
+      }
+    }
+  ]
+}

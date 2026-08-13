@@ -1,0 +1,292 @@
+{
+  "name": "tago",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "국가대중교통정보센터(TAGO) 13개 서비스 통합 — 버스(정류소·노선·실시간 도착·실시간 위치) · 고속버스 · 시외버스 · 열차 · 지하철(역·출구·시간표) · 국내항공 · 국내선박 · 카셰어링 · 공유 전동킥보드. 실시간 버스 도착·위치는 10~20초 갱신이고, 지하철은 실시간이 아니라 시간표(주1회 갱신)입니다 — 지하철은 정시 운행이라 시간표+현재시각으로 다음 열차가 계산됩니다. ID 는 *-search/*-list 액션이 발급하고 나머지가 소비하는 계단 구조이며, 엉뚱한 목록의 ID 를 넣으면 에러가 아니라 빈 결과가 돌아옵니다. 키 = molit·kma 와 같은 DATA_GO_KR_API_KEY.",
+  "aliases": [
+    "버스",
+    "지하철",
+    "대중교통",
+    "기차",
+    "열차",
+    "TAGO",
+    "교통"
+  ],
+  "tags": [
+    "버스도착",
+    "버스노선",
+    "버스정류소",
+    "실시간버스",
+    "버스위치",
+    "지하철",
+    "지하철시간표",
+    "역출구",
+    "기차",
+    "KTX",
+    "열차시간표",
+    "고속버스",
+    "시외버스",
+    "터미널",
+    "국내선",
+    "항공편",
+    "여객선",
+    "항구",
+    "카셰어링",
+    "전동킥보드",
+    "공유킥보드",
+    "대중교통"
+  ],
+  "runtime": "node",
+  "capability": "public-transport",
+  "providerType": "api",
+  "secrets": [
+    "DATA_GO_KR_API_KEY"
+  ],
+  "actionCatalog": {
+    "file": "actions.json"
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "city-codes",
+          "bus-stop-search",
+          "bus-stop-nearby",
+          "bus-stop-routes",
+          "bus-route-search",
+          "bus-route-stops",
+          "bus-route-info",
+          "bus-arrivals",
+          "bus-arrival-route",
+          "bus-positions",
+          "bus-position-at-stop",
+          "express-terminals-arr",
+          "express-destinations",
+          "express-arrivals",
+          "express-terminals",
+          "express-grades",
+          "express-schedule",
+          "suburbs-terminals",
+          "suburbs-grades",
+          "suburbs-schedule",
+          "train-stations",
+          "train-grades",
+          "train-schedule",
+          "subway-stations",
+          "subway-exit-buses",
+          "subway-exit-facilities",
+          "subway-timetable",
+          "airports",
+          "airlines",
+          "flight-schedule",
+          "ports",
+          "ship-terminals",
+          "ship-kinds",
+          "ship-schedule",
+          "carshare-by-name",
+          "carshare-by-address",
+          "carshare-nearby",
+          "scooter-providers",
+          "scooters"
+        ],
+        "default": "bus-arrivals",
+        "description": "Which TAGO operation to run. Ids are minted by the *-search / *-list actions and consumed by the others; an id from the wrong list returns an empty result rather than an error, so follow the ladder each action names."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000,
+        "default": 100,
+        "description": "Rows per page (numOfRows)"
+      },
+      "pageNo": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Page number"
+      },
+      "service": {
+        "type": "string",
+        "enum": [
+          "bus-route",
+          "bus-arrival",
+          "bus-location",
+          "bus-stop",
+          "express",
+          "suburbs",
+          "train"
+        ],
+        "default": "bus-route",
+        "description": "[city-codes] Which service's 도시코드 list to read. Every service publishes its own under its own base and whether they are identical has not been measured, so read the one belonging to the service you are about to call"
+      },
+      "cityCode": {
+        "type": "string",
+        "description": "[bus-*/train-stations/suburbs-terminals/scooters] 도시코드. ⚠️ TWO DIFFERENT NUMBERINGS share this name: for every bus, train and suburbs action it is the 도시코드 from the `city-codes` action (Daejeon = 25); for `scooters` it is the 지역번호 from `scooter-providers` and the city-codes list does not apply"
+      },
+      "nodeId": {
+        "type": "string",
+        "description": "[bus-arrivals/bus-arrival-route/bus-position-at-stop/bus-stop-routes] 정류소ID, e.g. DJB8001793 — from bus-stop-search or bus-stop-nearby"
+      },
+      "nodeNm": {
+        "type": "string",
+        "description": "[bus-stop-search/ports] Stop or port name to search for"
+      },
+      "nodeNo": {
+        "type": "string",
+        "description": "[bus-stop-search] 정류소번호 (the number posted on the sign, not the id)"
+      },
+      "gpsLati": {
+        "type": "number",
+        "description": "[bus-stop-nearby] WGS84 latitude"
+      },
+      "gpsLong": {
+        "type": "number",
+        "description": "[bus-stop-nearby] WGS84 longitude"
+      },
+      "routeId": {
+        "type": "string",
+        "description": "[bus-route-stops/bus-route-info/bus-arrival-route/bus-positions/bus-position-at-stop] 노선ID, e.g. DJB30300004 — from bus-route-search"
+      },
+      "routeNo": {
+        "type": "string",
+        "description": "[bus-route-search] 노선번호 (the number on the front of the bus)"
+      },
+      "tmnNm": {
+        "type": "string",
+        "description": "[express-terminals-arr] Terminal name to search for"
+      },
+      "depTmnCd": {
+        "type": "string",
+        "description": "[express-destinations/express-arrivals] 출발터미널코드, a bare number like 010 — from express-terminals-arr. ⚠️ NOT interchangeable with depTerminalId, which is the prefixed form (NAEK010) used by express-schedule"
+      },
+      "arrTmnCd": {
+        "type": "string",
+        "description": "[express-arrivals] 도착터미널코드, e.g. 700 — from express-destinations"
+      },
+      "terminalNm": {
+        "type": "string",
+        "description": "[express-terminals/suburbs-terminals] Terminal name to search for"
+      },
+      "depTerminalId": {
+        "type": "string",
+        "description": "[express-schedule/suburbs-schedule] 출발터미널ID, a prefixed id like NAEK010 or NAI0671801 — from express-terminals or suburbs-terminals. ⚠️ NOT the bare depTmnCd used by the arrival actions"
+      },
+      "arrTerminalId": {
+        "type": "string",
+        "description": "[express-schedule/suburbs-schedule] 도착터미널ID, e.g. NAEK300"
+      },
+      "depPlandTime": {
+        "type": "string",
+        "description": "[*-schedule] Departure date YYYYMMDD. train-schedule treats it as today when omitted; the express and suburbs schedules require it"
+      },
+      "busGradeId": {
+        "type": "string",
+        "description": "[express-schedule/suburbs-schedule] 버스등급 — from express-grades or suburbs-grades"
+      },
+      "depPlaceId": {
+        "type": "string",
+        "description": "[train-schedule] 출발기차역ID, e.g. NAT010000 — from train-stations"
+      },
+      "arrPlaceId": {
+        "type": "string",
+        "description": "[train-schedule] 도착기차역ID, e.g. NAT010971 — from train-stations"
+      },
+      "trainGradeCode": {
+        "type": "string",
+        "description": "[train-schedule] 차량종류코드, e.g. 02 — from train-grades"
+      },
+      "subwayStationName": {
+        "type": "string",
+        "description": "[subway-stations] Station name to search for, e.g. 서울역"
+      },
+      "subwayStationId": {
+        "type": "string",
+        "description": "[subway-exit-*/subway-timetable] 지하철역ID, e.g. MTRS11133 — from subway-stations"
+      },
+      "dailyTypeCode": {
+        "type": "string",
+        "enum": [
+          "01",
+          "02",
+          "03"
+        ],
+        "description": "[subway-timetable] 01=평일, 02=토요일, 03=일요일"
+      },
+      "upDownTypeCode": {
+        "type": "string",
+        "enum": [
+          "U",
+          "D"
+        ],
+        "description": "[subway-timetable] U=상행, D=하행"
+      },
+      "depAirportId": {
+        "type": "string",
+        "description": "[flight-schedule] 출발공항ID, e.g. NAARKJJ — from airports"
+      },
+      "arrAirportId": {
+        "type": "string",
+        "description": "[flight-schedule] 도착공항ID, e.g. NAARKPC — from airports"
+      },
+      "airlineId": {
+        "type": "string",
+        "description": "[flight-schedule] 항공사ID, e.g. AAR — from airlines"
+      },
+      "depNodeId": {
+        "type": "string",
+        "description": "[ship-schedule] 출발지(항구)ID, e.g. SEA96060 — from ports"
+      },
+      "zoneName": {
+        "type": "string",
+        "description": "[carshare-by-name] 차고지명 to search for"
+      },
+      "zoneAddr": {
+        "type": "string",
+        "description": "[carshare-by-address] Address to search near, e.g. 서울 중구"
+      },
+      "latitude": {
+        "type": "number",
+        "description": "[carshare-nearby] WGS84 latitude"
+      },
+      "longitude": {
+        "type": "number",
+        "description": "[carshare-nearby] WGS84 longitude"
+      },
+      "radius": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 10,
+        "default": 2,
+        "description": "[carshare-nearby] Search radius in km, up to 10"
+      },
+      "providerName": {
+        "type": "string",
+        "description": "[scooters/scooter-providers] 운영사명, e.g. SWING — from scooter-providers"
+      },
+      "cityName": {
+        "type": "string",
+        "description": "[scooter-providers] 시군단위 지역명, e.g. 세종. Omit for all regions"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "description": "Result rows. Field names follow the vendor: the four bus services answer all-lowercase (routeid, nodenm, gpslati), the rest camelCase (terminalId, depPlandTime)"
+      },
+      "totalCount": {
+        "type": "integer",
+        "description": "Total matching rows"
+      }
+    },
+    "description": "Every action returns {items, totalCount}. An empty items list means the ids were well-formed but matched nothing — the note names which list each id should have come from."
+  }
+}

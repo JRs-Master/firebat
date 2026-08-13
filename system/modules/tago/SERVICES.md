@@ -1,0 +1,312 @@
+# TAGO — the 13 services, transcribed from the vendor guides
+
+Condensed from the official 오픈API활용가이드 .docx files (11 of them) plus the two portal pages for
+국내선박운항정보 and 열차정보. Kept because re-reading eleven Word documents to answer "which list
+does this id come from" is the cost this file exists to avoid.
+
+**Read this before adding or changing an action.** Four things in here are not guessable from the
+endpoint names, and each of them fails silently rather than erroring:
+
+1. **Path case splits the family.** The four bus services (`BusRouteInfoInqireService`,
+   `ArvlInfoInqireService`, `BusLcInfoInqireService`, `BusSttnInfoInqireService`) use
+   lowercase-initial operations — `/getRouteNoList`. The other nine use uppercase —
+   `/GetExpBusTmnList`. Wrong case is a 404.
+2. **Response field case splits the same way.** The bus four answer `routeid`, `nodenm`, `gpslati`,
+   `citycode`; everything else answers `terminalId`, `depPlandTime`, `cityCode`.
+3. **`cityCode` is three different numberings.** Bus services: 도시코드 from their own
+   `/getCtyCodeList` (Daejeon = 25). Express / suburbs / train: 도시코드 from `/GetCtyCodeList`.
+   Personal mobility: a 지역번호 from `/GetPMProvider`, which is not a 도시코드 list at all.
+4. **Express terminals have two id systems for the same terminals.** The arrival service takes
+   `depTmnCd` = a bare `010` from `/GetExpBusTmnList`; the schedule service takes `depTerminalId` =
+   a prefixed `NAEK010` from `/GetExpBusTrminlList`. Feeding one to the other returns zero rows.
+
+Plus one spelling slip inside a single family: `getSttnThrghRouteList` spells the stop id `nodeid`
+while its siblings spell it `nodeId`. The module renames it on the way out so callers never see it.
+
+An empty `items` list is TAGO's answer to a well-formed id that does not exist. Nothing 404s, so
+"no rows" almost always means an id came from the wrong list — which is why every action's note
+names the list its ids should have come from.
+
+---
+
+## 고속버스도착정보v1.1
+Base: `http://apis.data.go.kr/1613000/ExpBusArrInfo`
+Refresh: 실시간(20분)
+
+| # | op | path |
+|---|---|---|
+| 1 | 고속버스 터미널목록 조회 | `/GetExpBusTmnList` |
+| 2 | 출발지기준 도착지목록 조회 | `/GetArrTmnFromDepTmn` |
+| 3 | 고속버스 도착예정정보 조회 | `/GetExpBusArrPrdtInfo` |
+
+### 1. 고속버스 터미널목록 조회
+req: tmnNm=부산 (터미널명)
+resp: tmnCd=터미널코드 · tmnNm=터미널명
+
+### 2. 출발지기준 도착지목록 조회
+req: depTmnCd*=010 (출발터미널코드)
+resp: arrTmnCd=도착터미널코드 · arrTmnNm=도착터미널명
+
+### 3. 고속버스 도착예정정보 조회
+req: depTmnCd*=010 ([고속버스 터미널목록 조회]의 터미널코드) · arrTmnCd*=700 ([고속버스 터미널목록 조회]의 터미널코드)
+resp: depTmnNm=출발터미널명 · arrTmnNm=도착터미널명 · depTm=출발시각 · corpNm=고속사명 · busGrdNm=버스등급명 · rmnTm=남은시간 · curLocNm=현위치명 · arrPrdtTm=도착예정시간
+
+---
+
+## 고속버스정보v1.1
+Base: `http://apis.data.go.kr/1613000/ExpBusInfo`
+Refresh: 일3회
+
+| # | op | path |
+|---|---|---|
+| 1 | 출/도착지기반 고속버스정보 조회 | `/GetStrtpntAlocFndExpbusInfo` |
+| 2 | 고속버스등급 목록 조회 | `/GetExpBusGradList` |
+| 3 | 고속버스터미널 목록 조회 | `/GetExpBusTrminlList` |
+| 4 | 도시코드 목록 조회 | `/GetCtyCodeList` |
+
+### 1. 출/도착지기반 고속버스정보 조회
+req: depTerminalId*=NAEK010 (출발터미널ID) · arrTerminalId*=NAEK300 (도착터미널ID) · depPlandTime*=20211201 (출발일(YYYYMMDD)) · busGradeId=1 (버스등급)
+resp: routeId=노선ID · gradeNm=버스등급 · depPlandTime=출발시간 · arrPlandTime=도착시간 · depPlaceNm=출발지 · arrPlaceNm=도착지 · charge=운임
+
+### 2. 고속버스등급 목록 조회
+req: (common only)
+resp: gradeId=고속버스등급ID · gradeNm=고속버스등급명
+
+### 3. 고속버스터미널 목록 조회
+req: terminalNm=센트럴 (터미널명)
+resp: terminalId=터미널ID · terminalNm=터미널명
+
+### 4. 도시코드 목록 조회
+req: (common only)
+resp: cityCode=도시코드 · cityName=도시명
+
+---
+
+## 국내항공운항정보v1.1
+Base: `http://apis.data.go.kr/1613000/DmstcFlightNvgInfo`
+Refresh: 실시간(1시간)
+
+| # | op | path |
+|---|---|---|
+| 1 | 항공운항정보 목록 조회 | `/GetFlightOpratInfoList` |
+| 2 | 공항 목록 조회 | `/GetArprtList` |
+| 3 | 항공사 목록 조회 | `/GetAirmanList` |
+
+### 1. 항공운항정보 목록 조회
+req: depAirportId*=NAARKJJ (출발공항ID) · arrAirportId*=NAARKPC (도착공항ID) · depPlandTime*=20201201 (출발일(YYYYMMDD)) · airlineId=AAR (항공사ID)
+resp: vihicleId=항공편명 · airlineNm=항공사명 · depPlandTime=출발시간 · arrPlandTime=도착시간 · economyCharge=일반석운임 · prestigeCharge=비즈니스석운임 · depAirportNm=출발공항 · arrAirportNm=도착공항
+
+### 2. 공항 목록 조회
+req: (common only)
+resp: airportId=공항ID · airportNm=공항명
+
+### 3. 항공사 목록 조회
+req: (common only)
+resp: airlineId=항공사ID · airlineNm=항공사명
+
+---
+
+## 버스노선정보v1.0
+Base: `http://apis.data.go.kr/1613000/BusRouteInfoInqireService`
+Refresh: 일 1회
+
+| # | op | path |
+|---|---|---|
+| 1 | 노선번호목록 조회 | `/getRouteNoList` |
+| 2 | 노선별경유정류소목록 조회 | `/getRouteAcctoThrghSttnList` |
+| 3 | 노선정보항목 조회 | `/getRouteInfoIem` |
+| 4 | 도시코드 목록 조회 | `/getCtyCodeList` |
+
+### 1. 노선번호목록 조회
+req: cityCode*=25 (도시코드[상세기능4. 도시코드 목록 조회]에서 조회 가능) · routeNo=5 (노선번호)
+resp: routeid=노선ID · routeno=노선번호 · routetp=노선유형 · endnodenm=종점 · startnodenm=기점 · endvehicletime=막차시간 · startvehicletime=첫차시간
+
+### 2. 노선별경유정류소목록 조회
+req: cityCode*=25 (도시코드[상세기능4. 도시코드 목록 조회]에서 조회 가능) · routeId*=DJB30300004 (노선ID[상세기능1. 노선번호목록 조회]에서 조회 가능)
+resp: routeid=노선ID · nodeid=정류소ID · nodenm=정류소명 · nodeno=정류소번호 · nodeord=정류소순번 · gpslati=정류소 Y좌표 · gpslong=정류소 X좌표 · updowncd=상하행구분코드
+
+### 3. 노선정보항목 조회
+req: cityCode*=25 (도시코드[상세기능4. 도시코드 목록 조회]에서 조회 가능) · routeId*=DJB30300004 (노선ID[상세기능1. 노선번호목록 조회]에서 조회 가능)
+resp: routeid=노선ID · routeno=노선번호 · routetp=노선유형 · endnodenm=종점 · startnodenm=기점 · endvehicletime=막차시간 · startvehicletime=첫차시간 · intervaltime=배차간격(평일) · intervalsattime=배차간격(토요일) · intervalsuntime=배차간격(일요일)
+
+### 4. 도시코드 목록 조회
+req: (common only)
+resp: citycode=도시코드 · cityname=도시명
+
+---
+
+## 버스도착정보v1.0
+Base: `http://apis.data.go.kr/1613000/ArvlInfoInqireService`
+Refresh: 실시간(10~20초)
+
+| # | op | path |
+|---|---|---|
+| 1 | 정류소별 도착예정정보 목록 조회 | `/getSttnAcctoArvlPrearngeInfoList` |
+| 2 | 정류소별 특정노선버스도착예정정보 목록 조회 | `/getSttnAcctoSpcifyRouteBusArvlPrearngeInfoList` |
+| 3 | 도시코드 목록 조회 | `/getCtyCodeList` |
+
+### 1. 정류소별도착예정정보 목록 조회
+req: cityCode*=25 (도시코드[상세기능3 도시코드 목록 조회]에서 조회 가능) · nodeId*=DJB8001793 (정류소ID[국토교통부(TAGO)_버스정류소정보]에서 조회가능)
+resp: nodeid=정류소ID · nodenm=정류소명 · routeid=노선ID · routeno=노선번호 · routetp=노선유형 · arrprevstationcnt=도착예정버스 남은 정류장 수 · vehicletp=도착예정버스 차량유형 · arrtime=도착예정버스 도착예상시간
+
+### 2. 정류소별특정노선버스 도착예정정보 목록조회
+req: cityCode*=25 (도시코드[상세기능3 도시코드 목록 조회]에서 조회 가능) · nodeId*=DJB8001793 (정류소ID[국토교통부(TAGO)_버스정류소정보]에서 조회가능) · routeId*=DJB30300002 (노선ID)
+resp: nodeid=정류소ID · nodenm=정류소명 · routeid=노선ID · routeno=노선번호 · routetp=노선유형 · arrprevstationcnt=도착예정버스 남은 정류장 수 · vehicletp=도착예정버스 차량유형 · arrtime=도착예정버스 도착예상시간
+
+### 3. 도시코드 목록 조회
+req: (common only)
+resp: citycode=도시코드 · cityname=도시명
+
+---
+
+## 버스위치정보v1.0
+Base: `http://apis.data.go.kr/1613000/BusLcInfoInqireService`
+Refresh: 실시간(10~20초)
+
+| # | op | path |
+|---|---|---|
+| 1 | 노선별버스위치 목록조회 | `/getRouteAcctoBusLcList` |
+| 2 | 노선별특정정류소접근 버스위치정보조회 | `/getRouteAcctoSpcifySttnAccesBusLcInfo` |
+| 3 | 도시코드 목록 조회 | `/getCtyCodeList` |
+
+### 1. 노선별버스위치 목록조회
+req: cityCode*=25 (도시코드[상세기능3 도시코드 목록 조회]에서 조회 가능) · routeId*=DJB30300052 (노선ID[국토교통부(TAGO)_버스노선정보]에서 조회가능)
+resp: routenm=노선번호 · gpslati=맵매칭 Y좌표 · gpslong=맵매칭 X좌표 · nodeord=정류소 순서 · nodenm=정류소명 · nodeid=정류소ID · routetp=노선유형 · vehicleno=차량번호
+
+### 2. 노선별특정정류소접근 버스위치정보조회
+req: routeId*=DJB30300037 (노선ID[국토교통부(TAGO)_버스노선정보]에서 조회가능) · nodeId*=DJB8007268 (정류소ID[국토교통부(TAGO)_버스정류소정보]에서 조회가능) · cityCode*=25 (도시코드[상세기능3 도시코드 목록 조회]에서 조회 가능)
+resp: routenm=노선번호 · nodenm=정류소명 · gpslati=맵매칭 Y좌표 · gpslong=맵매칭 X좌표 · routetp=노선유형
+
+### 3. 도시코드 목록 조회
+req: (common only)
+resp: citycode=도시코드 · cityname=도시명
+
+---
+
+## 버스정류소정보v1.0
+Base: `http://apis.data.go.kr/1613000/BusSttnInfoInqireService`
+Refresh: 일 1회
+
+| # | op | path |
+|---|---|---|
+| 1 | 정류소번호 목록조회 | `/getSttnNoList` |
+| 2 | 좌표기반근접정류소 목록조회 | `/getCrdntPrxmtSttnList` |
+| 3 | 도시코드 목록 조회 | `/getCtyCodeList` |
+| 4 | 정류소별경유노선 목록조회 | `/getSttnThrghRouteList` |
+
+### 1. 정류소번호 목록조회
+req: cityCode*=25 (도시코드) · nodeNm=전통시장 (정류소명) · nodeNo=44810 (정류소번호)
+resp: gpslati=정류소 Y좌표 · gpslong=정류소 X좌표 · nodeid=정류소ID · nodenm=정류소명 · nodeno=정류소번호
+
+### 2. 좌표기반근접정류소 목록조회
+req: gpsLati*=36.3 (WGS84 위도 좌표) · gpsLong*=127.3 (WGS84 경도 좌표)
+resp: gpslati=정류소 Y좌표 · gpslong=정류소 X좌표 · nodeid=정류소ID · nodenm=정류소명 · citycode=도시코드
+
+### 3. 도시코드 목록 조회
+req: (common only)
+resp: citycode=도시코드 · cityname=도시명
+
+### 4. 정류소별경유노선 목록조회
+req: cityCode*=25 (도시코드) · nodeid*=DJB8002536 (정류소ID)
+resp: routeid=노선ID · routeno=노선번호 · routetp=노선유형 · endnodenm=종점 · startnodenm=기점
+
+---
+
+## 시외버스정보v1.1
+Base: `http://apis.data.go.kr/1613000/SuburbsBusInfo`
+Refresh: 일1회
+
+| # | op | path |
+|---|---|---|
+| 1 | 시외버스등급 목록 조회 | `/GetSuberbsBusGradList` |
+| 2 | 시외버스 터미널 목록 조회 | `/GetSuberbsBusTrminlList` |
+| 3 | 출/도착지기반 시외버스정보 조회 | `/GetStrtpntAlocFndSuberbsBusInfo` |
+| 4 | 도시코드 목록 조회 | `/GetCtyCodeList` |
+
+### 1. 시외버스등급 목록 조회
+req: (common only)
+resp: gradeId=시외버스등급ID · gradeNm=시외버스등급명
+
+### 2. 시외버스 터미널 목록 조회
+req: terminalNm=서울남부 (터미널명) · cityCode=11 (도시코드)
+resp: terminalId=터미널ID · terminalNm=터미널명 · cityName=도시명
+
+### 3. 출/도착지기반 시외버스정보 조회
+req: depTerminalId*=NAI0671801 (출발터미널ID) · arrTerminalId*=NAI3214401 (도착터미널ID) · depPlandTime*=20211201 (출발일(YYYYMMDD)) · busGradeId=IDG (버스등급)
+resp: routeId=노선ID · gradeNm=버스등급 · depPlandTime=출발시간 · arrPlandTime=도착시간 · depPlaceNm=출발지 · arrPlaceNm=도착지 · charge=운임
+
+### 4. 도시코드 목록 조회
+req: (common only)
+resp: cityCode=도시코드 · cityName=도시명
+
+---
+
+## 지하철정보v1.1
+Base: `http://apis.data.go.kr/1613000/SubwayInfo`
+Refresh: 주1회
+
+| # | op | path |
+|---|---|---|
+| 1 | 키워드기반 지하철역 목록 조회 | `/GetKwrdFndSubwaySttnList` |
+| 2 | 지하철역출구별 버스노선 목록 조회 | `/GetSubwaySttnExitAcctoBusRouteList` |
+| 3 | 지하철역출구별 주변 시설 목록 조회 | `/GetSubwaySttnExitAcctoCfrFcltyList` |
+| 4 | 지하철역별 시간표 목록조회 | `/GetSubwaySttnAcctoSchdulList` |
+
+### 1. 키워드기반 지하철역 목록 조회
+req: subwayStationName=서울역 (지하철역명)
+resp: subwayStationId=지하철역ID · subwayStationName=지하철역명 · subwayRouteName=노선명
+
+### 2. 지하철역출구별 버스노선 목록 조회
+req: subwayStationId*=MTRS11133 (지하철역ID[상세기능1. 지하철역 목록조회]에서 조회 가능)
+resp: exitNo=출구번호 · busRouteNo=버스번호
+
+### 3. 지하철역출구별 주변 시설 목록 조회
+req: subwayStationId*=MTRS11133 (지하철역ID[상세기능1. 지하철역 목록조회]에서 조회 가능)
+resp: exitNo=출구번호 · dirDesc=시설명
+
+### 4. 지하철역별 시간표 목록조회
+req: subwayStationId*=MTRS11133 (지하철역ID[상세기능1. 지하철역 목록조회]에서 조회 가능) · dailyTypeCode*=01 (요일구분코드(01:평일, 02:토요일, 03:일요일)) · upDownTypeCode*=D (상하행구분코드(U:상행, D:하행))
+resp: subwayRouteId=지하철노선ID · subwayStationId=지하철역ID · subwayStationNm=지하철역명 · dailyTypeCode=요일구분코드 · upDownTypeCode=상하행구분코드 · depTime=출발시간 · arrTime=도착시간 · endSubwayStationId=종점지하철역ID · endSubwayStationNm=종점지하철역명
+
+---
+
+## 카셰어링정보v1.1
+Base: `http://apis.data.go.kr/1613000/CarSharingInfo`
+Refresh: 일1회
+
+| # | op | path |
+|---|---|---|
+| 1 | 이름기반 차고지 목록 조회 | `/GetCarZoneListByName` |
+| 2 | 주소기반 차고지 목록 조회 | `/GetCarZoneListByAddr` |
+| 3 | 좌표기반 차고지 목록 조회 | `/GetCarZoneListByCoord` |
+
+### 1. 이름기반 차고지 목록 조회
+req: zoneName*=서울역 (차고지명)
+resp: zoneId=차고지ID · zoneName=차고지명 · address=주소 · latitude=GPS위도 · longitude=GPS경도 · type=차고지타입
+
+### 2. 주소기반 차고지 목록 조회
+req: zoneAddr*=서울 중구 (주소)
+resp: zoneId=차고지ID · zoneName=차고지명 · address=주소 · latitude=GPS위도 · longitude=GPS경도 · type=차고지타입
+
+### 3. 좌표기반 차고지 목록 조회
+req: latitude*=37.553638 (위도(WGS84)) · longitude*=126.975494 (경도(WGS84)) · radius=2 (반경(Km)[기본값:2,최댓값:10])
+resp: zoneId=차고지ID · zoneName=차고지명 · address=주소 · latitude=GPS위도 · longitude=GPS경도 · type=차고지타입
+
+---
+
+## 퍼스널모빌리티정보v1.1
+Base: `http://apis.data.go.kr/1613000/PersonalMobilityInfo`
+Refresh: 10초
+
+| # | op | path |
+|---|---|---|
+| 1 | 지역별 운영사기반 탑승가능 공유전동킥보드 목록 조회 | `/GetPMListByProvider` |
+| 2 | 지역별 공유전동킥보드 운영사 목록 조회 | `/GetPMProvider` |
+
+### 1. 지역별 운영사기반 공유전동킥보드 목록 조회
+req: providerName*=SWING (운영사명) · cityCode*=12 (지역번호)
+resp: providerName=운영사명 · vehicleID=장치ID · battery=베터리잔량 · cityCode=지역번호 · cityName=지역명 · latitude=GPS위도 · longitude=GPS경도
+
+### 2. 지역별 공유전동킥보드 운영사 목록 조회
+req: providerName=SWING (공유킥보드 운영사명* 미입력시 전체 조회) · cityName=세종 (시군단위 지역명* 미입력시 전체 조회)
+resp: cityName=지역명 · cityCode=지역코드 · providerName=운영사명

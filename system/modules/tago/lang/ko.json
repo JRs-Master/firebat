@@ -1,0 +1,14 @@
+{
+  "error": {
+    "api_key_missing": "DATA_GO_KR_API_KEY 가 설정되지 않았습니다. 공공데이터포털 인증키이며 molit-realestate · kma-weather 가 쓰는 것과 같은 키입니다.",
+    "action_required": "action 이 필요합니다.",
+    "unknown_action": "알 수 없는 action \"{{action}}\" 입니다. 사용 가능: {{actions}}",
+    "params_required": "{{action}} 에 필요한 값이 빠졌습니다: {{missing}}",
+    "city_code_service_unknown": "알 수 없는 service \"{{service}}\" 입니다. 사용 가능: {{services}}. TAGO 는 서비스마다 자기 도시코드 목록을 따로 내므로, 곧 호출할 서비스의 목록을 읽으십시오.",
+    "auth_rejected": "공공데이터포털 인증이 거부됐습니다: {{message}}. 이 API 를 활용신청했는지, 그리고 저장된 키가 인코딩되지 않은(Decoding) 키인지 확인하십시오 — 이미 인코딩된 키를 넣으면 이중 인코딩으로 실패합니다.",
+    "api_error": "TAGO API 오류 {{code}}: {{message}}",
+    "http_status": "TAGO API HTTP {{status}}",
+    "network": "TAGO API 연결 실패: {{message}}",
+    "runtime": "{{message}}"
+  }
+}
