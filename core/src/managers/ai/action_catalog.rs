@@ -41,6 +41,30 @@ const REBUILD_TTL: Duration = Duration::from_secs(300);
 /// text because naming the venue IS the routing signal, and it is safe there because it is short
 /// and identical across that module's rows: it moves them together against OTHER modules without
 /// separating them from each other.
+/// The action rows out of an `actionCatalog` value, in either shape it is written in.
+///
+/// `{"actions": [...]}` is the documented shape and a bare `[...]` says the same thing, so both
+/// are read — and they are read HERE, once, because the two used to be handled in different places
+/// and drifted: the inline branch took both while the file branch parsed a bare list only. tago
+/// wrote the documented shape into its file and lost all 39 actions to a `unwrap_or_default()`
+/// (measured live 2026-08-14 — the module fell back to enum-derived entries, so every
+/// `get_action_schema` answered `derived: true` with the module blurb where the action's own
+/// description belonged). Every other module happened to write the bare list, which is why one
+/// module was broken and the shape looked fine.
+///
+/// `None` means the value is neither shape — a different failure from an empty list, and the
+/// callers say so differently.
+///
+/// Public so the config audit reads catalogs through the same function the loader does. The audit
+/// had its own copy of this logic, more permissive than the loader's, which is why CI stayed green
+/// for a module that had silently lost every action.
+pub fn catalog_rows(v: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
+    if let Some(arr) = v.as_array() {
+        return Some(arr.clone());
+    }
+    v.get("actions").and_then(|a| a.as_array()).cloned()
+}
+
 fn module_identity(name: &str, config: &serde_json::Value) -> Vec<String> {
     let mut out = vec![name.to_string()];
     if let Some(list) = config.get("aliases").and_then(|v| v.as_array()) {
@@ -130,23 +154,36 @@ impl ModuleActionSource {
         let grounded = crate::utils::grounding::parse_grounding(config);
         let ident = module_identity(name, config);
         let tag_words = module_tags(config);
-        let actions: Vec<serde_json::Value> = if let Some(arr) = decl.as_array() {
-            // The documented shape is `{"actions": [...]}`, but writing the list itself is the
-            // obvious mistake to make, and it used to cost the whole module: no `actions` key
-            // meant zero entries, and the key's mere presence skipped the derive-from-input
-            // fallback below, so the module vanished from search_module_actions entirely
-            // (2026-08-10 — binance shipped that way and answered 0 of 11 actions). Accept the
-            // bare list; it says exactly the same thing.
-            arr.clone()
-        } else if let Some(arr) = decl.get("actions").and_then(|v| v.as_array()) {
-            arr.clone()
-        } else if let Some(file) = decl.get("file").and_then(|v| v.as_str()) {
+        let actions: Vec<serde_json::Value> = if let Some(file) =
+            decl.get("file").and_then(|v| v.as_str())
+        {
             match self.module.read_module_file(scope, name, file).await {
-                Some(raw) => serde_json::from_str::<Vec<serde_json::Value>>(&raw).unwrap_or_default(),
+                Some(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
+                    Ok(v) => catalog_rows(&v).unwrap_or_else(|| {
+                        tracing::warn!(
+                            target: "action_catalog",
+                            module = %name, file = %file,
+                            "actionCatalog file holds neither a list nor an `actions` list"
+                        );
+                        Vec::new()
+                    }),
+                    // A parse failure used to become an empty list, and the empty list became
+                    // "this module declares no actions" — so a stray comma read as a design
+                    // decision. Say where it broke; the module still falls back to the input
+                    // schema below, and now the reason is in the log.
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "action_catalog",
+                            module = %name, file = %file, error = %e,
+                            "actionCatalog file did not parse as JSON"
+                        );
+                        Vec::new()
+                    }
+                },
                 None => Vec::new(),
             }
         } else {
-            Vec::new()
+            catalog_rows(decl).unwrap_or_default()
         };
         let entries: Vec<CatalogEntry> = actions
             .into_iter()

@@ -532,12 +532,27 @@ fn every_action_catalog_file_names_runnable_actions() {
             }
         };
         audited += 1;
-        let list = catalog
-            .get("actions")
-            .or(Some(&catalog))
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+        // Read it the way the LOADER reads it. This audit used to accept both shapes through its
+        // own inline logic while the loader's file branch parsed a bare list only — so tago's
+        // documented `{"actions": [...]}` passed CI and yielded zero actions in production
+        // (2026-08-14). A test more permissive than the code it guards is not a guard.
+        let list = match firebat_core::managers::ai::action_catalog::catalog_rows(&catalog) {
+            Some(l) => l,
+            None => {
+                problems.push(format!(
+                    "{name}/{file}: holds neither a list nor an `actions` list — the loader reads \
+                     zero actions from it and the module falls back to enum-derived entries"
+                ));
+                continue;
+            }
+        };
+        if list.is_empty() {
+            problems.push(format!(
+                "{name}/{file}: declares a catalog that yields no actions — the module is \
+                 discoverable only through the thin enum fallback"
+            ));
+            continue;
+        }
         let known = declared_actions(&config);
         let mut missing = 0usize;
         for e in &list {
