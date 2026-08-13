@@ -57,6 +57,16 @@ gaps are not per line at all — see below.
   other than `U`/`D`. So 02 is a valid, documented slot that was never populated — not a parameter
   that changed behind an unrevised document.
 
+  **The portal's own worked example for this endpoint returns nothing.** 상세기능4 documents
+  `subwayStationId=MTRARA1A01` (서울역 공항철도) with `dailyTypeCode=01`, `upDownTypeCode=D` — zero
+  rows, in both directions. Its sibling examples all work: 상세기능1 finds 서울역 (5 rows, the
+  first of which is that very id), 상세기능2 returns 62 exit bus routes for `MTRS12228` and
+  상세기능3 returns 59 facilities. Only the timetable example is empty. `MTRS12228` itself reads
+  232 / 0 / 186 across the three day types, which takes the Saturday count to 9 of 9 lines.
+
+  That makes a support request easy to write and hard to argue with: calling the parameters printed
+  in the provider's own guide returns an empty list, and the reproduction steps are the document.
+
   What that does NOT establish is whether 03 also covers Saturday. Korean subway timetables are
   variously published as 평일/토요일/일요일·공휴일 or as 평일/토·휴일, and the feed cannot tell us
   which one this is. So do not hand 03 over as a Saturday timetable — say the Saturday table is not
