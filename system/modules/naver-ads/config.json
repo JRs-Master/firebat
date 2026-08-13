@@ -3,11 +3,27 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "네이버 검색광고 API. keyword-tool(키워드 검색량/CPC/경쟁도+연관키워드), stats(캠페인/광고그룹/키워드 성과 통계), estimate(입찰가 시뮬레이션), bizmoney(잔액/충전/소진 내역), managed-keywords(키워드 관리상태), list-campaigns/adgroups/keywords/ads(관리), raw(직접 API 호출).",
+  "description": "네이버 검색광고 API. keyword-tool(키워드 검색량 PC/모바일·클릭수·클릭률·경쟁도·연관검색어 + CPC·제한플래그 동시 조회), estimate(최소노출/중간 입찰가 = CPC, 입찰가별 예상성과), managed-keywords(저검색량·성인·노출제한·판매금지·시즌 플래그), biz-categories(업종 코드), seasonal-events(시즌 이벤트 코드), stats(내 광고 성과), bizmoney(잔액), list-campaigns/adgroups/keywords/ads(관리), raw(직접 호출).",
   "aliases": [
     "네이버",
     "네이버광고",
+    "네이버검색광고",
     "Naver"
+  ],
+  "tags": [
+    "키워드분석",
+    "키워드도구",
+    "연관검색어",
+    "검색량",
+    "월간검색수",
+    "CPC",
+    "클릭당비용",
+    "입찰가",
+    "경쟁도",
+    "클릭률",
+    "업종",
+    "시즌키워드",
+    "검색광고"
   ],
   "runtime": "node",
   "capability": "keyword-analytics",
@@ -17,6 +33,170 @@
     "NAVER_AD_SECRET_KEY",
     "NAVER_AD_CUSTOMER_ID"
   ],
+  "cacheInputs": [
+    "keywords"
+  ],
+  "autoCacheWhole": {
+    "keyword-tool": "Pass this key as keywordsCacheKey to naver-ads estimate or managed-keywords to reuse the analyzed keywords without retyping them, or as a row source when building a sheet."
+  },
+  "actionCatalog": {
+    "actions": [
+      {
+        "id": "keyword-tool",
+        "name": "키워드 분석 (검색량·클릭수·경쟁도·연관검색어 + CPC)",
+        "description": "The keyword research entry point. Returns monthly search counts (PC and mobile), average click counts and CTR, competition index and average ad depth, plus related keywords. Entry is by hint keywords OR by industry (biztpId) OR by seasonal theme (event) OR by business channel (siteId) — at least one. Hint keywords are chunked past the vendor's 5-per-call cap. Set withBid for estimated CPC per keyword and withFlags for the low-volume/restricted/adult flags. Search counts are a 30-day SUM while clicks and CTR are a 4-week AVERAGE, so they cannot be divided into each other.",
+        "params": {
+          "keywords": "Hint keywords. Chunked in fives automatically; accepts rows from a previous result via keywordsCacheKey",
+          "biztpId": "Industry id from biz-categories — an entry point on its own, no keywords needed",
+          "event": "Seasonal theme id from seasonal-events — an entry point on its own",
+          "month": "Month 1-12, pairs with event",
+          "siteId": "Business channel id (SITE type)",
+          "limit": "How many related keywords to include (default 100, max 1000)",
+          "withBid": "Attach estimated minimum-exposure and median bids per keyword (CPC)",
+          "withFlags": "Attach isLowSearchVolume / isRestricted / isAdult / isSellProhibit / isSeason",
+          "showDetail": "Include the per-month search history"
+        }
+      },
+      {
+        "id": "estimate",
+        "name": "입찰가·성과 추정 (CPC 계산)",
+        "description": "Where CPC comes from — the keyword tool does not return one. exposure-minimum-bid is the least you can bid and still be shown; median-bid is the middle of what is being bid; average-position-bid is the bid for a target rank; performance takes one keyword with many bids and returns the impression/click/cost curve; performance-bulk takes many keyword+bid pairs. Keyword lists are chunked past the vendor's 200-per-call cap.",
+        "params": {
+          "estimateType": "exposure-minimum-bid | median-bid | average-position-bid | performance | performance-bulk",
+          "keywords": "Keywords to price, chunked in 200s; accepts rows via keywordsCacheKey",
+          "device": "PC or MOBILE (performance also takes BOTH)",
+          "period": "DAY (yesterday) or MONTH (last 28 days) — not a number of days",
+          "position": "Target rank for average-position-bid: 1-10 on PC, 1-5 on MOBILE",
+          "bids": "For performance: the bid amounts to simulate, up to 100"
+        }
+      },
+      {
+        "id": "managed-keywords",
+        "name": "키워드 제한 상태 (저검색량·성인·노출제한·판매금지·시즌)",
+        "description": "Why a keyword has no numbers. isLowSearchVolume confirms the keyword tool masked its count as '< 10'; isRestricted / isAdult / isSellProhibit mean ads cannot run on it at all whatever its volume; isSeason means a 30-day figure taken off-season understates demand. Keywords absent from the result are simply unmanaged, which is not a restriction.",
+        "params": {
+          "keywords": "Keywords to check, chunked automatically"
+        }
+      },
+      {
+        "id": "biz-categories",
+        "name": "업종 코드 목록 (biztpId)",
+        "description": "The industry tree behind keyword-tool's biztpId. Naver publishes it only as an asynchronous Master Report job, so this action registers the job, waits, downloads and caches it on disk. If the job is still building it returns a jobId to call back with. Pass query to filter by name, refresh to rebuild the cached copy.",
+        "params": {
+          "query": "Filter rows by industry name",
+          "refresh": "Rebuild from Naver instead of using the on-disk copy",
+          "jobId": "Resume polling a master report job returned by an earlier call"
+        }
+      },
+      {
+        "id": "seasonal-events",
+        "name": "시즌 이벤트 코드 목록 (event)",
+        "description": "The seasonal theme codes behind keyword-tool's event parameter — 설, 추석, 장마, 캠핑, 벚꽃, 수능 and so on, with their parent category and level. Shipped with the module, so it answers without an API call or credentials. Pass query to filter by name.",
+        "params": {
+          "query": "Filter themes by Korean or English name"
+        }
+      },
+      {
+        "id": "stats",
+        "name": "내 광고 성과 통계",
+        "description": "Performance of MY running ads by campaign / adgroup / keyword / ad id. Requires ads to be running; it says nothing about keywords you do not advertise on.",
+        "params": {
+          "id": "Single entity id",
+          "ids": "Multiple entity ids",
+          "fields": "Metrics to fetch",
+          "datePreset": "Preset range instead of timeRange"
+        }
+      },
+      {
+        "id": "bizmoney",
+        "name": "비즈머니 잔액·충전·소진 내역",
+        "description": "Ad account balance and its charge / exhaust / daily histories.",
+        "params": {
+          "subAction": "balance | charge-history | exhaust-history | period-history",
+          "searchStartDt": "YYYYMMDD",
+          "searchEndDt": "YYYYMMDD"
+        }
+      },
+      {
+        "id": "list-campaigns",
+        "name": "캠페인 목록",
+        "description": "Lists campaigns in the ad account.",
+        "params": { "campaignType": "Filter by campaign type", "ids": "Specific campaign ids" }
+      },
+      {
+        "id": "get-campaign",
+        "name": "캠페인 단건",
+        "description": "One campaign by id.",
+        "params": { "id": "Campaign id" }
+      },
+      {
+        "id": "list-adgroups",
+        "name": "광고그룹 목록",
+        "description": "Lists adgroups, optionally within one campaign.",
+        "params": { "nccCampaignId": "Campaign filter", "ids": "Specific adgroup ids" }
+      },
+      {
+        "id": "get-adgroup",
+        "name": "광고그룹 단건",
+        "description": "One adgroup by id.",
+        "params": { "id": "Adgroup id" }
+      },
+      {
+        "id": "list-keywords",
+        "name": "등록 키워드 목록",
+        "description": "Keywords registered in MY account, with their bids and quality index. Not a research tool — use keyword-tool for that.",
+        "params": { "nccAdgroupId": "Adgroup filter", "ids": "Specific keyword ids" }
+      },
+      {
+        "id": "get-keyword",
+        "name": "등록 키워드 단건",
+        "description": "One registered keyword by id.",
+        "params": { "id": "Keyword id" }
+      },
+      {
+        "id": "list-ads",
+        "name": "소재 목록",
+        "description": "Ad creatives in an adgroup.",
+        "params": { "nccAdgroupId": "Adgroup filter", "ids": "Specific ad ids" }
+      },
+      {
+        "id": "get-ad",
+        "name": "소재 단건",
+        "description": "One ad creative by id.",
+        "params": { "id": "Ad id" }
+      },
+      {
+        "id": "list-channels",
+        "name": "비즈채널 목록",
+        "description": "Business channels. The SITE-type channel id is what keyword-tool's siteId takes.",
+        "params": { "channelTp": "Filter by channel type", "ids": "Specific channel ids" }
+      },
+      {
+        "id": "list-extensions",
+        "name": "확장소재 목록",
+        "description": "Ad extensions belonging to a campaign or adgroup.",
+        "params": { "ownerId": "Campaign or adgroup id" }
+      },
+      {
+        "id": "list-labels",
+        "name": "즐겨찾기 목록",
+        "description": "Labels registered in the account.",
+        "params": {}
+      },
+      {
+        "id": "list-shared-budgets",
+        "name": "공유예산 목록",
+        "description": "Shared budgets in the account.",
+        "params": {}
+      },
+      {
+        "id": "raw",
+        "name": "API 직접 호출",
+        "description": "Escape hatch for endpoints this module does not wrap. Signs and sends the request as given.",
+        "params": { "method": "HTTP method", "uri": "API path", "params": "Query parameters", "body": "Request body" }
+      }
+    ]
+  },
   "input": {
     "type": "object",
     "properties": {
@@ -24,10 +204,12 @@
         "type": "string",
         "enum": [
           "keyword-tool",
-          "stats",
           "estimate",
-          "bizmoney",
           "managed-keywords",
+          "biz-categories",
+          "seasonal-events",
+          "stats",
+          "bizmoney",
           "list-campaigns",
           "get-campaign",
           "list-adgroups",
@@ -43,52 +225,99 @@
           "raw"
         ],
         "default": "keyword-tool",
-        "description": "API 액션"
+        "description": "API action"
       },
       "keywords": {
         "type": "array",
         "items": {
-          "type": "string"
+          "type": [
+            "string",
+            "object"
+          ]
         },
-        "maxItems": 5,
-        "description": "[keyword-tool/managed-keywords] 키워드 목록 (최대 5개)"
+        "maxItems": 1000,
+        "description": "[keyword-tool/estimate/managed-keywords] Keywords. Plain strings, or rows carrying a `keyword` field (which is what keywordsCacheKey expands into). Chunked automatically past the per-call vendor caps: 5 hints for keyword-tool, 200 keys for estimate."
       },
       "showDetail": {
         "type": "boolean",
         "default": true,
-        "description": "[keyword-tool] 월별 검색량 상세 (최근 12개월)"
+        "description": "[keyword-tool] Include per-month search history for each keyword"
       },
       "siteId": {
         "type": "string",
-        "description": "[keyword-tool] 사이트 ID"
+        "description": "[keyword-tool] Business channel id, SITE type only (nccBusinessChannelId). An entry point on its own — see list-channels"
       },
       "biztpId": {
-        "type": "string",
-        "description": "[keyword-tool] 업종 ID"
+        "type": "integer",
+        "description": "[keyword-tool] Industry id. An entry point on its own: with no keywords, returns that industry's keyword universe. Get ids from the biz-categories action"
       },
       "event": {
         "type": "integer",
-        "description": "[keyword-tool] 시즌 이벤트"
+        "description": "[keyword-tool] Seasonal theme id (e.g. 84 = 캠핑, 42 = 크리스마스). An entry point on its own. Get ids from the seasonal-events action"
       },
       "month": {
         "type": "integer",
-        "description": "[keyword-tool] 월"
+        "minimum": 1,
+        "maximum": 12,
+        "description": "[keyword-tool] Month 1-12, used together with event"
       },
-      "includeHintKeywords": {
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000,
+        "default": 100,
+        "description": "[keyword-tool] How many related keywords to include. The vendor can return up to 1000; anything dropped is reported in the note"
+      },
+      "withBid": {
         "type": "boolean",
         "default": false,
-        "description": "[keyword-tool] hintKeywords 자체 (입력 키워드) 도 결과에 포함. 입력 키워드의 검색량/CTR 직접 보려면 true"
+        "description": "[keyword-tool] Attach estimated CPC per keyword: minBidPc/minBidMobile (minimum bid that still gets shown) and medianBidPc/medianBidMobile. Costs extra calls, chunked in 200s"
+      },
+      "withFlags": {
+        "type": "boolean",
+        "default": false,
+        "description": "[keyword-tool] Attach isLowSearchVolume / isRestricted / isAdult / isSellProhibit / isSeason, which explain why a keyword has no numbers"
+      },
+      "bidPeriod": {
+        "type": "string",
+        "enum": [
+          "DAY",
+          "MONTH"
+        ],
+        "default": "MONTH",
+        "description": "[keyword-tool withBid] Statistics window for the bid estimate: DAY = yesterday, MONTH = last 28 days"
+      },
+      "bidDevice": {
+        "type": "string",
+        "enum": [
+          "PC",
+          "MOBILE"
+        ],
+        "description": "[keyword-tool withBid] Only price this device. Omit to get both PC and mobile columns"
+      },
+      "query": {
+        "type": "string",
+        "description": "[seasonal-events/biz-categories] Filter the code table by name"
+      },
+      "refresh": {
+        "type": "boolean",
+        "default": false,
+        "description": "[biz-categories] Rebuild the industry table from Naver instead of using the on-disk copy"
+      },
+      "jobId": {
+        "type": "string",
+        "description": "[biz-categories] Resume polling a master report job id returned by an earlier call"
       },
       "id": {
         "type": "string",
-        "description": "[stats/get-*] 단일 엔티티 ID (캠페인/광고그룹/키워드/소재)"
+        "description": "[stats/get-*] Single entity id (campaign / adgroup / keyword / ad)"
       },
       "ids": {
         "type": "array",
         "items": {
           "type": "string"
         },
-        "description": "[stats/list-*] 복수 ID 배열"
+        "description": "[stats/list-*] Multiple entity ids"
       },
       "fields": {
         "type": "array",
@@ -113,21 +342,21 @@
             "viewCnt"
           ]
         },
-        "description": "[stats] 조회할 지표. impCnt=노출, clkCnt=클릭, salesAmt=비용, ctr=클릭률, cpc=클릭당비용, avgRnk=평균순위, ccnt=전환수"
+        "description": "[stats] Metrics. impCnt=impressions, clkCnt=clicks, salesAmt=cost, ctr=click rate, cpc=cost per click, avgRnk=average rank, ccnt=conversions"
       },
       "timeRange": {
         "type": "object",
         "properties": {
           "since": {
             "type": "string",
-            "description": "시작일 YYYY-MM-DD"
+            "description": "Start date YYYY-MM-DD"
           },
           "until": {
             "type": "string",
-            "description": "종료일 YYYY-MM-DD"
+            "description": "End date YYYY-MM-DD"
           }
         },
-        "description": "[stats] 조회 기간"
+        "description": "[stats] Date range"
       },
       "datePreset": {
         "type": "string",
@@ -140,7 +369,7 @@
           "lastmonth",
           "lastquarter"
         ],
-        "description": "[stats] 프리셋 기간 (timeRange 대신 사용)"
+        "description": "[stats] Preset range, used instead of timeRange"
       },
       "timeIncrement": {
         "type": "string",
@@ -148,7 +377,7 @@
           "1",
           "allDays"
         ],
-        "description": "[stats] 1=일별, allDays=합산"
+        "description": "[stats] 1=per day, allDays=summed"
       },
       "breakdown": {
         "type": "string",
@@ -156,23 +385,23 @@
           "pcMblTp",
           "dayw"
         ],
-        "description": "[stats] 분류. pcMblTp=PC/모바일, dayw=요일별"
+        "description": "[stats] Split by pcMblTp=PC/mobile or dayw=day of week"
       },
       "statType": {
         "type": "string",
-        "description": "[stats] 통계 유형"
+        "description": "[stats] Custom report type"
       },
       "estimateType": {
         "type": "string",
         "enum": [
-          "performance",
-          "performance-bulk",
-          "average-position-bid",
+          "exposure-minimum-bid",
           "median-bid",
-          "exposure-minimum-bid"
+          "average-position-bid",
+          "performance",
+          "performance-bulk"
         ],
-        "default": "performance",
-        "description": "[estimate] 시뮬레이션 유형. performance=예상 성과, average-position-bid=평균순위 입찰가, median-bid=중위 입찰가, exposure-minimum-bid=보장노출 최소 입찰가"
+        "default": "exposure-minimum-bid",
+        "description": "[estimate] exposure-minimum-bid=lowest bid that still gets shown, median-bid=middle of current bids, average-position-bid=bid for a target rank, performance=one keyword across many bids, performance-bulk=many keyword+bid pairs"
       },
       "keyType": {
         "type": "string",
@@ -181,37 +410,59 @@
           "keyword"
         ],
         "default": "keyword",
-        "description": "[estimate] id=키워드ID로 조회, keyword=키워드 문자열로 조회"
+        "description": "[estimate] Whether the entries in `keywords` are keyword strings or registered keyword ids"
       },
       "key": {
         "type": "string",
-        "description": "[estimate] 키워드 문자열 또는 ID (keyType에 따라)"
+        "description": "[estimate] A single keyword or id. Shorthand for a one-entry `keywords` list"
+      },
+      "bids": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        },
+        "maxItems": 100,
+        "description": "[estimate:performance] Bid amounts in KRW to simulate. The response is one impression/click/cost row per bid"
       },
       "bid": {
         "type": "integer",
-        "description": "[estimate] 입찰가 (원)"
+        "description": "[estimate:performance] A single bid. Shorthand for a one-entry `bids` list"
+      },
+      "position": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10,
+        "default": 1,
+        "description": "[estimate:average-position-bid] Target ad rank: 1-10 on PC, 1-5 on MOBILE"
       },
       "device": {
         "type": "string",
         "enum": [
           "PC",
-          "MOBILE"
+          "MOBILE",
+          "BOTH"
         ],
-        "description": "[estimate] 디바이스"
+        "default": "PC",
+        "description": "[estimate] Device. BOTH is accepted by performance only"
       },
-      "keywordplus": {
-        "type": "boolean",
-        "description": "[estimate] 키워드 확장 여부"
+      "period": {
+        "type": "string",
+        "enum": [
+          "DAY",
+          "MONTH"
+        ],
+        "default": "MONTH",
+        "description": "[estimate] Statistics window: DAY = yesterday, MONTH = last 28 days. This is an enum, not a number of days"
       },
       "items": {
         "type": "array",
-        "description": "[estimate:performance-bulk] [{key, device, bid, keywordplus}] 배열",
+        "description": "[estimate:performance-bulk] Keyword and bid pairs, chunked in 200s",
         "items": {
           "type": "object",
           "properties": {
             "key": {
               "type": "string",
-              "description": "키워드 또는 소재 ID"
+              "description": "Keyword or registered keyword id"
             },
             "device": {
               "type": "string",
@@ -219,22 +470,18 @@
                 "PC",
                 "MOBILE"
               ],
-              "description": "디바이스"
+              "description": "Device"
             },
             "bid": {
               "type": "integer",
-              "description": "입찰가"
+              "description": "Bid amount in KRW"
             },
             "keywordplus": {
               "type": "boolean",
-              "description": "키워드 확장 여부"
+              "description": "Whether extended search is on"
             }
           }
         }
-      },
-      "period": {
-        "type": "string",
-        "description": "[estimate:performance-bulk] 평가 기간 (일 수, 예: '7', '30', '90'). 미지정 시 default '30'"
       },
       "subAction": {
         "type": "string",
@@ -245,47 +492,47 @@
           "period-history"
         ],
         "default": "balance",
-        "description": "[bizmoney] balance=잔액, charge-history=충전내역, exhaust-history=소진내역, period-history=일별현황"
+        "description": "[bizmoney] balance, charge-history, exhaust-history, or period-history"
       },
       "searchStartDt": {
         "type": "string",
-        "description": "[bizmoney:history] 조회 시작일 YYYYMMDD"
+        "description": "[bizmoney:history] Start date YYYYMMDD"
       },
       "searchEndDt": {
         "type": "string",
-        "description": "[bizmoney:history] 조회 종료일 YYYYMMDD"
+        "description": "[bizmoney:history] End date YYYYMMDD"
       },
       "nccCampaignId": {
         "type": "string",
-        "description": "[list-adgroups/list-keywords] 캠페인 ID 필터"
+        "description": "[list-adgroups/list-keywords] Campaign filter"
       },
       "nccAdgroupId": {
         "type": "string",
-        "description": "[list-keywords/list-ads] 광고그룹 ID 필터"
+        "description": "[list-keywords/list-ads] Adgroup filter"
       },
       "campaignType": {
         "type": "string",
-        "description": "[list-campaigns] 캠페인 유형 필터"
+        "description": "[list-campaigns] Campaign type filter"
       },
       "ownerId": {
         "type": "string",
-        "description": "[list-extensions] 소유자 ID"
+        "description": "[list-extensions] Owner id (campaign or adgroup)"
       },
       "nccLabelId": {
         "type": "string",
-        "description": "[list-*] 라벨 ID 필터"
+        "description": "[list-*] Label filter"
       },
       "channelTp": {
         "type": "string",
-        "description": "[list-channels] 채널 유형 필터"
+        "description": "[list-channels] Channel type filter"
       },
       "recordSize": {
         "type": "integer",
-        "description": "[list-*] 페이지당 결과 수"
+        "description": "[list-*] Results per page"
       },
       "selector": {
         "type": "string",
-        "description": "[list-*] 페이징 셀렉터"
+        "description": "[list-*] Paging selector"
       },
       "method": {
         "type": "string",
@@ -296,19 +543,19 @@
           "DELETE"
         ],
         "default": "GET",
-        "description": "[raw] HTTP 메서드"
+        "description": "[raw] HTTP method"
       },
       "uri": {
         "type": "string",
-        "description": "[raw] API 경로 (예: /api/ncc/campaigns)"
+        "description": "[raw] API path (e.g. /ncc/campaigns)"
       },
       "params": {
         "type": "object",
-        "description": "[raw] 쿼리 파라미터"
+        "description": "[raw] Query parameters"
       },
       "body": {
         "type": "object",
-        "description": "[raw] POST/PUT 요청 바디"
+        "description": "[raw] POST/PUT request body"
       }
     },
     "additionalProperties": false
@@ -318,13 +565,21 @@
     "properties": {
       "keywords": {
         "type": "array",
-        "description": "[keyword-tool] 입력 키워드 분석 결과"
+        "description": "[keyword-tool] Rows for the hint keywords themselves"
       },
       "relatedKeywords": {
         "type": "array",
-        "description": "[keyword-tool] 연관 키워드 (최대 20)"
+        "description": "[keyword-tool] Related keyword rows, up to `limit`"
+      },
+      "rows": {
+        "type": "array",
+        "description": "[managed-keywords/biz-categories/seasonal-events] Result rows"
+      },
+      "estimate": {
+        "type": "array",
+        "description": "[estimate] Estimated bids or performance"
       }
     },
-    "description": "action별 응답 구조가 다름. keyword-tool={keywords,relatedKeywords}, stats=통계 배열, estimate=시뮬레이션 결과, bizmoney=잔액/내역"
+    "description": "Shape differs per action. keyword-tool={keywords,relatedKeywords} where each row carries monthlyPcQcCnt/monthlyMobileQcCnt (null when the vendor masked a count under 10), monthlyAve*ClkCnt, monthlyAve*Ctr, plAvgDepth, compIdx, and with withBid/withFlags also minBid*/medianBid* and the restriction flags. estimate={estimate:[...]}, managed-keywords/biz-categories/seasonal-events={rows:[...]}, stats/bizmoney=vendor response."
   }
 }
