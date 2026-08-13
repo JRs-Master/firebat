@@ -103,6 +103,172 @@ fn nearest(key: &str) -> &'static str {
         .unwrap_or("input")
 }
 
+/// The form a model is actually handed must carry everything the server accepts.
+///
+/// The existing form audit (`infra/tests/tool_registry_test.rs`) walks `tools.list()` — the static
+/// registry — so the sysmod surface, which is derived per conversation, was never in scope. That
+/// is exactly where the hole was: `statementsCacheKey` was declared in fa's input schema, absent
+/// from its action catalog, and the published form intersects on catalog names, so the one surface
+/// the model reads never named it. Nothing failed; a turn burned its budget guessing (2026-08-13,
+/// turn 49).
+///
+/// So this builds the REAL surface from every module config and asserts the vocabulary is on it.
+/// It fails if a future refactor goes back to publishing only what a hand-written catalog listed.
+#[test]
+fn the_published_form_names_every_key_the_expander_accepts() {
+    use firebat_core::managers::ai::sysmod_surface::{build_action_form, typed_parameters};
+    use firebat_core::utils::cache_inputs::{key_field, limit_field, parse_nested, range_field};
+
+    let mut problems = Vec::new();
+    let mut audited = 0usize;
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        let cache_inputs: Vec<String> = config
+            .get("cacheInputs")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        if cache_inputs.is_empty() {
+            continue;
+        }
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        let form = build_action_form(&config);
+        // Every action this module declares — the form is published per discovered action, so an
+        // action that takes the param must show its siblings.
+        let actions: Vec<String> = declared_actions(&config)
+            .map(|s| s.into_iter().collect())
+            .unwrap_or_else(|| vec![String::new()]);
+        for action in actions {
+            let Some(published) = typed_parameters(&form, std::slice::from_ref(&action)) else {
+                continue; // nothing discovered for this action — the thin form stands
+            };
+            let Some(props) = published.get("properties").and_then(|p| p.as_object()) else {
+                continue;
+            };
+            audited += 1;
+            for spec in &cache_inputs {
+                match parse_nested(spec) {
+                    None => {
+                        if !props.contains_key(spec) {
+                            continue; // this action does not take the param
+                        }
+                        for want in
+                            [key_field(spec), limit_field(spec), range_field(spec)]
+                        {
+                            if !props.contains_key(&want) {
+                                problems.push(format!(
+                                    "{name}/{action}: form publishes `{spec}` but not `{want}` — \
+                                     the server accepts it, the model cannot see it"
+                                ));
+                            }
+                        }
+                    }
+                    Some(nested) => {
+                        let Some(item) = props
+                            .get(&nested.list)
+                            .and_then(|l| l.get("items"))
+                            .and_then(|i| i.get("properties"))
+                            .and_then(|p| p.as_object())
+                        else {
+                            continue;
+                        };
+                        if !item.contains_key(&nested.field) {
+                            continue;
+                        }
+                        for want in [
+                            key_field(&nested.field),
+                            limit_field(&nested.field),
+                            range_field(&nested.field),
+                        ] {
+                            if !item.contains_key(&want) {
+                                problems.push(format!(
+                                    "{name}/{action}: `{}` items publish `{}` but not `{want}`",
+                                    nested.list, nested.field
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(audited >= 5, "only {audited} forms audited — the derivation drifted");
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
+/// The render half of the same rule: `render_exec` resolves `dataCacheKey` / `dataLimit` /
+/// `dataRange` generically — "no per-component branching" — on any component that reads
+/// `props.data`. Of 44 components exactly one named the key (by hand), and two components that
+/// take `data` did not, so the model's only route to the vocabulary was prose. Published from the
+/// catalog now; this proves the publishing stayed wired.
+#[test]
+fn a_component_that_takes_data_publishes_the_injection_vocabulary() {
+    use firebat_core::managers::ai::component_registry::{components, published_props_schema};
+    let mut problems = Vec::new();
+    let mut audited = 0usize;
+    for def in components() {
+        let published = published_props_schema(def);
+        let Some(props) = published.get("properties").and_then(|p| p.as_object()) else {
+            continue;
+        };
+        if !props.contains_key("data") {
+            continue;
+        }
+        audited += 1;
+        for want in ["dataCacheKey", "dataLimit", "dataRange"] {
+            if !props.contains_key(want) {
+                problems.push(format!(
+                    "{}: takes `data` but the published schema does not name `{want}` — the \
+                     server accepts it on every component, the model cannot see it",
+                    def.name
+                ));
+            }
+        }
+    }
+    assert!(audited >= 3, "only {audited} data components audited — the catalog drifted");
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
+/// What the framework INJECTS, the schema must declare.
+///
+/// The mirror of the form audit above: there the framework accepts a key nobody declared, here it
+/// *writes* one. `ModuleManager::run` inserts `account` into the input of every module that
+/// declares `accounts`, before validation — so a module with `additionalProperties: false` that
+/// does not declare `account` fails every account-resolved call, with an error about a key the
+/// caller never sent. `mock` / `accountNo` / `market` guard themselves (they are injected only
+/// where the schema declares them, by design); `account` does not, which is why it needs a net.
+#[test]
+fn a_module_that_declares_accounts_declares_the_key_the_framework_injects() {
+    let mut problems = Vec::new();
+    let mut audited = 0usize;
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        if config.get("accounts").is_none() {
+            continue;
+        }
+        audited += 1;
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        if !declared_params(&config).contains("account") {
+            let strict = config.pointer("/input/additionalProperties") == Some(&Value::Bool(false));
+            problems.push(format!(
+                "{name}: declares `accounts` but its input schema has no `account` — the \
+                 framework injects it before validation{}",
+                if strict {
+                    ", and additionalProperties:false means every resolved call is refused"
+                } else {
+                    " and the model has no form to choose an account with"
+                }
+            ));
+        }
+    }
+    assert!(audited >= 3, "only {audited} account modules audited — the path drifted");
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
 #[test]
 fn every_module_declaration_names_something_that_exists() {
     let dir = modules_dir();

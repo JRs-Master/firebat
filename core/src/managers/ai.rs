@@ -968,7 +968,8 @@ impl AiManager {
                     Some(c) => Ok(serde_json::json!({
                         "name": c.name,
                         "description": c.description,
-                        "propsSchema": c.props_schema,
+                        "propsSchema":
+                            crate::managers::ai::component_registry::published_props_schema(c),
                         "guide": c.guide,
                     })),
                     None => {

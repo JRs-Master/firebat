@@ -50,6 +50,63 @@ pub fn components() -> &'static Vec<ComponentDef> {
     })
 }
 
+/// A component's props schema AS PUBLISHED — the catalog's own text plus the data-injection
+/// vocabulary the server accepts on any component that reads `props.data`.
+///
+/// `dataCacheKey` / `dataLimit` / `dataRange` are handled generically in `render_exec` ("no
+/// per-component branching"), which means no component author declares them: 44 components, one
+/// of them (`stock_chart`, by hand) named the key, and the two other components that take `data`
+/// did not. That is the render half of the gap measured on the module half the same day — a
+/// framework convention that lives only in prose is a convention the model has to guess
+/// (2026-08-13, turn 49: seven rounds on `statementsCacheKey`). Derived here so the catalog stays
+/// the author's file and the two can never disagree.
+///
+/// An author who declared a sibling keeps their own wording.
+pub fn published_props_schema(def: &ComponentDef) -> serde_json::Value {
+    let mut schema = def.props_schema.clone();
+    let Some(props) = schema.get_mut("properties").and_then(|p| p.as_object_mut()) else {
+        return schema;
+    };
+    if !props.contains_key("data") {
+        return schema;
+    }
+    for (name, sub) in [
+        (
+            "dataCacheKey",
+            serde_json::json!({
+                "type": "string",
+                "description": "The `_cacheKey` from the call that produced the rows, sent INSTEAD \
+                                of `data` — a sibling prop, never a value inside `data`. The \
+                                server injects the cached records as `data` before rendering, so \
+                                the rows never get retyped."
+            }),
+        ),
+        (
+            "dataLimit",
+            serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "description": "Keep only the most-recent N rows of the injected data."
+            }),
+        ),
+        (
+            "dataRange",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string", "description": "Inclusive start, in the rows' own date format."},
+                    "to": {"type": "string", "description": "Inclusive end, in the rows' own date format."}
+                },
+                "description": "Keep only rows inside this date range. A range matching nothing is \
+                                ignored and the full set is kept — a chart must never blank."
+            }),
+        ),
+    ] {
+        props.entry(name.to_string()).or_insert(sub);
+    }
+    schema
+}
+
 /// `name` 으로 컴포넌트 lookup. 옛 TS `COMPONENTS.find(c => c.name === name)` 1:1.
 pub fn find_component(name: &str) -> Option<&'static ComponentDef> {
     components()
@@ -105,7 +162,8 @@ pub fn merged_props_schema(names: &[&str]) -> serde_json::Value {
     let mut owners: Vec<String> = Vec::new();
     for name in names {
         let Some(def) = find_component(name) else { continue };
-        let Some(p) = def.props_schema.get("properties").and_then(|v| v.as_object()) else {
+        let published = published_props_schema(def);
+        let Some(p) = published.get("properties").and_then(|v| v.as_object()) else {
             continue;
         };
         let required: Vec<&str> = def

@@ -87,6 +87,15 @@ pub struct McpServerState {
     /// is not a multi-action call, and its grounding hint says "call directly"
     /// (2026-08-12 실측: the gate rejected the very call the hint prescribed).
     pub action_selectors: RwLock<std::collections::HashSet<String>>,
+    /// Step-three form material per sysmod tool: `tool_name → (module, ActionForm)`.
+    ///
+    /// The FC registry has published the typed form since `a6ed5a95`; this path did not, so a CLI
+    /// turn saw the thin schema forever no matter how far up the ladder it had walked. Same class
+    /// of gap the whole day has been about — a surface that knows less than the server accepts —
+    /// and the exact failure mode [[feedback_dual_tool_registry]] names: build it on one transport
+    /// and the other drifts in silence.
+    pub forms:
+        RwLock<HashMap<String, (String, firebat_core::managers::ai::sysmod_surface::ActionForm)>>,
 }
 
 impl McpServerState {
@@ -99,6 +108,7 @@ impl McpServerState {
             grounding: RwLock::new(HashMap::new()),
             image_import: None,
             action_selectors: RwLock::new(std::collections::HashSet::new()),
+            forms: RwLock::new(HashMap::new()),
         }
     }
 
@@ -385,16 +395,20 @@ async fn handle_rpc(
         }
         "tools/list" => {
             let id = req.id.unwrap_or(Value::Null);
+            let scope = tool_scope_key(&token);
             let tools = state.tools.read().await;
-            let items: Vec<ToolListItem> = tools
-                .values()
-                .filter(|t| is_tool_visible(&state, &t.name))
-                .map(|t| ToolListItem {
+            let mut items: Vec<ToolListItem> = Vec::with_capacity(tools.len());
+            for t in tools.values() {
+                if !is_tool_visible(&state, &t.name) {
+                    continue;
+                }
+                items.push(ToolListItem {
                     name: t.name.clone(),
                     description: t.description.clone(),
-                    input_schema: t.input_schema.clone(),
-                })
-                .collect();
+                    input_schema: schema_for_scope(&state, t, &scope).await,
+                });
+            }
+            drop(tools);
             rpc_success(id, serde_json::json!({ "tools": items }))
         }
         "tools/call" => {
@@ -517,6 +531,20 @@ fn rpc_error(id: Value, code: i32, message: &str) -> axum::response::Response {
 // the same question, and every gate had to be planted twice. Both now live in
 // `firebat_core::utils::conversation_scope`, keyed by conversation (falling back to the caller's
 // token), so a CLI turn and the chat turn that spawned it share one state.
+
+/// The published schema for one tool in one scope: the typed form once this conversation has
+/// fetched an action's schema, the thin form until then.
+///
+/// The gate and the form read the SAME store, which is the point — the ladder's state decides both
+/// "may you call this" and "here is the shape", so a client can never be gated on a step it was
+/// shown no form for.
+async fn schema_for_scope(state: &Arc<McpServerState>, tool: &McpTool, scope: &str) -> Value {
+    let forms = state.forms.read().await;
+    let Some((module, form)) = forms.get(&tool.name) else { return tool.input_schema.clone() };
+    let discovered = conversation_scope::discovered_actions(scope, module);
+    firebat_core::managers::ai::sysmod_surface::typed_parameters(form, &discovered)
+        .unwrap_or_else(|| tool.input_schema.clone())
+}
 
 /// The scope key for one MCP request.
 ///
@@ -1074,6 +1102,13 @@ pub async fn register_sysmod_tools(
             }),
         };
         state.register(tool).await;
+        // Step-three material, kept for the list handler to fill in per conversation (the FC
+        // registry's `forms` map, mirrored).
+        state
+            .forms
+            .write()
+            .await
+            .insert(tool_name.clone(), (surface.module.clone(), surface.form.clone()));
         if !surface.grounding.is_empty() {
             state
                 .grounding
@@ -2673,16 +2708,22 @@ async fn dispatch_method(
             "serverInfo": { "name": "firebat", "version": env!("CARGO_PKG_VERSION") },
         }))),
         "tools/list" => {
+            // stdio has one pseudo-token, so its scope is that one session — the same key the
+            // gate uses on this path, so list and gate stay in step here too.
+            let scope = tool_scope_key("stdio");
             let tools = state.tools.read().await;
-            let items: Vec<ToolListItem> = tools
-                .values()
-                .filter(|t| is_tool_visible(state, &t.name))
-                .map(|t| ToolListItem {
+            let mut items: Vec<ToolListItem> = Vec::with_capacity(tools.len());
+            for t in tools.values() {
+                if !is_tool_visible(state, &t.name) {
+                    continue;
+                }
+                items.push(ToolListItem {
                     name: t.name.clone(),
                     description: t.description.clone(),
-                    input_schema: t.input_schema.clone(),
-                })
-                .collect();
+                    input_schema: schema_for_scope(state, t, &scope).await,
+                });
+            }
+            drop(tools);
             Ok(Some(serde_json::json!({ "tools": items })))
         }
         "tools/call" => {
@@ -2753,5 +2794,90 @@ async fn dispatch_method(
         }
         "notifications/initialized" => Ok(None),
         other => Err((-32601, format!("method not found: {}", other))),
+    }
+}
+
+#[cfg(test)]
+mod parity_tests {
+    use super::*;
+
+    fn fa_like_config() -> Value {
+        serde_json::json!({
+            "name": "fa",
+            "description": "financial analysis",
+            "cacheInputs": ["statements"],
+            "actionCatalog": {"actions": [{"id": "ratios", "params": {"statements": "DART rows"}}]},
+            "input": {"properties": {
+                "action": {"type": "string", "enum": ["ratios"]},
+                "statements": {"type": ["array", "null"], "items": {"type": "object"}}
+            }}
+        })
+    }
+
+    /// The MCP surface must hand over the SAME step-three form the FC registry does, once the
+    /// ladder has been walked. It did not until 2026-08-13: `typed_parameters` had one consumer
+    /// (`ai.rs`), so a CLI turn saw the thin schema no matter how many schemas it had fetched —
+    /// exactly the two-transport drift [[feedback_dual_tool_registry]] exists to catch.
+    #[tokio::test]
+    async fn the_mcp_list_publishes_the_same_typed_form_the_fc_path_does() {
+        let config = fa_like_config();
+        let surface = sysmod_surface::build_surface("fa", &config);
+        let tool = McpTool {
+            name: "sysmod_fa".to_string(),
+            description: surface.description.clone(),
+            input_schema: surface.thin_parameters.clone(),
+            handler: Arc::new(NoopHandler),
+        };
+        let state = Arc::new(McpServerState::new(Arc::new(NoVault)));
+        state
+            .forms
+            .write()
+            .await
+            .insert("sysmod_fa".to_string(), ("fa".to_string(), surface.form.clone()));
+
+        // Before discovery: thin, so the gate keeps its teeth.
+        let scope = tool_scope_key("test-token-parity");
+        let before = schema_for_scope(&state, &tool, &scope).await;
+        assert!(before.get("properties").is_none(), "thin until the ladder is walked: {before}");
+
+        // After get_action_schema in this scope: the filled form, cache vocabulary included.
+        conversation_scope::record_schema(&scope, "fa", "ratios");
+        let after = schema_for_scope(&state, &tool, &scope).await;
+        let props = after["properties"].as_object().expect("typed form");
+        assert!(props.contains_key("statements"));
+        assert!(
+            props.contains_key("statementsCacheKey"),
+            "the CLI surface must name the key the server accepts: {after}"
+        );
+        // …and the FC path derives byte-for-byte the same thing from the same material.
+        let fc = sysmod_surface::typed_parameters(&surface.form, &["ratios".to_string()]).unwrap();
+        assert_eq!(after, fc, "the two transports must publish one form");
+    }
+
+    struct NoopHandler;
+    #[async_trait::async_trait]
+    impl McpToolHandler for NoopHandler {
+        async fn call(&self, _args: Value) -> Result<Value, String> {
+            Ok(Value::Null)
+        }
+    }
+
+    struct NoVault;
+    impl firebat_core::ports::IVaultPort for NoVault {
+        fn get_secret(&self, _key: &str) -> Option<String> {
+            None
+        }
+        fn set_secret(&self, _key: &str, _value: &str) -> bool {
+            true
+        }
+        fn delete_secret(&self, _key: &str) -> bool {
+            true
+        }
+        fn list_keys(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn list_keys_by_prefix(&self, _prefix: &str) -> Vec<String> {
+            Vec::new()
+        }
     }
 }
