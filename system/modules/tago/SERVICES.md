@@ -49,9 +49,18 @@ gaps are not per line at all — see below.
 - `dailyTypeCode=02` (토요일) returned **zero on 8 of 8 lines**, including every line whose 평일 and
   일요일 tables are full — 서울역 1호선 236 / 0 / 227, 구로 2호선 228 / 0 / 190, 노량진 9호선
   231 / 0 / 179, 신림선 178 / 0 / 145, 수인분당 164 / 0 / 125, 경의중앙 29 / 0 / 18, 부산김해경전철
-  189 / 0 / 174. TAGO publishes **평일 (01) and 휴일 (03)**; the Saturday code is documented with
-  nothing behind it. A Saturday request must be answered from 03, described as the 휴일 table —
-  otherwise the answer is wrong about the trains rather than about the feed.
+  189 / 0 / 174.
+
+  **The documentation is not stale — the code space was checked.** Returned rows echo
+  `dailyTypeCode` back as `01` and `03`, matching the guide, and no undocumented alternative
+  answers: `1`, `2`, `3`, `02`, `00`, `04`, `05` and `SAT` all return zero, as do direction values
+  other than `U`/`D`. So 02 is a valid, documented slot that was never populated — not a parameter
+  that changed behind an unrevised document.
+
+  What that does NOT establish is whether 03 also covers Saturday. Korean subway timetables are
+  variously published as 평일/토요일/일요일·공휴일 or as 평일/토·휴일, and the feed cannot tell us
+  which one this is. So do not hand 03 over as a Saturday timetable — say the Saturday table is not
+  published, and offer 03 as what it is labelled.
 - 노량진 1호선 `MTRKR1136` is zero in **all six** day/direction combinations, so it is not a
   parameter mistake. And the station is not unknown to the service: its exit-bus list returns 64
   rows and its exit-facility list 16. Only the timetable is missing for it.

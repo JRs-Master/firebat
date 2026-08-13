@@ -215,7 +215,7 @@
           "02",
           "03"
         ],
-        "description": "[subway-timetable] 01=평일, 02=토요일, 03=일요일. ⚠️ 02 came back empty on every line measured (8 of 8) — TAGO publishes 평일 and 휴일 only, so use 03 for any weekend day"
+        "description": "[subway-timetable] 01=평일, 02=토요일, 03=일요일. ⚠️ 02 는 측정한 8개 노선 전부 빈 결과입니다 — 코드 자체는 유효한데 데이터가 안 실린 슬롯입니다. 03 이 토요일을 포함하는지는 확인되지 않았으니 03 을 토요일 시간표라고 대신 내놓지 마십시오"
       },
       "upDownTypeCode": {
         "type": "string",
