@@ -770,8 +770,15 @@ impl ModuleManager {
                     // sends the model back up the ladder when the fix is one field rename.
                     for param in crate::utils::cache_inputs::declared(config) {
                         if detail.contains(&format!("/{param}")) || detail.contains(&format!("'{param}'")) {
+                            // Say WHERE the key goes, not just that it is accepted. "`statements`
+                            // accepts `statementsCacheKey`" reads as "put it inside statements",
+                            // and that is exactly how it was read: turn 49 (2026-08-13) tried
+                            // `{"_cacheKey": …}`, `[{"_cacheKey": …}]` and
+                            // `[{"statementsCacheKey": …}]` in the value slot over four rounds,
+                            // reasoning each time that the description "suggests" a sibling it
+                            // could not see. A hint that names the slot ends that guessing.
                             msg.push_str(&format!(
-                                " `{param}` accepts `{param}CacheKey` — pass the producing call's `_cacheKey` instead of retyping rows; for part of the table add `{param}Limit`:N (most-recent N) or `{param}Range`:{{from,to}} beside it."
+                                " Send `{param}CacheKey`: \"<the producing call's _cacheKey>\" as its OWN top-level parameter — a sibling of `{param}`, not a value inside it — and omit `{param}` entirely; the server fills it. Several keys may go in a list (`[\"key1\",\"key2\"]`) and their rows are concatenated. For part of the table add `{param}Limit`:N (most-recent N) or `{param}Range`:{{from,to}} beside the key."
                             ));
                             break;
                         }
@@ -3220,6 +3227,16 @@ fn coerce_node(
             if t.starts_with('[') || t.starts_with('{') {
                 if let Ok(parsed @ V::Array(_)) = serde_json::from_str::<V>(t) {
                     notes.push(format!("{path}: JSON string → array"));
+                    return coerce_node(&parsed, schema, path, notes);
+                }
+                // A hand-serialized OBJECT where a list is declared parses just as cleanly, and
+                // reading it is just as lossless — the wrap into a one-item list is the scalar
+                // rule, unchanged. Leaving it a string instead cost a whole exchange: turn 49
+                // (2026-08-13) sent `"{\"_cacheKey\": \"…\"}"` to fa's `statements`, which the
+                // cache-key carrier absorber would have taken, but the value never became an
+                // object so the absorber never saw it and the error blamed the type.
+                if let Ok(parsed @ V::Object(_)) = serde_json::from_str::<V>(t) {
+                    notes.push(format!("{path}: JSON string → object"));
                     return coerce_node(&parsed, schema, path, notes);
                 }
                 // It MEANT to be JSON and the JSON is broken — wrapping it would bury that.

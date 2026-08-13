@@ -138,7 +138,8 @@
         }
       },
       "barsCacheKey": {
-        "type": "string",
+        "type": ["string", "array"],
+        "items": {"type": "string"},
         "description": "Cache key from the broker's candle response — expanded into `bars` before validation, so the rows never ride in the call."
       },
       "signal": {

@@ -240,6 +240,15 @@ impl ModuleActionSource {
                 if !envelope.is_empty() {
                     extra["envelope"] = serde_json::Value::String(envelope.to_string());
                 }
+                // The cache-key vocabulary belongs in the params the model reads, not only in the
+                // hint it gets after a rejection. A hand-written catalog lists what its author
+                // remembered, and `cacheInputs` is declared elsewhere in the same file: fa's
+                // catalog named `statements` while its input schema declared
+                // `statementsCacheKey`, so `get_action_schema` reported four params and the model
+                // reasoned, verbatim, "the schema I got only shows 4 params" — then spent seven
+                // rounds inventing shapes (2026-08-13, turn 49). Derived from the declaration, so
+                // it cannot drift from what the expander accepts.
+                add_cache_key_params(&mut extra, config);
                 // Attach resolve guidance for grounded params this action actually takes —
                 // the model reads it exactly where it reads the params (get_action_schema),
                 // BEFORE its first call, instead of after a grounding rejection.
@@ -453,6 +462,38 @@ fn tag_tokens(desc: &str) -> Vec<String> {
         i += 1;
     }
     out
+}
+
+/// Names the `<param>CacheKey` / `Limit` / `Range` siblings in an entry's `params`, for every
+/// `cacheInputs` param the entry already lists.
+///
+/// Only params this action takes get siblings — the catalog decides relevance, this decides
+/// completeness. A nested `"<list>.*.<field>"` declaration names the field, since that is the key
+/// the model writes inside each element.
+fn add_cache_key_params(extra: &mut serde_json::Value, config: &serde_json::Value) {
+    use crate::utils::cache_inputs::{declared, parse_nested, sibling_schemas};
+    let declared = declared(config);
+    if declared.is_empty() {
+        return;
+    }
+    let Some(params) = extra.get_mut("params").and_then(|p| p.as_object_mut()) else {
+        return;
+    };
+    for entry in &declared {
+        let (listed, param) = match parse_nested(entry) {
+            None => (entry.clone(), entry.clone()),
+            Some(spec) => (spec.list.clone(), spec.field.clone()),
+        };
+        if !params.contains_key(&listed) {
+            continue;
+        }
+        for (name, schema) in sibling_schemas(&param) {
+            let Some(desc) = schema.get("description").and_then(|d| d.as_str()) else { continue };
+            params
+                .entry(name)
+                .or_insert_with(|| serde_json::Value::String(desc.to_string()));
+        }
+    }
 }
 
 /// `ultra-*` matches `ultra-short`; otherwise an exact action-id match.

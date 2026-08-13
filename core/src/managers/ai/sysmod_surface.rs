@@ -40,6 +40,10 @@ use crate::utils::grounding::{parse_grounding, GroundedParam};
 pub struct ActionForm {
     pub props: serde_json::Map<String, serde_json::Value>,
     pub per_action: std::collections::HashMap<String, Vec<String>>,
+    /// `cacheInputs` verbatim — plain param names and nested `"<list>.*.<field>"` paths alike.
+    /// The key/window siblings are framework convention, so nobody declares them and the form
+    /// has to derive them (see `cache_inputs::sibling_schemas`).
+    pub cache_params: Vec<String>,
 }
 
 /// Everything a transport needs to expose one system module as one tool.
@@ -88,7 +92,48 @@ pub fn build_action_form(config: &serde_json::Value) -> ActionForm {
             per_action.insert(id.to_string(), params.keys().cloned().collect());
         }
     }
-    ActionForm { props, per_action }
+    ActionForm { props, per_action, cache_params: crate::utils::cache_inputs::declared(config) }
+}
+
+/// Adds the cache-key vocabulary to a published property set.
+///
+/// A declared `cacheInputs` param gets `<param>CacheKey` / `<param>Limit` / `<param>Range` beside
+/// it; a nested `"<list>.*.<field>"` declaration gets them inside that list's item schema, where
+/// the model actually writes them. An author who declared the sibling explicitly keeps their own
+/// wording — this fills gaps, it does not overwrite declarations.
+fn add_cache_siblings(
+    out: &mut serde_json::Map<String, serde_json::Value>,
+    declared_props: &serde_json::Map<String, serde_json::Value>,
+    cache_params: &[String],
+) {
+    use crate::utils::cache_inputs::{parse_nested, sibling_schemas};
+    for entry in cache_params {
+        match parse_nested(entry) {
+            None => {
+                if !out.contains_key(entry) {
+                    continue; // not part of this action's form
+                }
+                for (name, schema) in sibling_schemas(entry) {
+                    let schema = declared_props.get(&name).cloned().unwrap_or(schema);
+                    out.entry(name).or_insert(schema);
+                }
+            }
+            Some(spec) => {
+                let Some(list) = out.get_mut(&spec.list) else { continue };
+                let Some(items) = list.get_mut("items") else { continue };
+                let Some(props) = items.get_mut("properties").and_then(|p| p.as_object_mut())
+                else {
+                    continue;
+                };
+                if !props.contains_key(&spec.field) {
+                    continue;
+                }
+                for (name, schema) in sibling_schemas(&spec.field) {
+                    props.entry(name).or_insert(schema);
+                }
+            }
+        }
+    }
 }
 
 /// Thin tool parameters (Part 1-B): the full input schema is NOT exposed — the model must discover
@@ -160,6 +205,10 @@ pub fn typed_parameters(form: &ActionForm, actions: &[String]) -> Option<serde_j
     if out.is_empty() {
         return None;
     }
+    // The convention the expander reads, published where the model writes. Without this the
+    // vocabulary lived only in prose and in error text, and a model holding the right key spent
+    // seven rounds guessing its shape (2026-08-13, fa `ratios`).
+    add_cache_siblings(&mut out, props, &form.cache_params);
     let discovered = actions.join(", ");
     Some(serde_json::json!({
         "type": "object",
@@ -379,5 +428,88 @@ mod tests {
         assert!(build_surface("stock-lookup", &single_action_config())
             .grounding
             .is_empty());
+    }
+
+    /// The form has to carry the vocabulary the expander accepts. fa declared
+    /// `cacheInputs: ["statements"]` and its catalog listed `statements` alone, so the only
+    /// surface the model reads never named `statementsCacheKey` — seven rounds of guessing
+    /// followed (2026-08-13, turn 49).
+    #[test]
+    fn a_cache_input_param_publishes_its_key_and_window_siblings() {
+        let cfg = json!({
+            "name": "fa",
+            "cacheInputs": ["statements"],
+            "actionCatalog": {"actions": [
+                {"id": "ratios", "params": {"statements": "DART rows", "shares": "count"}}
+            ]},
+            "input": {"properties": {
+                "action": {"type": "string", "enum": ["ratios"]},
+                "statements": {"type": ["array", "null"], "items": {"type": "object"}},
+                "shares": {"type": "number"}
+            }}
+        });
+        let form = build_action_form(&cfg);
+        let published = typed_parameters(&form, &["ratios".to_string()]).unwrap();
+        let props = published["properties"].as_object().unwrap();
+        assert!(props.contains_key("statements"));
+        assert!(
+            props.contains_key("statementsCacheKey"),
+            "the key the server reads must appear where the model writes: {published}"
+        );
+        assert!(props.contains_key("statementsLimit"));
+        assert!(props.contains_key("statementsRange"));
+        let desc = props["statementsCacheKey"]["description"].as_str().unwrap();
+        assert!(desc.contains("top-level"), "the slot must be named, not implied: {desc}");
+        // A param this action does not take gets no siblings — the catalog decides relevance.
+        assert!(!props.contains_key("sharesCacheKey"));
+    }
+
+    /// A nested declaration's siblings belong inside the list's items, which is where the model
+    /// writes them (`sheets[i].rowsCacheKey`).
+    #[test]
+    fn a_nested_cache_input_publishes_its_siblings_inside_the_item() {
+        let cfg = json!({
+            "name": "docs",
+            "cacheInputs": ["sheets.*.rows"],
+            "actionCatalog": {"actions": [{"id": "make_xlsx", "params": {"sheets": "the sheets"}}]},
+            "input": {"properties": {
+                "action": {"type": "string", "enum": ["make_xlsx"]},
+                "sheets": {"type": "array", "items": {"type": "object", "properties": {
+                    "name": {"type": "string"},
+                    "rows": {"type": "array", "items": {"type": "object"}}
+                }}}
+            }}
+        });
+        let form = build_action_form(&cfg);
+        let published = typed_parameters(&form, &["make_xlsx".to_string()]).unwrap();
+        let item = &published["properties"]["sheets"]["items"]["properties"];
+        assert!(item.get("rowsCacheKey").is_some(), "{published}");
+        assert!(item.get("rowsLimit").is_some());
+        assert!(item.get("rowsRange").is_some());
+        assert!(
+            published["properties"].get("rowsCacheKey").is_none(),
+            "a nested key never belongs at the top level"
+        );
+    }
+
+    /// An author who declared the sibling themselves keeps their own wording — this fills a gap,
+    /// it does not overwrite a declaration.
+    #[test]
+    fn a_declared_sibling_is_left_exactly_as_declared() {
+        let cfg = json!({
+            "cacheInputs": ["statements"],
+            "actionCatalog": {"actions": [{"id": "ratios", "params": {"statements": "rows"}}]},
+            "input": {"properties": {
+                "action": {"type": "string", "enum": ["ratios"]},
+                "statements": {"type": ["array", "null"]},
+                "statementsCacheKey": {"type": "string", "description": "author's own words"}
+            }}
+        });
+        let published =
+            typed_parameters(&build_action_form(&cfg), &["ratios".to_string()]).unwrap();
+        assert_eq!(
+            published["properties"]["statementsCacheKey"]["description"],
+            "author's own words"
+        );
     }
 }

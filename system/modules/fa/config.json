@@ -78,9 +78,13 @@
       "statementsCacheKey": {
         "type": [
           "string",
+          "array",
           "null"
         ],
-        "description": "The `_cacheKey` from the dart financial call — hands the rows over without re-inlining them. One of statements / statementsCacheKey is required."
+        "items": {
+          "type": "string"
+        },
+        "description": "The `_cacheKey` from the dart financial call — a top-level parameter of its own, never a value inside `statements`. Hands the rows over without re-inlining them. One of statements / statementsCacheKey is required. Several calls (one per year) may be listed — [\"key2023\",\"key2024\",\"key2025\"] — and their rows are concatenated in the order given."
       },
       "marketCap": {
         "type": [

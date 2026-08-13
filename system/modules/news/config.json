@@ -86,8 +86,12 @@
       "itemsCacheKey": {
         "type": [
           "string",
+          "array",
           "null"
         ],
+        "items": {
+          "type": "string"
+        },
         "description": "The `_cacheKey` from the naver_search news call — hands the items over without re-inlining."
       },
       "bars": {
@@ -103,8 +107,12 @@
       "barsCacheKey": {
         "type": [
           "string",
+          "array",
           "null"
         ],
+        "items": {
+          "type": "string"
+        },
         "description": "The `_cacheKey` from the candle call."
       },
       "benchmarkBars": {
@@ -120,8 +128,12 @@
       "benchmarkBarsCacheKey": {
         "type": [
           "string",
+          "array",
           "null"
         ],
+        "items": {
+          "type": "string"
+        },
         "description": "The `_cacheKey` from the index candle call."
       },
       "horizons": {

@@ -150,8 +150,12 @@
       "blocksCacheKey": {
         "type": [
           "string",
+          "array",
           "null"
         ],
+        "items": {
+          "type": "string"
+        },
         "description": "Cache key holding the blocks array (from a previous tool result) instead of inlining it."
       },
       "sheets": {

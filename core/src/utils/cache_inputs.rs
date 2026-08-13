@@ -60,6 +60,110 @@ pub fn range_field(param: &str) -> String {
     format!("{param}Range")
 }
 
+/// The three siblings as PUBLISHABLE properties — the form for this vocabulary.
+///
+/// The names above are framework convention, which means no author declares them and no schema
+/// carried them: `<param>CacheKey` existed only in prose (an action catalog's description) and in
+/// validation hints. A model that had the right key and the right intent therefore had to guess
+/// the shape. Measured 2026-08-13 (SK하이닉스, turn 49): fa `ratios` was called five different
+/// ways in seven rounds — the key as the value of `statements`, `{"_cacheKey": …}`,
+/// `[{"_cacheKey": …}]`, `[{"statementsCacheKey": …}]`, and three keys comma-joined into one
+/// string — and the model's own reasoning names the reason twice: "the schema I got only shows 4
+/// params". fa's `config.input` had declared `statementsCacheKey` all along; the catalog that
+/// feeds `get_action_schema` had not, and the published form intersects on catalog names, so the
+/// one surface the model reads never showed it. Seven rounds and the tool budget went to a
+/// parameter that existed.
+///
+/// So the convention publishes itself. Every surface that lists a cacheInputs param lists these
+/// beside it, derived from the same declaration the expander reads — one derivation, no drift.
+pub fn sibling_schemas(param: &str) -> Vec<(String, serde_json::Value)> {
+    vec![
+        (
+            key_field(param),
+            serde_json::json!({
+                "type": ["string", "array"],
+                "items": {"type": "string"},
+                "description": format!(
+                    "The producing call's `_cacheKey`, sent INSTEAD of `{param}` — a top-level \
+                     parameter of its own, never a value inside `{param}`. The server reads the \
+                     rows and fills `{param}` before validation. Several keys may be sent as a \
+                     list and their rows are concatenated in the order given (three yearly \
+                     reports into one table)."
+                ),
+            }),
+        ),
+        (
+            limit_field(param),
+            serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "description": format!(
+                    "Keep only the most-recent N rows of what `{}` expands to.",
+                    key_field(param)
+                ),
+            }),
+        ),
+        (
+            range_field(param),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string", "description": "Inclusive start, as the rows' own date format."},
+                    "to": {"type": "string", "description": "Inclusive end, as the rows' own date format."},
+                },
+                "description": format!(
+                    "Keep only the rows of `{}` inside this date range. A range that matches \
+                     nothing is refused, not silently widened.",
+                    key_field(param)
+                ),
+            }),
+        ),
+    ]
+}
+
+/// Every key in an argument that is meant to name cached rows.
+///
+/// One key stays one key. A LIST of keys is the answer to a question the vocabulary could not
+/// answer before: three `dart financialAll` calls, one per year, feeding one `fa ratios` call.
+/// With no way to say it, the model joined them with commas into a single string (measured
+/// 2026-08-13) — so the joined string is read the same way, but only when EVERY comma-part has
+/// the key shape. A value with one key-shaped part and one of anything else is not a list of
+/// keys, and guessing there would corrupt an argument rather than repair it.
+fn keys_in(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                return Vec::new();
+            }
+            if !t.contains(',') {
+                return vec![t.to_string()];
+            }
+            let parts: Vec<&str> = t.split(',').map(str::trim).collect();
+            if parts.iter().all(|p| looks_like_cache_key(p)) {
+                parts.into_iter().map(str::to_string).collect()
+            } else {
+                vec![t.to_string()]
+            }
+        }
+        serde_json::Value::Array(items) if !items.is_empty() => {
+            let keys: Vec<String> = items
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| looks_like_cache_key(s))
+                .map(str::to_string)
+                .collect();
+            if keys.len() == items.len() {
+                keys
+            } else {
+                Vec::new()
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Applies the `<param>Limit` / `<param>Range` siblings sitting next to a cache key.
 ///
 /// `holder` is whichever object carries them (the call for a flat param, the list element for a
@@ -188,23 +292,38 @@ pub fn looks_like_cache_key(s: &str) -> bool {
 /// `"statements": [{"_cacheKey": "dart-financialAll:list-…"}]`. Both the bare object and the
 /// one-element list around it arrive (scalar coercion wraps a lone object into a list).
 ///
-/// Deliberately strict: the object must carry `_cacheKey` and NOTHING else. An object that also
-/// holds real fields is a record, and a records list whose one row happens to name a key is data,
-/// not an instruction.
-fn carrier_cache_key(v: &serde_json::Value) -> Option<String> {
-    let obj = match v {
-        serde_json::Value::Object(o) => o,
-        serde_json::Value::Array(a) if a.len() == 1 => a[0].as_object()?,
-        _ => return None,
-    };
-    if obj.len() != 1 {
-        return None;
+/// Deliberately strict: each object must carry `_cacheKey` and NOTHING else. An object that also
+/// holds real fields is a record, not an instruction.
+///
+/// A LIST of such carriers is read as a list of keys — every element must be a pure carrier, so a
+/// records list can never be mistaken for one (real rows carry real fields). The one-element case
+/// used to be the only one accepted; the model that had three yearly reports to hand over wrote
+/// the three-element form and got a type error naming a structure it had reasoned its way to
+/// (measured 2026-08-13).
+fn carrier_cache_keys(v: &serde_json::Value) -> Vec<String> {
+    fn one(v: &serde_json::Value) -> Option<String> {
+        let obj = v.as_object()?;
+        if obj.len() != 1 {
+            return None;
+        }
+        obj.get("_cacheKey")
+            .and_then(|k| k.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
     }
-    obj.get("_cacheKey")
-        .and_then(|k| k.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
+    match v {
+        serde_json::Value::Object(_) => one(v).into_iter().collect(),
+        serde_json::Value::Array(items) if !items.is_empty() => {
+            let keys: Vec<String> = items.iter().filter_map(one).collect();
+            if keys.len() == items.len() {
+                keys
+            } else {
+                Vec::new()
+            }
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// Whether a cache key points at a WHOLE-response entry (scalar/autoCacheWhole path — the
@@ -249,23 +368,19 @@ fn expand_nested(
         let Some(item_obj) = item.as_object() else {
             continue;
         };
-        let Some(key) = item_obj
-            .get(&field)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        else {
+        let keys: Vec<String> = item_obj.get(&field).map(keys_in).unwrap_or_default();
+        if keys.is_empty() {
             continue;
-        };
-        let key = key.to_string();
+        }
         let at = format!("{}[{i}].{field}", spec.list);
         // A whole-response key can never be rows. Turn 39 (2026-08-12) shipped a "일봉
         // (120일)" sheet that was EMPTY: the model grabbed an earlier dud call's `…:_`
         // key while the real 500-row array key sat one call later in the history.
         // Expanding it faithfully injects one response object where rows belong — data
         // loss that looks like data. Refuse with the shape named instead.
-        if is_whole_entry_key(&key) {
+        if let Some(whole) = keys.iter().find(|k| is_whole_entry_key(k)) {
             return Err(format!(
-                "{at}: {key} is a WHOLE-response cache entry (label ':_'), not a rows list — \
+                "{at}: {whole} is a WHOLE-response cache entry (label ':_'), not a rows list — \
                  pass the _cacheKey whose label names the rows field (e.g. \
                  module-action:rowsField-…), from the call that actually returned the rows."
             ));
@@ -288,9 +403,14 @@ fn expand_nested(
                 spec.field
             ));
         };
-        let records = read_records(cache, &key, &at)?;
+        let mut records: Vec<serde_json::Value> = Vec::new();
+        for (k, key) in keys.iter().enumerate() {
+            let at = if keys.len() == 1 { at.clone() } else { format!("{at}[{k}]") };
+            records.extend(read_records(cache, key, &at)?);
+        }
         let records = sliced_records(&spec.field, item_obj, records, &at)?;
         let count = records.len();
+        let key = keys.join(", ");
         target.insert(spec.field.clone(), serde_json::Value::Array(records));
         target.remove(&field);
         target.remove(&slice_keys.0);
@@ -344,47 +464,50 @@ pub fn expand(
             continue;
         }
         let field = key_field(&param);
-        let key_owned: Option<String> = obj
-            .get(&field)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .or_else(|| {
-                // Dialect: the key handed to the VALUE slot — "statements": "<key>" (string
-                // coercion then wraps it into a one-item list, so both shapes arrive).
-                // The key shape is unmistakable; reading the intent is lossless and saves
-                // the relearning round (measured 2026-08-12 turn 39: two rounds burned).
-                match obj.get(&param) {
-                    Some(serde_json::Value::String(s)) if looks_like_cache_key(s) => {
-                        Some(s.trim().to_string())
-                    }
-                    Some(serde_json::Value::Array(a)) if a.len() == 1 => a[0]
-                        .as_str()
-                        .filter(|s| looks_like_cache_key(s))
-                        .map(|s| s.trim().to_string()),
-                    _ => None,
-                }
-            })
-            .or_else(|| {
-                // Dialect: the carrier object the cached response advertised, handed back whole —
-                // `"statements": [{"_cacheKey": "…"}]` (measured 2026-08-12). Same intent, same
-                // expansion, same errors: a miss reports `<param>CacheKey` exactly as the normal
-                // path does.
-                obj.get(&param).and_then(carrier_cache_key)
-            });
-        let Some(key) = key_owned else {
+        let mut keys: Vec<String> = obj.get(&field).map(keys_in).unwrap_or_default();
+        if keys.is_empty() {
+            // Dialect: the key handed to the VALUE slot — "statements": "<key>" (string
+            // coercion then wraps it into a one-item list, so both shapes arrive).
+            // The key shape is unmistakable; reading the intent is lossless and saves
+            // the relearning round (measured 2026-08-12 turn 39: two rounds burned).
+            keys = obj
+                .get(&param)
+                .map(keys_in)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|k| looks_like_cache_key(k))
+                .collect();
+        }
+        if keys.is_empty() {
+            // Dialect: the carrier object the cached response advertised, handed back whole —
+            // `"statements": [{"_cacheKey": "…"}]` (measured 2026-08-12). Same intent, same
+            // expansion, same errors: a miss reports `<param>CacheKey` exactly as the normal
+            // path does.
+            keys = obj.get(&param).map(carrier_cache_keys).unwrap_or_default();
+        }
+        if keys.is_empty() {
             continue;
-        };
+        }
+        let cache = cache.ok_or_else(|| {
+            format!("{field} was given but this server has no result cache — send `{param}` directly.")
+        })?;
+        // An object-shaped param holds ONE response, so several keys have no meaning there —
+        // concatenating them would silently drop all but one. Say which slot and how many.
+        if keys.len() > 1 && param_wants_object(config, &param) {
+            return Err(format!(
+                "{field}: {} keys given, but `{param}` takes a single object — call once per key, \
+                 or pass the key of the one call that returned them together.",
+                keys.len()
+            ));
+        }
+        let mut records: Vec<serde_json::Value> = Vec::new();
+        for (i, key) in keys.iter().enumerate() {
+            let at =
+                if keys.len() == 1 { field.clone() } else { format!("{field}[{i}]") };
+            records.extend(read_records(cache, key, &at)?);
+        }
+        let key = keys.join(", ");
         let key = key.as_str();
-        let records = read_records(
-            cache.ok_or_else(|| {
-                format!(
-                    "{field} was given but this server has no result cache — send `{param}` directly."
-                )
-            })?,
-            key,
-            &field,
-        )?;
         let records = sliced_records(&param, obj, records, &field)?;
         // A param declared as an OBJECT receives the record itself, not a one-element list.
         // Whole-object caching (`autoCacheWhole`) stores a multi-section response as a single
@@ -673,7 +796,6 @@ mod tests {
         for input in [
             serde_json::json!({"statements": {"_cacheKey": key, "account": "x"}}),
             serde_json::json!({"statements": [{"_cacheKey": key, "account": "x"}]}),
-            serde_json::json!({"statements": [{"_cacheKey": key}, {"_cacheKey": key}]}),
             serde_json::json!({"statements": {"_cacheKey": ""}}),
         ] {
             assert!(
@@ -681,6 +803,47 @@ mod tests {
                 "absorbed a shape it should have left alone: {input}"
             );
         }
+    }
+
+    /// Three yearly DART reports, one ratios call. The vocabulary had no way to say it, so the
+    /// model said it four ways in one turn (2026-08-13): a list of keys, a list of carriers, and
+    /// the three keys comma-joined into one string. All three now mean the same thing — rows
+    /// concatenated in the order given.
+    #[test]
+    fn several_keys_become_one_table_however_they_are_written() {
+        let (cache, k1, _d1) = cache_with(vec![serde_json::json!({"y": 2023})]);
+        // Both keys must live in the SAME store, as three dart calls in one turn do.
+        let k2 = cache
+            .data("dart", "financialAll", serde_json::json!({}), vec![serde_json::json!({"y": 2024})], None)
+            .unwrap();
+        let cfg = serde_json::json!({"cacheInputs": ["statements"]});
+        for input in [
+            serde_json::json!({"statementsCacheKey": [k1.clone(), k2.clone()]}),
+            serde_json::json!({"statementsCacheKey": format!("{k1}, {k2}")}),
+            serde_json::json!({"statements": [{"_cacheKey": k1}, {"_cacheKey": k2}]}),
+        ] {
+            let out = expand("m", &cfg, &input, Some(&cache)).unwrap().unwrap();
+            let rows = out["statements"].as_array().unwrap();
+            assert_eq!(rows.len(), 2, "{input} → {out}");
+            assert_eq!(rows[0]["y"], 2023);
+            assert_eq!(rows[1]["y"], 2024, "order follows the order given");
+            assert!(out.get("statementsCacheKey").is_none());
+        }
+    }
+
+    /// An object slot holds one response, so several keys there cannot be honoured — and dropping
+    /// all but one silently is the failure this refuses to become.
+    #[test]
+    fn several_keys_for_an_object_param_are_refused_by_name() {
+        let (cache, k1, _d) = cache_with(vec![serde_json::json!({"a": 1})]);
+        let cfg = serde_json::json!({
+            "cacheInputs": ["estimates"],
+            "input": {"properties": {"estimates": {"type": ["object", "null"]}}}
+        });
+        let input = serde_json::json!({"estimatesCacheKey": [k1.clone(), k1]});
+        let err = expand("m", &cfg, &input, Some(&cache)).unwrap_err();
+        assert!(err.contains("estimatesCacheKey: 2 keys given"), "{err}");
+        assert!(err.contains("call once per key"), "{err}");
     }
 
     #[test]

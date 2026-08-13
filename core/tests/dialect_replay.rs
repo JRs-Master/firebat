@@ -29,7 +29,11 @@ use serde_json::Value;
 
 /// Seeds `n` dated rows and hands back the cache plus its key, so a corpus entry can name one
 /// with `"<KEY>"` without knowing how keys are built.
-fn seeded_cache(n: usize) -> (Arc<SysmodCacheAdapter>, String, tempfile::TempDir) {
+///
+/// A SECOND entry of one row is always seeded as `"<KEY2>"`: several calls feeding one argument is
+/// itself a measured shape (three yearly DART reports into one `fa ratios` call, 2026-08-13), and
+/// replaying it needs two keys in the same store.
+fn seeded_cache(n: usize) -> (Arc<SysmodCacheAdapter>, String, String, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let cache = SysmodCacheAdapter::new(dir.path().to_path_buf()).unwrap();
     let rows: Vec<Value> = (1..=n)
@@ -38,19 +42,30 @@ fn seeded_cache(n: usize) -> (Arc<SysmodCacheAdapter>, String, tempfile::TempDir
     let key = cache
         .data("m", "a:rows", serde_json::json!({}), rows, None)
         .unwrap();
-    (Arc::new(cache), key, dir)
+    let key2 = cache
+        .data(
+            "m2",
+            "a:rows",
+            serde_json::json!({}),
+            vec![serde_json::json!({"date": "2026-09-01", "close": 99})],
+            None,
+        )
+        .unwrap();
+    (Arc::new(cache), key, key2, dir)
 }
 
-fn substitute_key(v: &Value, key: &str) -> Value {
+fn substitute_key(v: &Value, key: &str, key2: &str) -> Value {
+    let substitute_key = |v: &Value| substitute_key(v, key, key2);
     match v {
-        Value::String(s) if s == "<KEY>" => Value::String(key.to_string()),
-        Value::String(_) | Value::Null | Value::Bool(_) | Value::Number(_) => v.clone(),
-        Value::Array(a) => Value::Array(a.iter().map(|x| substitute_key(x, key)).collect()),
-        Value::Object(o) => Value::Object(
-            o.iter()
-                .map(|(k, x)| (k.clone(), substitute_key(x, key)))
-                .collect(),
-        ),
+        // Substring, not equality: a shape can bury a key inside a hand-serialized container
+        // (`"{\"_cacheKey\": \"<KEY>\"}"`) or join two of them into one string, and those are
+        // exactly the shapes worth replaying.
+        Value::String(s) => Value::String(s.replace("<KEY2>", key2).replace("<KEY>", key)),
+        Value::Null | Value::Bool(_) | Value::Number(_) => v.clone(),
+        Value::Array(a) => Value::Array(a.iter().map(substitute_key).collect()),
+        Value::Object(o) => {
+            Value::Object(o.iter().map(|(k, x)| (k.clone(), substitute_key(x))).collect())
+        }
     }
 }
 
@@ -71,7 +86,9 @@ fn every_measured_dialect_still_reads_the_way_it_did() {
         // Only entries that ask for a cache get one — the rest prove the no-cache path too.
         let seeded = entry["cacheRows"].as_u64().map(|n| seeded_cache(n as usize));
         let (cache, input) = match &seeded {
-            Some((cache, key, _dir)) => (Some(cache), substitute_key(&entry["input"], key)),
+            Some((cache, key, key2, _dir)) => {
+                (Some(cache), substitute_key(&entry["input"], key, key2))
+            }
             None => (None, entry["input"].clone()),
         };
 

@@ -168,6 +168,25 @@ fn every_module_declaration_names_something_that_exists() {
             if !params.contains(head) {
                 say(format!("cacheInputs `{spec}` names param `{head}`, which is not declared"));
             }
+            // The `<param>CacheKey` sibling is framework convention, so a module need not declare
+            // it at all — but one that DOES must not declare it narrower than the framework
+            // accepts, or the published form tells the model less than the server will take. fa
+            // declared it `string|null` on the day list-of-keys shipped; a model reading that form
+            // would go on hand-joining keys into one string, which is the dialect this replaced.
+            let field = spec.split(".*.").last().unwrap_or(spec).to_string() + "CacheKey";
+            if let Some(decl) = config.pointer(&format!("/input/properties/{field}")) {
+                let types: Vec<&str> = match decl.get("type") {
+                    Some(Value::String(t)) => vec![t.as_str()],
+                    Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str()).collect(),
+                    _ => vec![],
+                };
+                if !types.is_empty() && !types.contains(&"array") {
+                    say(format!(
+                        "`{field}` is declared {types:?} but the expander also accepts a LIST of \
+                         keys (rows concatenated) — add \"array\" so the published form says so"
+                    ));
+                }
+            }
         }
         // A grounded param may sit inside a declared object container (kiwoom's `params`,
         // korea-invest's `query`/`body`) — `check_grounding` walks nested args, so "is it a
