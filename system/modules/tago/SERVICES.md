@@ -27,25 +27,31 @@ An empty `items` list has two causes and the response cannot tell them apart: th
 wrong list, or TAGO holds no data for that entity. Nothing 404s either way. Coverage is uneven, so
 a perfectly correct id can legitimately return nothing.
 
-**Measured 2026-08-13 — subway timetable coverage** (10 station ids, `dailyTypeCode=01`,
-`upDownTypeCode=U`, row counts):
+**Measured 2026-08-13 — subway timetable coverage.** Station ids were pulled for 20 place names,
+grouped into the 32 distinct line families that came back, and one id per family was asked for a
+timetable (`dailyTypeCode=01`, `upDownTypeCode=U`). Row counts:
 
 | answers | empty |
 |---|---|
-| 서울역 1호선 `MTRS11150` — 236 | 노량진 1호선 `MTRKR1136` — 0 |
-| 구로 2호선 `MTRS12232` — 228 | 구로 1호선 `MTRKR1141` — 0 |
-| 서울역 4호선 `MTRS14426` — 232 | 신도림 1호선 `MTRKR1140` — 0 |
-| 노량진 9호선 `MTRS99917` — 231 | 강남 신분당 `MTRDXD14307` — 0 |
-| 서울역 경의중앙 `MTRKRK4P313` — 29 | 서울역 공항철도 `MTRARA1A01` — 0 |
-| 강남 수인분당 `MTRKRK1K213` — 165 | 서울역 GTX-A `MTRGXAX106` — 0 |
+| 서울 1호선 236 · 2호선 237 · 3호선 187 · 4호선 233 | **서울 6호선 0** |
+| 서울 5호선 191 · 7호선 198 · 8호선 158 | 1호선 코레일 구간 (`MTRKR1*`) 0 |
+| 신림선 178 | 부산 1·2·3호선 0 · 대구 1·2호선 0 |
+| 수인분당 164 · 경강 59 · 동해 50 · 경춘 47 | 대전 0 · 인천 1·2호선 0 · 광주 0 |
+| 대경선 46 · 경의중앙 29 · 서해선 83 | 신분당 0 · 공항철도 0 · GTX-A 0 |
+| **부산김해경전철 189** | 에버라인 0 · 자기부상 0 |
 
-The boundary is the operating line, not the operator: 서울교통공사 lines are complete, and so are
-코레일's 경의중앙 and 수인분당 — but the 코레일-run stretch of 1호선 is entirely absent, as are the
-privately run 신분당, 공항철도 and GTX-A. `subway-stations` returns one row per line at a station,
-so when one line is empty another line at the same station may still answer.
+**Do not turn this into a rule.** Two obvious ones both fail: "서울교통공사 is complete" fails on
+6호선, and "capital region only" fails on 부산김해경전철. Coverage is per line, and the station id
+tells you nothing about it. What the module says instead is that an empty schedule means TAGO lacks
+that line rather than that the trains do not run, and that `subway-stations` lists every line at a
+station so another one may answer.
 
-Also measured: the guide's own example id `MTRS11133` (서울역) **no longer exists** — the current
-서울역 1호선 id is `MTRS11150`. Sample ids in these documents are not safe to test against.
+Station, exit and exit-facility lookups cover the whole country — only the timetable is patchy.
+
+Two id caveats. The guide's own sample `MTRS11133` (서울역) **no longer exists**; the current 서울역
+1호선 id is `MTRS11150`, so sample ids in these documents are not safe to test against. And the id
+the API returns is the one to match on — GTX-A comes back as `MTRGXAX106`, which is not necessarily
+how the same line is written on tago.go.kr.
 
 ---
 

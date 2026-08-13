@@ -226,7 +226,7 @@
     {
       "id": "subway-timetable",
       "name": "지하철역 시간표 (요일·방향별)",
-      "description": "Departure and arrival times at one station for a day type and a direction, with the terminus of each train. Subways run to schedule, so the next train is this table plus the current time — there is no live subway arrival feed in TAGO, and none is needed.",
+      "description": "Departure and arrival times at one station for a day type and a direction, with the terminus of each train. Subways run to schedule, so the next train is this table plus the current time — there is no live subway feed in TAGO and none is needed. Timetable coverage is uneven LINE BY LINE and cannot be predicted from the station id, the operator or the region — measured 2026-08-13 across 32 line families. Answering: 서울 1·2·3·4·5·7·8호선, 신림선, 경의중앙, 수인분당, 경춘, 경강, 동해, 대경선, 서해선, 부산김해경전철. Empty: 서울 6호선 (the one exception inside an otherwise complete operator), the 코레일 stretch of 1호선, 부산·대구·대전·인천·광주 metros, 신분당, 공항철도, GTX-A, 에버라인, 자기부상. Station, exit and exit-facility lookups DO cover the whole country; only the timetable is patchy. An empty schedule means TAGO lacks that line, not that the trains do not run — say which, and do not re-look-up the id.",
       "params": {
         "dailyTypeCode": "01=평일, 02=토요일, 03=일요일",
         "subwayStationId": "From subway-stations",
