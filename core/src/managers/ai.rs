@@ -5011,8 +5011,30 @@ impl AiManager {
                     .filter(|s| !s.is_empty())
                     .unwrap_or("")
                     .to_string();
-                let tool_names: Vec<String> =
-                    turn_calls.iter().map(|c| c.name.clone()).collect();
+                // Name AND arguments. The trace kept names only, and this week made the cost
+                // plain: every dialect readout — a key list serialized as a string, `limit` on a
+                // module that wants `display`, an action called before its schema — had to be
+                // reconstructed from what the model SAID it sent, or from a badge the operator
+                // happened to paste. Twice on 2026-08-13 the answer to "what did it actually
+                // send" was "the archive does not know". Arguments are the primary evidence for
+                // the shape of a call; capped and redacted, they cost a few hundred bytes.
+                const ARGS_CAP: usize = 800;
+                let tool_names: Vec<serde_json::Value> = turn_calls
+                    .iter()
+                    .map(|c| {
+                        let args = crate::utils::redactor::redact_string(&c.arguments.to_string());
+                        let (args, truncated) = if args.chars().count() > ARGS_CAP {
+                            (args.chars().take(ARGS_CAP).collect::<String>(), true)
+                        } else {
+                            (args, false)
+                        };
+                        let mut row = serde_json::json!({ "name": c.name, "args": args });
+                        if truncated {
+                            row["argsTruncated"] = serde_json::json!(true);
+                        }
+                        row
+                    })
+                    .collect();
                 let any_failed = turn_action_results.iter().any(|r| !r.success);
                 // The round's TEXT rides along (capped). Mid-round text goes to the buffer and,
                 // when a final text exists, never reaches the answer — which is correct for

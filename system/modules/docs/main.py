@@ -2514,7 +2514,7 @@ def _unit_badge(ws, row, c0, cols, unit):
     return span
 
 
-def _build_chart(wb, spec, sheet_map, notes):
+def _build_chart(wb, spec, sheet_map, notes, sheet_fields=None):
     """Resolve one chart spec against the data sheets -> (chart, ctype), or None with a note.
     Sizing and placement are NOT decided here: a chart's slot depends on what else is on the
     page, so the caller lays out first and only then hands each chart its centimetres."""
@@ -2537,11 +2537,20 @@ def _build_chart(wb, spec, sheet_map, notes):
         notes.append(f"chart '{who}' skipped: sheet '{target}' has no data rows")
         return None
     headers = [c.value for c in ws[1]]
+    # A sheet filled from a cache key has TWO names per column: the caller's display header
+    # ("종가") and the source field the rows actually carried ("close"). The caller writes one in
+    # `headers` and reaches for the other in `valueCols` — measured 2026-08-13, twice, each time
+    # costing a repair round and a second file. Both names resolve now; it is the same column.
+    fields = (sheet_fields or {}).get(target) or []
+
+    def resolve(ref):
+        return _resolve_column(headers, ref) or (_resolve_column(fields, ref) if fields else None)
+
     want = spec.get("valueCols")
     want = want if isinstance(want, list) else ([want] if want not in (None, "") else [])
     vcols, bad = [], []
     for ref in want:
-        col = _resolve_column(headers, ref)
+        col = resolve(ref)
         (vcols if col else bad).append(col if col else ref)
     if bad:
         # Naming what IS there turns a dead end into the next call. Measured 2026-08-13: a sheet
@@ -2549,15 +2558,16 @@ def _build_chart(wb, spec, sheet_map, notes):
         # the Korean headers (or the reverse) — two repair rounds and a third file, because the
         # note said only which names failed.
         have = [str(h) for h in headers if str(h or "").strip()]
+        also = f" (source fields: {fields})" if fields else ""
         notes.append(f"chart '{who}': columns not found in '{target}': {bad} — "
-                     f"this sheet's columns are {have}. Use those names (or 0-based indexes); "
+                     f"this sheet's columns are {have}{also}. Either name works, or a 0-based index; "
                      f"with rowsCacheKey, `rowsColumns` decides which fields become columns "
                      f"and `headers` only renames them.")
     if not vcols:
         notes.append(f"chart '{who}' skipped: no value column resolved in '{target}'")
         return None
     lab_ref = spec.get("labelCol")
-    labcol = _resolve_column(headers, 0 if lab_ref in (None, "") else lab_ref)
+    labcol = _resolve_column(headers, 0) if lab_ref in (None, "") else resolve(lab_ref)
     if labcol is None:
         notes.append(f"chart '{who}': label column {lab_ref!r} not found — using row numbers")
 
@@ -2572,7 +2582,7 @@ def _build_chart(wb, spec, sheet_map, notes):
     if ctype == "combo":
         chart = _combo_chart(ws, vcols, labcol, ws.max_row)
     elif ctype == "stock":
-        volcol = _resolve_column(headers, spec.get("volumeCol")) \
+        volcol = resolve(spec.get("volumeCol")) \
             if spec.get("volumeCol") not in (None, "") else None
         chart = _stock_chart(ws, vcols[:4], labcol, volcol, ws.max_row)
     else:
@@ -2649,13 +2659,14 @@ def _chart_bands(prepared, width):
     return bands
 
 
-def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes, width):
+def _add_dashboard_charts(wb, ws_dash, charts, sheet_map, top_row, notes, width,
+                          sheet_fields=None):
     """Chart cards below the KPI band. Returns (charts placed, first free row below)."""
     from openpyxl.utils import get_column_letter
 
     prepared = []
     for i, spec in enumerate(charts):
-        made = _build_chart(wb, spec, sheet_map, notes)
+        made = _build_chart(wb, spec, sheet_map, notes, sheet_fields)
         if made:
             prepared.append((made[0], made[1], i, spec))
     row = top_row
@@ -2780,7 +2791,7 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None, callout
         # the grid. Data sheets keep theirs — they are working sheets.
         ws_dash.sheet_view.showGridLines = False
 
-    sheet_map, sheet_rows = {}, []
+    sheet_map, sheet_rows, sheet_fields = {}, [], {}
     for i, sh in enumerate(sheets):
         raw = str(sh.get("name") or "")
         name = _sheet_title(raw or f"Sheet{i + 1}", i, used)
@@ -2793,6 +2804,11 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None, callout
         # whose sheets were three bare header rows, so the count that mattered (did the DATA
         # arrive?) was the one number nobody could see (2026-08-12 판독).
         sheet_rows.append({"name": name, "rows": written})
+        # The column list the caller sent beside rowsCacheKey: source field per column, in order.
+        # Keyed by the WRITTEN sheet name, because that is what a chart's `sheet` resolves to.
+        cols = sh.get("rowsColumns")
+        if isinstance(cols, list) and cols:
+            sheet_fields[name] = [str(c) for c in cols]
         if written == 0:
             # Not an error: a headers-only template sheet is a legitimate thing to ask for. But
             # the far likelier cause is rows that never made it — an unexpanded rowsCacheKey, or
@@ -2818,7 +2834,7 @@ def make_xlsx_file(sheets, out_path, title=None, kpis=None, charts=None, callout
             row = _write_kpi_card_grid(ws_dash, cards, row, width)
         if charts:
             placed, row = _add_dashboard_charts(
-                wb, ws_dash, charts, sheet_map, row, notes, width)
+                wb, ws_dash, charts, sheet_map, row, notes, width, sheet_fields)
         if bars:
             row = _write_kpi_bars(ws_dash, bars, row, width)
         if callouts:

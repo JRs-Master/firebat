@@ -493,7 +493,12 @@ fn expand_nested(
         target.remove(&field);
         target.remove(&slice_keys.0);
         target.remove(&slice_keys.1);
-        target.remove(&slice_keys.2);
+        // `<field>Columns` STAYS. The key and the window are spent here, but the column list is
+        // also the only record of which source field became which column — and the module needs
+        // that to answer "which column is 종가?" when the caller labelled the sheet in Korean and
+        // named the chart's series in English. Measured 2026-08-13 (turn 59): that mismatch cost
+        // a round and an extra file, twice in one day. Consumed keys are removed because leaving
+        // them would fail strict schemas; this one is data the module reads.
         tracing::info!(
             target: "module",
             module,
