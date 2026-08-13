@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "네이버 검색광고 API. keyword-tool(키워드 검색량 PC/모바일·클릭수·클릭률·경쟁도·연관검색어 + CPC·제한플래그 동시 조회), estimate(최소노출/중간 입찰가 = CPC, 입찰가별 예상성과), managed-keywords(저검색량·성인·노출제한·판매금지·시즌 플래그), biz-categories(업종 코드), seasonal-events(시즌 이벤트 코드), stats(내 광고 성과), bizmoney(잔액), list-campaigns/adgroups/keywords/ads(관리), raw(직접 호출).",
+  "description": "키워드 검색량(PC/모바일)·클릭수·CPC·경쟁도·연관검색어 분석 + 업종/시즌별 키워드 발굴 — 네이버 검색광고 API. keyword-tool(키워드 검색량 PC/모바일·클릭수·클릭률·경쟁도·연관검색어 + CPC·제한플래그 동시 조회), estimate(최소노출/중간 입찰가 = CPC, 입찰가별 예상성과), managed-keywords(저검색량·성인·노출제한·판매금지·시즌 플래그), biz-categories(업종 코드), seasonal-events(시즌 이벤트 코드), stats(내 광고 성과), bizmoney(잔액), list-campaigns/adgroups/keywords/ads(관리), raw(직접 호출).",
   "aliases": [
     "네이버",
     "네이버광고",
@@ -121,61 +121,86 @@
         "id": "list-campaigns",
         "name": "캠페인 목록",
         "description": "Lists campaigns in the ad account.",
-        "params": { "campaignType": "Filter by campaign type", "ids": "Specific campaign ids" }
+        "params": {
+          "campaignType": "Filter by campaign type",
+          "ids": "Specific campaign ids"
+        }
       },
       {
         "id": "get-campaign",
         "name": "캠페인 단건",
         "description": "One campaign by id.",
-        "params": { "id": "Campaign id" }
+        "params": {
+          "id": "Campaign id"
+        }
       },
       {
         "id": "list-adgroups",
         "name": "광고그룹 목록",
         "description": "Lists adgroups, optionally within one campaign.",
-        "params": { "nccCampaignId": "Campaign filter", "ids": "Specific adgroup ids" }
+        "params": {
+          "nccCampaignId": "Campaign filter",
+          "ids": "Specific adgroup ids"
+        }
       },
       {
         "id": "get-adgroup",
         "name": "광고그룹 단건",
         "description": "One adgroup by id.",
-        "params": { "id": "Adgroup id" }
+        "params": {
+          "id": "Adgroup id"
+        }
       },
       {
         "id": "list-keywords",
         "name": "등록 키워드 목록",
         "description": "Keywords registered in MY account, with their bids and quality index. Not a research tool — use keyword-tool for that.",
-        "params": { "nccAdgroupId": "Adgroup filter", "ids": "Specific keyword ids" }
+        "params": {
+          "nccAdgroupId": "Adgroup filter",
+          "ids": "Specific keyword ids"
+        }
       },
       {
         "id": "get-keyword",
         "name": "등록 키워드 단건",
         "description": "One registered keyword by id.",
-        "params": { "id": "Keyword id" }
+        "params": {
+          "id": "Keyword id"
+        }
       },
       {
         "id": "list-ads",
         "name": "소재 목록",
         "description": "Ad creatives in an adgroup.",
-        "params": { "nccAdgroupId": "Adgroup filter", "ids": "Specific ad ids" }
+        "params": {
+          "nccAdgroupId": "Adgroup filter",
+          "ids": "Specific ad ids"
+        }
       },
       {
         "id": "get-ad",
         "name": "소재 단건",
         "description": "One ad creative by id.",
-        "params": { "id": "Ad id" }
+        "params": {
+          "id": "Ad id"
+        }
       },
       {
         "id": "list-channels",
         "name": "비즈채널 목록",
         "description": "Business channels. The SITE-type channel id is what keyword-tool's siteId takes.",
-        "params": { "channelTp": "Filter by channel type", "ids": "Specific channel ids" }
+        "params": {
+          "channelTp": "Filter by channel type",
+          "ids": "Specific channel ids"
+        }
       },
       {
         "id": "list-extensions",
         "name": "확장소재 목록",
         "description": "Ad extensions belonging to a campaign or adgroup.",
-        "params": { "ownerId": "Campaign or adgroup id" }
+        "params": {
+          "ownerId": "Campaign or adgroup id"
+        }
       },
       {
         "id": "list-labels",
@@ -193,7 +218,12 @@
         "id": "raw",
         "name": "API 직접 호출",
         "description": "Escape hatch for endpoints this module does not wrap. Signs and sends the request as given.",
-        "params": { "method": "HTTP method", "uri": "API path", "params": "Query parameters", "body": "Request body" }
+        "params": {
+          "method": "HTTP method",
+          "uri": "API path",
+          "params": "Query parameters",
+          "body": "Request body"
+        }
       }
     ]
   },

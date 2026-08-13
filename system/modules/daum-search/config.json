@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "다음(Daum) 검색 API — 웹문서·동영상·이미지·블로그·책·카페 검색. naver-search 와 같은 필드 이름(title/link/description/datetime)으로 돌려주므로 두 벤더를 바꿔 껴도 소비처가 그대로입니다. **책 검색은 네이버가 2026-07-31 에 종료해서 여기가 유일한 경로**이고, **동영상 검색은 네이버에 아예 없습니다**. 뉴스 검색은 다음에 없으니 뉴스는 naver-search 를 쓰십시오. 지역·장소 검색은 kakao-map 소관입니다. 인증 = kakao-map·kakao-talk 이 이미 쓰는 KAKAO_REST_API_KEY 그대로. 일 쿼터 = 검색 유형당 30,000건, 다음 검색 전체 50,000건.",
+  "description": "다음 웹문서·동영상·이미지·블로그·책·카페 검색 (네이버가 종료한 책, 네이버에 없는 동영상 포함) — 다음(Daum) 검색 API. 웹문서·동영상·이미지·블로그·책·카페 검색. naver-search 와 같은 필드 이름(title/link/description/datetime)으로 돌려주므로 두 벤더를 바꿔 껴도 소비처가 그대로입니다. **책 검색은 네이버가 2026-07-31 에 종료해서 여기가 유일한 경로**이고, **동영상 검색은 네이버에 아예 없습니다**. 뉴스 검색은 다음에 없으니 뉴스는 naver-search 를 쓰십시오. 지역·장소 검색은 kakao-map 소관입니다. 인증 = kakao-map·kakao-talk 이 이미 쓰는 KAKAO_REST_API_KEY 그대로. 일 쿼터 = 검색 유형당 30,000건, 다음 검색 전체 50,000건.",
   "aliases": [
     "다음",
     "다음검색",
