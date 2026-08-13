@@ -205,7 +205,16 @@ async function handleSearch(OC, data) {
   // 0건 = 검색어 문제인 경우가 대부분 (법제처 검색은 AND 매칭이라 긴 복합어가 통째로 0건).
   // 빈 배열만 돌려주면 모델이 원인을 몰라 파라미터를 변주하며 재시도한다 → 다음 수를 명시.
   if (searchResult.totalCnt === 0 && searchResult.items.length === 0) {
-    searchResult.note = 'no results — this API matches ALL words (AND). Retry with a SHORTER core term (1-2 words, e.g. "폭행치사" instead of "폭행치사 예견가능성"); adding words narrows, never broadens. Legal doctrine keywords are often absent from case titles.';
+    // The note used to diagnose the exact problem — doctrine words are not in titles — and then
+    // withhold the switch that fixes it: this call searched TITLES because `search` defaults to
+    // "1". Measured 2026-08-13 (turn 56): two 0-hit rounds, then a title search that returned
+    // generic 이혼 cases, and the answer cited one whose holding was about something else. A
+    // capability the module has and the failure text describes must be named where it fails.
+    const bodyHint = String(data.search || '1') === '2'
+      ? 'You are already searching the BODY (search:"2"), so shorten the query further.'
+      : 'This searched TITLES only (search defaults to "1"). For a doctrine or a fact pattern, '
+        + 'retry the same query with search:"2" to match the BODY text instead.';
+    searchResult.note = 'no results — this API matches ALL words (AND). Retry with a SHORTER core term (1-2 words, e.g. "폭행치사" instead of "폭행치사 예견가능성"); adding words narrows, never broadens. Legal doctrine keywords are often absent from case titles. ' + bodyHint;
   } else {
     // A hit is a citation, not an answer. These rows carry only 사건번호·법원명·선고일자 — no
     // holding, no reasoning, no outcome. Measured 2026-08-04: a search matched one case on a body
