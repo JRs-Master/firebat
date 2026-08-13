@@ -40,11 +40,21 @@ timetable (`dailyTypeCode=01`, `upDownTypeCode=U`). Row counts:
 | 대경선 46 · 경의중앙 29 · 서해선 83 | 신분당 0 · 공항철도 0 · GTX-A 0 |
 | **부산김해경전철 189** | 에버라인 0 · 자기부상 0 |
 
-**Do not turn this into a rule.** Two obvious ones both fail: "서울교통공사 is complete" fails on
-6호선, and "capital region only" fails on 부산김해경전철. Coverage is per line, and the station id
-tells you nothing about it. What the module says instead is that an empty schedule means TAGO lacks
-that line rather than that the trains do not run, and that `subway-stations` lists every line at a
-station so another one may answer.
+**Do not turn this into a rule.** Three tries at one all failed. "서울교통공사 is complete" fails on
+6호선; "capital region only" fails on 부산김해경전철; and "these lines have data" fails because the
+gaps are not per line at all — see below.
+
+**The empty cell is (station × day type × direction), not the line.** Two findings force this:
+
+- `dailyTypeCode=02` (토요일) returned **zero on 8 of 8 lines**, including every line whose 평일 and
+  일요일 tables are full — 서울역 1호선 236 / 0 / 227, 구로 2호선 228 / 0 / 190, 노량진 9호선
+  231 / 0 / 179, 신림선 178 / 0 / 145, 수인분당 164 / 0 / 125, 경의중앙 29 / 0 / 18, 부산김해경전철
+  189 / 0 / 174. TAGO publishes **평일 (01) and 휴일 (03)**; the Saturday code is documented with
+  nothing behind it. A Saturday request must be answered from 03, described as the 휴일 table —
+  otherwise the answer is wrong about the trains rather than about the feed.
+- 노량진 1호선 `MTRKR1136` is zero in **all six** day/direction combinations, so it is not a
+  parameter mistake. And the station is not unknown to the service: its exit-bus list returns 64
+  rows and its exit-facility list 16. Only the timetable is missing for it.
 
 Station, exit and exit-facility lookups cover the whole country — only the timetable is patchy.
 
