@@ -208,26 +208,50 @@ fn a_component_that_takes_data_publishes_the_injection_vocabulary() {
     use firebat_core::managers::ai::component_registry::{components, published_props_schema};
     let mut problems = Vec::new();
     let mut audited = 0usize;
+    // Anchors: real catalog entries whose rows a model will want to hand over. Named here rather
+    // than re-derived, so this test disagrees with the derivation instead of copying it.
+    let anchors = [
+        ("stock_chart", "data"),
+        ("table", "rows"),
+        ("timeline", "items"),
+        ("key_value", "items"),
+        ("live_stock_chart", "data"),
+    ];
     for def in components() {
         let published = published_props_schema(def);
         let Some(props) = published.get("properties").and_then(|p| p.as_object()) else {
             continue;
         };
-        if !props.contains_key("data") {
-            continue;
-        }
-        audited += 1;
-        for want in ["dataCacheKey", "dataLimit", "dataRange"] {
-            if !props.contains_key(want) {
-                problems.push(format!(
-                    "{}: takes `data` but the published schema does not name `{want}` — the \
-                     server accepts it on every component, the model cannot see it",
-                    def.name
-                ));
+        for (name, prop) in anchors.iter().filter(|(n, _)| *n == def.name) {
+            audited += 1;
+            for suffix in ["CacheKey", "Limit", "Range"] {
+                let want = format!("{prop}{suffix}");
+                if !props.contains_key(&want) {
+                    problems.push(format!(
+                        "{name}: `{prop}` holds rows but the published schema does not name \
+                         `{want}` — the server accepts it, the model cannot see it"
+                    ));
+                }
             }
         }
+        // Whatever the derivation includes, it must be complete: a key without its window is a
+        // half-published vocabulary.
+        for key in props.keys().filter(|k| k.ends_with("CacheKey")) {
+            let prop = key.trim_end_matches("CacheKey");
+            for suffix in ["Limit", "Range"] {
+                if !props.contains_key(&format!("{prop}{suffix}")) {
+                    problems.push(format!("{}: `{key}` published without `{prop}{suffix}`", def.name));
+                }
+            }
+        }
+        // A rows-are-arrays prop needs the projection vocabulary or the key is unusable.
+        if def.name == "table" && !props.contains_key("rowsColumns") {
+            problems.push("table: `rows` holds arrays but `rowsColumns` is not published — a \
+                           cached object record cannot become a row without it"
+                .to_string());
+        }
     }
-    assert!(audited >= 3, "only {audited} data components audited — the catalog drifted");
+    assert_eq!(audited, anchors.len(), "an anchor component vanished from the catalog");
     assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
 }
 

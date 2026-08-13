@@ -67,44 +67,100 @@ pub fn published_props_schema(def: &ComponentDef) -> serde_json::Value {
     let Some(props) = schema.get_mut("properties").and_then(|p| p.as_object_mut()) else {
         return schema;
     };
-    if !props.contains_key("data") {
-        return schema;
-    }
-    for (name, sub) in [
-        (
-            "dataCacheKey",
-            serde_json::json!({
-                "type": "string",
-                "description": "The `_cacheKey` from the call that produced the rows, sent INSTEAD \
-                                of `data` — a sibling prop, never a value inside `data`. The \
-                                server injects the cached records as `data` before rendering, so \
-                                the rows never get retyped."
-            }),
-        ),
-        (
-            "dataLimit",
-            serde_json::json!({
-                "type": "integer",
-                "minimum": 1,
-                "description": "Keep only the most-recent N rows of the injected data."
-            }),
-        ),
-        (
-            "dataRange",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "from": {"type": "string", "description": "Inclusive start, in the rows' own date format."},
-                    "to": {"type": "string", "description": "Inclusive end, in the rows' own date format."}
-                },
-                "description": "Keep only rows inside this date range. A range matching nothing is \
-                                ignored and the full set is kept — a chart must never blank."
-            }),
-        ),
-    ] {
-        props.entry(name.to_string()).or_insert(sub);
+    for (prop, rows_are_arrays) in row_props(props) {
+        let mut add = vec![
+            (
+                format!("{prop}CacheKey"),
+                serde_json::json!({
+                    "type": "string",
+                    "description": format!(
+                        "The `_cacheKey` from the call that produced these rows, sent INSTEAD of \
+                         `{prop}` — a sibling prop, never a value inside it. The server fills \
+                         `{prop}` from the cache before rendering, so the rows are never retyped."
+                    ),
+                }),
+            ),
+            (
+                format!("{prop}Limit"),
+                serde_json::json!({
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": format!("Keep only the most-recent N rows of `{prop}`."),
+                }),
+            ),
+            (
+                format!("{prop}Range"),
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "from": {"type": "string", "description": "Inclusive start, in the rows' own date format."},
+                        "to": {"type": "string", "description": "Inclusive end, in the rows' own date format."}
+                    },
+                    "description": format!(
+                        "Keep only `{prop}` rows inside this date range. A range matching nothing \
+                         is ignored and the full set kept — a chart must never blank."
+                    ),
+                }),
+            ),
+        ];
+        if rows_are_arrays {
+            add.push((
+                format!("{prop}Columns"),
+                serde_json::json!({
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": format!(
+                        "Record fields to take, in column order, when `{prop}CacheKey` holds \
+                         objects and `{prop}` needs arrays (e.g. [\"date\",\"close\"]). `headers` \
+                         stays the display text."
+                    ),
+                }),
+            ));
+        }
+        for (name, sub) in add {
+            props.entry(name).or_insert(sub);
+        }
     }
     schema
+}
+
+/// Props that hold ROWS, and whether each row is an array.
+///
+/// Row props are the array props whose items are records — that is what a cache entry holds.
+/// Excluded: props whose items are BLOCKS (`children`, a tab's contents), because injecting
+/// records where nested components belong is meaningless. Both tests read the item schema, so a
+/// new component is classified the day it lands, by shape rather than by name.
+fn row_props(
+    props: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<(String, bool)> {
+    let mut out = Vec::new();
+    for (name, schema) in props {
+        let declares_array = match schema.get("type") {
+            Some(serde_json::Value::String(t)) => t == "array",
+            Some(serde_json::Value::Array(ts)) => ts.iter().any(|t| t.as_str() == Some("array")),
+            _ => false,
+        };
+        if !declares_array {
+            continue;
+        }
+        let Some(items) = schema.get("items") else { continue };
+        let item_props = items.get("properties").and_then(|p| p.as_object());
+        // A block carrier: `{type, props}` pairs, or anything holding nested children.
+        let is_block_carrier = item_props.is_some_and(|p| {
+            (p.contains_key("type") && p.contains_key("props")) || p.contains_key("children")
+        });
+        if is_block_carrier {
+            continue;
+        }
+        let items_are_arrays = items.get("type").and_then(|t| t.as_str()) == Some("array");
+        let items_are_objects =
+            items.get("type").and_then(|t| t.as_str()) == Some("object") || item_props.is_some();
+        if items_are_arrays || items_are_objects {
+            out.push((name.clone(), items_are_arrays));
+        }
+    }
+    out.sort();
+    out
 }
 
 /// `name` 으로 컴포넌트 lookup. 옛 TS `COMPONENTS.find(c => c.name === name)` 1:1.

@@ -41,20 +41,206 @@ pub(crate) const MAX_INJECT_ROWS: usize = 5000;
 /// from the model must not blank the chart. The module side refuses instead — a document
 /// silently holding every row under a windowed label is worse than an error.
 pub(crate) fn apply_data_slice(records: Vec<Value>, props: &Value) -> Vec<Value> {
-    let range = props.get("dataRange").and_then(|v| v.as_object());
+    apply_prop_slice("data", records, props)
+}
+
+/// The same slice for any row prop: `<prop>Limit` / `<prop>Range` beside `<prop>CacheKey`.
+pub(crate) fn apply_prop_slice(prop: &str, records: Vec<Value>, props: &Value) -> Vec<Value> {
+    let range = props.get(format!("{prop}Range")).and_then(|v| v.as_object());
     let out = crate::utils::row_slice::slice_rows(
         records,
-        props.get("dataLimit").and_then(|v| v.as_u64()).map(|n| n as usize),
+        props.get(format!("{prop}Limit")).and_then(|v| v.as_u64()).map(|n| n as usize),
         range.and_then(|r| r.get("from")).and_then(|v| v.as_str()),
         range.and_then(|r| r.get("to")).and_then(|v| v.as_str()),
     );
     if out.range_emptied {
         tracing::warn!(
             target: "render",
-            "[render] dataRange matched 0 rows — range ignored, full records kept"
+            prop,
+            "[render] range matched 0 rows — range ignored, full records kept"
         );
     }
     out.rows
+}
+
+/// Fits cached records to the shape the target prop declares.
+///
+/// Object records drop straight into an object-item prop — that is every list component
+/// (`timeline.items`, `key_value.items`, `vocab.words` …), and they were unreachable by cache key
+/// only because the injection was hard-wired to the name `data`. A prop whose items are ARRAYS
+/// (`table.rows` = array of string arrays) needs a projection instead, and projecting is a real
+/// choice — which columns, in which order — so it is asked for rather than guessed:
+/// `rowsColumns: ["date","close"]` names the record fields to take. Missing, the error names the
+/// fields the records actually have, which is the next step.
+fn fit_records_to_prop(
+    prop: &str,
+    project: bool,
+    records: Vec<Value>,
+    props: &Value,
+) -> Result<Vec<Value>, String> {
+    if !project {
+        return Ok(records);
+    }
+    // Already row-arrays (a cache of `table.rows` itself) — nothing to project.
+    if records.iter().all(|r| r.is_array()) {
+        return Ok(records);
+    }
+    let columns: Vec<String> = props
+        .get(format!("{prop}Columns"))
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    if columns.is_empty() {
+        let available: Vec<String> = records
+            .first()
+            .and_then(|r| r.as_object())
+            .map(|o| o.keys().take(12).cloned().collect())
+            .unwrap_or_default();
+        return Err(format!(
+            "`{prop}` holds arrays, one per row, but the cached records are objects — add \
+             `{prop}Columns` naming the fields to take, in column order (available: {}). \
+             `headers` stays the display text.",
+            available.join(", ")
+        ));
+    }
+    Ok(records
+        .into_iter()
+        .map(|rec| {
+            let cells: Vec<Value> = columns
+                .iter()
+                .map(|c| match rec.get(c) {
+                    Some(Value::String(s)) => Value::String(s.clone()),
+                    Some(Value::Null) | None => Value::String(String::new()),
+                    Some(other) => Value::String(other.to_string()),
+                })
+                .collect();
+            Value::Array(cells)
+        })
+        .collect())
+}
+
+/// Resolves every `<prop>CacheKey` in a block's props, at any depth. Returns an error string for
+/// the first slot that cannot be filled — the block is then reported as failed, because a block
+/// that silently loses its rows renders a lie.
+///
+/// The TOP-LEVEL `dataCacheKey` is deliberately left to the caller: it carries measured behaviour
+/// this generic pass should not re-decide (keep model-supplied rows when the key expired, rather
+/// than dropping the block). Everything else — other props, nested blocks, list elements — is
+/// handled here.
+fn resolve_nested_cache_keys(
+    props: &mut Value,
+    resolver: Option<FenceDataResolver>,
+    array_item_props: &std::collections::HashSet<String>,
+) -> Option<String> {
+    fn walk(
+        v: &mut Value,
+        resolver: Option<FenceDataResolver>,
+        array_item_props: &std::collections::HashSet<String>,
+        depth: usize,
+        top: bool,
+    ) -> Option<String> {
+        if depth > 6 {
+            return None;
+        }
+        match v {
+            Value::Array(items) => {
+                for item in items.iter_mut() {
+                    if let Some(e) = walk(item, resolver, array_item_props, depth + 1, false) {
+                        return Some(e);
+                    }
+                }
+                None
+            }
+            Value::Object(obj) => {
+                let slots: Vec<(String, String)> = obj
+                    .iter()
+                    .filter_map(|(k, val)| {
+                        let prop = k.strip_suffix("CacheKey")?;
+                        if prop.is_empty() || (top && prop == "data") {
+                            return None;
+                        }
+                        let key = val.as_str()?.trim();
+                        if key.is_empty() {
+                            return None;
+                        }
+                        Some((prop.to_string(), key.to_string()))
+                    })
+                    .collect();
+                for (prop, key) in slots {
+                    let records = match resolver {
+                        Some(r) => r(&key),
+                        None => Err("no cache resolver on this path".to_string()),
+                    };
+                    let records = match records {
+                        Ok(r) => r,
+                        Err(e) => {
+                            return Some(format!(
+                                "{prop}CacheKey '{key}' resolve failed: {e}. Re-run the call and \
+                                 use the fresh _cacheKey."
+                            ))
+                        }
+                    };
+                    let holder = Value::Object(obj.clone());
+                    let sliced = apply_prop_slice(&prop, records, &holder);
+                    let rows = if sliced.len() > MAX_INJECT_ROWS {
+                        sliced[sliced.len() - MAX_INJECT_ROWS..].to_vec()
+                    } else {
+                        sliced
+                    };
+                    // Columns present = the caller asked for a projection (a prop whose rows are
+                    // arrays, `table.rows`); absent = the records go in as they are.
+                    // The component's own schema decides at the top level (`table.rows` holds
+                    // arrays); deeper down, where the child's schema is not resolved here, the
+                    // caller saying `<prop>Columns` is the signal.
+                    let wants_projection = obj.contains_key(&format!("{prop}Columns"))
+                        || (top && array_item_props.contains(&prop));
+                    let fitted = match fit_records_to_prop(&prop, wants_projection, rows, &holder) {
+                        Ok(rows) => rows,
+                        Err(e) => return Some(e),
+                    };
+                    tracing::info!(
+                        target: "render",
+                        prop = %prop,
+                        cache_key = %key,
+                        rows = fitted.len(),
+                        "[render] cache key resolved — records injected server-side"
+                    );
+                    obj.insert(prop.clone(), Value::Array(fitted));
+                    obj.remove(&format!("{prop}CacheKey"));
+                    obj.remove(&format!("{prop}Limit"));
+                    obj.remove(&format!("{prop}Range"));
+                    obj.remove(&format!("{prop}Columns"));
+                }
+                for (_, child) in obj.iter_mut() {
+                    if let Some(e) = walk(child, resolver, array_item_props, depth + 1, false) {
+                        return Some(e);
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+    walk(props, resolver, array_item_props, 0, true)
+}
+
+/// Prop names whose ITEMS are arrays — `table.rows` is the one in the catalog today. Read from the
+/// schema so a new component with row-arrays is covered the day it lands.
+fn array_item_props(schema: &Value) -> std::collections::HashSet<String> {
+    schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .map(|props| {
+            props
+                .iter()
+                .filter(|(_, v)| {
+                    v.get("items").and_then(|i| i.get("type")).and_then(|t| t.as_str())
+                        == Some("array")
+                })
+                .map(|(k, _)| k.clone())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Alphanumeric-only lowercase key, so "Candle_Stick" / "OHLCV" / "candlestick" all compare.
@@ -244,10 +430,23 @@ pub fn render_blocks(
             continue;
         }
 
-        // dataCacheKey → server-side data injection (generic — no per-component branching).
-        // The model references the sysmod `_cacheKey` instead of hand-copying rows; the full
-        // cached records become `props.data`. Kills inline truncation/fabrication and the
-        // token double-spend (cache_read into context + rows written back out).
+        // `<prop>CacheKey` → server-side row injection, at every depth (generic — no
+        // per-component branching). The model references the sysmod `_cacheKey` instead of
+        // hand-copying rows. Kills inline truncation/fabrication and the token double-spend
+        // (cache_read into context + rows written back out).
+        //
+        // Two limits used to make this reachable only from one slot: the name was hard-wired to
+        // `data`, and only TOP-LEVEL blocks were walked. So a `timeline` or a `table` could never
+        // take a key, and a chart inside a `grid` could not either — the rows had to be retyped,
+        // which is the failure this whole mechanism exists to remove. The pass below is recursive
+        // over props, so a nested block and a list element (`series[i].dataCacheKey`) speak the
+        // same words the module side does for `sheets.*.rows`.
+        if let Some(err) =
+            resolve_nested_cache_keys(&mut props, resolver, &array_item_props(&comp.props_schema))
+        {
+            failed.push(serde_json::json!({ "idx": idx, "type": block_type, "error": err }));
+            continue;
+        }
         if let Some(key) = props
             .get("dataCacheKey")
             .and_then(|v| v.as_str())
@@ -1430,5 +1629,75 @@ mod tests {
             None,
         );
         assert!(out.is_err() || out.unwrap()["failed"].as_array().map(|a| !a.is_empty()).unwrap_or(false));
+    }
+
+    /// Rows reach any declared row prop, at any depth. Before this, the injection knew one name
+    /// (`data`) and one level (top), so a `timeline` could not take a key at all and a chart
+    /// inside a `grid` could not either — both had to be retyped inline, which is the failure the
+    /// cache key exists to remove.
+    #[test]
+    fn a_cache_key_fills_any_row_prop_at_any_depth() {
+        let rows = vec![
+            serde_json::json!({"date": "2026-08-01", "title": "A", "close": 1}),
+            serde_json::json!({"date": "2026-08-02", "title": "B", "close": 2}),
+        ];
+        let resolve = |_k: &str| -> Result<Vec<Value>, String> { Ok(rows.clone()) };
+        let out = render_blocks(
+            &serde_json::json!({"blocks": [
+                {"type": "timeline", "props": {"itemsCacheKey": "m-a:rows-0123456789abcdef-1786000000000"}},
+                {"type": "grid", "props": {"columns": 2, "children": [
+                    {"type": "timeline", "props": {"itemsCacheKey": "m-a:rows-0123456789abcdef-1786000000000",
+                                                   "itemsLimit": 1}}
+                ]}}
+            ]}),
+            false,
+            Some(&resolve),
+        )
+        .expect("render");
+        assert!(out["failed"].as_array().unwrap().is_empty(), "{out}");
+        let blocks = out["components"].as_array().or_else(|| out["blocks"].as_array()).unwrap();
+        let top = &blocks[0]["props"]["items"];
+        assert_eq!(top.as_array().unwrap().len(), 2, "top-level row prop filled: {out}");
+        let nested = &blocks[1]["props"]["children"][0]["props"]["items"];
+        assert_eq!(nested.as_array().unwrap().len(), 1, "nested block filled and windowed: {out}");
+        assert!(blocks[0]["props"].get("itemsCacheKey").is_none(), "the key is consumed");
+    }
+
+    /// `table.rows` holds arrays, so object records need a projection — asked for, never guessed,
+    /// and the refusal names the fields the records actually have.
+    #[test]
+    fn a_table_projects_records_into_rows_or_says_what_is_missing() {
+        let rows = vec![serde_json::json!({"date": "2026-08-01", "close": 1500, "vol": 7})];
+        let resolve = |_k: &str| -> Result<Vec<Value>, String> { Ok(rows.clone()) };
+        let key = "m-a:rows-0123456789abcdef-1786000000000";
+
+        let out = render_blocks(
+            &serde_json::json!({"blocks": [{"type": "table", "props": {
+                "headers": ["날짜", "종가"], "rowsCacheKey": key, "rowsColumns": ["date", "close"]
+            }}]}),
+            false,
+            Some(&resolve),
+        )
+        .expect("render");
+        assert!(out["failed"].as_array().unwrap().is_empty(), "{out}");
+        let blocks = out["components"].as_array().or_else(|| out["blocks"].as_array()).unwrap();
+        assert_eq!(blocks[0]["props"]["rows"][0][0], "2026-08-01");
+        assert_eq!(blocks[0]["props"]["rows"][0][1], "1500");
+
+        // Every block failing is an Err, not an Ok carrying failures — either way the text the
+        // model reads is the same one.
+        let missing = render_blocks(
+            &serde_json::json!({"blocks": [{"type": "table", "props": {
+                "headers": ["날짜", "종가"], "rowsCacheKey": key
+            }}]}),
+            false,
+            Some(&resolve),
+        );
+        let err = match &missing {
+            Err(e) => e.clone(),
+            Ok(v) => v["failed"][0]["error"].as_str().unwrap_or("").to_string(),
+        };
+        assert!(err.contains("rowsColumns"), "the error must name the next step: {err}");
+        assert!(err.contains("date"), "and the fields available: {err}");
     }
 }

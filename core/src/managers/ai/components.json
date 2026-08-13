@@ -3404,7 +3404,36 @@
         },
         "data": {
           "type": "array",
-          "description": "seed candles — standard OHLCV rows ({date,open,high,low,close,volume}) at the SAME granularity as interval (minute seed for interval=60, daily seed for interval=86400); live ticks continue on the last (current-period) candle. Omit when using `seed` (fresh-on-visit)."
+          "description": "seed candles — standard OHLCV rows ({date,open,high,low,close,volume}) at the SAME granularity as interval (minute seed for interval=60, daily seed for interval=86400); live ticks continue on the last (current-period) candle. Omit when using `seed` (fresh-on-visit).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "date": {
+                "type": "string",
+                "description": "YYYY-MM-DD or YYYYMMDD"
+              },
+              "open": {
+                "type": "number"
+              },
+              "high": {
+                "type": "number"
+              },
+              "low": {
+                "type": "number"
+              },
+              "close": {
+                "type": "number"
+              },
+              "volume": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "date",
+              "close"
+            ],
+            "additionalProperties": false
+          }
         },
         "seed": {
           "type": "object",
@@ -3412,7 +3441,11 @@
         },
         "indicators": {
           "type": "array",
-          "description": "moving averages to draw, subset of [\"MA5\",\"MA10\",\"MA20\",\"MA60\"]"
+          "description": "moving averages to draw, subset of [\"MA5\",\"MA10\",\"MA20\",\"MA60\"]",
+          "items": {
+            "type": "string",
+            "pattern": "^MA[0-9]+$"
+          }
         },
         "valueField": {
           "type": "string",
@@ -3436,7 +3469,30 @@
             "array",
             "null"
           ],
-          "description": "fresh-on-visit ANALYSIS binding — {module, action, args?, barsArg?}. Runs AFTER `seed` and receives the freshly fetched candles as an argument (default arg name `bars`), then merges the module's returned block props (annotations, futureSlots, ...) into this chart. This is how an analysis stays current on a published page: `seed` alone refreshes only the candles, so anything you compute at authoring time and write into text freezes there. Use it for wave/trendline/indicator overlays — e.g. {module:\"technical-analysis\", action:\"chart_annotations\"} draws the wave skeleton, channel, projected path and invalidation line, recomputed every visit. Pick an action from a search_module_actions row carrying `pageBinding: true`. If the derived module returns MORE blocks than one, the extra blocks are rendered directly BELOW the chart — that is how a signal module ships its fills table and summary cards alongside the arrows, all recomputed on the same visit from the same numbers (e.g. technical-analysis `signals` → chart arrows + 체결 기록 table + 승률/누적/MDD metrics). **Several steps are allowed**: pass an array and each runs in order against the same fresh candles, merging its first block into the chart and appending the rest below. That is how one chart carries both an Elliott overlay (technical-analysis chart_annotations) and buy/sell arrows with a fills table (technical-analysis signals) computed from the same bars. Give every step the same windowing argument (e.g. lastSessionOnly) — annotation coordinates are bar indices, so steps that analyse different ranges land on the wrong candles."
+          "description": "fresh-on-visit ANALYSIS binding — {module, action, args?, barsArg?}. Runs AFTER `seed` and receives the freshly fetched candles as an argument (default arg name `bars`), then merges the module's returned block props (annotations, futureSlots, ...) into this chart. This is how an analysis stays current on a published page: `seed` alone refreshes only the candles, so anything you compute at authoring time and write into text freezes there. Use it for wave/trendline/indicator overlays — e.g. {module:\"technical-analysis\", action:\"chart_annotations\"} draws the wave skeleton, channel, projected path and invalidation line, recomputed every visit. Pick an action from a search_module_actions row carrying `pageBinding: true`. If the derived module returns MORE blocks than one, the extra blocks are rendered directly BELOW the chart — that is how a signal module ships its fills table and summary cards alongside the arrows, all recomputed on the same visit from the same numbers (e.g. technical-analysis `signals` → chart arrows + 체결 기록 table + 승률/누적/MDD metrics). **Several steps are allowed**: pass an array and each runs in order against the same fresh candles, merging its first block into the chart and appending the rest below. That is how one chart carries both an Elliott overlay (technical-analysis chart_annotations) and buy/sell arrows with a fills table (technical-analysis signals) computed from the same bars. Give every step the same windowing argument (e.g. lastSessionOnly) — annotation coordinates are bar indices, so steps that analyse different ranges land on the wrong candles.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "barsArg": {
+                "type": "string",
+                "description": "Name of the action parameter that receives the freshly fetched candles."
+              }
+            },
+            "required": [
+              "module",
+              "action"
+            ]
+          }
         },
         "cacheTtl": {
           "type": "number",
@@ -3444,7 +3500,84 @@
         },
         "annotations": {
           "type": "array",
-          "description": "same annotation layer as stock_chart (path/hline/zone/marker, `barsAhead` for future coordinates). Prefer `derive` on a published page so these recompute per visit; a literal array here is a snapshot."
+          "description": "same annotation layer as stock_chart (path/hline/zone/marker, `barsAhead` for future coordinates). Prefer `derive` on a published page so these recompute per visit; a literal array here is a snapshot.",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "path",
+                  "hline",
+                  "zone",
+                  "marker"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "price"
+                  ],
+                  "properties": {
+                    "i": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "candle index"
+                    },
+                    "barsAhead": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "description": "offset from the LAST candle — use for future projections"
+                    },
+                    "price": {
+                      "type": "number"
+                    },
+                    "label": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "color": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "dashed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "projected": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "mark as an interpretation/scenario rather than observed data — rendered dashed and faded"
+              }
+            }
+          }
         },
         "futureSlots": {
           "type": "number",
@@ -3463,14 +3596,74 @@
             "array",
             "null"
           ],
-          "description": "buy markers — same shape as stock_chart ({label, price, date}); an up arrow under the matching candle. Prefer generating them with derive so they recompute per visit."
+          "description": "buy markers — same shape as stock_chart ({label, price, date}); an up arrow under the matching candle. Prefer generating them with derive so they recompute per visit.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "candle date (must match a data date). With it, an ↑ buy arrow below that candle; without it, a horizontal line at the price level (support)."
+              }
+            },
+            "required": [
+              "label",
+              "price",
+              "note"
+            ],
+            "additionalProperties": false
+          }
         },
         "sellPoints": {
           "type": [
             "array",
             "null"
           ],
-          "description": "sell markers — down arrow above the matching candle."
+          "description": "sell markers — down arrow above the matching candle.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "candle date (must match a data date). With it, a ↓ sell arrow above that candle; without it, a horizontal line at the price level (resistance)."
+              }
+            },
+            "required": [
+              "label",
+              "price",
+              "note"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
