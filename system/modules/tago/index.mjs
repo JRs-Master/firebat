@@ -174,12 +174,19 @@ process.stdin.on('end', async () => {
 
     const notes = [`Data freshness for this action: ${op.fresh}.`];
     if (r.items.length === 0) {
-      // Zero rows is TAGO's answer to a well-formed id that does not exist, so it must not read as
-      // "the service is empty" — the ids it was handed are the thing to check.
+      // Zero rows has TWO causes and the response cannot tell them apart, so it must not pick one.
+      // Measured 2026-08-13: a subway timetable came back empty for a station id that was entirely
+      // correct — TAGO simply holds no data for that line — and an earlier version of this note
+      // asserted "the id is from the wrong list", which sent the caller back to re-look-up an id it
+      // already had, for four more rounds. An empty result means the id did not match anything; it
+      // does not say whether the id was wrong or the data is absent.
       const given = [...(op.req ?? []), ...(op.opt ?? [])]
         .filter(p => ID_SOURCE[p] && params[op.wire?.[p] ?? p] !== undefined);
-      notes.push('No rows matched. TAGO answers 200 with an empty list for an id that is well-formed but wrong, so this usually means one of the ids is from the wrong list'
-        + (given.length > 0 ? `: ${given.map(p => `${p}=${params[op.wire?.[p] ?? p]} should come from ${ID_SOURCE[p]}`).join('; ')}.` : '.'));
+      notes.push('No rows matched, and TAGO returns 200 with an empty list for both possible reasons: an id that is well-formed but from the wrong list, OR an entity it simply holds no data for. Coverage is uneven — some lines, regions and operators are missing entirely while their neighbours are complete, so a correct id can legitimately return nothing.'
+        + (given.length > 0 ? ` The ids used were ${given.map(p => `${p}=${params[op.wire?.[p] ?? p]} (from ${ID_SOURCE[p]})`).join(', ')} — check those first, then treat it as absent data rather than retrying the same lookup.` : ''));
+      if (action === 'subway-timetable') {
+        notes.push('For subway timetables specifically, coverage varies by operating line: measured 2026-08-13, 서울교통공사 lines and the 경의중앙 / 수인분당 lines answer, while the 코레일-run stretch of 1호선 and the privately run 신분당 / 공항철도 / GTX-A return nothing. `subway-stations` gives one row per line at a station, so if one line is empty another line at the same station may still answer.');
+      }
     }
     if (action === 'scooters') {
       notes.push('`cityCode` here is the 지역번호 from scooter-providers — NOT the 도시코드 from city-codes. They are different numbering schemes under the same field name.');

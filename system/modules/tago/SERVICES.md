@@ -23,9 +23,29 @@ endpoint names, and each of them fails silently rather than erroring:
 Plus one spelling slip inside a single family: `getSttnThrghRouteList` spells the stop id `nodeid`
 while its siblings spell it `nodeId`. The module renames it on the way out so callers never see it.
 
-An empty `items` list is TAGO's answer to a well-formed id that does not exist. Nothing 404s, so
-"no rows" almost always means an id came from the wrong list — which is why every action's note
-names the list its ids should have come from.
+An empty `items` list has two causes and the response cannot tell them apart: the id came from the
+wrong list, or TAGO holds no data for that entity. Nothing 404s either way. Coverage is uneven, so
+a perfectly correct id can legitimately return nothing.
+
+**Measured 2026-08-13 — subway timetable coverage** (10 station ids, `dailyTypeCode=01`,
+`upDownTypeCode=U`, row counts):
+
+| answers | empty |
+|---|---|
+| 서울역 1호선 `MTRS11150` — 236 | 노량진 1호선 `MTRKR1136` — 0 |
+| 구로 2호선 `MTRS12232` — 228 | 구로 1호선 `MTRKR1141` — 0 |
+| 서울역 4호선 `MTRS14426` — 232 | 신도림 1호선 `MTRKR1140` — 0 |
+| 노량진 9호선 `MTRS99917` — 231 | 강남 신분당 `MTRDXD14307` — 0 |
+| 서울역 경의중앙 `MTRKRK4P313` — 29 | 서울역 공항철도 `MTRARA1A01` — 0 |
+| 강남 수인분당 `MTRKRK1K213` — 165 | 서울역 GTX-A `MTRGXAX106` — 0 |
+
+The boundary is the operating line, not the operator: 서울교통공사 lines are complete, and so are
+코레일's 경의중앙 and 수인분당 — but the 코레일-run stretch of 1호선 is entirely absent, as are the
+privately run 신분당, 공항철도 and GTX-A. `subway-stations` returns one row per line at a station,
+so when one line is empty another line at the same station may still answer.
+
+Also measured: the guide's own example id `MTRS11133` (서울역) **no longer exists** — the current
+서울역 1호선 id is `MTRS11150`. Sample ids in these documents are not safe to test against.
 
 ---
 
