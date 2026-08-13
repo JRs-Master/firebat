@@ -830,7 +830,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? p.badges ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
-    case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} lines={p.lines} cone={p.cone} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
+    case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} lines={p.lines} cone={p.cone} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} cluster={p.cluster} overlay={p.overlay} />;
     case 'Diagram':       return <DiagramComp code={p.code ?? ''} theme={p.theme} />;
     case 'Math':          return <MathComp expression={p.expression ?? ''} block={p.block !== false} />;
     case 'FunctionPlot':  return <FunctionPlotComp expressions={p.expressions ?? p.expr ?? p.functions ?? []} xMin={p.xMin} xMax={p.xMax} yMin={p.yMin} yMax={p.yMax} title={p.title} xLabel={p.xLabel} yLabel={p.yLabel} showGrid={p.showGrid} />;
@@ -5362,8 +5362,24 @@ function sanitizePopupHtml(html: string): string {
   return html.replace(/\b(?:href|src)\s*=\s*["']?\s*(?:javascript|data|vbscript):[^"'>\s]*/gi, 'href="#"');
 }
 
+/** Kakao overlay tile types, by the name a page author would use. */
+const KAKAO_OVERLAY_TILE: Record<string, string> = {
+  district: 'USE_DISTRICT',
+  traffic: 'TRAFFIC',
+  terrain: 'TERRAIN',
+  bicycle: 'BICYCLE',
+  roadview: 'ROADVIEW',
+};
+
+/**
+ * Above this many plain markers the pins stop being readable and start being a blob, so they are
+ * grouped into counted circles that split as you zoom. Below it, grouping hides information for
+ * no gain. `cluster` overrides the guess in either direction.
+ */
+const CLUSTER_AUTO_FROM = 30;
+
 function MapComp({
-  markers, circles, lines, cone, legend, center, zoom, height, provider,
+  markers, circles, lines, cone, legend, center, zoom, height, provider, cluster, overlay,
 }: {
   markers: MapMarker[];
   circles?: MapCircle[] | null;
@@ -5374,6 +5390,8 @@ function MapComp({
   zoom?: number | null;
   height?: string | null;
   provider?: 'auto' | 'leaflet' | 'kakao' | null;
+  cluster?: boolean | null;
+  overlay?: string | string[] | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // cone 은 단일 또는 배열 수용 — 네이버식 태풍 = 크기 cone(강풍반경) + 확률 cone(70%) 2개 겹침.
@@ -5451,6 +5469,16 @@ function MapComp({
           });
           resizeObserver = new ResizeObserver(() => map.relayout());
           resizeObserver.observe(container);
+          // Zoom and map-type controls. Every map a visitor has ever used has these; a published
+          // page without them leaves the reader unable to look around what they were shown.
+          map.addControl(new w.kakao.maps.ZoomControl(), w.kakao.maps.ControlPosition.RIGHT);
+          map.addControl(new w.kakao.maps.MapTypeControl(), w.kakao.maps.ControlPosition.TOPRIGHT);
+          // Overlay tiles — cadastral boundaries for property maps, traffic, terrain. Off unless
+          // asked for: each one is ink over the base map and only one subject wants any given layer.
+          for (const name of (Array.isArray(overlay) ? overlay : overlay ? [overlay] : [])) {
+            const tile = KAKAO_OVERLAY_TILE[String(name).toLowerCase()];
+            if (tile && w.kakao.maps.MapTypeId[tile]) map.addOverlayMapTypeId(w.kakao.maps.MapTypeId[tile]);
+          }
           // cone (예측 영역) — 경로 + 반경 → 부드러운 polygon. 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침.
           // circles 보다 먼저 (아래 깔림). 색은 각 cone.color (크기 cyan / 확률 indigo).
           for (const cn of safeCones) {
@@ -5506,6 +5534,11 @@ function MapComp({
           // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 이 닫히지 않아 누적되던 문제.
           let openInfo: any = null;
           const labelChips: { el: HTMLElement; lat: number; lon: number }[] = [];
+          // Weather badges and typhoon swirls are CustomOverlays, which a clusterer cannot take —
+          // and they are few and individually meaningful anyway. Only the plain pins are counted.
+          const plainMarkerCount = safeMarkers.filter(m => !isWeatherIcon(m.icon) && m.icon !== 'typhoon' && m.icon !== 'forecast').length;
+          const useCluster = cluster ?? (plainMarkerCount >= CLUSTER_AUTO_FROM);
+          const clustered: any[] = [];
           for (const m of safeMarkers) {
             const pos = new w.kakao.maps.LatLng(m.lat, m.lon);
             const isWx = isWeatherIcon(m.icon);
@@ -5546,9 +5579,14 @@ function MapComp({
                 opts.image = makePinMarkerImage('', size, colorHex(m.color, '#ef4444'));
               }
               marker = new w.kakao.maps.Marker(opts);
-              marker.setMap(map);
+              // Under clustering the clusterer owns setMap: adding the marker to the map here too
+              // leaves it drawn underneath its own cluster circle.
+              if (useCluster) clustered.push(marker);
+              else marker.setMap(map);
               // Always-visible label chip (opt-in, generic markers only — weather badge has its own pill).
-              if (m.labelAlways && m.label) {
+              // Skipped while clustering: the chip is anchored to a coordinate, not to the marker, so
+              // it would keep floating over a cluster whose members are no longer drawn.
+              if (m.labelAlways && m.label && !useCluster) {
                 const wrap = document.createElement('div');
                 wrap.style.cssText = `padding-top:${chipPad}px;pointer-events:none;`;
                 const chipEl = buildLabelChipEl(m.label);
@@ -5586,6 +5624,21 @@ function MapComp({
               if (marker) w.kakao.maps.event.addListener(marker, 'click', openPopup);
               else if (clickEl) clickEl.addEventListener('click', openPopup);
             }
+          }
+          // Grouping. `minLevel` keeps the pins individual once the reader has zoomed in far enough
+          // to tell them apart; clicking a group zooms to it, which is the only way back to the
+          // markers underneath since a collapsed marker has nothing to click.
+          if (useCluster && clustered.length > 0 && w.kakao.maps.MarkerClusterer) {
+            const clusterer = new w.kakao.maps.MarkerClusterer({
+              map, markers: clustered, gridSize: 60, minLevel: 4, minClusterSize: 2, averageCenter: true,
+            });
+            w.kakao.maps.event.addListener(clusterer, 'clusterclick', (c: any) => {
+              map.setLevel(Math.max(1, map.getLevel() - 2), { anchor: c.getCenter() });
+            });
+          } else if (useCluster) {
+            // The clusterer ships as a separate SDK library; if it did not load, the markers must
+            // still appear rather than vanish into a group that was never built.
+            for (const mk of clustered) mk.setMap(map);
           }
           // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 + 선 영역 보이도록 줌 자동
           const conePts = safeCones.reduce((a, c) => a + c.points.length, 0);
@@ -5634,7 +5687,10 @@ function MapComp({
         if (existing) existing.addEventListener('load', initKakao);
         else {
           const s = document.createElement('script');
-          s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false`;
+          // `clusterer` is a separate library and is not in the base bundle. It is requested here
+          // unconditionally because the decision to group happens per render, after the script has
+          // already been cached — loading it lazily would mean the first crowded map has no grouping.
+          s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false&libraries=clusterer`;
           s.onload = initKakao;
           document.head.appendChild(s);
         }
@@ -5838,7 +5894,7 @@ function MapComp({
       try { mapInstance?.remove?.(); } catch { /* 이미 해제됨 무시 */ }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(safeMarkers), JSON.stringify(safeCircles), JSON.stringify(safeLines), finalCenter.lat, finalCenter.lon, finalZoom, provider]);
+  }, [JSON.stringify(safeMarkers), JSON.stringify(safeCircles), JSON.stringify(safeLines), finalCenter.lat, finalCenter.lon, finalZoom, provider, cluster, JSON.stringify(overlay)]);
 
   return (
     <div

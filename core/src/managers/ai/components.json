@@ -2983,6 +2983,31 @@
             "null"
           ],
           "description": "auto (default — Korea→Kakao / outside Korea→Leaflet) / leaflet (outside Korea only, or forced) / kakao (force Korea)"
+        },
+        "cluster": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Group nearby markers into counted circles that split as the reader zooms in. Left unset it turns itself on past about 30 plain markers, which is where individual pins stop being readable; set false to keep every pin separate on a crowded map, or true to group a smaller set. Kakao maps only."
+        },
+        "overlay": {
+          "type": [
+            "array",
+            "string",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "enum": [
+              "district",
+              "traffic",
+              "terrain",
+              "bicycle",
+              "roadview"
+            ]
+          },
+          "description": "Extra tile layers drawn over the base map. district = 지적편집도, the cadastral parcel boundaries wanted on property maps; traffic = live congestion; terrain = contours; bicycle = cycle routes; roadview = streets with street-view coverage. Each is ink over the map, so ask only for the one the subject needs. Kakao maps only."
         }
       }
     },
