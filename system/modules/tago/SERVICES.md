@@ -48,6 +48,11 @@ station so another one may answer.
 
 Station, exit and exit-facility lookups cover the whole country — only the timetable is patchy.
 
+⚠️ **These counts are one reading, not a permanent property.** On the same day, tago.go.kr's own site
+also showed nothing for 노량진 1호선, which is consistent with a standing gap but does not rule out an
+outage. Re-measure before treating any line as permanently absent; the module says "came back empty"
+rather than "TAGO does not have it" for exactly this reason.
+
 Two id caveats. The guide's own sample `MTRS11133` (서울역) **no longer exists**; the current 서울역
 1호선 id is `MTRS11150`, so sample ids in these documents are not safe to test against. And the id
 the API returns is the one to match on — GTX-A comes back as `MTRGXAX106`, which is not necessarily
