@@ -89,7 +89,13 @@ async fn main() -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("logs.db"));
     let log_reload_handle = init_tracing(log_db_path.clone());
-    tracing::info!(version = firebat_core::version(), "Firebat Core booting");
+    // `build` is the deploy identity — the running process states which build it is, so a stale
+    // artifact shows up in `journalctl` instead of having to be inferred from a file mtime.
+    tracing::info!(
+        version = firebat_core::version(),
+        build = firebat_core::BUILD_VERSION,
+        "Firebat Core booting"
+    );
 
     // 옛 commit `3418b4b` 의 HF_ENDPOINT env 자동 default 설정 fix = 잘못된 진단 — hf-hub 0.3
     // 은 env 를 안 읽음 + default endpoint = "https://huggingface.co" 자체에 있음. 사용자 환경

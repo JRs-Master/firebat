@@ -77,5 +77,7 @@ tokio = { version = "1", features = ["test-util", "rt-multi-thread", "macros", "
 [build-dependencies]
 tonic-build = "0.12"
 protoc-bin-vendored = "3"
+# Build-time clock for the build stamp in FIREBAT_BUILD (see build.rs).
+chrono = "0.4"
 
 # [profile.*] — root Cargo.toml workspace 의 profile 사용.
