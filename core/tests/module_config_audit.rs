@@ -280,3 +280,238 @@ fn every_module_declaration_names_something_that_exists() {
         problems.join("\n  ")
     );
 }
+
+// ── The rest of the authored declaration surfaces ─────────────────────────────────────────────
+// Derived from the code rather than remembered: every declaration file core/ or infra/ reads
+// (include_str! or by path) that a HUMAN OR MODEL authors, as opposed to runtime state the system
+// writes for itself. config.json is audited above; these are the others.
+//
+//   system/modules/*/actions.json        the big brokers' action catalog (actionCatalog.file)
+//   system/modules/*/cron-*.json         cron jobs a module registers when enabled
+//   core/src/managers/ai/components.json the render catalog — where every component's FORM lives
+//   language/{ko,en}.json                every user-visible string
+//
+// Runtime state (cron-jobs.json, auth.json, plan-store.json, pending-tools.json, mcp-servers.json,
+// *.meta.json) is deliberately out of scope: nobody authors it, so there is no declaration to be
+// wrong about.
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+}
+
+/// A catalog file's entries must name actions the module can actually run — the inline form of
+/// this is checked above, and the file form is where the big brokers live (200+ actions each),
+/// which is exactly where nobody would notice a stale id.
+#[test]
+fn every_action_catalog_file_names_runnable_actions() {
+    let mut problems = Vec::new();
+    let mut audited = 0usize;
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        let Some(file) = config.pointer("/actionCatalog/file").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        let Ok(craw) = fs::read_to_string(dir.join(file)) else { continue };
+        let catalog: Value = match serde_json::from_str(&craw) {
+            Ok(v) => v,
+            Err(e) => {
+                problems.push(format!("{name}/{file}: does not parse — {e}"));
+                continue;
+            }
+        };
+        audited += 1;
+        let list = catalog
+            .get("actions")
+            .or(Some(&catalog))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let known = declared_actions(&config);
+        let mut missing = 0usize;
+        for e in &list {
+            let Some(id) = e.get("id").and_then(|v| v.as_str()) else {
+                problems.push(format!("{name}/{file}: an entry has no `id`"));
+                continue;
+            };
+            if let Some(known) = &known {
+                if !known.contains(id) {
+                    missing += 1;
+                    if missing <= 5 {
+                        problems.push(format!(
+                            "{name}/{file}: catalog names `{id}`, which the input schema does not \
+                             declare — searchable but not callable"
+                        ));
+                    }
+                }
+            }
+        }
+        if missing > 5 {
+            problems.push(format!("{name}/{file}: and {} more unrunnable ids", missing - 5));
+        }
+    }
+    assert!(audited >= 2, "no catalog files audited ({audited}) — the path drifted");
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
+/// A module's cron files run UNATTENDED — the autotrade ones place real orders. Their steps are
+/// PipelineStep values, so the executor's own parser is the only honest validator: if serde
+/// cannot read a step here, the scheduler could not have run it there.
+/// Cron declarations that exist, are tested, and deliberately do NOT register yet. Stock trading
+/// is not switched on — only the crypto loop runs live (CLAUDE.md tracker), so these four market
+/// loops and two discovery jobs sit ready instead of firing at an account nobody armed.
+const DORMANT_CRONS: &[&str] = &[
+    "autotrade/cron-kiwoom-kr.json",
+    "autotrade/cron-kiwoom-us.json",
+    "autotrade/cron-kis-kr.json",
+    "autotrade/cron-kis-us.json",
+    "autotrade/cron-kiwoom-universe.json",
+    "autotrade/cron-kiwoom-screen.json",
+];
+
+#[test]
+fn every_declared_cron_job_parses_as_the_pipeline_the_scheduler_runs() {
+    use firebat_core::managers::task::PipelineStep;
+    let mut problems = Vec::new();
+    let mut audited = 0usize;
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        let registered: BTreeSet<String> = config
+            .get("schedules")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str()).map(str::to_string).collect())
+            .unwrap_or_default();
+        let mut present: Vec<String> = fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with("cron-") && n.ends_with(".json"))
+            .collect();
+        present.sort();
+        for f in &present {
+            // A cron file the module does not list in `schedules` never registers. That can be
+            // deliberate (a market not switched on yet) — but it must be SAID, or a job everyone
+            // believes is running is a file nobody reads.
+            if !registered.contains(f) && !DORMANT_CRONS.contains(&format!("{name}/{f}").as_str()) {
+                problems.push(format!(
+                    "{name}/{f}: present but not in `schedules` — it never registers. Add it, or                      list it in DORMANT_CRONS with the reason it is waiting"
+                ));
+            }
+            let Ok(jraw) = fs::read_to_string(dir.join(f)) else { continue };
+            let job: Value = match serde_json::from_str(&jraw) {
+                Ok(v) => v,
+                Err(e) => {
+                    problems.push(format!("{name}/{f}: does not parse — {e}"));
+                    continue;
+                }
+            };
+            audited += 1;
+            if job.get("title").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                problems.push(format!("{name}/{f}: no `title`"));
+            }
+            let has_trigger = ["cronTime", "runAt", "delaySec"]
+                .iter()
+                .any(|k| job.get(*k).is_some_and(|v| !v.is_null()));
+            if !has_trigger {
+                problems.push(format!("{name}/{f}: no trigger (cronTime / runAt / delaySec)"));
+            }
+            let mode = job.get("executionMode").and_then(|v| v.as_str()).unwrap_or("");
+            match job.get("pipeline").and_then(|v| v.as_array()) {
+                Some(steps) => {
+                    if mode != "pipeline" {
+                        problems.push(format!(
+                            "{name}/{f}: carries a pipeline but executionMode is `{mode}`"
+                        ));
+                    }
+                    for (i, step) in steps.iter().enumerate() {
+                        if let Err(e) = serde_json::from_value::<PipelineStep>(step.clone()) {
+                            problems.push(format!(
+                                "{name}/{f}: step[{i}] is not a step the executor can run — {e}"
+                            ));
+                        }
+                    }
+                }
+                None if mode == "pipeline" => {
+                    problems.push(format!("{name}/{f}: executionMode=pipeline with no steps"))
+                }
+                None => {}
+            }
+        }
+    }
+    assert!(audited >= 9, "only {audited} cron declarations audited — the path drifted");
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
+/// The component catalog is where a fence block's FORM lives — `get_component_schema` hands one
+/// over on request, and it is the only form the fence channel has. A component with no props
+/// schema is a component the model must guess at.
+#[test]
+fn every_render_component_carries_a_props_form() {
+    let path = repo_root().join("core/src/managers/ai/components.json");
+    let raw = fs::read_to_string(&path).expect("the render catalog is baked into the binary");
+    let catalog: Vec<Value> = serde_json::from_str(&raw).expect("catalog parses");
+    let mut problems = Vec::new();
+    for c in &catalog {
+        let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("<unnamed>");
+        for key in ["componentType", "description", "semanticText"] {
+            if c.get(key).and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                problems.push(format!("{name}: `{key}` is empty — it is how the model FINDS this"));
+            }
+        }
+        // An explicit empty `properties` IS an answer ("this component takes none" — divider).
+        // A missing propsSchema is not: get_component_schema would have nothing to hand over.
+        match c.get("propsSchema") {
+            Some(s) if s.get("properties").and_then(|p| p.as_object()).is_some() => {}
+            Some(_) => problems.push(format!("{name}: propsSchema has no `properties` object")),
+            None => problems.push(format!("{name}: no propsSchema — nothing to answer with")),
+        }
+    }
+    assert!(catalog.len() >= 20, "only {} components — the catalog drifted", catalog.len());
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
+/// Every user-visible string exists in both languages. A key present in one file and not the
+/// other renders as the raw key to whoever picked the other language.
+#[test]
+fn the_two_language_files_declare_the_same_keys() {
+    fn flatten(v: &Value, prefix: &str, out: &mut BTreeSet<String>) {
+        match v {
+            Value::Object(o) => {
+                for (k, child) in o {
+                    let p = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+                    flatten(child, &p, out);
+                }
+            }
+            _ => {
+                out.insert(prefix.to_string());
+            }
+        }
+    }
+    let root = repo_root().join("language");
+    let read = |name: &str| -> BTreeSet<String> {
+        let raw = fs::read_to_string(root.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let v: Value = serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let mut out = BTreeSet::new();
+        flatten(&v, "", &mut out);
+        out
+    };
+    let ko = read("ko.json");
+    let en = read("en.json");
+    let only_ko: Vec<&String> = ko.difference(&en).collect();
+    let only_en: Vec<&String> = en.difference(&ko).collect();
+    assert!(ko.len() > 100, "only {} keys — the i18n files drifted", ko.len());
+    assert!(
+        only_ko.is_empty() && only_en.is_empty(),
+        "language files disagree — {} ko-only, {} en-only:\n  ko-only: {:?}\n  en-only: {:?}",
+        only_ko.len(),
+        only_en.len(),
+        only_ko.iter().take(12).collect::<Vec<_>>(),
+        only_en.iter().take(12).collect::<Vec<_>>()
+    );
+}
