@@ -162,6 +162,26 @@ process.stdin.on('end', async () => {
       });
     }
 
+    // A subway station id in a train, flight, ferry or terminal slot. Measured 2026-08-13: after the
+    // subway timetable came back empty, the model reached for `train-schedule` with the subway id it
+    // already had — different service, different id namespace, and TAGO would have answered with
+    // another empty list, which looks exactly like the problem it was working around.
+    for (const p of ['depPlaceId', 'arrPlaceId', 'depAirportId', 'arrAirportId', 'depNodeId',
+                     'depTerminalId', 'arrTerminalId', 'depTmnCd', 'arrTmnCd']) {
+      if (typeof data[p] === 'string' && data[p].startsWith('MTR')) {
+        return outErr('error.subway_id_in_other_service', { action, param: p, value: data[p] });
+      }
+    }
+
+    // Origin equal to destination. Every schedule endpoint answers this with an empty list, which
+    // is indistinguishable from "no service" — so it is refused where the mistake is still visible.
+    for (const [dep, arr] of [['depPlaceId', 'arrPlaceId'], ['depTerminalId', 'arrTerminalId'],
+                              ['depTmnCd', 'arrTmnCd'], ['depAirportId', 'arrAirportId']]) {
+      if (data[dep] !== undefined && data[dep] === data[arr]) {
+        return outErr('error.same_origin_destination', { action, value: String(data[dep]) });
+      }
+    }
+
     const params = {};
     for (const p of [...(op.req ?? []), ...(op.opt ?? [])]) {
       if (data[p] !== undefined && data[p] !== null && data[p] !== '') params[op.wire?.[p] ?? p] = data[p];
@@ -185,7 +205,7 @@ process.stdin.on('end', async () => {
       notes.push('No rows matched, and TAGO returns 200 with an empty list for both possible reasons: an id that is well-formed but from the wrong list, OR an entity it simply holds no data for. Coverage is uneven — some lines, regions and operators are missing entirely while their neighbours are complete, so a correct id can legitimately return nothing.'
         + (given.length > 0 ? ` The ids used were ${given.map(p => `${p}=${params[op.wire?.[p] ?? p]} (from ${ID_SOURCE[p]})`).join(', ')} — check those first, then treat it as absent data rather than retrying the same lookup.` : ''));
       if (action === 'subway-timetable') {
-        notes.push('Timetable coverage is uneven LINE BY LINE and cannot be predicted from the station id, the operator or the region — measured 2026-08-13 across 32 line families. Answering: 서울 1·2·3·4·5·7·8호선, 신림선, 경의중앙, 수인분당, 경춘, 경강, 동해, 대경선, 서해선, 부산김해경전철. Empty: 서울 6호선 (the one exception inside an otherwise complete operator), the 코레일 stretch of 1호선, 부산·대구·대전·인천·광주 metros, 신분당, 공항철도, GTX-A, 에버라인, 자기부상. Station, exit and exit-facility lookups DO cover the whole country; only the timetable is patchy. An empty schedule is TAGO not returning that line right now — a standing gap or a temporary outage, and the response cannot tell which. It is NOT a wrong id and NOT "no trains": say that it came back empty and when, and do not re-look-up the id. `subway-stations` returns one row per line at a station, so when one line is empty another line at the same station may still answer.');
+        notes.push('Timetable coverage is uneven LINE BY LINE and cannot be predicted from the station id, the operator or the region — measured 2026-08-13 across 32 line families. Answering: 서울 1·2·3·4·5·7·8호선, 신림선, 경의중앙, 수인분당, 경춘, 경강, 동해, 대경선, 서해선, 부산김해경전철. Empty: 서울 6호선 (the one exception inside an otherwise complete operator), the 코레일 stretch of 1호선, 부산·대구·대전·인천·광주 metros, 신분당, 공항철도, GTX-A, 에버라인, 자기부상. Station, exit and exit-facility lookups DO cover the whole country; only the timetable is patchy. An empty schedule is TAGO not returning that line right now — a standing gap or a temporary outage, and the response cannot tell which. It is NOT a wrong id and NOT "no trains": say that it came back empty and when, and do not re-look-up the id. `subway-stations` returns one row per line at a station, so when one line is empty another line at the same station may still answer. If the line you were asked about is the empty one, STOP querying TAGO: no other action here carries subway timetables — train-schedule is a different service with its own NAT-prefixed station ids and will not answer for a subway station. The remaining routes are a web search or telling the user the source does not have it; either is better than more calls that return the same empty list.');
       }
     }
     if (action === 'scooters') {

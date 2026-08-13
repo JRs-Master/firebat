@@ -191,7 +191,7 @@
     {
       "id": "train-schedule",
       "name": "기차 시간표 (출발역·도착역)",
-      "description": "Trains between two stations, optionally on a date and of one type. Omitting the date reads today.",
+      "description": "Trains between two stations, optionally on a date and of one type. Omitting the date reads today. This is the intercity/KTX rail service, NOT the subway: its station ids come from train-stations and look like NAT010000. A subway station id (MTR...) belongs to subway-timetable and is refused here.",
       "params": {
         "arrPlaceId": "From train-stations",
         "depPlaceId": "From train-stations",
@@ -226,7 +226,7 @@
     {
       "id": "subway-timetable",
       "name": "지하철역 시간표 (요일·방향별)",
-      "description": "Departure and arrival times at one station for a day type and a direction, with the terminus of each train. Subways run to schedule, so the next train is this table plus the current time — there is no live subway feed in TAGO and none is needed. Timetable coverage is uneven LINE BY LINE and cannot be predicted from the station id, the operator or the region — measured 2026-08-13 across 32 line families. Answering: 서울 1·2·3·4·5·7·8호선, 신림선, 경의중앙, 수인분당, 경춘, 경강, 동해, 대경선, 서해선, 부산김해경전철. Empty: 서울 6호선 (the one exception inside an otherwise complete operator), the 코레일 stretch of 1호선, 부산·대구·대전·인천·광주 metros, 신분당, 공항철도, GTX-A, 에버라인, 자기부상. Station, exit and exit-facility lookups DO cover the whole country; only the timetable is patchy. An empty schedule is TAGO not returning that line right now — a standing gap or a temporary outage, and the response cannot tell which. It is NOT a wrong id and NOT \"no trains\": say that it came back empty and when, and do not re-look-up the id.",
+      "description": "Departure and arrival times at one station for a day type and a direction, with the terminus of each train. Subways run to schedule, so the next train is this table plus the current time — there is no live subway feed in TAGO and none is needed. Timetable coverage is uneven LINE BY LINE and cannot be predicted from the station id, the operator or the region — measured 2026-08-13 across 32 line families. Answering: 서울 1·2·3·4·5·7·8호선, 신림선, 경의중앙, 수인분당, 경춘, 경강, 동해, 대경선, 서해선, 부산김해경전철. Empty: 서울 6호선 (the one exception inside an otherwise complete operator), the 코레일 stretch of 1호선, 부산·대구·대전·인천·광주 metros, 신분당, 공항철도, GTX-A, 에버라인, 자기부상. Station, exit and exit-facility lookups DO cover the whole country; only the timetable is patchy. An empty schedule is TAGO not returning that line right now — a standing gap or a temporary outage, and the response cannot tell which. It is NOT a wrong id and NOT \"no trains\": say that it came back empty and when, and do not re-look-up the id. `subway-stations` returns one row per line at a station, so when one line is empty another line at the same station may still answer. If the line asked about is the empty one, STOP querying TAGO: no other action here carries subway timetables — train-schedule is a different service with its own NAT-prefixed station ids and will not answer for a subway station. What remains is a web search or telling the user the source does not have it; either beats more calls returning the same empty list.",
       "params": {
         "dailyTypeCode": "01=평일, 02=토요일, 03=일요일",
         "subwayStationId": "From subway-stations",

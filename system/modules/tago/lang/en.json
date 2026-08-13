@@ -9,6 +9,8 @@
     "api_error": "TAGO API error {{code}}: {{message}}",
     "http_status": "TAGO API HTTP {{status}}",
     "network": "Could not reach the TAGO API: {{message}}",
-    "runtime": "{{message}}"
+    "runtime": "{{message}}",
+    "subway_id_in_other_service": "{{action}} received the subway station id \"{{value}}\" in {{param}}. Subway ids (MTR…) belong to the subway-* actions; this action uses a different service with its own id namespace and would simply answer with an empty list. Use subway-timetable for subway schedules.",
+    "same_origin_destination": "{{action}} was given \"{{value}}\" as both origin and destination. The API answers that with an empty list rather than an error, so it is refused here."
   }
 }

@@ -9,6 +9,8 @@
     "api_error": "TAGO API 오류 {{code}}: {{message}}",
     "http_status": "TAGO API HTTP {{status}}",
     "network": "TAGO API 연결 실패: {{message}}",
-    "runtime": "{{message}}"
+    "runtime": "{{message}}",
+    "subway_id_in_other_service": "{{action}} 의 {{param}} 에 지하철역 ID \"{{value}}\" 가 들어왔습니다. 지하철역 ID(MTR…)는 subway-* 액션 전용이고 이 액션은 다른 서비스의 ID 체계를 씁니다 — 넣어도 빈 결과만 돌아옵니다. 지하철 시간표는 subway-timetable 을 쓰십시오.",
+    "same_origin_destination": "{{action}} 의 출발지와 도착지가 \"{{value}}\" 로 같습니다. API 는 이 경우 에러가 아니라 빈 목록으로 답하므로 여기서 거부합니다."
   }
 }
