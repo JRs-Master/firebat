@@ -7,21 +7,6 @@
 //! protoc binary 는 protoc-bin-vendored crate 가 OS-별 동봉 — 시스템 설치 의존 0.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Build stamp — `<pkg version>.<yy.mm.dd.hh.mm>` of the moment this was compiled, UTC (the
-    // build runs in GHA, which is UTC). Read back through `firebat_core::BUILD_VERSION`.
-    //
-    // It answers one question on sight: is the thing running the thing that was just built? Two
-    // deploy paths (Rust artifact, frontend bundle) go out separately and either can be forgotten,
-    // and the running binary otherwise says nothing about which build it is.
-    //
-    // Derived, so there is no number to remember to increment. `version.workspace` stays the
-    // product version and is the only hand-managed part.
-    let stamp = chrono::Utc::now().format("%y.%m.%d.%H.%M");
-    let pkg = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".into());
-    // `1.0.0` → `1.0`: the patch digit is what the stamp replaces.
-    let product: String = pkg.split('.').take(2).collect::<Vec<_>>().join(".");
-    println!("cargo:rustc-env=FIREBAT_BUILD={product}.{stamp}");
-
     // protoc binary 환경 변수 set (tonic-build / prost-build 가 PROTOC 읽음)
     let protoc_path = protoc_bin_vendored::protoc_bin_path()?;
     std::env::set_var("PROTOC", protoc_path);

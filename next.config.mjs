@@ -1,16 +1,5 @@
-// Build stamp — `<product>.<yy.mm.dd.hh.mm>` UTC of the moment this bundle was built, mirroring
-// core's `build.rs`/`FIREBAT_BUILD`. The frontend and the Rust artifact deploy on separate paths
-// and either can be left behind; stamping both is what makes that visible instead of guessed.
-const buildStamp = new Date()
-  .toISOString()             // 2026-08-14T07:06:12.345Z — UTC, same clock the Rust side uses
-  .slice(2, 16)              // 26-08-14T07:06
-  .replace(/[-T:]/g, '.');   // 26.08.14.07.06
-const FIREBAT_BUILD = `1.0.${buildStamp}`;
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Inlined at build time, so the running bundle carries the stamp of the build it came from.
-  env: { NEXT_PUBLIC_FIREBAT_BUILD: FIREBAT_BUILD },
   reactStrictMode: true,
   transpilePackages: [],
   allowedDevOrigins: ['127.0.0.1', 'localhost'],

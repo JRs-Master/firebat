@@ -7,38 +7,6 @@
 //!
 //! 의존 단방향 — `infra → core`. core 는 trait 만 정의, infra 가 implement.
 
-/// The build this binary is, as `<product>.<yy.mm.dd.hh.mm>` in UTC — e.g. `1.0.26.08.14.07.06`.
-///
-/// Stamped by `build.rs` at compile time. Its job is to make "did that deploy actually go out?"
-/// answerable by looking, instead of by remembering: the Rust artifact and the frontend bundle ship
-/// on separate paths and either one can be left behind.
-pub const BUILD_VERSION: &str = env!("FIREBAT_BUILD");
-
-#[cfg(test)]
-mod build_version_tests {
-    /// `1.0.26.08.14.07.06` — product, then year/month/day/hour/minute. Asserted because a stamp
-    /// that silently degrades to a placeholder would still compile and would still look like a
-    /// version on the screen where the deploy question gets answered.
-    #[test]
-    fn the_build_stamp_has_the_documented_shape() {
-        let parts: Vec<&str> = super::BUILD_VERSION.split('.').collect();
-        assert_eq!(parts.len(), 7, "got {:?}", super::BUILD_VERSION);
-        for (i, p) in parts.iter().enumerate() {
-            assert!(
-                p.chars().all(|c| c.is_ascii_digit()),
-                "segment {i} is not numeric in {:?}",
-                super::BUILD_VERSION
-            );
-        }
-        // The five stamp segments are fixed-width, so string comparison orders builds by time.
-        assert!(
-            parts[2..].iter().all(|p| p.len() == 2),
-            "stamp segments must be zero-padded: {:?}",
-            super::BUILD_VERSION
-        );
-    }
-}
-
 pub mod ports;
 pub mod principal;
 pub mod core_facade;
