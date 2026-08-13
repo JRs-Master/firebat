@@ -10,6 +10,14 @@
     "http_status": "HTTP {{status}}: {{body}}",
     "json_parse": "Failed to parse JSON.",
     "api_error": "API error: {{message}}",
-    "runtime": "Exception: {{message}}"
+    "runtime": "Exception: {{message}}",
+    "transcoord_xy_required": "transcoord needs numeric x and y. They are values in `inputCoord` units and may not be degrees at all (TM and WTM are metres).",
+    "coord_system_invalid": "{{field}} is not a valid coordinate system. Available: {{systems}}",
+    "category_code_invalid": "Unknown category group code \"{{code}}\". Available: {{codes}}",
+    "distance_sort_needs_center": "sort:\"distance\" requires a centre. Supply lat_center and lon_center.",
+    "category_area_required": "Category search ({{code}}) requires a search area: either lat_center/lon_center (with radius) or rect. There is no nationwide category listing.",
+    "route_coords_required": "Directions need both origin and destination coordinates. Missing: {{missing}}",
+    "route_not_found": "No {{action}} route was found (status: {{status}}). This comes back when origin and destination are the same, when there is no road or stop nearby, or when the two points are too far apart.",
+    "static_map_center_required": "A static map needs either a centre (centerLat/centerLon) or markers. With neither, there is nothing to centre the image on."
   }
 }

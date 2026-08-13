@@ -28,9 +28,16 @@
           "geocoding",
           "reverse-geocoding",
           "search-address",
-          "search-keyword"
+          "search-keyword",
+          "coord2region",
+          "transcoord",
+          "search-category",
+          "route-transit",
+          "route-walk",
+          "route-bicycle",
+          "static-map"
         ],
-        "description": "geocoding=주소→좌표, reverse-geocoding=좌표→주소, search-address=주소 자동완성·검색, search-keyword=장소 키워드 검색 (음식점·은행·병원 등)"
+        "description": "geocoding/search-address=address to coordinates, reverse-geocoding=coordinates to address, coord2region=coordinates to administrative (H) and legal (B) division codes, transcoord=between coordinate systems, search-keyword=places by name, search-category=places by category code with no keyword, route-transit/route-walk/route-bicycle=directions, static-map=a PNG of the map, for documents and notifications where an interactive map cannot go"
       },
       "address": {
         "type": "string",
@@ -64,7 +71,27 @@
       },
       "categoryGroupCode": {
         "type": "string",
-        "description": "[search-keyword] 카테고리 코드 (선택). MT1=대형마트, CS2=편의점, PS3=어린이집·유치원, SC4=학교, AC5=학원, PK6=주차장, OL7=주유소, SW8=지하철역, BK9=은행, CT1=문화시설, AG2=중개업소, PO3=공공기관, AT4=관광명소, AD5=숙박, FD6=음식점, CE7=카페, HP8=병원, PM9=약국"
+        "enum": [
+          "MT1",
+          "CS2",
+          "PS3",
+          "SC4",
+          "AC5",
+          "PK6",
+          "OL7",
+          "SW8",
+          "BK9",
+          "CT1",
+          "AG2",
+          "PO3",
+          "AT4",
+          "AD5",
+          "FD6",
+          "CE7",
+          "HP8",
+          "PM9"
+        ],
+        "description": "[search-keyword/search-category] Category group. Required for search-category, optional as a filter for search-keyword. MT1=대형마트, CS2=편의점, PS3=어린이집·유치원, SC4=학교, AC5=학원, PK6=주차장, OL7=주유소·충전소, SW8=지하철역, BK9=은행, CT1=문화시설, AG2=중개업소, PO3=공공기관, AT4=관광명소, AD5=숙박, FD6=음식점, CE7=카페, HP8=병원, PM9=약국"
       },
       "lat_center": {
         "type": "number",
@@ -81,7 +108,193 @@
       "limit": {
         "type": "integer",
         "default": 15,
-        "description": "최대 결과 수 (max 45)"
+        "description": "[search-*] Results per page. The cap differs per endpoint and is NOT 45 (that is the page cap): address search takes 30, place and category search take 15. Over-asking is a 400, so it is capped here and reported."
+      },
+      "page": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 45,
+        "description": "[search-category] Page number, 1-45"
+      },
+      "rect": {
+        "type": "string",
+        "description": "[search-category] Rectangular search area as \"leftX,leftY,rightX,rightY\". An alternative to centre plus radius; one of the two is required"
+      },
+      "sort": {
+        "type": "string",
+        "enum": [
+          "accuracy",
+          "distance"
+        ],
+        "description": "[search-category] accuracy (default) or distance. distance needs lat_center/lon_center — without them the vendor rejects the call"
+      },
+      "x": {
+        "type": "number",
+        "description": "[transcoord] X value in `inputCoord` units. Not necessarily a longitude — TM and WTM are metres"
+      },
+      "y": {
+        "type": "number",
+        "description": "[transcoord] Y value in `inputCoord` units"
+      },
+      "inputCoord": {
+        "type": "string",
+        "description": "[coord2region/transcoord/route-*] Coordinate system of the input (default WGS84). Local endpoints take WGS84|WCONGNAMUL|CONGNAMUL|WTM|TM|KTM|UTM|BESSEL|WKTM|WUTM; routing takes only WGS84|WTM|TM|WCONGNAMUL"
+      },
+      "outputCoord": {
+        "type": "string",
+        "description": "[coord2region/transcoord/route-*] Coordinate system of the response. Required for transcoord"
+      },
+      "startLat": {
+        "type": "number",
+        "description": "[route-*] Origin latitude"
+      },
+      "startLon": {
+        "type": "number",
+        "description": "[route-*] Origin longitude"
+      },
+      "endLat": {
+        "type": "number",
+        "description": "[route-*] Destination latitude"
+      },
+      "endLon": {
+        "type": "number",
+        "description": "[route-*] Destination longitude"
+      },
+      "startName": {
+        "type": "string",
+        "description": "[route-*] Origin label shown in the guidance (default 출발)"
+      },
+      "endName": {
+        "type": "string",
+        "description": "[route-*] Destination label (default 도착)"
+      },
+      "via": {
+        "type": "array",
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "properties": {
+            "lat": {
+              "type": "number",
+              "description": "Waypoint latitude"
+            },
+            "lon": {
+              "type": "number",
+              "description": "Waypoint longitude"
+            },
+            "name": {
+              "type": "string",
+              "description": "Waypoint label"
+            }
+          }
+        },
+        "description": "[route-walk/route-bicycle] Up to 5 waypoints. Transit routing does not take them"
+      },
+      "routeMode": {
+        "type": "string",
+        "enum": [
+          "BROAD_FIRST",
+          "SHORTEST",
+          "ACCESSIBLE",
+          "BIKE_ONLY"
+        ],
+        "description": "[route-walk/route-bicycle] Search preference. Walk takes BROAD_FIRST (default) | SHORTEST | ACCESSIBLE; bicycle takes BIKE_ONLY (default) | SHORTEST | ACCESSIBLE. Transit has none"
+      },
+      "includePath": {
+        "type": "boolean",
+        "default": true,
+        "description": "[route-*] Keep the step geometry. Those point arrays are most of the response and also what draws the route on a map, so they are kept by default; set false when only distance, time and guidance are wanted"
+      },
+      "centerLat": {
+        "type": "number",
+        "description": "[static-map] Map centre latitude. Either this pair or `markers` is required"
+      },
+      "centerLon": {
+        "type": "number",
+        "description": "[static-map] Map centre longitude"
+      },
+      "markers": {
+        "type": "array",
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "properties": {
+            "lat": {
+              "type": "number",
+              "description": "Marker latitude"
+            },
+            "lon": {
+              "type": "number",
+              "description": "Marker longitude"
+            },
+            "excludeFromBounds": {
+              "type": "boolean",
+              "description": "Leave this marker out when the map auto-fits its view"
+            }
+          }
+        },
+        "description": "[static-map] Up to 5 markers. Supplying them lets the centre and zoom be worked out automatically"
+      },
+      "width": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2048,
+        "default": 640,
+        "description": "[static-map] Image width in pixels, up to 2048"
+      },
+      "height": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1024,
+        "default": 480,
+        "description": "[static-map] Image height in pixels, up to 1024"
+      },
+      "level": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 15,
+        "description": "[static-map] Zoom level 1-15 (default 3). Lower is closer in"
+      },
+      "scale": {
+        "type": "integer",
+        "enum": [
+          1,
+          2
+        ],
+        "description": "[static-map] Pixel density. 2 (default) returns an image twice the requested size"
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "png",
+          "jpg"
+        ],
+        "default": "png",
+        "description": "[static-map] Image format"
+      },
+      "logoPos": {
+        "type": "string",
+        "enum": [
+          "BOTTOM_LEFT",
+          "BOTTOM_RIGHT",
+          "TOP_LEFT",
+          "TOP_RIGHT"
+        ],
+        "description": "[static-map] Where the Kakao logo sits. It is burned into the image and cannot be removed, only moved"
+      },
+      "coord": {
+        "type": "string",
+        "enum": [
+          "WGS84",
+          "WCONGNAMUL",
+          "WTM",
+          "TM"
+        ],
+        "description": "[static-map] Coordinate system of the supplied centre and markers (default WGS84)"
+      },
+      "name": {
+        "type": "string",
+        "description": "[static-map] File name stem for the saved image. Defaults to a name built from the coordinates"
       }
     },
     "additionalProperties": false
