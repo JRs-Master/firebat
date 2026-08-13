@@ -1,0 +1,156 @@
+{
+  "name": "daum-search",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "다음(Daum) 검색 API — 웹문서·동영상·이미지·블로그·책·카페 검색. naver-search 와 같은 필드 이름(title/link/description/datetime)으로 돌려주므로 두 벤더를 바꿔 껴도 소비처가 그대로입니다. **책 검색은 네이버가 2026-07-31 에 종료해서 여기가 유일한 경로**이고, **동영상 검색은 네이버에 아예 없습니다**. 뉴스 검색은 다음에 없으니 뉴스는 naver-search 를 쓰십시오. 지역·장소 검색은 kakao-map 소관입니다. 인증 = kakao-map·kakao-talk 이 이미 쓰는 KAKAO_REST_API_KEY 그대로. 일 쿼터 = 검색 유형당 30,000건, 다음 검색 전체 50,000건.",
+  "aliases": [
+    "다음",
+    "다음검색",
+    "카카오",
+    "Daum",
+    "Kakao"
+  ],
+  "tags": [
+    "검색",
+    "웹문서",
+    "동영상",
+    "유튜브",
+    "이미지검색",
+    "블로그",
+    "카페",
+    "책",
+    "도서",
+    "ISBN",
+    "출판사",
+    "저자",
+    "다음"
+  ],
+  "runtime": "node",
+  "capability": "web-search",
+  "providerType": "api",
+  "secrets": [
+    "KAKAO_REST_API_KEY"
+  ],
+  "actionCatalog": {
+    "actions": [
+      {
+        "id": "search",
+        "name": "다음 검색 (웹문서·동영상·이미지·블로그·책·카페)",
+        "description": "One endpoint per `type`, returning title / link / description / datetime plus per-type extras — the same field names naver-search uses, so rows from either vendor share a table. Book search is the notable one: Naver retired theirs on 2026-07-31 and this still answers, with ISBN / publisher / author narrowing via `target`. Video search has no Naver counterpart at all. Paging caps and sort words differ per type and are handled here: `recency` and `latest` mean the same thing but only one is valid per type, so the wrong one is translated rather than refused.",
+        "params": {
+          "query": "Search term, required. For blog, 'blogUrl term' (space separated) searches inside one blog",
+          "type": "web | vclip (video) | image | blog | book | cafe",
+          "sort": "accuracy (default) or newest-first — recency for every type except book, which calls it latest",
+          "page": "Page number. 1-50, except video which stops at 15",
+          "size": "Results per page. web/blog/cafe/book 1-50 (default 10), video 1-30 (default 15), image 1-80 (default 80)",
+          "target": "book only: narrow to title | isbn | publisher | person"
+        }
+      }
+    ]
+  },
+  "input": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "search"
+        ],
+        "default": "search",
+        "description": "API action"
+      },
+      "query": {
+        "type": "string",
+        "description": "Search term. For blog search, a blog URL followed by a space and the term restricts the search to that blog"
+      },
+      "type": {
+        "type": "string",
+        "enum": [
+          "web",
+          "vclip",
+          "image",
+          "blog",
+          "book",
+          "cafe"
+        ],
+        "default": "web",
+        "description": "web=web documents, vclip=video (YouTube and others), image, blog=Daum blogs, book=book catalogue with ISBN/publisher/author, cafe=Daum cafe posts. Naver has no video search and retired book search on 2026-07-31; Daum has no news search"
+      },
+      "sort": {
+        "type": "string",
+        "enum": [
+          "accuracy",
+          "recency",
+          "latest"
+        ],
+        "description": "accuracy (default) or newest-first. Newest-first is `recency` on web/vclip/image/blog/cafe and `latest` on book — the same idea under two names, and the wrong one for the type is translated rather than refused"
+      },
+      "page": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "description": "Page number. 1-50 for all types except vclip, which caps at 15. Paging past `pageableTotal` returns nothing regardless"
+      },
+      "size": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 80,
+        "description": "Results per page, and both the cap and the default vary: web/blog/cafe/book allow 50 and default to 10, vclip allows 30 and defaults to 15, image allows 80 and defaults to 80"
+      },
+      "target": {
+        "type": "string",
+        "enum": [
+          "title",
+          "isbn",
+          "publisher",
+          "person"
+        ],
+        "description": "[type=book] Narrow the match to one field. Ignored by every other type"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "total": {
+        "type": "integer",
+        "description": "Documents that matched"
+      },
+      "pageableTotal": {
+        "type": "integer",
+        "description": "Documents actually reachable by paging — far smaller than `total` (the vendor's own example shows 775 against 897,323). This is the number to quote, and paging past it returns nothing"
+      },
+      "isEnd": {
+        "type": "boolean",
+        "description": "Whether this is the last page"
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "Absent for image results, which have no title"
+            },
+            "link": {
+              "type": "string",
+              "description": "Document URL; for images, the image URL itself (the page holding it is `docLink`)"
+            },
+            "description": {
+              "type": "string",
+              "description": "Excerpt, with the vendor's <b> match markers removed"
+            },
+            "datetime": {
+              "type": "string",
+              "description": "ISO 8601 with offset"
+            }
+          }
+        },
+        "description": "Results. Extras by type: vclip adds thumbnail/playTimeSec/author, blog adds blogname/thumbnail, cafe adds cafename/thumbnail, image adds thumbnail/width/height/sitename/docLink/collection, book adds authors/translators/publisher/isbn/price/salePrice/thumbnail/status"
+      }
+    }
+  }
+}

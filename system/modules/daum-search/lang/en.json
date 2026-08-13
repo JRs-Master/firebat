@@ -1,0 +1,10 @@
+{
+  "error": {
+    "api_key_missing": "KAKAO_REST_API_KEY is not configured. It is the REST API key from the Kakao developer console — the same one kakao-map and kakao-talk use.",
+    "unknown_action": "Unknown action: {{action}}",
+    "unknown_type": "Unknown search type \"{{type}}\". Available: {{types}}. Daum has no news search — use naver-search for that — and place search belongs to kakao-map.",
+    "query_required": "query field is required.",
+    "search_api_status": "Daum Search API {{status}}: {{body}}",
+    "runtime": "{{message}}"
+  }
+}
