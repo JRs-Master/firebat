@@ -57,6 +57,48 @@ fn base_prompt_contains_tool_system_sections() {
     assert!(prompt.contains("Page generation guide"));
 }
 
+/// The system prompt guides by stating consequences, not by issuing bans (user's call, 2026-08-14).
+///
+/// "Calling without the form returns a refusal and spends a round" carries the same instruction as
+/// "never call without the form", and it stays true on the turns where the model is doing nothing
+/// wrong — so it reads as information rather than as suspicion. The sweep that converted ~85 lines
+/// is easy to undo one edit at a time, which is what this test is for.
+///
+/// Descriptive negations are untouched and belong here: "the user never receives it" and "props you
+/// don't know exactly" state facts. What the list below catches is the imperative forms.
+#[test]
+fn the_prompt_guides_by_consequence_rather_than_prohibition() {
+    let (v, _dir) = vault();
+    let pb = pb(v);
+    let prompt = pb.build(None, None, None);
+
+    // Sentence- or bullet-initial imperatives, plus the loud markers. Matched case-sensitively
+    // where capitalization is what makes it imperative, so "…and do not" inside a clause survives.
+    for banned in [
+        "Do not ",
+        "Do NOT ",
+        "do **NOT**",
+        "**Never",
+        "must not",
+        "Must not",
+        "strictly forbidden",
+        "is forbidden",
+        "are forbidden",
+        "Forbidden:",
+        "Forbidden phrasing",
+        "Prohibitions",
+        "not allowed",
+        "prohibited",
+    ] {
+        assert!(
+            !prompt.contains(banned),
+            "system prompt reverted to prohibition phrasing: {banned:?}\n\
+             State what happens instead — the consequence says the same thing and stays true when \
+             the model is complying."
+        );
+    }
+}
+
 #[test]
 fn user_prompt_appended_when_set() {
     let (v, _dir) = vault();

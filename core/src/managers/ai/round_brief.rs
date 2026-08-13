@@ -118,10 +118,20 @@ impl RoundBrief {
         Some(format!("[turn status]\n{}", sections.join("\n\n")))
     }
 
-    /// Where the turn is in its budget. Absent when the budget is unknown (0), which is how the
-    /// non-loop callers construct a brief.
+    /// Where the turn is in its budget — said when the number can change what happens next.
+    ///
+    /// On the opening round of a turn with the whole budget ahead, it cannot: "round 1 of 25" is
+    /// the same sentence every turn, and on a turn that calls no tools at all it appends a tool
+    /// budget to a conversation (measured live 2026-08-14: a plain greeting turn carried the line
+    /// as its entire brief). The number starts mattering once the turn is actually spending
+    /// rounds, once the end is near, or once tools have closed.
     fn progress_line(&self) -> Option<String> {
         if self.max_rounds == 0 || self.round == 0 {
+            return None;
+        }
+        let opening_round_with_room =
+            self.round == 1 && self.tools_open && self.remaining() > CLOSING_SOON;
+        if opening_round_with_room {
             return None;
         }
         let mut s = format!(
@@ -264,14 +274,40 @@ mod tests {
 
     #[test]
     fn an_empty_first_round_says_nothing() {
-        // A scaffold with no content every round teaches the model to skip the block.
+        // The shape the LOOP actually builds on the opening round: 1-based round, real budget,
+        // nothing discovered or executed yet. The first version of this test used round 0 /
+        // max_rounds 0 — a combination the loop never produces — so it passed while every live
+        // turn, including a plain greeting with no tools at all, carried "this is round 1 of 25"
+        // as its entire brief (measured on the server, 2026-08-14).
         let b = RoundBrief {
-            round: 0,
-            max_rounds: 0,
+            round: 1,
+            max_rounds: 25,
             tools_open: true,
+            schema_window_min: 30,
             ..Default::default()
         };
         assert_eq!(b.render(), None);
+    }
+
+    #[test]
+    fn an_opening_round_of_a_short_budget_still_warns() {
+        // The suppression is about a number that cannot change anything, not about round 1: when
+        // the whole budget is nearly gone the opening round is also the closing one.
+        let b = RoundBrief {
+            round: 1,
+            max_rounds: 2,
+            tools_open: true,
+            ..Default::default()
+        };
+        assert!(b.render().is_some());
+    }
+
+    #[test]
+    fn the_second_round_starts_reporting_progress() {
+        let mut b = base();
+        b.round = 2;
+        let out = b.render().expect("has content");
+        assert!(out.contains("round 2"), "{out}");
     }
 
     #[test]
