@@ -1087,10 +1087,18 @@ impl ModuleActionCatalog {
                 let score = (m.score * 1000.0).round() / 1000.0;
                 let is_stream = m.extra.get("kind").and_then(|v| v.as_str()) == Some("stream");
                 if is_stream {
+                    let stream_module = m.extra.get("module").cloned().unwrap_or_default();
+                    let stream_key = m.extra.get("stream").cloned().unwrap_or_default();
                     return serde_json::json!({
-                        "module": m.extra.get("module").cloned().unwrap_or_default(),
-                        "stream": m.extra.get("stream").cloned().unwrap_or_default(),
+                        "module": stream_module,
+                        "stream": stream_key,
                         "kind": "stream",
+                        // Streams take the same next step — get_action_schema accepts the stream
+                        // key (F4) — so they carry the same assembled call.
+                        "schemaCall": {
+                            "tool": "get_action_schema",
+                            "arguments": { "module": stream_module, "action": stream_key },
+                        },
                         "name": m.name,
                         "desc": m.extra.get("desc").cloned().unwrap_or_default(),
                         "tool": "stream_watch_start",
@@ -1103,10 +1111,21 @@ impl ModuleActionCatalog {
                     });
                 }
                 let module_name = m.extra.get("module").cloned().unwrap_or_default();
+                let action_id = m.extra.get("action").cloned().unwrap_or_default();
                 let mut row = serde_json::json!({
                     "module": module_name,
-                    "action": m.extra.get("action").cloned().unwrap_or_default(),
+                    "action": action_id,
                     "kind": "action",
+                    // The next call, already assembled. `module` and `action` are right here in
+                    // the row, so composing it is two string copies — and two string copies is
+                    // still a step where a name can be mistyped, a module borrowed from the row
+                    // above, or an id invented. A row that carries the call has none of those
+                    // states. Same reasoning as every other next-step pointer here: say the move,
+                    // at the point the move is being decided.
+                    "schemaCall": {
+                        "tool": "get_action_schema",
+                        "arguments": { "module": module_name, "action": action_id },
+                    },
                     // 호출할 도구 이름 — 모듈명(`kma-weather`)과 노출 도구명(`sysmod_kma_weather`)이
                     // 달라서, 이게 없으면 모델이 자기 도구 목록을 뒤져 이름을 맞춘다(2026-07-27 실측:
                     // 두 턴 모두 `ALL_TOOLS.filter(x => x.name.includes("sysmod_..."))` 로 한 라운드
@@ -1354,6 +1373,42 @@ impl ModuleActionCatalog {
                 None => out["params"] = serde_json::json!({ "account": doc }),
             }
         }
+
+        // The last step, assembled as far as this end can assemble it.
+        //
+        // Each step of the enforced order hands the next one its arguments: a search row carries
+        // the `get_action_schema` call, and this carries the module call with the selector already
+        // filled. `envelope` said the same thing in prose — "{ \"action\": \"<id>\", <params...> }"
+        // — and prose is a shape the model has to build from, which is where a selector goes
+        // missing (ta was called six times with bars and no action, two measured turns) or a
+        // value lands one level too deep. What is left to supply is the values, and `fill` names
+        // the ones the call is refused without.
+        let fill: Vec<String> = out
+            .get("required")
+            .and_then(|r| r.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .filter(|n| *n != "action")
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut arguments = serde_json::Map::new();
+        // A selector-less module has no action to send; sending one there is its own error.
+        if out.get("params").is_some() || !fill.is_empty() {
+            if entry.extra.get("action").is_some() || out.get("envelope").is_some() {
+                arguments.insert(
+                    "action".to_string(),
+                    serde_json::Value::String(action.to_string()),
+                );
+            }
+        }
+        out["call"] = serde_json::json!({
+            "tool": sysmod_tool_name(module),
+            "arguments": serde_json::Value::Object(arguments),
+            "fill": fill,
+        });
         Some(out)
     }
 
