@@ -20,21 +20,23 @@ fn make_manager() -> (CapabilityManager, TempDir) {
     (CapabilityManager::new(storage, vault, log), dir)
 }
 
+/// The list is what the modules say it is.
+///
+/// This used to assert a fixed count of eleven built-ins, which is what let the hand-written list
+/// drift from the modules in both directions — capabilities on the screen with no provider, and
+/// providers whose capability never appeared. With nothing installed there is nothing to offer.
 #[tokio::test]
-async fn list_returns_builtin_capabilities() {
+async fn an_installation_with_no_modules_offers_no_capabilities() {
     let (mgr, _dir) = make_manager();
-    let caps = mgr.list();
-    assert!(caps.contains_key("web-scrape"));
-    assert!(caps.contains_key("notification"));
-    assert_eq!(caps.len(), 11);
+    assert!(mgr.list().await.is_empty());
 }
 
 #[tokio::test]
 async fn register_adds_dynamic_capability() {
     let (mgr, _dir) = make_manager();
     mgr.register("custom-cap", "사용자 정의", "테스트");
-    let caps = mgr.list();
-    assert_eq!(caps.len(), 12);
+    let caps = mgr.list().await;
+    assert_eq!(caps.len(), 1);
     assert_eq!(caps.get("custom-cap").unwrap().label, "사용자 정의");
 }
 
@@ -164,5 +166,5 @@ async fn unknown_capability_auto_registered_on_scan() {
     // get_providers 호출 후 dynamic 에 등록됨
     let providers = mgr.get_providers("my-custom-thing").await;
     assert_eq!(providers.len(), 1);
-    assert!(mgr.list().contains_key("my-custom-thing"));
+    assert!(mgr.list().await.contains_key("my-custom-thing"));
 }

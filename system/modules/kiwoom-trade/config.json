@@ -10,7 +10,7 @@
     "Kiwoom"
   ],
   "runtime": "node",
-  "capability": "stock-trading",
+  "capability": "stock-order",
   "providerType": "api",
   "accounts": {
     "modes": [

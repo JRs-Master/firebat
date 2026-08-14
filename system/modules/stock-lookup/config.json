@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "runtime": "python",
   "providerType": "api",
-  "capability": "stock-lookup",
+  "capability": "stock-symbol",
   "description": "종목코드 검색 전용 — 회사명(종목명)을 공식 종목코드(6자리)와 DART corp_code(8자리)로 변환합니다. 사용법: {\"query\": \"회사명\"} 하나만 넣어 바로 호출 (action 불필요, 사전 검색·스키마 조회 불필요). 예: {\"query\": \"LG에너지솔루션\"} → corp_name + stock_code. 브로커 API(키움 stk_cd·한투 FID_INPUT_ISCD/PDNO·토스 등)에 종목코드가 필요할 때 항상 이 도구를 먼저 호출하세요 — 코드를 기억으로 추측하면 grounding 게이트가 거부합니다. 6자리 코드를 넣으면 그 코드의 회사를 확인(검증)해 줍니다. 여러 회사가 일치하면 candidates 배열이 반환되며, 확실하지 않으면 suggest 피커로 사용자에게 확인하세요.",
   "aliases": [
     "종목조회",

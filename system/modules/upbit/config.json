@@ -9,7 +9,7 @@
     "Upbit"
   ],
   "runtime": "node",
-  "capability": "crypto-trading",
+  "capability": "crypto-quote",
   "providerType": "api",
   "timeseries": {
     "candle-days": {

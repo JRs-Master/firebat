@@ -1,0 +1,109 @@
+{
+  "_note": "capability 라벨·설명. 어떤 capability가 '존재하는가'는 이 파일이 아니라 모듈 config 의 `capability` 선언에서 파생됩니다 — 여기 없는 id 는 id 그대로 표시되고, 여기 있지만 선언한 모듈이 없는 id 는 목록에 나오지 않습니다. 그래서 이 파일과 모듈이 어긋날 수 없습니다. 수정 = git pull (Rust 빌드 불필요).",
+  "capabilities": {
+    "stock-quote": {
+      "label": "주식 시세",
+      "description": "국내·해외 주식 시세·차트·호가 조회 — 어느 증권사로도 대체 가능"
+    },
+    "stock-order": {
+      "label": "주식 주문",
+      "description": "매수/매도 주문·잔고·미체결 — 계좌에 묶여 있어 다른 증권사로 대체 불가"
+    },
+    "stock-symbol": {
+      "label": "종목 코드 찾기",
+      "description": "회사 이름 → 종목코드"
+    },
+    "crypto-quote": {
+      "label": "코인 시세",
+      "description": "암호화폐 시세·캔들 조회"
+    },
+    "crypto-order": {
+      "label": "코인 주문",
+      "description": "암호화폐 매수/매도·잔고·입출금 — 계좌에 묶여 있음"
+    },
+    "auto-trading": {
+      "label": "자동매매",
+      "description": "선언한 전략을 봉 마감·틱에 따라 자동 실행"
+    },
+    "market-hours": {
+      "label": "장 운영 시간",
+      "description": "그 날짜에 시장이 열리는지, 몇 시부터 몇 시까지인지"
+    },
+    "technical-analysis": {
+      "label": "기술적 분석",
+      "description": "이동평균·RSI·MACD·엘리엇 등 차트 지표 계산과 백테스트"
+    },
+    "fundamental-analysis": {
+      "label": "기본적 분석",
+      "description": "PER·PBR·ROE·부채비율 등 재무 지표 계산"
+    },
+    "disclosure": {
+      "label": "기업 공시",
+      "description": "DART 전자공시 — 사업보고서·재무제표·지분·주요사항"
+    },
+    "news-impact": {
+      "label": "뉴스 영향 분석",
+      "description": "뉴스가 종목에 미친 영향 측정"
+    },
+    "keyword-analytics": {
+      "label": "키워드 분석",
+      "description": "키워드 검색량, CPC, 경쟁도 등 광고/SEO 지표 조회"
+    },
+    "real-estate": {
+      "label": "부동산 실거래가",
+      "description": "국토교통부 아파트·오피스텔·토지 실거래 조회"
+    },
+    "web-search": {
+      "label": "웹 검색",
+      "description": "키워드 → 검색 결과 목록 (제목, URL, 설명)"
+    },
+    "web-scrape": {
+      "label": "웹 페이지 읽기",
+      "description": "URL → 텍스트/링크 추출"
+    },
+    "law-search": {
+      "label": "법령·판례 검색",
+      "description": "국가법령정보 — 법령/판례/행정규칙/헌재결정례"
+    },
+    "weather": {
+      "label": "날씨·기상",
+      "description": "예보·실황·기상특보·태풍·지진"
+    },
+    "public-transport": {
+      "label": "대중교통",
+      "description": "버스·지하철·기차·고속버스·항공·여객선 시간표와 실시간 도착"
+    },
+    "map": {
+      "label": "지도·길찾기",
+      "description": "주소↔좌표 변환, 장소 검색, 대중교통·도보·자전거 경로"
+    },
+    "notification": {
+      "label": "메시지 발송",
+      "description": "텔레그램·카카오톡으로 메시지 보내기"
+    },
+    "calendar": {
+      "label": "일정",
+      "description": "날짜·약속 기록 (실행은 하지 않음 — 그건 스케줄)"
+    },
+    "note": {
+      "label": "메모",
+      "description": "마크다운 메모 작성·검색"
+    },
+    "document-io": {
+      "label": "문서 만들기·읽기",
+      "description": "PPTX·XLSX·DOCX·PDF·한글 문서 생성과 읽기"
+    },
+    "document-extraction": {
+      "label": "문서에서 정보 추출",
+      "description": "영수증·명함·계약서 이미지 → 구조화 JSON"
+    },
+    "speech-to-text": {
+      "label": "음성 받아쓰기",
+      "description": "녹음 → 텍스트"
+    },
+    "audio-synthesis": {
+      "label": "노래 합성",
+      "description": "가사·멜로디 → 오디오"
+    }
+  }
+}

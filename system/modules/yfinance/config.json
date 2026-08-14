@@ -38,7 +38,7 @@
     "ticker"
   ],
   "runtime": "python",
-  "capability": "stock-data",
+  "capability": "stock-quote",
   "providerType": "api",
   "timeseries": {
     "history": {

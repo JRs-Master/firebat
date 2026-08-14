@@ -9,7 +9,7 @@
     "Binance"
   ],
   "runtime": "node",
-  "capability": "crypto-data",
+  "capability": "crypto-quote",
   "providerType": "api",
   "hubSafe": true,
   "timeseries": {

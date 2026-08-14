@@ -2672,24 +2672,29 @@ impl AiManager {
                         extra_parts.push(format!("<MEMORY_WRITE_MODE>\n{mode}\n</MEMORY_WRITE_MODE>"));
                     }
                 }
-                // Intent L1-lite — 후보 선주입 (2026-07-11). shortlist 는 힌트일 뿐 세계를 좁히지
-                // 않는다(전 도구·검색 그대로). 발견 표면이 커버하는 것은 후보로 즉시 보이고, 후보가
-                // 틀리면 모델이 평소처럼 검색한다. admin 턴만(hub 는 카탈로그 스코프가 다름).
-                if ai_opts.hub_context.is_none()
-                    && (!shadow_actions.is_empty() || !shadow_skills.is_empty())
-                {
-                    let mut lines: Vec<String> = Vec::new();
-                    for (id, score) in shadow_actions.iter().take(5) {
-                        lines.push(format!("- action {} ({:.2})", id, score));
-                    }
-                    for (slug, score) in shadow_skills.iter().take(2) {
-                        lines.push(format!("- skill {} ({:.2}) — get_skill first", slug, score));
-                    }
-                    extra_parts.push(format!(
-                        "<LIKELY_TOOLS>\nAutomatic matches for this request (candidates, NOT commands — scores are rough). If one fits, go straight to get_action_schema(module, action) / get_skill(slug) instead of searching; if none fit, search as usual.\n{}\n</LIKELY_TOOLS>",
-                        lines.join("\n")
-                    ));
-                }
+                // The `<LIKELY_TOOLS>` pre-injection is gone. The shortlist above is still computed
+                // — it is the S0 shadow, and it is what measured this — but it no longer reaches
+                // the model.
+                //
+                // Measured over 218 turns (2026-08-14): the shortlist saved a discovery round on
+                // 17 of them. When it was RIGHT the model searched anyway 41 times out of 58, so
+                // the problem was never its accuracy. It is that we were giving two instructions
+                // that contradict each other — the discovery gate says climb the ladder, and this
+                // block said skip it and go straight to get_action_schema. The model resolves that
+                // by climbing, which is correct, and the hint becomes dead weight it still has to
+                // read. On the 103 turns that called no tool at all it was pure noise, and on 57
+                // of the tool-using turns every candidate was wrong ("금지된 아니라고" →
+                // dart:nonAuditService, from a follow-up message whose meaning lives in the prior
+                // turn, not in its own words).
+                //
+                // The deeper reason it cannot be fixed by a score floor: this embeds the user's
+                // QUESTION, while what has to match is a CAPABILITY. Those are different texts. A
+                // model reading the same message plus the history writes the query the user did
+                // not — measured the same day, "카카오맵으로 대중교통 경로를 뽑아라" became the
+                // search "대중교통 경로 길찾기 bus transit route". Query formulation is the step
+                // this path structurally cannot perform, and it is the step that decides the
+                // result.
+                let _ = &shadow_skills;
                 let extra = if extra_parts.is_empty() {
                     None
                 } else {

@@ -72,7 +72,7 @@ impl CapabilityService for CapabilityServiceImpl {
         &self,
         _req: Request<CapabilityListRequest>,
     ) -> Result<Response<CapabilityListResponse>, TonicStatus> {
-        let caps = self.manager.list();
+        let caps = self.manager.list().await;
         Ok(Response::new(CapabilityListResponse {
             raw_json: to_raw_json(&caps),
         }))

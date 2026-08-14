@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use crate::capabilities::{
-    builtin_capabilities, CapabilityDef, CapabilityProvider, CapabilitySettings, ProviderLocation,
+    CapabilityDef, CapabilityProvider, CapabilitySettings, ProviderLocation,
     ProviderType,
 };
 use crate::ports::{ILogPort, IStoragePort, IVaultPort};
@@ -57,13 +57,51 @@ impl CapabilityManager {
     }
 
     /// 전체 capability 목록 (빌트인 + 동적 등록).
-    pub fn list(&self) -> BTreeMap<String, CapabilityDef> {
-        let mut map = builtin_capabilities();
+    /// The capabilities that exist, which is decided by the modules.
+    ///
+    /// Derived rather than listed: a capability exists because some enabled module declares it.
+    /// `system/capabilities.json` supplies the label and nothing else, so the two cannot disagree
+    /// — an id with no label shows as its id, and a label with no module simply does not appear.
+    /// The hand-written list this replaces had drifted both ways (2026-08-14 audit of 35 modules:
+    /// fifteen module capabilities never reached the settings screen, four screen entries had no
+    /// module behind them).
+    pub async fn list(&self) -> BTreeMap<String, CapabilityDef> {
+        let labels = self.labels().await;
+        let mut map = BTreeMap::new();
+        for entry in crate::utils::mod_scan::scan_module_configs(&*self.storage).await {
+            let Some(id) = entry.config.get("capability").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let module_name = entry
+                .config
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&entry.dir_name);
+            if !self.is_module_enabled(module_name) {
+                continue;
+            }
+            map.entry(id.to_string()).or_insert_with(|| {
+                labels.get(id).cloned().unwrap_or(CapabilityDef {
+                    label: id.to_string(),
+                    description: String::new(),
+                })
+            });
+        }
+        // Manually registered capabilities keep working — they have no module to be derived from.
         let dynamic = self.lock_dynamic();
         for (k, v) in dynamic.iter() {
             map.entry(k.clone()).or_insert_with(|| v.clone());
         }
         map
+    }
+
+    /// Labels from `system/capabilities.json`. Absent or unreadable = every id shows as itself,
+    /// which is worse-looking and still correct.
+    async fn labels(&self) -> BTreeMap<String, CapabilityDef> {
+        match self.storage.read("system/capabilities.json").await {
+            Ok(raw) => crate::capabilities::capability_labels(&raw),
+            Err(_) => BTreeMap::new(),
+        }
     }
 
     /// 새 capability 수동 등록.
@@ -115,24 +153,6 @@ impl CapabilityManager {
                 ProviderLocation::User
             };
 
-            // 미등록 capability 자동 등록
-            if !builtin_capabilities().contains_key(cap_id) {
-                let mut dynamic = self.lock_dynamic();
-                if !dynamic.contains_key(cap_id) {
-                    dynamic.insert(
-                        cap_id.to_string(),
-                        CapabilityDef {
-                            label: cap_id.to_string(),
-                            description: description.clone(),
-                        },
-                    );
-                    self.log.warn(&format!(
-                        "[Capability] auto-registered unknown capability: {}",
-                        cap_id
-                    ));
-                }
-            }
-
             providers.push(CapabilityProvider {
                 module_name,
                 provider_type,
@@ -145,32 +165,7 @@ impl CapabilityManager {
 
     /// 전체 capability 별 provider 수 요약 — 어드민 UI 용.
     pub async fn list_with_providers(&self) -> Vec<CapabilitySummary> {
-        // 모든 모듈 1차 스캔 — 미등록 capability 자동 등록
-        for entry in crate::utils::mod_scan::scan_module_configs(&*self.storage).await {
-            let Some(capability) = entry.config.get("capability").and_then(|v| v.as_str()) else {
-                continue;
-            };
-            if !builtin_capabilities().contains_key(capability) {
-                let mut dynamic = self.lock_dynamic();
-                if !dynamic.contains_key(capability) {
-                    let description = entry
-                        .config
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    dynamic.insert(
-                        capability.to_string(),
-                        CapabilityDef {
-                            label: capability.to_string(),
-                            description,
-                        },
-                    );
-                }
-            }
-        }
-
-        let all = self.list();
+        let all = self.list().await;
         let mut result = Vec::new();
         for (id, def) in all.iter() {
             let providers = self.get_providers(id).await;
@@ -234,16 +229,8 @@ impl CapabilityManager {
     ///
     /// 매 capability 마다 get_providers 스캔 — failed_module 매칭되는 capability 찾을 때까지.
     pub async fn fallback_modules(&self, failed_module: &str) -> Vec<CapabilityProvider> {
-        // 빌트인 + 동적 capability id 합집합
-        let mut cap_ids: Vec<String> = builtin_capabilities().keys().cloned().collect();
-        {
-            let dyn_map = self.lock_dynamic();
-            for id in dyn_map.keys() {
-                if !cap_ids.contains(id) {
-                    cap_ids.push(id.clone());
-                }
-            }
-        }
+        // Every capability that exists — derived from the modules, same as `list`.
+        let cap_ids: Vec<String> = self.list().await.keys().cloned().collect();
 
         for cap_id in cap_ids {
             let providers = self.get_providers(&cap_id).await;

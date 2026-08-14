@@ -46,29 +46,35 @@ pub struct CapabilityProvider {
     pub description: String,
 }
 
-/// 빌트인 capability list — 옛 TS BUILTIN_CAPABILITIES 와 동등.
-/// BTreeMap 사용 — list 시 안정 ordering (사용자 UI 일관).
-pub fn builtin_capabilities() -> BTreeMap<String, CapabilityDef> {
+/// Human labels for capability ids, read from `system/capabilities.json`.
+///
+/// This file says how a capability is PRESENTED. What capabilities EXIST is derived from the
+/// modules — see `CapabilityManager::list`. Keeping those two apart is what removes the drift:
+/// the old hand-written Rust list was both at once, and it had gone wrong in both directions
+/// (2026-08-14 audit of 35 modules — fifteen capabilities declared by modules never reached the
+/// settings screen, four on the screen had no module behind them and rendered "0개").
+///
+/// A missing label is not an error: the id shows as-is, so a module introducing a new capability
+/// is visible the moment it lands, and naming it is a separate, unhurried edit — one that ships by
+/// `git pull` rather than a Rust build.
+pub fn capability_labels(raw: &str) -> BTreeMap<String, CapabilityDef> {
     let mut map = BTreeMap::new();
-    let entries: &[(&str, &str, &str)] = &[
-        ("web-scrape", "웹 스크래핑", "URL → 텍스트/링크 추출"),
-        ("email-send", "이메일 발송", "이메일 전송"),
-        ("image-gen", "이미지 생성", "텍스트 → 이미지"),
-        ("translate", "번역", "텍스트 번역"),
-        ("notification", "알림", "슬랙/텔레그램/카톡 알림"),
-        ("pdf-gen", "PDF 생성", "HTML/마크다운 → PDF"),
-        ("web-search", "웹 검색", "키워드 → 검색 결과 목록 (제목, URL, 설명)"),
-        ("keyword-analytics", "키워드 분석", "키워드 검색량, CPC, 경쟁도 등 광고/SEO 지표 조회"),
-        ("stock-trading", "주식 거래", "시세 조회, 매수/매도 주문, 잔고 조회"),
-        ("crypto-trading", "암호화폐 거래", "암호화폐 시세 조회, 매수/매도 주문, 잔고/입출금 관리"),
-        ("law-search", "법령 검색", "국가법령정보 검색 — 법령/판례/행정규칙/헌재결정례 조회"),
-    ];
-    for (id, label, desc) in entries {
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return map;
+    };
+    let Some(obj) = doc.get("capabilities").and_then(|v| v.as_object()) else {
+        return map;
+    };
+    for (id, v) in obj {
         map.insert(
-            id.to_string(),
+            id.clone(),
             CapabilityDef {
-                label: label.to_string(),
-                description: desc.to_string(),
+                label: v.get("label").and_then(|x| x.as_str()).unwrap_or(id).to_string(),
+                description: v
+                    .get("description")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
             },
         );
     }
@@ -77,14 +83,19 @@ pub fn builtin_capabilities() -> BTreeMap<String, CapabilityDef> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::capability_labels;
 
+    /// A label file is presentation only, so a broken or absent one degrades to bare ids rather
+    /// than emptying the settings screen — the screen's content comes from the modules.
     #[test]
-    fn builtin_capabilities_has_known_ids() {
-        let caps = builtin_capabilities();
-        assert!(caps.contains_key("web-scrape"));
-        assert!(caps.contains_key("notification"));
-        assert!(caps.contains_key("stock-trading"));
-        assert_eq!(caps.len(), 11);
+    fn labels_load_and_missing_ones_are_not_fatal() {
+        let raw = include_str!("../../system/capabilities.json");
+        let caps = capability_labels(raw);
+        assert!(caps.len() >= 20, "got {}", caps.len());
+        assert_eq!(caps.get("stock-order").map(|c| c.label.as_str()), Some("주식 주문"));
+        assert_eq!(caps.get("stock-quote").map(|c| c.label.as_str()), Some("주식 시세"));
+        // Garbage in, empty out — never a panic.
+        assert!(capability_labels("not json").is_empty());
+        assert!(capability_labels("{}").is_empty());
     }
 }

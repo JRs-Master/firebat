@@ -9,7 +9,7 @@
     "Upbit"
   ],
   "runtime": "node",
-  "capability": "crypto-trading",
+  "capability": "crypto-order",
   "providerType": "api",
   "secrets": [
     "UPBIT_ACCESS_KEY",

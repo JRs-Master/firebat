@@ -11,7 +11,7 @@
     "KIS"
   ],
   "runtime": "node",
-  "capability": "stock-trading",
+  "capability": "stock-quote",
   "providerType": "api",
   "actionCatalog": {
     "file": "actions.json",

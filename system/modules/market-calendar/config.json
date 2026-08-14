@@ -12,7 +12,7 @@
     "trading day"
   ],
   "runtime": "python",
-  "capability": "market-data",
+  "capability": "market-hours",
   "providerType": "library",
   "hubSafe": true,
   "actionCatalog": {
