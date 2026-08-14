@@ -201,9 +201,20 @@ impl CapabilityManager {
                 // One provider is not a ranking — "선호 1순위" over a list of one says nothing.
                 continue;
             }
+            let mut ordered: Vec<String> = providers.into_iter().map(|p| p.module_name).collect();
+            // A saved order can outlive the modules it named — one gets renamed, removed or
+            // switched off and the stored list keeps the dead name. Then nothing here is ordered
+            // by the user, everything ties at usize::MAX, and scan order would go out wearing
+            // rank numbers: the invented-preference this function exists to avoid, arriving by
+            // the back door. Requiring one live name closes it.
+            if !ordered
+                .iter()
+                .any(|name| settings.providers.contains(name))
+            {
+                continue;
+            }
             // Same ordering fallback_modules applies, so the label cannot disagree with what the
             // retry path would do: chosen names first in their chosen order, the rest after.
-            let mut ordered: Vec<String> = providers.into_iter().map(|p| p.module_name).collect();
             ordered.sort_by_key(|name| {
                 settings
                     .providers

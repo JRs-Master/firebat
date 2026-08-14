@@ -209,6 +209,37 @@ async fn scan_order_alone_is_not_a_preference() {
 }
 
 #[tokio::test]
+async fn a_new_provider_joins_the_ranking_with_no_code_change() {
+    // The whole point of deriving: install a module, it is ranked. Here the user ordered two and
+    // a third exists that they never saw — it takes the last place rather than being dropped.
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    mgr.set_settings(
+        "web-search",
+        &CapabilitySettings {
+            providers: vec!["naver".into(), "daum".into()],
+        },
+    );
+    let ranks = mgr.preference_ranks().await;
+    assert_eq!(ranks.get("naver"), Some(&(1, 3)), "total counts the newcomer");
+    assert_eq!(ranks.get("daum"), Some(&(2, 3)));
+    assert_eq!(ranks.get("bing"), Some(&(3, 3)));
+}
+
+#[tokio::test]
+async fn an_order_naming_only_gone_modules_ranks_nothing() {
+    // The saved list outlived what it named. Sorting on it ties everything, and scan order would
+    // go out wearing rank numbers — a preference nobody expressed.
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    mgr.set_settings(
+        "web-search",
+        &CapabilitySettings {
+            providers: vec!["yahoo".into(), "altavista".into()],
+        },
+    );
+    assert!(mgr.preference_ranks().await.is_empty());
+}
+
+#[tokio::test]
 async fn a_capability_with_one_provider_is_not_ranked() {
     let (mgr, _dir) = three_providers_and_a_loner().await;
     mgr.set_settings(
