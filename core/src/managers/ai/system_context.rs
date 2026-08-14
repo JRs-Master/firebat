@@ -12,100 +12,36 @@
 
 use std::sync::Arc;
 
-use crate::managers::capability::CapabilityManager;
 use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 
 pub struct SystemContextGatherer {
     module: Arc<ModuleManager>,
     mcp: Arc<McpManager>,
-    capability: Arc<CapabilityManager>,
-}
-
-/// A module description's first clause — enough to pick it, not to use it.
-fn first_clause(desc: &str) -> String {
-    let d = desc.trim();
-    if d.is_empty() {
-        return "(설명 없음)".to_string();
-    }
-    // `find` returns a BYTE index, and two of these delimiters are multi-byte — `+ 1` lands
-    // inside the character and the slice PANICS. Every module description carrying an em-dash
-    // killed every chat turn on the deployed binary (2026-08-10). The clause ends the
-    // delimiter's own byte length past its index, never a bare +1.
-    let cut = d
-        .char_indices()
-        .find(|(_, ch)| matches!(ch, '.' | '\u{2014}' | '\n' | '\u{ff0e}'))
-        .map(|(i, ch)| i + ch.len_utf8())
-        .unwrap_or(d.len());
-    let head = d[..cut].trim_end_matches(['.', ' ', '\u{2014}']).trim();
-    let head = if head.chars().count() > 110 {
-        head.chars().take(110).collect::<String>() + "\u{2026}"
-    } else {
-        head.to_string()
-    };
-    if head.is_empty() {
-        d.chars().take(110).collect()
-    } else {
-        head
-    }
 }
 
 impl SystemContextGatherer {
-    pub fn new(
-        module: Arc<ModuleManager>,
-        mcp: Arc<McpManager>,
-        capability: Arc<CapabilityManager>,
-    ) -> Self {
-        Self {
-            module,
-            mcp,
-            capability,
-        }
+    pub fn new(module: Arc<ModuleManager>, mcp: Arc<McpManager>) -> Self {
+        Self { module, mcp }
     }
 
     /// 시스템 컨텍스트 마크다운 합성 — PromptBuilder.build() 에 extra_context 로 전달.
     pub async fn gather(&self) -> String {
         let mut sections: Vec<String> = Vec::new();
 
-        // 1. system modules — sysmod_<name> 도구로 호출.
-        // 비활성 모듈 (Vault settings.enabled = false) 은 제외 — LLM 한테 활성 도구만 노출.
-        let system_mods = self.module.list_system_modules().await;
-        let active_sys: Vec<_> = system_mods.into_iter().filter(|e| e.enabled).collect();
-        if !active_sys.is_empty() {
-            let mut s = String::from("## 등록된 시스템 모듈 (sysmod_* 도구로 호출)\n");
-            // The order the user put these providers in, from the settings screen. Without it the
-            // preference reached only the pipeline retry path, so chat picked by name and the
-            // screen's "1 / 2" meant nothing here (2026-08-15).
-            let ranks = self.capability.preference_ranks().await;
-            for entry in active_sys {
-                // capability 는 별도 config.json 조회 (옵션 — 없으면 description 만)
-                let capability = self
-                    .module
-                    .get_module_config("system", &entry.name)
-                    .await
-                    .and_then(|cfg| cfg.get("capability").and_then(|v| v.as_str()).map(String::from))
-                    .map(|c| match ranks.get(&entry.name) {
-                        Some((rank, total)) => {
-                            format!(" [capability: {c} · 사용자 선호 {rank}순위/{total}]")
-                        }
-                        None => format!(" [capability: {c}]"),
-                    })
-                    .unwrap_or_default();
-                // Enough to PICK a module, not to use one. Measured 2026-08-10: the full
-                // descriptions made this the second-largest section of the assembled prompt
-                // (14,064 chars of 73,612) — a catalog sitting resident behind a search tool
-                // that exists precisely so it does not have to. Same surgery as the component
-                // catalog: names and one clause here, the rest through search_module_actions.
-                let desc = first_clause(&entry.description);
-                s.push_str(&format!(
-                    "- **sysmod_{}**{}: {}\n",
-                    entry.name.replace('-', "_"),
-                    capability,
-                    desc
-                ));
-            }
-            sections.push(s);
-        }
+        // 1. System modules are NOT listed here.
+        //
+        // They were, as name + first clause + capability, and every line of it was a lossy copy of
+        // something already in the request: each sysmod ships as its own tool, whose description
+        // carries the module's full text, its tags, its capability and its required secrets. The
+        // copy cost 2,905 chars a turn to say less (measured 2026-08-15) — and cost more than
+        // that, because truncating to a first clause is a failure mode the original does not have:
+        // descriptions that opened with a provider's name reached the model saying nothing about
+        // what the module does, and module selection quietly died for five of them (2026-08-13).
+        //
+        // Which module answers a request is decided by `search_module_actions`, whose rows carry
+        // the module, its capability and the user's preference rank — at the moment of choosing,
+        // where a comparison is actually being made.
 
         // 2. user modules — EXECUTE pipeline step 또는 직접 sandbox 호출.
         let user_mods = self.module.list_user_modules().await;
@@ -140,22 +76,6 @@ impl SystemContextGatherer {
         }
 
         sections.join("\n")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    /// The delimiters include multi-byte characters; the cut must land on a char boundary.
-    /// A bare `find() + 1` panicked on every description carrying an em-dash — which is most
-    /// of them — and took every chat turn down with it (2026-08-10, deployed).
-    #[test]
-    fn first_clause_survives_multibyte_delimiters() {
-        assert_eq!(super::first_clause("바이낸스 시세 — 캔들과 호가"), "바이낸스 시세");
-        assert_eq!(super::first_clause("Binance spot data. Read-only."), "Binance spot data");
-        assert_eq!(super::first_clause("한 줄 설명\n둘째 줄"), "한 줄 설명");
-        assert_eq!(super::first_clause(""), "(설명 없음)");
-        // No delimiter at all — the whole (capped) text comes back, uncut.
-        assert_eq!(super::first_clause("구분자 없음"), "구분자 없음");
     }
 }
 

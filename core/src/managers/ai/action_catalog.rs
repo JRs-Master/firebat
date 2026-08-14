@@ -975,6 +975,9 @@ pub struct ModuleActionCatalog {
     /// Kept for read-time detail the index must not freeze — registered accounts change with a
     /// vault write, while the catalog rebuilds on a TTL.
     module: Arc<ModuleManager>,
+    /// Which providers substitute for each other, and the order the user put them in. Read here
+    /// because this is where two of them are on screen together being compared.
+    capability: Arc<crate::managers::capability::CapabilityManager>,
 }
 
 impl ModuleActionCatalog {
@@ -982,6 +985,7 @@ impl ModuleActionCatalog {
         module: Arc<ModuleManager>,
         embedder: Arc<dyn IEmbedderPort>,
         cache_port: Arc<dyn IEmbedderCachePort>,
+        capability: Arc<crate::managers::capability::CapabilityManager>,
     ) -> Self {
         Self {
             catalog: RefreshingCatalog::new(
@@ -994,6 +998,7 @@ impl ModuleActionCatalog {
                 REBUILD_TTL,
             ),
             module,
+            capability,
         }
     }
 
@@ -1044,17 +1049,34 @@ impl ModuleActionCatalog {
         module: Option<&str>,
         limit: usize,
     ) -> Result<(Vec<serde_json::Value>, bool, Vec<String>, String, String), String> {
-        let scopes: Option<Vec<String>> = module.map(|m| vec![format!("{}:", m)]);
+        // `module` narrows what is GUARANTEED to come back, not what gets considered.
+        //
+        // It used to be a filter applied before ranking, so a sibling module was never scored at
+        // all. That turned discovery into confirmation: the model picked a module off the resident
+        // list, scoped the search to it, and the ladder recorded a clean pass. Measured 2026-08-15
+        // across three sessions — 8 discovery calls, 7 of them scoped, and the one unscoped call
+        // is the only one that found two modules at once (yfinance quote + dart statements, from a
+        // single query). The scoped ones could not have: `웹문서 검색` ran twice against
+        // naver-search while daum-search, which carries the video and book endpoints naver
+        // dropped, was never scored.
+        //
+        // So the ranking runs wide and the named module is guaranteed a place in the result.
+        const GUARANTEE_SHARE: usize = 2; // at least half the rows may be the named module's
+        let wide = if module.is_some() {
+            (limit * 3).clamp(limit, 40)
+        } else {
+            limit
+        };
         let outcome = self
             .catalog
-            .query_analyzed(query, limit, scopes.as_deref())
+            .query_analyzed(query, wide, None)
             .await
             .map_err(|e| e.to_string())?;
         let all_oov = outcome.all_oov;
         let dropped = outcome.dropped_tokens;
         let searched_with = outcome.searched_with;
         let embedder = outcome.embedder;
-        let rows = outcome
+        let mut rows: Vec<serde_json::Value> = outcome
             .matches
             .into_iter()
             .map(|m| {
@@ -1157,6 +1179,69 @@ impl ModuleActionCatalog {
                 row
             })
             .collect();
+
+        // Which of these modules substitute for each other, and in what order the user wants
+        // them. This is the moment the information decides something: two providers of one
+        // capability are side by side and one of them is about to be called. Sitting in a
+        // resident list it was read at no such moment (2026-08-15).
+        let ranks = self.capability.preference_ranks().await;
+        for row in rows.iter_mut() {
+            let Some(name) = row.get("module").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if let Some((rank, total)) = ranks.get(name) {
+                row["preference"] =
+                    serde_json::Value::String(format!("사용자 선호 {rank}순위/{total}"));
+            }
+        }
+
+        if let Some(m) = module {
+            let top_module = rows
+                .first()
+                .and_then(|r| r.get("module"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let score_of = |r: &serde_json::Value| r.get("score").and_then(|v| v.as_f64());
+            let best_named = rows
+                .iter()
+                .find(|r| r.get("module").and_then(|v| v.as_str()) == Some(m))
+                .and_then(score_of);
+
+            // Guarantee, then truncate: the named module keeps up to half the rows even when the
+            // ranking would have pushed them past the cut, and the rest is the wide result.
+            let quota = (limit / GUARANTEE_SHARE).max(1);
+            let (named, others): (Vec<_>, Vec<_>) = rows
+                .into_iter()
+                .partition(|r| r.get("module").and_then(|v| v.as_str()) == Some(m));
+            let take_named = quota.min(named.len());
+            let mut kept: Vec<serde_json::Value> = named.into_iter().take(take_named).collect();
+            kept.extend(others.into_iter().take(limit.saturating_sub(kept.len())));
+            // Back into rank order so the numbers on screen mean what they say.
+            kept.sort_by(|a, b| {
+                score_of(b)
+                    .unwrap_or(0.0)
+                    .partial_cmp(&score_of(a).unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            rows = kept;
+
+            // Say it when the scope was not where the query pointed. Stated as what the scores
+            // are, so it is equally true when the guess was a good one.
+            if let (Some(top), Some(named_score)) = (top_module, best_named) {
+                if top != m {
+                    let top_score = rows.first().and_then(score_of).unwrap_or(named_score);
+                    rows.push(serde_json::json!({
+                        "kind": "scopeNote",
+                        "note": format!(
+                            "Scoped to `{m}` (best score {named_score:.3}), while `{top}` scores \
+                             {top_score:.3} for this query. Rows from both are above — `module` \
+                             guarantees a module a place in the result, and the ranking still \
+                             covers every module."
+                        ),
+                    }));
+                }
+            }
+        }
         Ok((rows, all_oov, dropped, searched_with, embedder))
     }
 

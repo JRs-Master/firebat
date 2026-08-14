@@ -154,11 +154,18 @@ fn add_cache_siblings(
 ///
 /// Constant across modules, so it is built from nothing: a per-module schema here would be the
 /// direct-call shortcut this design removes.
+///
+/// **Kept to the chain and nothing else.** This text is identical on every gated module — 34 of
+/// them at the time of writing — so a paragraph here is a paragraph billed 34 times against the
+/// context window (measured 2026-08-15: 515 chars each, ~17,500 total). What earns its place at a
+/// call site is the next action, and that is three names long. The rule it used to spell out —
+/// the thirty-minute conversation window — is stated by the rejection at the moment a call meets
+/// it, which is the only moment it decides anything.
 pub fn thin_parameters() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "additionalProperties": true,
-        "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Enforced: a multi-action call whose schema was not fetched via get_action_schema within the last 30 minutes in this conversation is rejected before dispatch — fetch schemas first, several in one round is fine, and a schema you keep using stays valid."
+        "description": "Discover before calling: search_module_actions(query) → get_action_schema(module, action) → call with those params at the top level."
     })
 }
 
@@ -418,18 +425,33 @@ mod tests {
             "a thin tool declares no properties — listing them is the direct-call shortcut"
         );
         let desc = s.thin_parameters["description"].as_str().unwrap();
+        assert!(desc.contains("search_module_actions"));
         assert!(desc.contains("get_action_schema"));
-        assert!(desc.contains("\"action\""));
-        // The discovery-gate notice travels with the schema (planting it once is the point), and
-        // it has to state the window the gate actually enforces: conversation + 30 minutes
-        // sliding, both transports. "THIS TURN" was true of neither path after wave 2.
-        assert!(desc.contains("rejected before dispatch"));
+        // This text ships on every gated module, so its length is paid once per module per
+        // request — 34 copies when this was written. It carries the chain and stops. The rule it
+        // used to spell out (conversation + 30 minutes) is stated where it decides something: by
+        // typed_parameters once a schema is in hand, and by the rejection itself.
+        assert!(
+            desc.len() < 200,
+            "a paragraph here is billed once per module — keep it to the next action: {} chars",
+            desc.len()
+        );
+    }
+
+    #[test]
+    fn the_form_for_a_discovered_action_states_the_window_the_gate_enforces() {
+        // The one surface where the window changes what the model does: it is holding a form and
+        // deciding whether the one it fetched earlier still counts. "THIS TURN" here trained it to
+        // re-fetch a schema it already had (2026-08-13).
+        let form = build_action_form(&multi_action_config());
+        let p = typed_parameters(&form, &["ka10081".to_string()]).unwrap();
+        let desc = p["description"].as_str().unwrap();
         assert!(desc.contains("30 minutes"));
         assert!(desc.contains("this conversation"));
         assert!(
             !desc.contains("THIS TURN"),
-            "the gate is no longer turn-local — a notice that says so trains the model to \
-             re-fetch a schema it already holds"
+            "the gate is not turn-local — a notice that says so trains the model to re-fetch a \
+             schema it already holds"
         );
     }
 
