@@ -432,6 +432,36 @@ fn rand4() -> String {
     hex::encode(buf)
 }
 
+/// The event bus, registered once at boot so a card can announce itself.
+///
+/// Every card is born in `create_pending_in`, so the announcement belongs there rather than at
+/// each caller — a new creation site would otherwise be silent until someone remembered. Held as
+/// a process-wide handle for the same reason the store itself is: this module has no owner to be
+/// constructed by, and the callers reach it as a free function.
+///
+/// Unset in tests and in any binary that never wires it — `announce_pending` is then a no-op, and
+/// the panel's poll still finds the card.
+static EVENT_SINK: OnceLock<std::sync::Arc<crate::managers::event::EventManager>> = OnceLock::new();
+
+/// Wire the bus. Called once from the binary's startup; later calls are ignored.
+pub fn set_event_sink(events: std::sync::Arc<crate::managers::event::EventManager>) {
+    let _ = EVENT_SINK.set(events);
+}
+
+/// Tell the screen a card is waiting.
+///
+/// A card created during a chat turn rides that turn's own stream to the user. A card created
+/// outside one — an editor's MCP client, the CLI, a script — has no stream to ride, and until now
+/// the only thing that found it was a twenty-second poll. This is the push half; the poll stays as
+/// the backstop for a client whose SSE has dropped.
+fn announce_pending(plan_id: &str, summary: &str) {
+    let Some(events) = EVENT_SINK.get() else { return };
+    events.emit(crate::managers::event::FirebatEvent {
+        event_type: "plan:pending".to_string(),
+        data: serde_json::json!({ "planId": plan_id, "summary": summary }),
+    });
+}
+
 /// 옛 TS `createPending` 1:1 — `plan-<base36(now)>-<rand4>` planId 발급.
 /// 2026-05-14 A1-full Step 2b: args 가 typed `PendingActionArgs`. 호출 site 는 raw LLM 인자 →
 /// `PendingActionArgs::from_call(name, value)` 로 먼저 parse 후 이 함수 호출.
@@ -519,6 +549,11 @@ pub fn create_pending_in(
         hub = hub_dbg.as_deref().unwrap_or("admin"),
         "pending card created"
     );
+    // Release the store before the bus fans out. `emit` calls listeners synchronously, and a
+    // listener that reaches back into pending_tools would deadlock against the guard this function
+    // otherwise holds to its last line. EventManager takes the same care with its own lock.
+    drop(map);
+    announce_pending(&plan_id, summary);
     plan_id
 }
 

@@ -375,6 +375,11 @@ async fn main() -> Result<()> {
         AuthManager::new(auth_port, vault.clone()).with_notifier(notifier.clone()),
     );
     let event_manager = Arc::new(EventManager::new(logger.clone()));
+    // Pending cards announce themselves on the bus (`plan:pending`). The store is a process-wide
+    // free-function module with no owner to be constructed by, so the bus is handed to it once
+    // here — every creation site then emits without knowing it does, which is the point: a card
+    // born in a new place would otherwise be invisible until its poll came round.
+    firebat_core::utils::pending_tools::set_event_sink(event_manager.clone());
     let capability_manager = Arc::new(CapabilityManager::new(
         storage.clone(),
         vault.clone(),

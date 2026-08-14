@@ -17,6 +17,7 @@ import { ShieldQuestion, Check, X, Loader2 } from 'lucide-react';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
 import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
+import { useEvents } from '../hooks/events-manager';
 
 interface Card {
   planId: string;
@@ -26,20 +27,13 @@ interface Card {
   args?: { name?: string } & Record<string, unknown>;
 }
 
-/** Poll rather than subscribe: these appear rarely and a missed one must not sit unseen. */
-/** How often the waiting-approval list is re-read.
+/** Backstop interval. The card arrives by push (`plan:pending`); this catches a dropped SSE.
  *
- *  A card created DURING a chat turn arrives with that turn's stream, so the panel is not what
- *  the user is waiting on there. This poll is the only path for a card created outside a turn —
- *  an external MCP client asking for something that needs approval — and at twenty seconds the
- *  card took up to twenty seconds to appear, with nothing on screen saying it was coming.
- *
- *  Four seconds reads as immediate for someone waiting to click approve. The proper fix is a push
- *  (the SSE bus and the `useEvents` hook both exist), but nothing emits when a pending card is
- *  created: `pending_tools` is a process-wide store in core/utils with no EventManager handle, so
- *  emitting means threading one into every creation site. Not worth it for a list this small —
- *  the request reads an in-memory store and returns a handful of rows. */
-const POLL_MS = 4000;
+ *  A card created DURING a chat turn rides that turn's own stream. A card created outside one —
+ *  an external MCP client asking for something that needs approval — has no stream, and this poll
+ *  used to be its only path: up to twenty seconds of nothing on screen. The store now announces
+ *  every card on the bus at the moment it is created, so the poll is no longer the mechanism. */
+const POLL_MS = 20000;
 
 function when(ms?: number): string {
   if (!ms) return '';
@@ -87,6 +81,11 @@ export function PendingApprovals() {
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+
+  // A card created outside a chat turn has no stream to arrive on, so the store announces it.
+  // The poll above stays as the backstop for a client whose SSE has dropped — the events manager
+  // re-emits on reconnect, but a card born during the gap is only found by re-reading.
+  useEvents(['plan:pending'], load);
 
   useEffect(() => {
     if (!open) { setCoords(null); return; }
