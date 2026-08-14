@@ -202,10 +202,53 @@ async fn providers_the_user_did_not_order_rank_after_the_ones_they_did() {
 }
 
 #[tokio::test]
-async fn scan_order_alone_is_not_a_preference() {
-    // No settings saved: ranking here would report a choice nobody made.
+async fn with_nothing_saved_the_order_is_still_defined_and_alphabetical() {
+    // There is no "unset" state to behave differently: 0-9 then a-z.
     let (mgr, _dir) = three_providers_and_a_loner().await;
-    assert!(mgr.preference_ranks().await.is_empty());
+    let ranks = mgr.preference_ranks().await;
+    assert_eq!(ranks.get("bing"), Some(&(1, 3)));
+    assert_eq!(ranks.get("daum"), Some(&(2, 3)));
+    assert_eq!(ranks.get("naver"), Some(&(3, 3)));
+}
+
+#[tokio::test]
+async fn an_order_naming_only_gone_modules_falls_back_to_alphabetical() {
+    // The saved list outlived what it named. Nothing is held open for the ghosts.
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    mgr.set_settings(
+        "web-search",
+        &CapabilitySettings {
+            providers: vec!["yahoo".into(), "altavista".into()],
+        },
+    );
+    let ranks = mgr.preference_ranks().await;
+    assert_eq!(ranks.get("bing"), Some(&(1, 3)));
+    assert_eq!(ranks.get("naver"), Some(&(3, 3)));
+}
+
+#[tokio::test]
+async fn the_label_the_retry_path_and_resolve_read_one_order() {
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    mgr.set_settings(
+        "web-search",
+        &CapabilitySettings {
+            providers: vec!["daum".into()],
+        },
+    );
+    let ranks = mgr.preference_ranks().await;
+    assert_eq!(ranks.get("daum"), Some(&(1, 3)), "chosen leads");
+    // resolve picks rank 1 …
+    assert_eq!(mgr.resolve("web-search").await.unwrap().module_name, "daum");
+    // … and a retry after daum fails walks 2 then 3, in the same order the label announced.
+    let after: Vec<String> = mgr
+        .fallback_modules("daum")
+        .await
+        .into_iter()
+        .map(|p| p.module_name)
+        .collect();
+    assert_eq!(after, vec!["bing".to_string(), "naver".to_string()]);
+    assert_eq!(ranks.get("bing"), Some(&(2, 3)));
+    assert_eq!(ranks.get("naver"), Some(&(3, 3)));
 }
 
 #[tokio::test]

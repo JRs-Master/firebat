@@ -179,52 +179,67 @@ impl CapabilityManager {
         result
     }
 
-    /// The user's provider preference, as a rank per module: `module → (rank, out of)`.
+    /// The order a capability's providers are tried in — the single answer to "which one first".
     ///
-    /// The setting existed and reached nothing the model could see. It is read in exactly one
-    /// place — `fallback_modules`, for pipeline retries — so a capability with a chosen order
-    /// behaved identically in chat to one without (measured 2026-08-15: the screen said naver 1 /
-    /// daum 2, the prompt listed them alphabetically with no mark, and the model picked by name).
-    /// Ranking here lets the resident module list say what the screen says.
+    /// `resolve`, `fallback_modules` and the prompt label all read this, so what the screen shows,
+    /// what the model is told, and what a retry actually does cannot drift apart.
     ///
-    /// Only capabilities the user actually ordered appear. Scan order is not a preference, and a
-    /// rank invented from it would be a claim about a choice nobody made.
-    pub async fn preference_ranks(&self) -> BTreeMap<String, (usize, usize)> {
-        let mut ranks = BTreeMap::new();
-        for cap_id in self.list().await.keys() {
-            let settings = self.get_settings(cap_id);
-            if settings.providers.is_empty() {
-                continue;
-            }
-            let providers = self.get_providers(cap_id).await;
-            if providers.len() < 2 {
-                // One provider is not a ranking — "선호 1순위" over a list of one says nothing.
-                continue;
-            }
-            let mut ordered: Vec<String> = providers.into_iter().map(|p| p.module_name).collect();
-            // A saved order can outlive the modules it named — one gets renamed, removed or
-            // switched off and the stored list keeps the dead name. Then nothing here is ordered
-            // by the user, everything ties at usize::MAX, and scan order would go out wearing
-            // rank numbers: the invented-preference this function exists to avoid, arriving by
-            // the back door. Requiring one live name closes it.
-            if !ordered
-                .iter()
-                .any(|name| settings.providers.contains(name))
-            {
-                continue;
-            }
-            // Same ordering fallback_modules applies, so the label cannot disagree with what the
-            // retry path would do: chosen names first in their chosen order, the rest after.
-            ordered.sort_by_key(|name| {
+    /// There is no "unset" state. An empty saved order used to mean *something different happens*,
+    /// which is the trap: the screen still had to show some order, the retry path used another,
+    /// and neither was written down. The order is always defined, in three steps:
+    ///
+    /// 1. the order the user saved, for the modules that still exist
+    /// 2. api before local — an unranked local provider is usually the stub, and this is what the
+    ///    old `resolve` default did, so nothing silently reroutes
+    /// 3. name (0-9 then a-z), so the tail is stable instead of "whatever the directory scan
+    ///    happened to return"
+    ///
+    /// Names in the saved order that no longer resolve to a live module are ignored rather than
+    /// held open — a renamed or disabled module leaves no gap.
+    pub async fn ordered_providers(&self, cap_id: &str) -> Vec<CapabilityProvider> {
+        let settings = self.get_settings(cap_id);
+        let mut providers = self.get_providers(cap_id).await;
+        providers.sort_by(|a, b| {
+            let rank = |p: &CapabilityProvider| {
                 settings
                     .providers
                     .iter()
-                    .position(|n| n == name)
+                    .position(|n| n == &p.module_name)
                     .unwrap_or(usize::MAX)
-            });
+            };
+            let api_first = |p: &CapabilityProvider| {
+                if p.provider_type == ProviderType::Api {
+                    0
+                } else {
+                    1
+                }
+            };
+            rank(a)
+                .cmp(&rank(b))
+                .then(api_first(a).cmp(&api_first(b)))
+                .then(a.module_name.cmp(&b.module_name))
+        });
+        providers
+    }
+
+    /// That order, as a rank per module: `module → (rank, out of)`.
+    ///
+    /// The setting existed and reached nothing the model could see — it was read only by
+    /// `fallback_modules`, for pipeline retries, so a capability with a chosen order behaved
+    /// identically in chat to one without (measured 2026-08-15: the screen said naver 1 / daum 2,
+    /// the prompt listed them alphabetically with no mark, and the model picked by name).
+    ///
+    /// A capability with one provider is left out: "1순위/1" is not a preference, it is a count.
+    pub async fn preference_ranks(&self) -> BTreeMap<String, (usize, usize)> {
+        let mut ranks = BTreeMap::new();
+        for cap_id in self.list().await.keys() {
+            let ordered = self.ordered_providers(cap_id).await;
+            if ordered.len() < 2 {
+                continue;
+            }
             let total = ordered.len();
-            for (i, name) in ordered.into_iter().enumerate() {
-                ranks.insert(name, (i + 1, total));
+            for (i, p) in ordered.into_iter().enumerate() {
+                ranks.insert(p.module_name, (i + 1, total));
             }
         }
         ranks
@@ -248,62 +263,29 @@ impl CapabilityManager {
         .is_ok()
     }
 
-    /// 설정 기준 provider 해석 — providers 배열 순서대로 시도. 미설정 시 api 우선.
+    /// 설정 기준 provider 해석 — 1순위를 고른다. 순서 규칙 = `ordered_providers`.
     pub async fn resolve(&self, cap_id: &str) -> Option<CapabilityProvider> {
-        let providers = self.get_providers(cap_id).await;
-        if providers.is_empty() {
-            return None;
-        }
-        if providers.len() == 1 {
-            return providers.into_iter().next();
-        }
-        let settings = self.get_settings(cap_id);
-        // 사용자 정의 순서
-        if !settings.providers.is_empty() {
-            for name in &settings.providers {
-                if let Some(p) = providers.iter().find(|p| &p.module_name == name) {
-                    return Some(p.clone());
-                }
-            }
-        }
-        // 기본: api provider 우선, 없으면 첫 번째
-        providers
-            .iter()
-            .find(|p| p.provider_type == ProviderType::Api)
-            .cloned()
-            .or_else(|| providers.into_iter().next())
+        self.ordered_providers(cap_id).await.into_iter().next()
     }
 
     /// 같은 capability 의 다른 활성 provider — pipeline EXECUTE 실패 시 자동 폴백 list.
-    /// 옛 TS task-manager.ts:373-420 tryFallbackProvider Rust port. 사용자 정의 순서 적용 +
-    /// 실패 module 자체 제외. 활성 모듈만 (Vault 의 module settings.enabled).
+    /// 옛 TS task-manager.ts:373-420 tryFallbackProvider Rust port. 실패 module 자체 제외.
+    /// 순서 규칙 = `ordered_providers` — 라벨·resolve 와 같은 함수라 어긋날 수 없다.
     ///
-    /// 매 capability 마다 get_providers 스캔 — failed_module 매칭되는 capability 찾을 때까지.
+    /// 매 capability 마다 스캔 — failed_module 매칭되는 capability 찾을 때까지.
     pub async fn fallback_modules(&self, failed_module: &str) -> Vec<CapabilityProvider> {
         // Every capability that exists — derived from the modules, same as `list`.
         let cap_ids: Vec<String> = self.list().await.keys().cloned().collect();
 
         for cap_id in cap_ids {
-            let providers = self.get_providers(&cap_id).await;
-            if !providers.iter().any(|p| p.module_name == failed_module) {
+            let ordered = self.ordered_providers(&cap_id).await;
+            if !ordered.iter().any(|p| p.module_name == failed_module) {
                 continue;
             }
-            // 같은 capability 발견 — failed 제외 + 사용자 순서 정렬
-            let mut others: Vec<CapabilityProvider> = providers
+            return ordered
                 .into_iter()
                 .filter(|p| p.module_name != failed_module)
                 .collect();
-            let settings = self.get_settings(&cap_id);
-            if !settings.providers.is_empty() {
-                others.sort_by_key(|p| {
-                    settings
-                        .providers
-                        .iter()
-                        .position(|n| n == &p.module_name)
-                        .unwrap_or(usize::MAX)
-                });
-            }
-            return others;
         }
         Vec::new()
     }
