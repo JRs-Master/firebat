@@ -13,13 +13,19 @@
       "id": "reverse-geocoding",
       "name": "좌표 → 주소 (역지오코딩)",
       "description": "Turn latitude and longitude back into a road-name and lot-number address. Use it to label a point the user picked or a coordinate a tool returned.",
-      "params": { "lat": "위도", "lon": "경도" }
+      "params": {
+        "lat": "위도",
+        "lon": "경도"
+      }
     },
     {
       "id": "search-address",
       "name": "주소 검색 (부분 일치)",
       "description": "Search addresses by fragment when the full address is unknown. Returns candidates with coordinates. Page size caps at 30 here — the 45 you may remember is the PAGE cap, not the size cap, and asking for more returns a 400.",
-      "params": { "address": "검색어", "limit": "한 페이지 결과 수 (최대 30)" }
+      "params": {
+        "address": "검색어",
+        "limit": "한 페이지 결과 수 (최대 30)"
+      }
     },
     {
       "id": "search-keyword",
@@ -54,7 +60,12 @@
       "id": "coord2region",
       "name": "좌표 → 행정구역 (시도·시군구·읍면동)",
       "description": "Which administrative region a coordinate falls in, both the legal-dong and the administrative-dong answer. Use it to group points by district, or to get the 시군구 a tool needs.",
-      "params": { "lat": "위도", "lon": "경도", "inputCoord": "입력 좌표계 (기본 WGS84)" }
+      "params": {
+        "lat": "위도",
+        "lon": "경도",
+        "inputCoord": "입력 좌표계 (기본 WGS84)",
+        "outputCoord": "응답 좌표계 (기본 WGS84)"
+      }
     },
     {
       "id": "transcoord",
@@ -78,7 +89,9 @@
         "endLon": "도착 경도",
         "startName": "출발 표기 (기본 출발)",
         "endName": "도착 표기 (기본 도착)",
-        "includePath": "경로 선 좌표 포함 여부 — 지도에 그릴 때만 true (응답 대부분이 이 좌표들)"
+        "includePath": "경로 선 좌표 포함 여부 — 지도에 그릴 때만 true (응답 대부분이 이 좌표들)",
+        "inputCoord": "입력 좌표계 (기본 WGS84)",
+        "outputCoord": "응답 좌표계 (기본 WGS84)"
       }
     },
     {
@@ -92,7 +105,11 @@
         "endLon": "도착 경도",
         "via": "경유지 최대 5곳",
         "routeMode": "BROAD_FIRST(기본) | SHORTEST | ACCESSIBLE",
-        "includePath": "경로 선 좌표 포함 여부"
+        "includePath": "경로 선 좌표 포함 여부",
+        "startName": "출발 표기 (기본 출발)",
+        "endName": "도착 표기 (기본 도착)",
+        "inputCoord": "입력 좌표계 (기본 WGS84)",
+        "outputCoord": "응답 좌표계 (기본 WGS84)"
       }
     },
     {
@@ -106,7 +123,11 @@
         "endLon": "도착 경도",
         "via": "경유지 최대 5곳",
         "routeMode": "자전거 전용 탐색 옵션",
-        "includePath": "경로 선 좌표 포함 여부"
+        "includePath": "경로 선 좌표 포함 여부",
+        "startName": "출발 표기 (기본 출발)",
+        "endName": "도착 표기 (기본 도착)",
+        "inputCoord": "입력 좌표계 (기본 WGS84)",
+        "outputCoord": "응답 좌표계 (기본 WGS84)"
       }
     },
     {

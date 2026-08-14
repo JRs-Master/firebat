@@ -189,10 +189,18 @@ process.stdin.on('end', async () => {
     if (data.pageNo) params.pageNo = data.pageNo;
     params.numOfRows = Math.max(1, Math.min(1000, Number(data.limit) || 100));
 
-    const r = await callApi(serviceKey, op.svc, op.path, params);
+    const r = await callAll(serviceKey, op.svc, op.path, params, data.pageNo !== undefined);
     if (!r.ok) return outErr(r.errorKey, r.errorParams);
 
     const notes = [`Data freshness for this action: ${op.fresh}.`];
+    if (r.short) {
+      // Partial data that does not say it is partial is the worst shape this module can return:
+      // a timetable cut at midday reads as "the last train is at noon". Measured 2026-08-14 —
+      // 서울역 1호선 상행 has 236 trains, the first page carried 100, the answer that came out of
+      // it put the last train around midday and the model went and crawled a web page to fill the
+      // hole it could not see.
+      notes.push(`⚠️ Partial: ${r.items.length} of ${r.totalCount} rows. Paging stopped at the ${PAGE_CAP}-request cap. What is here is the EARLIEST part of the set, so anything about the end of it (a last train, a final entry) is not answerable from this response — say so rather than reading the last row as the last one.`);
+    }
     if (r.items.length === 0) {
       // Zero rows has TWO causes and the response cannot tell them apart, so it must not pick one.
       // Measured 2026-08-13: a subway timetable came back empty for a station id that was entirely
@@ -248,6 +256,38 @@ async function handleCityCodes(serviceKey, data) {
  * One request, both response dialects. Ported from molit-realestate: same portal, same envelope,
  * same habit of returning XML for a JSON request.
  */
+/// How many requests one action may spend collecting its pages.
+///
+/// Every TAGO service answers with the same envelope — `totalCount` beside the rows — so a caller
+/// that reads only the first page silently gets a prefix. The sets here are bounded (a day's
+/// timetable is a few hundred rows, a route's stops fewer), so a small cap covers them whole while
+/// still refusing to page forever if a service reports a total it never delivers.
+const PAGE_CAP = 8;
+
+/// Fetch every page the vendor says exists, up to the cap.
+///
+/// `pinned` = the caller asked for one specific `pageNo`, which means they want that page and not
+/// the whole set — paging past it would answer a different question.
+async function callAll(serviceKey, svc, path, params, pinned) {
+  const first = await callApi(serviceKey, svc, path, params);
+  if (!first.ok || pinned) return first;
+
+  const total = Number(first.totalCount) || 0;
+  const per = Number(params.numOfRows) || first.items.length || 1;
+  const items = [...first.items];
+  let page = 1;
+  while (items.length < total && page < PAGE_CAP) {
+    page += 1;
+    const next = await callApi(serviceKey, svc, path, { ...params, pageNo: page });
+    // A failed later page keeps what was already collected — a partial answer that says it is
+    // partial beats losing the rows that did arrive.
+    if (!next.ok || next.items.length === 0) break;
+    items.push(...next.items);
+    if (next.items.length < per) break;
+  }
+  return { ...first, items, totalCount: total || items.length, short: items.length < total };
+}
+
 async function callApi(serviceKey, svc, path, params) {
   const url = new URL(`${HOST}/${svc}/${path}`);
   // The stored key is the DECODED form; searchParams encodes it. Setting an already-encoded key

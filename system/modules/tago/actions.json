@@ -5,7 +5,9 @@
       "name": "도시코드 목록 (버스·고속·시외·열차)",
       "description": "The 도시코드 every bus, express, suburbs and train action needs. Each service publishes its own list under its own base, so `service` names which one to read; they have not been measured against each other. The scooter service is NOT here — its cityCode is a 지역번호 from scooter-providers.",
       "params": {
-        "service": "Which service's list: bus-route | bus-arrival | bus-location | bus-stop | express | suburbs | train"
+        "service": "Which service's list: bus-route | bus-arrival | bus-location | bus-stop | express | suburbs | train",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -15,7 +17,9 @@
       "params": {
         "cityCode": "From city-codes",
         "nodeNm": "Stop name",
-        "nodeNo": "Number on the sign"
+        "nodeNo": "Number on the sign",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -24,7 +28,9 @@
       "description": "Bus stops near a WGS84 coordinate. The way in when you have a location but no city code — the result carries citycode as well as nodeid.",
       "params": {
         "gpsLati": "Latitude",
-        "gpsLong": "Longitude"
+        "gpsLong": "Longitude",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -33,7 +39,9 @@
       "description": "Which bus routes pass a given stop, with first and last stop names. Answers \"what can I catch here\".",
       "params": {
         "cityCode": "From city-codes",
-        "nodeId": "From bus-stop-search or bus-stop-nearby"
+        "nodeId": "From bus-stop-search or bus-stop-nearby",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -42,7 +50,9 @@
       "description": "Find routes in a city, optionally by the number on the front of the bus. Returns routeid, plus first and last departure times and the terminus names.",
       "params": {
         "cityCode": "From city-codes",
-        "routeNo": "Route number"
+        "routeNo": "Route number",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -51,7 +61,9 @@
       "description": "Every stop on a route in running order, with coordinates and an up/down direction code. This is the route drawn as a line — the stop sequence a position or an arrival estimate is measured against.",
       "params": {
         "cityCode": "From city-codes",
-        "routeId": "From bus-route-search"
+        "routeId": "From bus-route-search",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -60,7 +72,9 @@
       "description": "One route's details: first and last departure, and the headway for weekdays, Saturdays and Sundays separately.",
       "params": {
         "cityCode": "From city-codes",
-        "routeId": "From bus-route-search"
+        "routeId": "From bus-route-search",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -69,7 +83,9 @@
       "description": "Live arrivals at one stop: for each approaching bus, how many stops away it is and the estimated seconds until it arrives. Refreshed every 10-20 seconds. This is the one to ask \"when is my bus\".",
       "params": {
         "cityCode": "From city-codes",
-        "nodeId": "From bus-stop-search or bus-stop-nearby"
+        "nodeId": "From bus-stop-search or bus-stop-nearby",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -79,7 +95,9 @@
       "params": {
         "cityCode": "From city-codes",
         "nodeId": "Stop id",
-        "routeId": "Route id"
+        "routeId": "Route id",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -88,7 +106,9 @@
       "description": "Where every bus on a route is right now: map-matched coordinates, the stop it is at and its sequence number, and the vehicle number. Refreshed every 10-20 seconds — these are the points to put on a map.",
       "params": {
         "cityCode": "From city-codes",
-        "routeId": "From bus-route-search"
+        "routeId": "From bus-route-search",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -98,7 +118,9 @@
       "params": {
         "cityCode": "From city-codes",
         "nodeId": "Stop id",
-        "routeId": "Route id"
+        "routeId": "Route id",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -106,7 +128,9 @@
       "name": "고속버스 터미널 목록 (도착정보용 코드)",
       "description": "Express bus terminals, returning tmnCd — the BARE number (010) used by the arrival actions. Note this is a different identifier from the prefixed terminalId (NAEK010) that express-schedule takes, for the same terminals.",
       "params": {
-        "tmnNm": "Terminal name"
+        "tmnNm": "Terminal name",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -114,7 +138,9 @@
       "name": "출발터미널 기준 도착지 목록",
       "description": "Which terminals you can reach from one departure terminal. Narrows the pair before asking for arrivals.",
       "params": {
-        "depTmnCd": "From express-terminals-arr"
+        "depTmnCd": "From express-terminals-arr",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -123,7 +149,9 @@
       "description": "Express buses running between two terminals right now: departure time, operator, grade, current location name, minutes remaining and estimated arrival. Refreshed every 20 minutes.",
       "params": {
         "arrTmnCd": "From express-destinations",
-        "depTmnCd": "From express-terminals-arr"
+        "depTmnCd": "From express-terminals-arr",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -131,13 +159,19 @@
       "name": "고속버스 터미널 목록 (시간표용 ID)",
       "description": "Express bus terminals, returning terminalId — the PREFIXED id (NAEK010) that express-schedule takes. Not interchangeable with tmnCd from express-terminals-arr.",
       "params": {
-        "terminalNm": "Terminal name"
+        "terminalNm": "Terminal name",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
       "id": "express-grades",
       "name": "고속버스 등급 목록",
-      "description": "Express bus grades (일반, 우등 and so on) with their ids."
+      "description": "Express bus grades (일반, 우등 and so on) with their ids.",
+      "params": {
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
+      }
     },
     {
       "id": "express-schedule",
@@ -147,7 +181,9 @@
         "arrTerminalId": "From express-terminals",
         "busGradeId": "From express-grades",
         "depPlandTime": "YYYYMMDD",
-        "depTerminalId": "From express-terminals"
+        "depTerminalId": "From express-terminals",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -156,13 +192,19 @@
       "description": "Intercity (시외) bus terminals by name or city, returning terminalId.",
       "params": {
         "cityCode": "From city-codes",
-        "terminalNm": "Terminal name"
+        "terminalNm": "Terminal name",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
       "id": "suburbs-grades",
       "name": "시외버스 등급 목록",
-      "description": "Intercity bus grades with their ids."
+      "description": "Intercity bus grades with their ids.",
+      "params": {
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
+      }
     },
     {
       "id": "suburbs-schedule",
@@ -172,7 +214,9 @@
         "arrTerminalId": "From suburbs-terminals",
         "busGradeId": "From suburbs-grades",
         "depPlandTime": "YYYYMMDD",
-        "depTerminalId": "From suburbs-terminals"
+        "depTerminalId": "From suburbs-terminals",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -180,13 +224,19 @@
       "name": "시/도별 기차역 목록",
       "description": "Train stations in one province or metropolitan city, returning the station id that train-schedule takes.",
       "params": {
-        "cityCode": "From city-codes (service: train)"
+        "cityCode": "From city-codes (service: train)",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
       "id": "train-grades",
       "name": "열차 종류 목록",
-      "description": "Train types (KTX, ITX and so on) with their codes."
+      "description": "Train types (KTX, ITX and so on) with their codes.",
+      "params": {
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
+      }
     },
     {
       "id": "train-schedule",
@@ -196,7 +246,9 @@
         "arrPlaceId": "From train-stations",
         "depPlaceId": "From train-stations",
         "depPlandTime": "YYYYMMDD, today when omitted",
-        "trainGradeCode": "From train-grades"
+        "trainGradeCode": "From train-grades",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -204,7 +256,9 @@
       "name": "지하철역 검색 (역명)",
       "description": "Subway stations by name, returning the station id and which line it is on. A station served by several lines comes back once per line.",
       "params": {
-        "subwayStationName": "Station name"
+        "subwayStationName": "Station name",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -212,7 +266,9 @@
       "name": "지하철역 출구별 버스노선",
       "description": "Which bus routes are reachable from each numbered exit of a station.",
       "params": {
-        "subwayStationId": "From subway-stations"
+        "subwayStationId": "From subway-stations",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -220,7 +276,9 @@
       "name": "지하철역 출구별 주변 시설",
       "description": "What is near each numbered exit of a station.",
       "params": {
-        "subwayStationId": "From subway-stations"
+        "subwayStationId": "From subway-stations",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -230,18 +288,28 @@
       "params": {
         "dailyTypeCode": "01=평일, 02=토요일, 03=일요일. 02 is empty on every line measured; do not silently substitute 03 for it",
         "subwayStationId": "From subway-stations",
-        "upDownTypeCode": "U=상행, D=하행"
+        "upDownTypeCode": "U=상행, D=하행",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
       "id": "airports",
       "name": "공항 목록",
-      "description": "Domestic airports with their ids."
+      "description": "Domestic airports with their ids.",
+      "params": {
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
+      }
     },
     {
       "id": "airlines",
       "name": "항공사 목록",
-      "description": "Airlines with their ids."
+      "description": "Airlines with their ids.",
+      "params": {
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
+      }
     },
     {
       "id": "flight-schedule",
@@ -251,7 +319,9 @@
         "airlineId": "From airlines",
         "arrAirportId": "From airports",
         "depAirportId": "From airports",
-        "depPlandTime": "YYYYMMDD"
+        "depPlandTime": "YYYYMMDD",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -259,18 +329,28 @@
       "name": "항구 목록 (이름 검색)",
       "description": "Ports whose name contains the given text, returning the port id.",
       "params": {
-        "nodeNm": "Port name"
+        "nodeNm": "Port name",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
       "id": "ship-terminals",
       "name": "여객선터미널 목록",
-      "description": "Passenger ferry terminals."
+      "description": "Passenger ferry terminals.",
+      "params": {
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
+      }
     },
     {
       "id": "ship-kinds",
       "name": "선박 종류 목록",
-      "description": "Vessel types."
+      "description": "Vessel types.",
+      "params": {
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
+      }
     },
     {
       "id": "ship-schedule",
@@ -278,7 +358,9 @@
       "description": "Sailings from a port on a date.",
       "params": {
         "depNodeId": "From ports",
-        "depPlandTime": "YYYYMMDD"
+        "depPlandTime": "YYYYMMDD",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -286,7 +368,9 @@
       "name": "카셰어링 차고지 검색 (이름)",
       "description": "Car-sharing zones whose name matches, with address, coordinates and zone type.",
       "params": {
-        "zoneName": "Zone name"
+        "zoneName": "Zone name",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -294,7 +378,9 @@
       "name": "카셰어링 차고지 검색 (주소)",
       "description": "Car-sharing zones by address text.",
       "params": {
-        "zoneAddr": "Address, e.g. 서울 중구"
+        "zoneAddr": "Address, e.g. 서울 중구",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -304,7 +390,9 @@
       "params": {
         "latitude": "WGS84 latitude",
         "longitude": "WGS84 longitude",
-        "radius": "km, default 2, max 10"
+        "radius": "km, default 2, max 10",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -313,7 +401,9 @@
       "description": "Which scooter operators serve which regions. This is also the ONLY source of the cityCode that `scooters` takes — a 지역번호, not the 도시코드 the bus actions use.",
       "params": {
         "cityName": "Region name, omit for all",
-        "providerName": "Operator name, omit for all"
+        "providerName": "Operator name, omit for all",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     },
     {
@@ -322,7 +412,9 @@
       "description": "Rideable scooters for one operator in one region: device id, battery level and coordinates. Refreshed every 10 seconds.",
       "params": {
         "cityCode": "지역번호 from scooter-providers — NOT the city-codes list",
-        "providerName": "From scooter-providers"
+        "providerName": "From scooter-providers",
+        "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
+        "pageNo": "Ask for ONE specific page. Supplying it turns OFF the automatic paging above — use it only when a single page is what you want."
       }
     }
   ]
