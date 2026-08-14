@@ -1196,16 +1196,47 @@ impl ModuleActionCatalog {
         }
 
         if let Some(m) = module {
-            let top_module = rows
-                .first()
-                .and_then(|r| r.get("module"))
-                .and_then(|v| v.as_str())
-                .map(String::from);
             let score_of = |r: &serde_json::Value| r.get("score").and_then(|v| v.as_f64());
             let best_named = rows
                 .iter()
                 .find(|r| r.get("module").and_then(|v| v.as_str()) == Some(m))
                 .and_then(score_of);
+            // The comparison worth naming is against a module that does the same job, not against
+            // whatever came first. Measured 2026-08-15: for `웹문서 검색` the top row is
+            // `notes.search` — a local note index, matching on the word "search" — so a note built
+            // on rank 1 would offer a notepad as the alternative to a web search. The siblings of
+            // a capability are the set a choice is actually between.
+            let siblings: Vec<String> = self
+                .capability
+                .fallback_modules(m)
+                .await
+                .into_iter()
+                .map(|p| p.module_name)
+                .collect();
+            let best_sibling = rows
+                .iter()
+                .filter(|r| {
+                    r.get("module")
+                        .and_then(|v| v.as_str())
+                        .map(|n| siblings.iter().any(|s| s == n))
+                        .unwrap_or(false)
+                })
+                .max_by(|a, b| {
+                    score_of(a)
+                        .unwrap_or(0.0)
+                        .partial_cmp(&score_of(b).unwrap_or(0.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|r| {
+                    (
+                        r["module"].as_str().unwrap_or_default().to_string(),
+                        score_of(r).unwrap_or(0.0),
+                        r.get("preference")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                    )
+                });
 
             // Guarantee, then truncate: the named module keeps up to half the rows even when the
             // ranking would have pushed them past the cut, and the rest is the wide result.
@@ -1225,21 +1256,24 @@ impl ModuleActionCatalog {
             });
             rows = kept;
 
-            // Say it when the scope was not where the query pointed. Stated as what the scores
-            // are, so it is equally true when the guess was a good one.
-            if let (Some(top), Some(named_score)) = (top_module, best_named) {
-                if top != m {
-                    let top_score = rows.first().and_then(score_of).unwrap_or(named_score);
-                    rows.push(serde_json::json!({
-                        "kind": "scopeNote",
-                        "note": format!(
-                            "Scoped to `{m}` (best score {named_score:.3}), while `{top}` scores \
-                             {top_score:.3} for this query. Rows from both are above — `module` \
-                             guarantees a module a place in the result, and the ranking still \
-                             covers every module."
-                        ),
-                    }));
-                }
+            // Say what the alternatives scored. Stated as scores rather than as a correction, so
+            // it reads the same when the scoped module is the better one — which it often is.
+            if let (Some(named_score), Some((sib, sib_score, sib_pref))) = (best_named, best_sibling)
+            {
+                let pref = if sib_pref.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({sib_pref})")
+                };
+                rows.push(serde_json::json!({
+                    "kind": "scopeNote",
+                    "note": format!(
+                        "`{m}` scored {named_score:.3} here. `{sib}`{pref} does the same job and \
+                         scored {sib_score:.3}; its rows are above too. `module` guarantees a \
+                         module a place in the result, and the ranking covers every module either \
+                         way."
+                    ),
+                }));
             }
         }
         Ok((rows, all_oov, dropped, searched_with, embedder))
