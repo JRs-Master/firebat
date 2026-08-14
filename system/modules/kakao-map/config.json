@@ -40,6 +40,9 @@
     "맛집찾기",
     "위치"
   ],
+  "actionCatalog": {
+    "file": "actions.json"
+  },
   "aliases": [
     "카카오",
     "카카오맵",

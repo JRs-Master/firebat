@@ -1,0 +1,131 @@
+{
+  "actions": [
+    {
+      "id": "geocoding",
+      "name": "주소 → 좌표 (지오코딩)",
+      "description": "Turn a Korean address or place name into latitude and longitude. `addresses` takes up to 30 in ONE call — use it instead of N single calls when placing several points on a map. This is the step that gives every route and static-map action its coordinates.",
+      "params": {
+        "address": "주소 또는 검색어 — '서울 강남구 역삼동', '강남역'",
+        "addresses": "여러 주소를 한 번에 (최대 30)"
+      }
+    },
+    {
+      "id": "reverse-geocoding",
+      "name": "좌표 → 주소 (역지오코딩)",
+      "description": "Turn latitude and longitude back into a road-name and lot-number address. Use it to label a point the user picked or a coordinate a tool returned.",
+      "params": { "lat": "위도", "lon": "경도" }
+    },
+    {
+      "id": "search-address",
+      "name": "주소 검색 (부분 일치)",
+      "description": "Search addresses by fragment when the full address is unknown. Returns candidates with coordinates. Page size caps at 30 here — the 45 you may remember is the PAGE cap, not the size cap, and asking for more returns a 400.",
+      "params": { "address": "검색어", "limit": "한 페이지 결과 수 (최대 30)" }
+    },
+    {
+      "id": "search-keyword",
+      "name": "장소 키워드 검색 (맛집·카페·역 등)",
+      "description": "Find places by what they are called — '강남역 카페', '판교 음식점'. Optionally bounded to a circle with lat_center/lon_center/radius, or filtered to one category group. `keywords` takes up to 30 in ONE call. Page size caps at 15 here; a larger limit returns a 400.",
+      "params": {
+        "keyword": "장소 키워드",
+        "keywords": "여러 키워드를 한 번에 (최대 30)",
+        "categoryGroupCode": "카테고리 그룹으로 좁히기 (선택)",
+        "lat_center": "반경 검색 중심 위도",
+        "lon_center": "반경 검색 중심 경도",
+        "radius": "반경 m (최대 20000)",
+        "limit": "한 페이지 결과 수 (최대 15)"
+      }
+    },
+    {
+      "id": "search-category",
+      "name": "카테고리로 주변 검색 (편의점·주차장·병원 등)",
+      "description": "List every place of one category near a point or inside a rectangle — the way to answer '이 근처 편의점 다 찾아줘' without naming any of them. The category code is required here, unlike in keyword search.",
+      "params": {
+        "categoryGroupCode": "카테고리 그룹 코드 (필수)",
+        "lat_center": "중심 위도",
+        "lon_center": "중심 경도",
+        "radius": "반경 m (최대 20000)",
+        "rect": "사각 영역 'leftX,leftY,rightX,rightY' — 중심+반경의 대안",
+        "sort": "accuracy(기본) 또는 distance. distance 는 중심 좌표가 있어야 함",
+        "page": "페이지 번호 1-45",
+        "limit": "한 페이지 결과 수 (최대 15)"
+      }
+    },
+    {
+      "id": "coord2region",
+      "name": "좌표 → 행정구역 (시도·시군구·읍면동)",
+      "description": "Which administrative region a coordinate falls in, both the legal-dong and the administrative-dong answer. Use it to group points by district, or to get the 시군구 a tool needs.",
+      "params": { "lat": "위도", "lon": "경도", "inputCoord": "입력 좌표계 (기본 WGS84)" }
+    },
+    {
+      "id": "transcoord",
+      "name": "좌표계 변환 (WGS84 ↔ TM/WTM/KTM 등)",
+      "description": "Convert one coordinate pair between coordinate systems. Note that x and y are NOT always longitude and latitude — TM and WTM are metres. Needed when another source hands you non-WGS84 coordinates.",
+      "params": {
+        "x": "입력 좌표계 단위의 X",
+        "y": "입력 좌표계 단위의 Y",
+        "inputCoord": "입력 좌표계",
+        "outputCoord": "출력 좌표계 (필수)"
+      }
+    },
+    {
+      "id": "route-transit",
+      "name": "대중교통 길찾기 (버스·지하철·환승)",
+      "description": "Public-transport directions between two coordinates — total time, fare, and the bus/subway legs with their transfers. Separate from the walk and bicycle actions because transit takes NO waypoints and no route preference. `path.points` come back as [경도, 위도], which is the order a map Polyline wants.",
+      "params": {
+        "startLat": "출발 위도",
+        "startLon": "출발 경도",
+        "endLat": "도착 위도",
+        "endLon": "도착 경도",
+        "startName": "출발 표기 (기본 출발)",
+        "endName": "도착 표기 (기본 도착)",
+        "includePath": "경로 선 좌표 포함 여부 — 지도에 그릴 때만 true (응답 대부분이 이 좌표들)"
+      }
+    },
+    {
+      "id": "route-walk",
+      "name": "도보 길찾기",
+      "description": "Walking directions, with up to five waypoints and a route preference (BROAD_FIRST default, SHORTEST, ACCESSIBLE). Those two options are why walking is its own action — transit routing accepts neither.",
+      "params": {
+        "startLat": "출발 위도",
+        "startLon": "출발 경도",
+        "endLat": "도착 위도",
+        "endLon": "도착 경도",
+        "via": "경유지 최대 5곳",
+        "routeMode": "BROAD_FIRST(기본) | SHORTEST | ACCESSIBLE",
+        "includePath": "경로 선 좌표 포함 여부"
+      }
+    },
+    {
+      "id": "route-bicycle",
+      "name": "자전거 길찾기",
+      "description": "Bicycle directions, with waypoints and its own set of route preferences. Kept apart from walking because the preference values differ.",
+      "params": {
+        "startLat": "출발 위도",
+        "startLon": "출발 경도",
+        "endLat": "도착 위도",
+        "endLon": "도착 경도",
+        "via": "경유지 최대 5곳",
+        "routeMode": "자전거 전용 탐색 옵션",
+        "includePath": "경로 선 좌표 포함 여부"
+      }
+    },
+    {
+      "id": "static-map",
+      "name": "정적 지도 이미지 (PNG)",
+      "description": "Render a map as a PNG and land it in the media store, so a map can go into a document, a report or a message. Markers place themselves and set the centre and zoom when supplied. The image is a picture: it cannot be panned or zoomed — an on-screen map the reader can move is the `map` render component instead.",
+      "params": {
+        "centerLat": "중심 위도 (markers 없을 때 필수)",
+        "centerLon": "중심 경도",
+        "markers": "마커 최대 5개 — 주면 중심·확대율 자동",
+        "width": "가로 픽셀 (최대 2048)",
+        "height": "세로 픽셀 (최대 1024)",
+        "level": "확대 1-15 (기본 3, 작을수록 가까이)",
+        "scale": "픽셀 밀도 (기본 2)",
+        "format": "이미지 포맷",
+        "logoPos": "카카오 로고 위치 — 이미지에 새겨져 제거 불가, 이동만 가능",
+        "coord": "입력 좌표계 (기본 WGS84)",
+        "name": "저장 파일 이름"
+      }
+    }
+  ]
+}
