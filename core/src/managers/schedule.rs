@@ -321,6 +321,24 @@ impl ScheduleManager {
         }
         let final_result = result.expect("retry loop runs from attempt=0 — always set");
 
+        // A failed run says why, in the journal, where a failure is looked for.
+        //
+        // The reason was already being kept — in `data/cron-logs.json`, which the admin panel
+        // reads. The journal got nothing: a job that died left `[Cron] agent run:` and then
+        // silence, and the calendar line only appears for jobs the user ticked. Measured
+        // 2026-08-14: an agent turn ended after eleven seconds and finding out why meant opening
+        // the log file, when the answer was one line — Upstage answered 429.
+        if !final_result.success {
+            if let Some(hooks) = &self.hooks {
+                hooks.log.warn(&format!(
+                    "[Cron] run FAILED: {} ({}ms) — {}",
+                    info.job_id,
+                    final_result.duration_ms,
+                    final_result.error.as_deref().unwrap_or("no reason recorded"),
+                ));
+            }
+        }
+
         // 3. notify hook (fire-and-forget)
         if let Some(notify) = &info.notify {
             if let Some(hooks) = &self.hooks {
