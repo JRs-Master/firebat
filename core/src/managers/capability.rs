@@ -179,6 +179,46 @@ impl CapabilityManager {
         result
     }
 
+    /// The user's provider preference, as a rank per module: `module → (rank, out of)`.
+    ///
+    /// The setting existed and reached nothing the model could see. It is read in exactly one
+    /// place — `fallback_modules`, for pipeline retries — so a capability with a chosen order
+    /// behaved identically in chat to one without (measured 2026-08-15: the screen said naver 1 /
+    /// daum 2, the prompt listed them alphabetically with no mark, and the model picked by name).
+    /// Ranking here lets the resident module list say what the screen says.
+    ///
+    /// Only capabilities the user actually ordered appear. Scan order is not a preference, and a
+    /// rank invented from it would be a claim about a choice nobody made.
+    pub async fn preference_ranks(&self) -> BTreeMap<String, (usize, usize)> {
+        let mut ranks = BTreeMap::new();
+        for cap_id in self.list().await.keys() {
+            let settings = self.get_settings(cap_id);
+            if settings.providers.is_empty() {
+                continue;
+            }
+            let providers = self.get_providers(cap_id).await;
+            if providers.len() < 2 {
+                // One provider is not a ranking — "선호 1순위" over a list of one says nothing.
+                continue;
+            }
+            // Same ordering fallback_modules applies, so the label cannot disagree with what the
+            // retry path would do: chosen names first in their chosen order, the rest after.
+            let mut ordered: Vec<String> = providers.into_iter().map(|p| p.module_name).collect();
+            ordered.sort_by_key(|name| {
+                settings
+                    .providers
+                    .iter()
+                    .position(|n| n == name)
+                    .unwrap_or(usize::MAX)
+            });
+            let total = ordered.len();
+            for (i, name) in ordered.into_iter().enumerate() {
+                ranks.insert(name, (i + 1, total));
+            }
+        }
+        ranks
+    }
+
     /// capability 설정 조회 (Vault). 미존재 또는 파싱 실패 시 default.
     pub fn get_settings(&self, cap_id: &str) -> CapabilitySettings {
         crate::utils::vault_json::vault_get_json::<CapabilitySettings>(

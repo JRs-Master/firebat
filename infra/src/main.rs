@@ -845,7 +845,11 @@ async fn main() -> Result<()> {
             .with_memory_file(memory_file_manager.clone())
             .with_skill_file(skill_file_manager.clone())
             .with_config_port(config_port.clone())
-            .with_system_context(module_manager.clone(), mcp_manager.clone())
+            .with_system_context(
+                module_manager.clone(),
+                mcp_manager.clone(),
+                capability_manager.clone(),
+            )
             .with_history_resolver(conversation_manager.clone())
             // CLI session resume — AiManager must hold the ConversationManager to read/persist the per-conv
             // cli_session_id (get_cli_session / set_cli_session). Without this the resume + persist gates both

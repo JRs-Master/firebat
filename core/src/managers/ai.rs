@@ -1713,8 +1713,11 @@ impl AiManager {
         mut self,
         module: Arc<ModuleManager>,
         mcp: Arc<crate::managers::mcp::McpManager>,
+        capability: Arc<crate::managers::capability::CapabilityManager>,
     ) -> Self {
-        self.context_gatherer = Some(Arc::new(SystemContextGatherer::new(module, mcp)));
+        self.context_gatherer = Some(Arc::new(SystemContextGatherer::new(
+            module, mcp, capability,
+        )));
         self
     }
 

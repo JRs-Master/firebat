@@ -144,6 +144,85 @@ async fn resolve_uses_user_settings_priority() {
     assert_eq!(resolved.module_name, "b");
 }
 
+/// Builds three providers of one capability, plus a lone provider of another.
+async fn three_providers_and_a_loner() -> (CapabilityManager, TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = LocalStorageAdapter::new(dir.path());
+    for name in ["naver", "daum", "bing"] {
+        storage
+            .write(
+                &format!("system/modules/{name}/config.json"),
+                &format!(r#"{{"name":"{name}","capability":"web-search","providerType":"api"}}"#),
+            )
+            .await
+            .unwrap();
+    }
+    storage
+        .write(
+            "system/modules/telegram/config.json",
+            r#"{"name":"telegram","capability":"notification","providerType":"api"}"#,
+        )
+        .await
+        .unwrap();
+    let storage_arc: Arc<dyn IStoragePort> = Arc::new(storage);
+    let vault: Arc<dyn IVaultPort> =
+        Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
+    let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+    (CapabilityManager::new(storage_arc, vault, log), dir)
+}
+
+#[tokio::test]
+async fn a_chosen_order_becomes_a_rank_for_every_provider() {
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    mgr.set_settings(
+        "web-search",
+        &CapabilitySettings {
+            providers: vec!["naver".into(), "daum".into(), "bing".into()],
+        },
+    );
+    let ranks = mgr.preference_ranks().await;
+    assert_eq!(ranks.get("naver"), Some(&(1, 3)));
+    assert_eq!(ranks.get("daum"), Some(&(2, 3)));
+    assert_eq!(ranks.get("bing"), Some(&(3, 3)));
+}
+
+#[tokio::test]
+async fn providers_the_user_did_not_order_rank_after_the_ones_they_did() {
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    mgr.set_settings(
+        "web-search",
+        &CapabilitySettings {
+            providers: vec!["bing".into()],
+        },
+    );
+    let ranks = mgr.preference_ranks().await;
+    assert_eq!(ranks.get("bing"), Some(&(1, 3)), "the chosen one leads");
+    // The other two still get a rank, because the retry path would visit them in this order.
+    assert_eq!(ranks.len(), 3);
+}
+
+#[tokio::test]
+async fn scan_order_alone_is_not_a_preference() {
+    // No settings saved: ranking here would report a choice nobody made.
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    assert!(mgr.preference_ranks().await.is_empty());
+}
+
+#[tokio::test]
+async fn a_capability_with_one_provider_is_not_ranked() {
+    let (mgr, _dir) = three_providers_and_a_loner().await;
+    mgr.set_settings(
+        "notification",
+        &CapabilitySettings {
+            providers: vec!["telegram".into()],
+        },
+    );
+    assert!(
+        mgr.preference_ranks().await.get("telegram").is_none(),
+        "「선호 1순위/1」 over a list of one says nothing"
+    );
+}
+
 #[tokio::test]
 async fn unknown_capability_auto_registered_on_scan() {
     let dir = tempfile::tempdir().unwrap();

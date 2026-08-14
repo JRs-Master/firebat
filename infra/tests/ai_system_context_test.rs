@@ -4,9 +4,11 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use firebat_core::managers::ai::system_context::SystemContextGatherer;
+use firebat_core::managers::capability::CapabilityManager;
 use firebat_core::managers::mcp::McpManager;
 use firebat_core::managers::module::ModuleManager;
-use firebat_core::ports::{IMcpClientPort, ISandboxPort, IStoragePort, IVaultPort};
+use firebat_core::ports::{ILogPort, IMcpClientPort, ISandboxPort, IStoragePort, IVaultPort};
+use firebat_infra::adapters::log::ConsoleLogAdapter;
 use firebat_infra::adapters::mcp_client::McpClientFileAdapter;
 use firebat_infra::adapters::sandbox::ProcessSandboxAdapter;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
@@ -21,10 +23,12 @@ async fn setup() -> (SystemContextGatherer, TempDir) {
         Arc::new(ProcessSandboxAdapter::new(dir.path().to_path_buf()));
     let mcp_client: Arc<dyn IMcpClientPort> =
         Arc::new(McpClientFileAdapter::new(dir.path().join("mcp.json")).unwrap());
+    let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
 
-    let module = Arc::new(ModuleManager::new(sandbox, storage, vault));
+    let module = Arc::new(ModuleManager::new(sandbox, storage.clone(), vault.clone()));
     let mcp = Arc::new(McpManager::new(mcp_client));
-    (SystemContextGatherer::new(module, mcp), dir)
+    let capability = Arc::new(CapabilityManager::new(storage, vault, log));
+    (SystemContextGatherer::new(module, mcp, capability), dir)
 }
 
 #[tokio::test]

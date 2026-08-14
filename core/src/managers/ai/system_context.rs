@@ -12,12 +12,14 @@
 
 use std::sync::Arc;
 
+use crate::managers::capability::CapabilityManager;
 use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 
 pub struct SystemContextGatherer {
     module: Arc<ModuleManager>,
     mcp: Arc<McpManager>,
+    capability: Arc<CapabilityManager>,
 }
 
 /// A module description's first clause — enough to pick it, not to use it.
@@ -49,8 +51,16 @@ fn first_clause(desc: &str) -> String {
 }
 
 impl SystemContextGatherer {
-    pub fn new(module: Arc<ModuleManager>, mcp: Arc<McpManager>) -> Self {
-        Self { module, mcp }
+    pub fn new(
+        module: Arc<ModuleManager>,
+        mcp: Arc<McpManager>,
+        capability: Arc<CapabilityManager>,
+    ) -> Self {
+        Self {
+            module,
+            mcp,
+            capability,
+        }
     }
 
     /// 시스템 컨텍스트 마크다운 합성 — PromptBuilder.build() 에 extra_context 로 전달.
@@ -63,6 +73,10 @@ impl SystemContextGatherer {
         let active_sys: Vec<_> = system_mods.into_iter().filter(|e| e.enabled).collect();
         if !active_sys.is_empty() {
             let mut s = String::from("## 등록된 시스템 모듈 (sysmod_* 도구로 호출)\n");
+            // The order the user put these providers in, from the settings screen. Without it the
+            // preference reached only the pipeline retry path, so chat picked by name and the
+            // screen's "1 / 2" meant nothing here (2026-08-15).
+            let ranks = self.capability.preference_ranks().await;
             for entry in active_sys {
                 // capability 는 별도 config.json 조회 (옵션 — 없으면 description 만)
                 let capability = self
@@ -70,7 +84,12 @@ impl SystemContextGatherer {
                     .get_module_config("system", &entry.name)
                     .await
                     .and_then(|cfg| cfg.get("capability").and_then(|v| v.as_str()).map(String::from))
-                    .map(|c| format!(" [capability: {}]", c))
+                    .map(|c| match ranks.get(&entry.name) {
+                        Some((rank, total)) => {
+                            format!(" [capability: {c} · 사용자 선호 {rank}순위/{total}]")
+                        }
+                        None => format!(" [capability: {c}]"),
+                    })
                     .unwrap_or_default();
                 // Enough to PICK a module, not to use one. Measured 2026-08-10: the full
                 // descriptions made this the second-largest section of the assembled prompt
