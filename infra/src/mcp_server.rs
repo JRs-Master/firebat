@@ -1032,23 +1032,22 @@ fn resolve_sysmod_error(module_name: &str, output: &firebat_core::ports::ModuleO
 /// Everything about *the module* — its text, its declared tags — comes from
 /// `sysmod_surface::build_surface`. What this adds is addressed to the hosted-MCP client, not to
 /// the module: the `[시스템 모듈] ` badge that separates modules from builtin tools in a CLI's flat
-/// tool list, the declared `capability` line, and the required-secrets hint that tells a CLI model
-/// to call `request_secret` instead of failing on a missing key. Keeping them here is deliberate —
-/// they are transport decoration, so planting them in the shared builder would push MCP wording
-/// onto the FC surface.
+/// tool list, and the required-secrets hint that tells a CLI model to call `request_secret`
+/// instead of failing on a missing key. Keeping them here is deliberate — they are transport
+/// decoration, so planting them in the shared builder would push MCP wording onto the FC surface.
+///
+/// `capability` used to be appended here, which made it a line one transport had and the other
+/// did not — the drift this shared builder exists to prevent. It says which modules substitute
+/// for each other, and that decides something only when two of them are side by side being
+/// compared, so it now rides the `search_module_actions` rows, where both transports read it.
 fn decorate_for_mcp(surface_description: &str, config: &Value) -> String {
-    let cap = config
-        .get("capability")
-        .and_then(|v| v.as_str())
-        .map(|c| format!("\ncapability: {c}"))
-        .unwrap_or_default();
     let names = firebat_core::utils::secret_schema::secret_names(config);
     let secrets = if names.is_empty() {
         String::new()
     } else {
         format!("\n필요 시크릿: {} (미설정 시 request_secret 호출)", names.join(", "))
     };
-    format!("[시스템 모듈] {surface_description}{cap}{secrets}")
+    format!("[시스템 모듈] {surface_description}{secrets}")
 }
 
 /// Scan system/modules config.json → register ONE thin `sysmod_<name>` tool per module.
@@ -1087,9 +1086,9 @@ pub async fn register_sysmod_tools(
         // the config, so the two names cannot drift apart.
         let tool_name = format!("sysmod_{}", surface.module.replace('-', "_"));
 
-        // MCP-only decoration ②: the hosted-client badge + capability + required-secrets hint,
-        // appended after the shared description. CLI clients read the secrets line to reach for
-        // request_secret rather than failing on a missing key.
+        // MCP-only decoration ②: the hosted-client badge + required-secrets hint, appended after
+        // the shared description. CLI clients read the secrets line to reach for request_secret
+        // rather than failing on a missing key.
         let description = decorate_for_mcp(&surface.description, &config);
 
         let tool = McpTool {
