@@ -440,6 +440,41 @@ impl OpenAiChatHandler {
             .and_then(|v| v.to_str().ok())
             .map(|s| s.contains("text/event-stream"))
             .unwrap_or(false);
+        if !status.is_success() {
+            // A refused request says why, in the journal, and says what the vendor's own headers
+            // say about the limit.
+            //
+            // Until now a non-2xx became a user-facing string and nothing else: a 429 during a
+            // chat turn left no trace at all, so counting how often it happens meant asking the
+            // user. Worse, the headers were dropped — the one place the actual rate limit is
+            // written. Measured 2026-08-14: Upstage refused with "API request limit" while this
+            // server was making six embedding calls a minute, which no commercial tier limits, so
+            // the number matters and guessing at it has already cost one wrong hypothesis.
+            let h = response.headers();
+            let hdr = |k: &str| {
+                h.get(k)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| format!("{k}={s}"))
+            };
+            let limits: Vec<String> = [
+                "retry-after",
+                "x-ratelimit-limit-requests",
+                "x-ratelimit-remaining-requests",
+                "x-ratelimit-reset-requests",
+                "x-ratelimit-limit-tokens",
+                "x-ratelimit-remaining-tokens",
+            ]
+            .iter()
+            .filter_map(|k| hdr(k))
+            .collect();
+            tracing::warn!(
+                target: "llm",
+                model = %config.display_name,
+                status = %status,
+                limits = %if limits.is_empty() { "(none sent)".to_string() } else { limits.join(" ") },
+                "LLM request refused"
+            );
+        }
         if !status.is_success() || !is_sse {
             // 에러 바디 또는 스트림 미지원 호환 서버(JSON 통짜) — 그대로 파싱해 기존 경로로.
             // 같은 클라이언트라 total timeout 이 없다: 헤더만 보내고 바디를 안 닫는 서버에서
