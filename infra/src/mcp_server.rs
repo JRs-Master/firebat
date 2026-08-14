@@ -2092,6 +2092,9 @@ impl McpToolHandler for ProposePlanHandler {
 
 pub struct NetworkRequestHandler {
     pub network: Arc<dyn firebat_core::ports::INetworkPort>,
+    /// A fetched page is a document — same choke point as a module result, same Arc as the
+    /// `cache_*` tools so the key resolves. See `firebat_core::utils::auto_cache`.
+    pub cache: Arc<SysmodCacheAdapter>,
 }
 #[async_trait::async_trait]
 impl McpToolHandler for NetworkRequestHandler {
@@ -2136,7 +2139,13 @@ impl McpToolHandler for NetworkRequestHandler {
                     body_size = body_size,
                     "[network_request] response received"
                 );
-                Ok(serde_json::json!({"success": true, "data": resp}))
+                let data = firebat_core::utils::auto_cache::apply_auto_cache(
+                    serde_json::to_value(&resp).unwrap_or(serde_json::Value::Null),
+                    &self.cache,
+                    "network",
+                    "request",
+                );
+                Ok(serde_json::json!({"success": true, "data": data}))
             }
             Err(e) => {
                 tracing::warn!(target: "network", url = %url, error = %e, "[network_request] failed");
@@ -2381,7 +2390,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         name: "cache_drop".into(),
         description: "sysmod `_cacheKey` 캐시 삭제. inputSchema: {cacheKey}.".into(),
         input_schema: core_schema("cache_drop", schema_object(serde_json::json!({"cacheKey": {"type": "string"}}))),
-        handler: Arc::new(CacheDropHandler { cache: deps.cache }),
+        handler: Arc::new(CacheDropHandler { cache: deps.cache.clone() }),
     }).await;
 
     // Secret / Mcp
@@ -2552,7 +2561,10 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         name: "network_request".into(),
         description: "가벼운 HTTP 요청. inputSchema: {url, method?, headers?, body?, timeoutMs?}.".into(),
         input_schema: core_schema("network_request", schema_object(serde_json::json!({"url": {"type":"string"}}))),
-        handler: Arc::new(NetworkRequestHandler { network: deps.network }),
+        handler: Arc::new(NetworkRequestHandler {
+            network: deps.network,
+            cache: deps.cache.clone(),
+        }),
     }).await;
 
     // ── Stage 2: ToolManager(core) 카탈로그 auto-sync ──

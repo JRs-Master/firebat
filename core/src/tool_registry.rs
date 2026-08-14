@@ -1033,6 +1033,7 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 
     // network_request — 가벼운 HTTP 요청.
     let network = h.network.clone();
+    let net_cache = h.cache.clone();
     tools.register_tool(
         ToolDefinition {
             name: "network_request".to_string(),
@@ -1052,6 +1053,7 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         },
         move |args| {
             let network = network.clone();
+            let cache = net_cache.clone();
             async move {
                 let url = args
                     .get("url")
@@ -1079,7 +1081,18 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 match network.fetch(req).await {
                     Ok(resp) => {
                         tracing::info!(target: "network", url = %url, status = resp.status, ok = resp.ok, "[network_request] response received");
-                        Ok(serde_json::json!({"success": true, "data": resp}))
+                        // A fetched page is a document like any module's — it goes through the
+                        // same choke point, so the model gets a preview plus a key it can grep
+                        // and page. Without this the whole body rode inline and the transport
+                        // clipped it: a 172 KB page reached the model as its `<head>` and the
+                        // answer said the page held nothing (measured 2026-08-15).
+                        let data = crate::utils::auto_cache::apply_auto_cache(
+                            serde_json::to_value(&resp).unwrap_or(serde_json::Value::Null),
+                            &cache,
+                            "network",
+                            "request",
+                        );
+                        Ok(serde_json::json!({"success": true, "data": data}))
                     }
                     Err(e) => {
                         tracing::warn!(target: "network", url = %url, error = %e, "[network_request] failed");
