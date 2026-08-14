@@ -25,16 +25,22 @@ fn make_service() -> (CapabilityServiceImpl, TempDir) {
     (CapabilityServiceImpl::new(manager), tmp)
 }
 
+/// The service returns what the modules declare, so a temp dir with none returns none.
+///
+/// This asserted two hard-coded builtin ids, which is the assumption that let the hand-written
+/// capability list drift from the modules in the first place — the same assertion existed in
+/// capability_manager_test and both passed while fifteen real capabilities never reached the
+/// screen. What the service owes is a well-formed answer, not a fixed vocabulary.
 #[tokio::test]
-async fn list_returns_builtin_via_grpc() {
+async fn list_returns_what_the_modules_declare_via_grpc() {
     let (service, _dir) = make_service();
     let resp = service
         .list(Request::new(CapabilityListRequest {}))
         .await
         .unwrap();
     let caps: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert!(caps.get("web-scrape").is_some());
-    assert!(caps.get("notification").is_some());
+    assert!(caps.is_object(), "expected an object, got {caps}");
+    assert_eq!(caps.as_object().map(|o| o.len()), Some(0), "no modules installed: {caps}");
 }
 
 #[tokio::test]
