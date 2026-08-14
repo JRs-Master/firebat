@@ -49,14 +49,19 @@ pub struct CatalogEntry {
     pub name: String,
     pub description: String,
     pub extra: serde_json::Value,
-    /// Words that must SURVIVE the OOV gate without steering the ranking.
+    /// The entry's declared tags — capability words, in the vocabulary a user would ask in.
     ///
-    /// One string used to do both jobs, and the jobs pull opposite ways: the gate asks "does this
-    /// word exist in our world at all" — a membership test, where more words is strictly better —
-    /// while the ranker asks "how close is this row", where every extra word blurs the vector.
-    /// Fused, the only way to teach the gate a word was to dilute the ranker (2026-08-10: the
-    /// token `binance` was deleted from queries because the module's own name appeared in no
-    /// row's text). Same source, two derivations: `entry_text` embeds, `vocab_text` gates.
+    /// These were held out of the embedded text from 2026-08-10, on the reasoning that the gate
+    /// wants every word it can get while the ranker wants none it does not need. The reasoning
+    /// was never measured, and what has been measured since points the other way: length is what
+    /// blurs a vector, not vocabulary. A 602-char description scored below a 389-char one for a
+    /// query whose answer was in the longer text (2026-08-15), and kakao-map sat 5th with tags
+    /// that let its query through and then counted for nothing.
+    ///
+    /// So tags are embedded now, and one text serves both jobs again. What to watch is the
+    /// failure the old note feared, which is real: a module declaring fifteen generic tags drags
+    /// every action it owns toward generic queries. Specific nouns earn their place; `조회` does
+    /// not.
     pub vocab: Vec<String>,
 }
 
@@ -178,18 +183,32 @@ fn sha1_hash(version: &str, s: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// One text per entry, for both jobs: the vector the ranker compares, and the haystack the OOV
+/// gate checks a query's words against.
+///
+/// The declared tags are part of it. They used to gate only — a word like `길찾기` survived the
+/// query cleaner because a module declared it, and then contributed nothing to the score, so a
+/// module could be reachable and still never win (kakao-map, 2026-08-14: tags fixed the gate and
+/// left it 5th at 0.513; only per-action prose moved it to 1st at 0.638). Tags are also the
+/// densest capability signal an entry has — a curated noun per line against a description that
+/// wanders into paging caps and sort vocabularies. Measured 2026-08-15 on two near-identical
+/// vendors: daum-search's 602-char description scored BELOW naver-search's 389-char one for
+/// `웹문서 검색`, while carrying the very facts that distinguish it (video, books). Length
+/// dilutes; tags do not.
+///
+/// Tags are declared per module, so every action of one module shares them — which lifts the
+/// module as a whole against a query and leaves the ordering among its own actions to their
+/// names and descriptions, where it belongs.
 fn entry_text(e: &CatalogEntry) -> String {
-    format!("Name: {}\nDesc: {}", e.name, e.description)
-}
-
-/// The gate's vocabulary for one entry — everything the ranker sees, plus the words the entry
-/// declared purely so a query containing them is not thrown away. Never embedded, so a long
-/// vocabulary costs nothing but a longer substring haystack.
-fn vocab_text(e: &CatalogEntry) -> String {
     if e.vocab.is_empty() {
-        return entry_text(e);
+        return format!("Name: {}\nDesc: {}", e.name, e.description);
     }
-    format!("{}\n{}", entry_text(e), e.vocab.join(" "))
+    format!(
+        "Name: {}\nTags: {}\nDesc: {}",
+        e.name,
+        e.vocab.join(", "),
+        e.description
+    )
 }
 
 /// Normalized-vector cosine = dot product (component_search_index mirror).
@@ -379,7 +398,7 @@ impl SemanticCatalog {
         );
         let mut corpus = String::new();
         for e in &entries {
-            corpus.push_str(&vocab_text(e).to_lowercase());
+            corpus.push_str(&entry_text(e).to_lowercase());
             corpus.push('\n');
         }
         let mut state = self.state.write().await;
@@ -796,7 +815,7 @@ mod tests {
     /// The gate and the ranker read the same entry but must not read the same text: a word can
     /// be added to the vocabulary — so a query carrying it is not thrown away — without ever
     /// entering the embedded document, where it would pull the vector around.
-    fn vocab_widens_the_gate_without_touching_the_embedding() {
+    fn tags_are_embedded_and_gate_from_one_text() {
         let e = CatalogEntry {
             id: "binance:get_candles".into(),
             name: "Candles".into(),
@@ -804,18 +823,21 @@ mod tests {
             extra: serde_json::Value::Null,
             vocab: vec!["암호화폐".into(), "코인".into()],
         };
-        // What gets embedded is unchanged by the vocabulary.
-        assert!(!entry_text(&e).contains("코인"));
-        assert_eq!(entry_text(&e), "Name: Candles\nDesc: binance OHLCV bars");
-        // What the gate tests against is wider.
-        let corpus = vocab_text(&e).to_lowercase();
-        assert!(corpus.contains("코인"));
+        // One text now: the words that let a query through are the words that score it.
+        assert_eq!(
+            entry_text(&e),
+            "Name: Candles
+Tags: 암호화폐, 코인
+Desc: binance OHLCV bars"
+        );
+        let corpus = entry_text(&e).to_lowercase();
         let (cleaned, dropped) = clean_query("코인 binance", &corpus);
         assert_eq!(cleaned, "코인 binance");
         assert!(dropped.is_empty());
-        // An entry that declares nothing keeps the old behaviour exactly.
+        // An entry that declares nothing carries no empty Tags line.
         let bare = CatalogEntry { vocab: Vec::new(), ..e };
-        assert_eq!(vocab_text(&bare), entry_text(&bare));
+        assert_eq!(entry_text(&bare), "Name: Candles
+Desc: binance OHLCV bars");
     }
 
     #[test]

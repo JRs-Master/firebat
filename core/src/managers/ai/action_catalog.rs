@@ -5,14 +5,14 @@
 //! This catalog gives the missing middle layer of progressive disclosure:
 //!   `search_module_actions(query)` → ranked candidates (cross-module by default, so the
 //!   "which broker" routing mistake is also softened) → `get_action_schema(module, action)`
-//!   → exact params + call envelope → the model writes a correct call (no guessing).
+//!   → exact params + an assembled `call` → the model supplies values, nothing else.
 //!
 //! Declarative (zero hardcoding): a module opts in via config `actionCatalog`:
 //! ```json
 //! "actionCatalog": {
 //!   "file": "actions.json",           // module-dir relative, OR inline:
 //!   "actions": [ { "id", "name", "description", "domain"?, "params"?: {name: desc}, ... } ],
-//!   "envelope": "{ \"action\": \"<id>\", \"params\": { ... } }"   // module call-shape hint
+//!   "call": { "tool": "sysmod_x", "arguments": { "action": "<id>" }, "fill": [...] }
 //! }
 //! ```
 //! Any extra per-action fields (method/path/trId/example …) ride along into
@@ -145,14 +145,12 @@ impl ModuleActionSource {
             // module already ships for validation doubles as the discovery catalog.
             return derive_entries_from_input(name, config, approval_decl);
         };
-        let envelope = decl.get("envelope").and_then(|v| v.as_str()).unwrap_or("");
         // Grounded params (config `grounding`) — surface the resolveHint PROACTIVELY in the
         // schema, not only on gate rejection. Observed (2026-07-11): a model that needed a
         // stock code hunted it through action-search/recall for 11 rounds because nothing on
         // the discovery surface said HOW to turn a name into the code; the hint existed but
         // only fired after a rejected call it never made. Declarative — no per-module logic.
         let grounded = crate::utils::grounding::parse_grounding(config);
-        let ident = module_identity(name, config);
         let tag_words = module_tags(config);
         let actions: Vec<serde_json::Value> = if let Some(file) =
             decl.get("file").and_then(|v| v.as_str())
@@ -203,21 +201,23 @@ impl ModuleActionSource {
                     .and_then(|v| v.as_object())
                     .map(|o| o.keys().cloned().collect())
                     .unwrap_or_default();
-                let sem = format!(
-                    "{} {} {} {}",
-                    ident.join(" "),
-                    domain,
-                    desc,
-                    a.get("params")
-                        .and_then(|v| v.as_object())
-                        .map(|o| {
-                            o.values()
-                                .filter_map(|d| d.as_str())
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        })
-                        .unwrap_or_default()
-                );
+                // The embedded document is the action's own description and nothing appended.
+                //
+                // It used to be `ident + domain + description + every parameter blurb`, which put
+                // 208,285 chars of text into the index for 64,146 chars of description — a
+                // korea-invest action embedded 1,471 chars of which 1,431 were parameter prose
+                // like "Rows per request (numOfRows, default 100, max 1000)". None of that says
+                // what the action is FOR, and length is what blurs a vector (measured 2026-08-15
+                // on two near-identical search vendors). Parameter docs stay where they are read,
+                // in the get_action_schema response.
+                //
+                // What used to be smuggled in through the concatenation now has its own place:
+                // the name rides `entry_text`, the id and the tags ride `vocab`.
+                let sem = if desc.trim().is_empty() {
+                    domain.to_string()
+                } else {
+                    desc.to_string()
+                };
                 let approval = requires_approval_value(approval_decl, &id);
                 let mut extra = serde_json::json!({
                     "module": name,
@@ -274,9 +274,6 @@ impl ModuleActionSource {
                         extra[k] = v.clone();
                     }
                 }
-                if !envelope.is_empty() {
-                    extra["envelope"] = serde_json::Value::String(envelope.to_string());
-                }
                 // The cache-key vocabulary belongs in the params the model reads, not only in the
                 // hint it gets after a rejection. A hand-written catalog lists what its author
                 // remembered, and `cacheInputs` is declared elsewhere in the same file: fa's
@@ -311,6 +308,26 @@ impl ModuleActionSource {
                 if !desc.trim().is_empty() {
                     extra["display"] = serde_json::Value::String(desc.trim().to_string());
                 }
+                // Two kinds of tag, and they answer different questions.
+                //
+                // A module's tags are what it is CALLED — 한투 / 한국투자 / 한국투자증권 / kis.
+                // Every action of the module shares them, which is right: they pull the whole
+                // module toward a query that names the vendor, and settle nothing inside it.
+                //
+                // An action's tags are what it DOES, in the words someone would ask in —
+                // 국내주식주문 / 한국주식주문 / 주식주문. These are what let a query land on ONE
+                // row instead of on a module, and they are the half a module could never supply.
+                let action_tags: Vec<String> = a
+                    .get("tags")
+                    .and_then(|t| t.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 Some(CatalogEntry {
                     id: format!("{}:{}", name, id),
                     name: a_name,
@@ -319,6 +336,7 @@ impl ModuleActionSource {
                     vocab: tag_words
                         .iter()
                         .cloned()
+                        .chain(action_tags)
                         .chain(std::iter::once(id.clone()))
                         .collect(),
                 })
@@ -417,7 +435,7 @@ fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogE
                 "kind": "stream",
                 "tool": "stream_watch_start",
                 "requiresApproval": false,
-                "envelope": "stream_watch_start({ module, stream, args }) — then render the returned topic with a live_chart / live_feed component. Stop it with stream_watch_stop.",
+                "afterCall": "render the returned topic with a live_chart / live_feed component; stream_watch_stop ends it.",
             });
             if !desc.is_empty() {
                 extra["desc"] = serde_json::Value::String(desc.to_string());
@@ -650,11 +668,9 @@ fn derive_entries_from_input(
         .and_then(|a| a.get("description"))
         .and_then(|d| d.as_str())
         .unwrap_or("");
-    let envelope = if action_enum.is_some() {
-        "{ \"action\": \"<id>\", <params...> } — flat: action selector + params at the top level"
-    } else {
-        "{ <params...> } — flat: params at the top level (this module has no action selector)"
-    };
+    // The module's call shape used to ship as an `envelope` sentence — "{ \"action\": \"<id>\",
+    // <params...> } — flat: …". The schema response answers that with an assembled `call` now,
+    // so the sentence is gone and `required` carries the selector fact instead.
     // All action ids of this module — needed to tell a real action tag (`[short/ultra-*]`) apart
     // from an incidental bracket in a description (`[필수]`), so the filter can't strip params.
     let all_actions: Vec<&str> = action_enum
@@ -699,7 +715,6 @@ fn derive_entries_from_input(
             "module": name,
             "action": action_id,
             "params": scoped,
-            "envelope": envelope,
             "requiresApproval": requires_approval_value(approval_decl, action_id),
             "derived": true,
         });
@@ -1106,7 +1121,7 @@ impl ModuleActionCatalog {
                         // stream key (F4). Without this pointer models assume "no schema for
                         // streams" and invent subscribe args (9차 실측: quotes 에 stk_cd/interval
                         // 발명 — 실제 키움 quotes args 는 item/type).
-                        "next": "subscribe args are NOT guessable — call get_action_schema(module, stream) first; it returns the subscribe contract (arg names + type codes), then stream_watch_start({module, stream, args}).",
+                        "next": "subscribe args are NOT guessable — the schema returns the subscribe contract (arg names + type codes), then stream_watch_start({module, stream, args}).",
                         "score": score,
                     });
                 }
@@ -1356,7 +1371,7 @@ impl ModuleActionCatalog {
         if params_empty {
             out["paramsNote"] = serde_json::Value::String(
                 "Parameter docs are NOT available for this action — searching again will not \
-                 reveal them. Construct the call from the envelope hint (+ method/path/trId) and \
+                 reveal them. Build on `call` (+ method/path/trId) and the module input \
                  the module input schema (get_module_config); the module's validation errors will \
                  name any missing field."
                     .to_string(),
@@ -1394,21 +1409,36 @@ impl ModuleActionCatalog {
                     .collect()
             })
             .unwrap_or_default();
-        let mut arguments = serde_json::Map::new();
-        // A selector-less module has no action to send; sending one there is its own error.
-        if out.get("params").is_some() || !fill.is_empty() {
-            if entry.extra.get("action").is_some() || out.get("envelope").is_some() {
+        // A stream is not called on the module tool at all — it is subscribed, and the row that
+        // sent the model here said so. Same handoff, different last step.
+        let is_stream = entry.extra.get("kind").and_then(|v| v.as_str()) == Some("stream");
+        out["call"] = if is_stream {
+            serde_json::json!({
+                "tool": "stream_watch_start",
+                "arguments": { "module": module, "stream": action },
+                "fill": ["args"],
+            })
+        } else {
+            let mut arguments = serde_json::Map::new();
+            // A selector-less module has no action to send; sending one there is its own error.
+            // `required` names the selector first for the modules that have one.
+            let has_selector = out
+                .get("required")
+                .and_then(|r| r.as_array())
+                .map(|a| a.iter().any(|v| v.as_str() == Some("action")))
+                .unwrap_or(false);
+            if has_selector {
                 arguments.insert(
                     "action".to_string(),
                     serde_json::Value::String(action.to_string()),
                 );
             }
-        }
-        out["call"] = serde_json::json!({
-            "tool": sysmod_tool_name(module),
-            "arguments": serde_json::Value::Object(arguments),
-            "fill": fill,
-        });
+            serde_json::json!({
+                "tool": sysmod_tool_name(module),
+                "arguments": serde_json::Value::Object(arguments),
+                "fill": fill,
+            })
+        };
         Some(out)
     }
 
