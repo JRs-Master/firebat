@@ -5,6 +5,8 @@
   "version": "1.0.0",
   "description": "주소↔좌표 변환 · 장소 검색(키워드/카테고리) · 대중교통·도보·자전거 길찾기 · 정적 지도 PNG — 카카오 지도 통합. REST API (geocoding·역지오코딩·주소 검색·키워드 검색) + JavaScript SDK 키 (render_map 컴포넌트가 사용). South Korea 전용. South Korea 외 지역은 render_map 의 Leaflet 폴백.",
   "tags": [
+    "다음지도",
+    "카카오",
     "지도",
     "카카오맵",
     "길찾기",

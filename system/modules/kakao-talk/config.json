@@ -5,6 +5,7 @@
   "version": "2.0.0",
   "description": "카카오톡 메시지 + 소셜 + 채널 API. send-me(나에게 보내기, 5종 템플릿: text/feed/list/location/commerce), send-me-scrap(스크랩 메시지), send-friends(친구에게 보내기), profile(내 프로필), friends(친구 목록+UUID), channels(채널 관계).",
   "tags": [
+    "카카오",
     "카카오톡",
     "카톡",
     "메시지",

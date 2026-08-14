@@ -12,6 +12,9 @@
   "capability": "law-search",
   "providerType": "api",
   "tags": [
+    "법제처",
+    "국가법령정보센터",
+    "law.go.kr",
     "법령",
     "법률",
     "판례",

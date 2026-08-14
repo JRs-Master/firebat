@@ -317,6 +317,8 @@
     "description": "액션별 result. prices → [{symbol,lastPrice,currency,timestamp}] / candles·market-indicator-candles → {candles:[{date,open,high,low,close,volume}],nextBefore} (표준 OHLCV 필드로 정규화됨) / accounts → [{accountNo,accountSeq,accountType}] / holdings → {totalPurchaseAmount,marketValue,profitLoss,items:[...]} / create-order|modify-order|cancel-order → {orderId,clientOrderId?} / buying-power → {currency,cashBuyingPower} / rankings → {rankedAt,rankings:[{rank,symbol,price:{lastPrice,basePrice,changeRate(소수비율)},tradingVolume,tradingAmount}]} / investor-trading → {nextUntil,records:[{date,individual,foreigner,institution{breakdown},otherCorporation}]} / create-conditional-order → {conditionalOrderId,clientOrderId?} / modify-conditional-order → {conditionalOrderId(새 ID)} / cancel-conditional-order → {canceled:true} / list-conditional-orders → {conditionalOrders:[...],nextCursor,hasNext} 등. 가격·수량은 문자열."
   },
   "tags": [
+    "토스증권",
+    "토스",
     "국내주식",
     "미국주식",
     "시세",

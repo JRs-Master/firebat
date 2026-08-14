@@ -5,6 +5,8 @@
   "version": "1.0.0",
   "description": "DART (전자공시시스템) opendart.fss.or.kr API — **한국 기업 공시·재무·지분 정보** 전용. 무료 API (1일 20,000회 제한, opendart.fss.or.kr 가입 후 키 발급).\n\n**사용 분담** (한투/키움/yfinance 와 보완):\n- DART 우선: 한국 기업 공시 (정기·주요사항·발행·지분), 분기/연간 재무 (단일/전체 계정 + 재무지표 + 다중회사 비교), 정기보고서 세부 (최대주주·임원·직원·보수·발행주식·자기주식·감사의견·채무증권·출자/공모자금), 주요사항보고서 (증자·감자·합병·분할·영업양수도·자기주식·전환사채/BW/EB·해외상장·소송·회생 등), 증권신고서, 대량보유 5%+, 임원·주요주주 소유보고, 배당, **종목코드 ↔ corp_code ↔ 회사명 매핑** (한국 전 종목 lookup). 전체 액션 = input.action 카탈로그 참조 (opendart 83 API 대부분 커버).\n- 한투/키움 우선: 시세·매수매도 주문·호가·실시간 시세·한국 특유 수급.\n- yfinance 우선: 글로벌 백테스트·재무 시계열·옵션.\n\n**종목 lookup utility** — action='lookup' query='회사명 or 종목코드 or corp_code' → 매핑 정보 반환. AI 가 종목코드 모를 때 한투/키움 호출 전에 dart lookup 먼저 권장. 신규 상장 (오늘 채비 0011T0 등) 도 cache miss 시 강제 refresh 로 자동 cover.\n\n**Sub-query 옵션** (큰 결과 cut, 토큰 절감):\n- limit: 최근/처음 N개 (default 10)\n- fields: 컬럼/필드 선택 (예: ['rcept_dt','report_nm','rcept_no'])\n- where: 조건 필터 (예: 'rcept_dt >= 2026-04-01')\n\n**한 호출 = 종목 1개**. 다종목이면 N개 EXECUTE step 분리.",
   "tags": [
+    "금융감독원",
+    "전자공시시스템",
     "공시",
     "전자공시",
     "DART",

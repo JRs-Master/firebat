@@ -264,11 +264,22 @@ node scripts/gen.mjs             # _apis.json → config + index
        건너뛰어 **모듈이 발견에서 통째로 사라졌다** — 실행·설정은 멀쩡해서 아무도 안 찾아볼 0.)
   2. 없으면 **`input` 스키마에서 자동 파생** — `input.properties.action.enum` 의 값마다 엔트리(설명 = `action.description` blob 조각, params = 나머지 input properties). **작은 모듈·usermod 는 별도 authoring 0** — 이미 있는 input 스키마가 곧 카탈로그.
   3. action enum 도 없으면(단일 목적 모듈) → 모듈 1엔트리(`get_action_schema` = input 스키마 통째).
-- `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). `envelope` = 호출 봉투 형태(flat vs `params` 중첩 — 모듈 방언). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
-- **`tags`** (선택, **string 배열**) = 모듈 선택 신호. 도구 설명에 append 되어 모델이 L1(모듈 선택)에서 고른다.
-  - **배열이어야 한다** — 문자열로 적으면 `core/utils/module_tags.rs` 가 WARN 을 남기고 무시한다(도구는 살아 있되 태그 없이 노출). `upstage-ie` 가 공백 구분 문자열로 선언해 태그가 통째로 사라진 채 오래 돌았다(2026-07-31).
-  - **모듈이 하는 일을 다 적어야 한다** — `technical-analysis` 는 태그 32개가 전부 파동·피보나치라 "백테스트"라는 낱말이 config 어디에도 없었고, 골든크로스 백테스트 요청이 그 모듈을 못 찾아 모델이 손계산으로 답했다(비용 모델 누락). **설명·태그가 곧 발견 표면**이다.
-- **description = 트리거만** ("인덱스 = 트리거"): 검색 결과에 파라미터 나열 금지(모델이 get 건너뛰고 추측). 무엇 한 줄 + 태그. 행동 재료(정확 파라미터·제약)는 `params`/`example` = get 계층.
+- `actions.json` 엔트리 = `{ id, name, description, domain?, tags?: [...], params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
+  - ⚠️ **`envelope` 은 폐기** (2026-08-15). 호출 봉투를 산문으로 적던 자리인데, `get_action_schema` 가 **조립된 `call`**(도구명 + `action` 채움 + `fill` = 없으면 거부되는 값 이름)을 내주므로 문장에서 모양을 유추할 이유가 없어졌다.
+
+- **⭐ 액션이 여럿이면 카탈로그를 쓴다 (신규 모듈 필수)**. 파생 폴백은 authoring 0 이 목적이지 품질 목표가 아니다 — 파생은 액션별 설명이 없어서 **`action.description` 덩어리에서 조각을 긁고**, 못 찾으면 모듈 설명 첫 절을 쓰고, 거기에 파라미터 enum 값을 덧붙인다. 액션이 많을수록 문서가 서로 닮아 **검색이 못 가른다**(2026-08-06 upbit: 캔들 일/주/월 세 액션이 같은 문서가 됐다). 2026-08-15 실측 = 35모듈 중 **18개가 카탈로그 없음**, 그중 dart 82액션·upbit-trade 33·kma-weather 28.
+  - 이미 `action.description` 에 `이름=설명 / 이름=설명` 형식으로 적어 뒀다면 그걸 **쪼개서** `actions.json` 으로 옮기면 된다(dart 는 82개 전부가 그 형식이라 커버리지 100%).
+
+- **`tags` 는 두 층이고 뜻이 다르다** (둘 다 **string 배열**, 둘 다 임베딩에 들어간다 — 2026-08-15)
+  - **모듈 `tags` = 뭐라고 불리는가** — `한투`·`한국투자`·`한국투자증권`·`kis`. 그 모듈의 모든 액션이 공유하므로 **모듈을 통째로** 질의 쪽으로 끌어당기고, 모듈 안에서는 아무것도 가르지 않는다.
+  - **액션 `tags` = 무엇을 하는가** — `국내주식주문`·`한국주식주문`·`주식주문`. 사용자가 실제로 쓸 말로 적는다. **질의를 한 행에 꽂는 유일한 재료**이고 모듈 태그가 못 하는 절반이다.
+  - **배열이어야 한다** — 문자열로 적으면 `core/utils/module_tags.rs` 가 WARN 을 남기고 무시한다. `upstage-ie` 가 공백 구분 문자열로 선언해 태그가 통째로 사라진 채 오래 돌았다(2026-07-31).
+  - **하는 일을 다 적어야 한다** — `technical-analysis` 는 태그 32개가 전부 파동·피보나치라 "백테스트"가 config 어디에도 없었고, 그 요청이 모듈을 못 찾아 모델이 손계산했다(2026-07-30).
+  - ⚠️ **일반어는 넣지 않는다** — `조회`·`검색` 같은 낱말은 그 모듈의 모든 액션을 아무 질의로나 끌어올린다. 태그는 변별이 목적이지 개수가 목적이 아니다.
+
+- **description = 임베딩되는 문서 그 자체** (2026-08-15). 액션의 `description` + 그 액션·모듈의 태그 + 이름, 이 셋만 벡터가 된다. **파라미터 설명은 임베딩에서 빠졌다** — 옛 색인은 `id+name+domain+description+파라미터 설명 전부`라 전 카탈로그 208,285자를 임베딩해 설명 64,146자를 담았고(한투 한 액션 1,471자 중 1,431자가 파라미터 산문), **길이가 벡터를 흐린다**(602자 문서가 389자 문서에 짐, 같은 날 실측).
+  - 그러니 **짧고 능력 밀도 높게**. 운용 지식(페이징 캡·정렬 어휘·벤더 함정)은 `params` 설명에 적는다 — `get_action_schema` 응답에 그대로 실려 **읽어야 할 시점에** 닿는다.
+  - 검색 결과 행에 파라미터를 나열하지 않는 원칙은 그대로다(모델이 get 을 건너뛰고 추측한다).
 - **usermod authoring**: input 스키마에 `action` enum + 각 액션 설명을 넣으면 → 등록 즉시 search_module_actions 로 발견(파생). per-action 정밀 params 를 원하면 `actionCatalog` + `actions.json` 선언. 둘 다 없어도 단일 엔트리로 발견은 된다.
 
 #### `cacheInputs` — 캐시 키를 모듈 입력으로 (호출 비용 제거, 2026-07-31)

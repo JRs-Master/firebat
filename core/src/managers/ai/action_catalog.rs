@@ -152,6 +152,21 @@ impl ModuleActionSource {
         // only fired after a rejected call it never made. Declarative — no per-module logic.
         let grounded = crate::utils::grounding::parse_grounding(config);
         let tag_words = module_tags(config);
+        // What the MODULE is, in one clause, on every one of its actions.
+        //
+        // Module-level capability used to reach the model through the resident list in the system
+        // prompt. That list is gone (its every line was a truncated copy of the tool description),
+        // and which module answers a request is decided by this ranking now — so a module whose
+        // purpose lives in its description and not in its tags would rank on nothing. The clause
+        // is the same one the list used to print, and it is already written to lead with capability
+        // nouns rather than a provider name (2026-08-13, five modules rewritten), which is exactly
+        // what makes it dense enough to repeat per action.
+        let module_clause = first_clause(
+            config
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default(),
+        );
         let actions: Vec<serde_json::Value> = if let Some(file) =
             decl.get("file").and_then(|v| v.as_str())
         {
@@ -213,10 +228,11 @@ impl ModuleActionSource {
                 //
                 // What used to be smuggled in through the concatenation now has its own place:
                 // the name rides `entry_text`, the id and the tags ride `vocab`.
-                let sem = if desc.trim().is_empty() {
-                    domain.to_string()
+                let own = if desc.trim().is_empty() { domain } else { desc };
+                let sem = if module_clause.is_empty() {
+                    own.to_string()
                 } else {
-                    desc.to_string()
+                    format!("{module_clause} {own}")
                 };
                 let approval = requires_approval_value(approval_decl, &id);
                 let mut extra = serde_json::json!({
