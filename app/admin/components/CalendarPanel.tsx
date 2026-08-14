@@ -372,7 +372,7 @@ export function CalendarPanel({
       if (!job) { await alertDialog({ title: '편집 불가', message: '해당 스케줄을 찾지 못했습니다 (이미 종료/삭제됨).' }); await fetchCron(); return; }
       setEditingCron(job);
     } catch (err: any) {
-      await alertDialog({ title: '오류', message: err?.message ?? String(err), danger: true });
+      await alertDialog({ title: t('common.error'), message: err?.message ?? String(err), danger: true });
     }
   };
 
