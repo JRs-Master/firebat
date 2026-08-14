@@ -4,6 +4,18 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "Playwright-based JS-rendering web scraper. Use for any page that cannot be fetched with static requests — dynamic JS pages, search engine results, etc.",
+  "tags": [
+    "웹스크래핑",
+    "스크래핑",
+    "브라우저",
+    "렌더링",
+    "자바스크립트페이지",
+    "동적페이지",
+    "검색결과수집",
+    "playwright",
+    "헤드리스브라우저",
+    "페이지캡처"
+  ],
   "aliases": [
     "브라우저",
     "스크래핑",

@@ -508,6 +508,41 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
+/// Every module declares `tags` — the words a question arrives in.
+///
+/// `tags` feeds the OOV gate, a string-membership test that runs BEFORE the embedding ranker: a
+/// token in no module's vocabulary is dropped from the query outright. Action ids are English and
+/// questions are Korean, so without tags a module is reachable only by whatever Korean happens to
+/// sit in an action description. Measured 2026-08-14: kakao-map had three routing actions and no
+/// tags, and "길찾기" — the word for exactly that — was dropped before ranking. Nine modules were
+/// in that state, dart with 82 actions among them.
+///
+/// The gate is membership, and tags do not join the per-row semantic text, so a long list costs
+/// nothing and blurs nothing. There is no reason for a module to have none.
+#[test]
+fn every_module_declares_the_words_its_questions_arrive_in() {
+    let mut missing = Vec::new();
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        let n = config
+            .get("tags")
+            .and_then(|t| t.as_array())
+            .map(|a| a.iter().filter(|t| t.as_str().is_some_and(|s| !s.trim().is_empty())).count())
+            .unwrap_or(0);
+        if n == 0 {
+            missing.push(name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "these modules declare no `tags`, so a question worded in Korean loses those words at the \
+         OOV gate before any ranking happens: {missing:?}"
+    );
+}
+
 /// A catalog file's entries must name actions the module can actually run — the inline form of
 /// this is checked above, and the file form is where the big brokers live (200+ actions each),
 /// which is exactly where nobody would notice a stale id.

@@ -4,6 +4,22 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "Built-in Firebat calendar (캘린더) — RECORDS dates/events only; it does NOT execute anything. For something that must run automatically at a time, use schedule_task (cron), not this. JSONL file (data/calendar/events.jsonl), no external sync (by design). Chains with other sysmods — link a calendar event to a cron job via linkedJobId for two-way tracking.",
+  "tags": [
+    "캘린더",
+    "달력",
+    "일정",
+    "일정관리",
+    "약속",
+    "기념일",
+    "스케줄기록",
+    "예정",
+    "일정추가",
+    "일정조회",
+    "일정삭제",
+    "다가오는일정",
+    "calendar",
+    "event"
+  ],
   "aliases": [
     "캘린더",
     "일정"

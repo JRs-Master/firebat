@@ -4,6 +4,21 @@
   "scope": "system",
   "version": "2.0.0",
   "description": "Web scraper based on Firecrawl API v1. Four actions: scrape (single URL), crawl (entire site), map (collect URL list), extract (LLM-structured data extraction). Supports JS rendering, browser actions (click/write/press/scroll/wait/screenshot), LLM JSON extraction, and location-based scraping.",
+  "tags": [
+    "웹스크래핑",
+    "스크래핑",
+    "크롤링",
+    "웹크롤러",
+    "사이트수집",
+    "URL수집",
+    "사이트맵",
+    "본문추출",
+    "페이지수집",
+    "구조화추출",
+    "firecrawl",
+    "scrape",
+    "crawl"
+  ],
   "aliases": [
     "파이어크롤",
     "Firecrawl"
