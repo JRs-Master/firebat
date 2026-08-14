@@ -13,9 +13,18 @@ use firebat_core::ports::{
     ToolCall, ToolDefinition, ToolResult,
 };
 
-/// 스트림 청크 간 최대 무데이터 허용 — 이걸 넘기면 행(hang)으로 판정.
+/// 최대 무진행 허용 — 이걸 넘기면 행(hang)으로 판정. 두 국면 모두에 건다:
+/// 응답 헤더 대기(`send()`)와 스트림 청크 간격.
+///
 /// 정상 라운드는 reasoning 토큰이 수 초 안에 흐르기 시작한다(라이브 검증) — 180s 는
 /// 프롬프트 큐잉·첫 토큰 지연의 넉넉한 상한이면서, 옛 비스트리밍의 "행에 10분 낭비"를 없앤다.
+///
+/// 헤더 국면에도 거는 이유(2026-08-14 실측): 스트림 클라이언트는 total timeout 이 **없고**
+/// (긴 생성을 중간에 자르지 않으려고 의도된 것) `connect_timeout` 은 TCP 연결까지만 덮는다.
+/// 그래서 서버가 연결만 받고 응답하지 않으면 `send()` 가 영원히 매달렸다 — 청크 간 타임아웃은
+/// 바디 순회가 시작된 **뒤**에만 도니 이 국면을 지키는 것이 아무것도 없었다. 크론 agent 턴
+/// 하나가 그렇게 40분간 로그 한 줄 없이 멈춰 있었다(에러도 종료도 없음). 헤더에 상한을 두어도
+/// 긴 생성은 안전하다 — 생성은 헤더가 도착한 뒤 바디에서 일어난다.
 const STREAM_IDLE_TIMEOUT_SECS: u64 = 180;
 
 pub struct OpenAiChatHandler;
@@ -399,13 +408,31 @@ impl OpenAiChatHandler {
 
         body["stream"] = serde_json::Value::Bool(true);
         body["stream_options"] = serde_json::json!({ "include_usage": true });
-        let response = llm_stream_client()
-            .post(&config.endpoint)
-            .bearer_auth(key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(map_reqwest_error)?;
+        // The headers phase gets the same no-progress bound as the chunk phase — see the constant.
+        // Without it this await had nothing guarding it at all.
+        let response = match tokio::time::timeout(
+            std::time::Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS),
+            llm_stream_client()
+                .post(&config.endpoint)
+                .bearer_auth(key)
+                .json(&body)
+                .send(),
+        )
+        .await
+        {
+            Ok(r) => r.map_err(map_reqwest_error)?,
+            Err(_) => {
+                let detail = format!(
+                    "no response headers for {STREAM_IDLE_TIMEOUT_SECS}s — request never started"
+                );
+                tracing::warn!(target: "llm", error = %detail, "LLM HTTP request failed");
+                return Err(firebat_core::i18n::t(
+                    "core.error.llm.http_failed",
+                    None,
+                    &[("detail", &detail)],
+                ));
+            }
+        };
         let status = response.status();
         let is_sse = response
             .headers()
@@ -415,7 +442,27 @@ impl OpenAiChatHandler {
             .unwrap_or(false);
         if !status.is_success() || !is_sse {
             // 에러 바디 또는 스트림 미지원 호환 서버(JSON 통짜) — 그대로 파싱해 기존 경로로.
-            let text = response.text().await.map_err(map_reqwest_error)?;
+            // 같은 클라이언트라 total timeout 이 없다: 헤더만 보내고 바디를 안 닫는 서버에서
+            // 이 await 도 무한정 매달린다. 헤더 국면과 같은 상한.
+            let text = match tokio::time::timeout(
+                std::time::Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS),
+                response.text(),
+            )
+            .await
+            {
+                Ok(t) => t.map_err(map_reqwest_error)?,
+                Err(_) => {
+                    let detail = format!(
+                        "response body did not finish in {STREAM_IDLE_TIMEOUT_SECS}s"
+                    );
+                    tracing::warn!(target: "llm", error = %detail, "LLM HTTP request failed");
+                    return Err(firebat_core::i18n::t(
+                        "core.error.llm.http_failed",
+                        None,
+                        &[("detail", &detail)],
+                    ));
+                }
+            };
             let json = serde_json::from_str(&text)
                 .unwrap_or_else(|_| serde_json::json!({ "raw": text }));
             return Ok((status, json));
