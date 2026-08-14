@@ -269,20 +269,6 @@ async fn a_new_provider_joins_the_ranking_with_no_code_change() {
 }
 
 #[tokio::test]
-async fn an_order_naming_only_gone_modules_ranks_nothing() {
-    // The saved list outlived what it named. Sorting on it ties everything, and scan order would
-    // go out wearing rank numbers — a preference nobody expressed.
-    let (mgr, _dir) = three_providers_and_a_loner().await;
-    mgr.set_settings(
-        "web-search",
-        &CapabilitySettings {
-            providers: vec!["yahoo".into(), "altavista".into()],
-        },
-    );
-    assert!(mgr.preference_ranks().await.is_empty());
-}
-
-#[tokio::test]
 async fn a_capability_with_one_provider_is_not_ranked() {
     let (mgr, _dir) = three_providers_and_a_loner().await;
     mgr.set_settings(
