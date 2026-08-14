@@ -1238,15 +1238,35 @@ impl ModuleActionCatalog {
                     )
                 });
 
-            // Guarantee, then truncate: the named module keeps up to half the rows even when the
-            // ranking would have pushed them past the cut, and the rest is the wide result.
+            // A floor, never a ceiling. The ranking decides the page; the named module is only
+            // topped up when the page would have shown fewer than its share of it. Taking a fixed
+            // count from the named module instead would punish the case scoping is FOR — a
+            // correctly scoped query whose module owns the top rows would have had them replaced
+            // by weaker rows from elsewhere.
             let quota = (limit / GUARANTEE_SHARE).max(1);
-            let (named, others): (Vec<_>, Vec<_>) = rows
-                .into_iter()
-                .partition(|r| r.get("module").and_then(|v| v.as_str()) == Some(m));
-            let take_named = quota.min(named.len());
-            let mut kept: Vec<serde_json::Value> = named.into_iter().take(take_named).collect();
-            kept.extend(others.into_iter().take(limit.saturating_sub(kept.len())));
+            let is_named =
+                |r: &serde_json::Value| r.get("module").and_then(|v| v.as_str()) == Some(m);
+            let mut kept: Vec<serde_json::Value> = rows.iter().take(limit).cloned().collect();
+            let have = kept.iter().filter(|r| is_named(r)).count();
+            if have < quota {
+                // The named module's next-best rows, from beyond the page.
+                let promote: Vec<serde_json::Value> = rows
+                    .iter()
+                    .filter(|r| is_named(r))
+                    .skip(have)
+                    .take(quota - have)
+                    .cloned()
+                    .collect();
+                for row in promote {
+                    // Room comes from the weakest row that is not the named module's.
+                    match kept.iter().rposition(|r| !is_named(r)) {
+                        Some(i) => {
+                            kept[i] = row;
+                        }
+                        None => kept.push(row),
+                    }
+                }
+            }
             // Back into rank order so the numbers on screen mean what they say.
             kept.sort_by(|a, b| {
                 score_of(b)
