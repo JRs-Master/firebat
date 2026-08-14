@@ -1895,8 +1895,16 @@ impl AiManager {
             return;
         };
         let owner = ai_opts.owner.as_deref().unwrap_or("admin");
+        // `content` is the answer body; `error` is the badge. They used to be the same string, so
+        // the assistant's answer WAS the vendor's raw JSON — measured 2026-08-14: two 429 turns
+        // stored `content` = `Solar Pro 4 … 429 Too Many Requests: {"error":{"code":…}}`. Live it
+        // looked fine (the client draws its own badge), and on reload the blob rendered as the
+        // reply. It also rode into the next turn's history as what the assistant had said.
+        //
+        // The detail still exists in full, in `error`, which is where a badge and a readout look.
+        let msg_text = crate::i18n::t("core.error.ai.turn_aborted", None, &[]);
         let mut msg = serde_json::json!({
-            "id": aid, "role": "assistant", "content": err, "error": err,
+            "id": aid, "role": "assistant", "content": msg_text, "error": err,
             "createdAt": crate::utils::time::now_ms(),
         });
         if !reasoning_trace.is_empty() {

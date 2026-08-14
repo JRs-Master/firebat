@@ -211,6 +211,7 @@
       "exhausted_done_prefix": "Work actually completed this turn:",
       "turn_exhausted_cron": "The tool-call budget was exhausted before the task finished (the final action never ran).",
       "empty_final": "Response generation failed (the model returned no content). Please try again.",
+      "turn_aborted": "The task stopped on an error. See the error badge for details.",
       "exhausted_empty_final": "⚠️ The tool-call budget ran out and the final write-up also failed. Only the list of work actually executed this turn is shown below — please retry with a slightly narrower question.",
       "ungrounded_final": "⚠️ The tool-call limit force-ended this task. No action was actually executed in this turn, so the content below may include unexecuted or unverified information.",
       "partial_grounded_final": "⚠️ The tool-call limit force-ended this task. Only some lookups were executed this turn, so the content below may include unexecuted or unverified information.",
