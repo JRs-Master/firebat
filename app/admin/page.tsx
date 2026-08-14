@@ -933,6 +933,7 @@ function ActionTags({ actions, steps, toolResults }: { actions: string[]; steps?
 
 // ─── 에러 접이식 박스 ──────────────────────────────────────────────────────────
 function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
+  const t = useTranslations();
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col gap-1 w-fit max-w-full">
@@ -941,7 +942,7 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
         onClick={() => setOpen(!open)}
       >
         <AlertTriangle size={10} className="text-red-400 shrink-0" />
-        <span>{label || '오류 발생'}</span>
+        <span>{label || t('common.error')}</span>
       </div>
       {open && (
         <div className="px-3 py-2 bg-red-50/50 border border-red-100 rounded-md text-[12px] font-mono text-red-600 leading-relaxed break-all">
