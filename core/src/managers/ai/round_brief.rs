@@ -168,12 +168,33 @@ impl RoundBrief {
         if !self.tools_open || self.schemas_ready.is_empty() {
             return None;
         }
-        let mut s = String::from(
-            "Forms this conversation already holds — these actions are callable right now, with \
-             no further get_action_schema round:",
-        );
-        for (module, actions) in &self.schemas_ready {
+        // Components ride the same store under a reserved name; they are the other half of the
+        // same ladder and belong in the same sentence, worded for what they are — a component is
+        // written into the answer, not called.
+        let (components, modules): (Vec<_>, Vec<_>) = self
+            .schemas_ready
+            .iter()
+            .partition(|(m, _)| m == crate::utils::conversation_scope::COMPONENT_PSEUDO_MODULE);
+        let mut s = String::new();
+        if !modules.is_empty() {
+            s.push_str(
+                "Forms this conversation already holds — these actions are callable right now, \
+                 with no further get_action_schema round:",
+            );
+        }
+        for (module, actions) in &modules {
             let _ = write!(s, "\n  {}: {}", module, actions.join(", "));
+        }
+        for (_, names) in &components {
+            if !s.is_empty() {
+                s.push('\n');
+            }
+            let _ = write!(
+                s,
+                "Component props already fetched — these can go straight into a \
+                 ```firebat-render``` fence: {}",
+                names.join(", ")
+            );
         }
         if self.schema_window_min > 0 {
             let _ = write!(
@@ -328,6 +349,39 @@ mod tests {
         assert!(out.contains("docs: make_xlsx, make_pdf"), "{out}");
         assert!(out.contains("tago: subway-stations"), "{out}");
         assert!(out.contains("30 minutes"), "{out}");
+    }
+
+    #[test]
+    fn component_schemas_are_reported_beside_action_forms() {
+        // The two halves of one ladder. Only the tool half used to be reported, so a model that
+        // had already fetched a component's props had no way to know it still held them.
+        let mut b = base();
+        b.schemas_ready = vec![
+            (
+                crate::utils::conversation_scope::COMPONENT_PSEUDO_MODULE.to_string(),
+                vec!["stock_chart".into(), "table".into()],
+            ),
+            ("docs".into(), vec!["make_xlsx".into()]),
+        ];
+        let out = b.render().expect("has content");
+        assert!(out.contains("docs: make_xlsx"), "{out}");
+        assert!(out.contains("stock_chart, table"), "{out}");
+        // Worded for what a component is — written into the answer, not called.
+        assert!(out.contains("firebat-render"), "{out}");
+        // The pseudo-module is bookkeeping; it never reaches the model.
+        assert!(!out.contains("render-component:"), "{out}");
+    }
+
+    #[test]
+    fn components_alone_still_produce_the_line() {
+        let mut b = base();
+        b.schemas_ready = vec![(
+            crate::utils::conversation_scope::COMPONENT_PSEUDO_MODULE.to_string(),
+            vec!["quiz".into()],
+        )];
+        let out = b.render().expect("has content");
+        assert!(out.contains("quiz"), "{out}");
+        assert!(!out.contains("get_action_schema"), "{out}");
     }
 
     #[test]

@@ -2295,13 +2295,15 @@ impl AiManager {
         // 옛 TS `finalSystemPrompt = planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection`
         // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미저장 — 후속 batch.
 
-        // ── Intent Agent S0+L1 — TurnBrief (shortlist 계산 + 후보 주입) ──
-        // 쿼리를 액션/스킬 카탈로그와 E5 매칭한 shortlist. 용도 2:
-        // (1) L1-lite 주입 — <LIKELY_TOOLS> 로 시스템 프롬프트에 후보 제시(세계 좁히기 아님,
-        //     탈출구 유지 — 후보가 틀리면 검색으로). 2026-07-11 실측 3연속: 발견에 검색 캡을
-        //     전부 태우고 정답을 쥔 채 소진 — 후보 선주입이 발견 라운드 자체를 줄이는 구조 해법.
-        // (2) S0 섀도우 — 턴 종료 시 실제 디스패치와 대조해 recall 을 journal(intent_shadow) 기록.
-        // 비용 = 쿼리 E5 임베딩 2회(로컬, ms 단위). 카탈로그 미배선(테스트 등) = skip.
+        // ── Intent Agent S0 — TurnBrief shortlist (측정 전용) ──
+        // 쿼리를 액션/스킬 카탈로그와 매칭한 shortlist. 용도는 이제 하나 —
+        // **S0 섀도우**: 턴 종료 시 실제 디스패치와 대조해 recall 을 journal(intent_shadow) 에
+        // 기록한다. 옛 용도였던 `<LIKELY_TOOLS>` 선주입은 제거됐다(2026-08-14) — 218턴 측정에서
+        // 발견 라운드를 아낀 것이 17턴뿐이었고, shortlist 가 맞은 58턴 중 41턴은 모델이 어차피
+        // 다시 검색했다. 이유는 정확도가 아니라 지시 충돌이었다: 발견 게이트는 사다리를 밟으라
+        // 하고 선주입은 건너뛰라 했으며, 모델은 게이트 쪽을 따랐다. 상세 = 주입 지점의 주석.
+        // 계측은 남긴다 — 제거가 옳았는지도 같은 수치로 본다.
+        // 비용 = 쿼리 임베딩 2회. 카탈로그 미배선(테스트 등) = skip.
         let mut shadow_actions: Vec<(String, f32)> = Vec::new(); // "module:action"
         let mut shadow_skills: Vec<(String, f32)> = Vec::new(); // slug
         // 질의 위생 사실 — shortlist 가 실제로 무엇을 보고 뽑혔나. 이 사실 없이 recall 을 세면
@@ -4448,6 +4450,35 @@ impl AiManager {
                                     &tool_scope,
                                     m,
                                     a,
+                                );
+                            }
+                        }
+                        // The component half of the same ladder. `search_components` →
+                        // `get_component_schema` → fence mirrors search → schema → call, but only
+                        // the tool half was ever recorded, so the round brief could say which
+                        // action forms the conversation holds and nothing at all about component
+                        // props. The model then re-fetched a schema it already had, or wrote the
+                        // props from memory — measured repeatedly (chart column mismatch, the
+                        // `{name, type:"component"}` block shape).
+                        //
+                        // Recorded under a reserved pseudo-module so the existing store, its
+                        // window and its eviction all apply unchanged. No gate reads it: a fence
+                        // is emitted inside the answer, and rejecting an answer costs a rewrite
+                        // round, which is a poor trade for a mistake that has no side effect.
+                        // This is for publishing state, not for refusing.
+                        if effective_call.name == "get_component_schema" {
+                            let name = result
+                                .result
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .or_else(|| {
+                                    effective_call.arguments.get("name").and_then(|v| v.as_str())
+                                });
+                            if let Some(n) = name.map(str::trim).filter(|s| !s.is_empty()) {
+                                crate::utils::conversation_scope::record_schema(
+                                    &tool_scope,
+                                    crate::utils::conversation_scope::COMPONENT_PSEUDO_MODULE,
+                                    n,
                                 );
                             }
                         }

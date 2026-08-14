@@ -111,6 +111,18 @@ fn store() -> MutexGuard<'static, HashMap<String, ScopeState>> {
         .unwrap_or_else(|e| e.into_inner())
 }
 
+/// The name component schemas are filed under.
+///
+/// Components are the other half of the same ladder (`search_components` →
+/// `get_component_schema` → fence), and what a conversation has fetched is the same kind of fact
+/// for both. Filing them here rather than in a second store means one window, one eviction, one
+/// reader — the round brief lists both from `discovered_all`.
+///
+/// A reserved name rather than a real module: no module is called this, so a component entry can
+/// never collide with `module:action`, and the discovery gate — which only ever asks about a
+/// module the model named — never sees it.
+pub const COMPONENT_PSEUDO_MODULE: &str = "render-component";
+
 /// Canonical module name for the discovery gate. `get_action_schema` accepts dialects the gate's
 /// raw-string keys never matched — a schema fetched as `sysmod_kma_weather` left the following
 /// call on `kma-weather` rejected four times in one measured cron turn (2026-08-11). Record and
