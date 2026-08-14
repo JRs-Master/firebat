@@ -227,6 +227,41 @@ use firebat_core::utils::render_map::render_tool_map;
 
 pub struct CodexCliHandler;
 
+/// Which channel each `agent_message` belongs to — the reply, or the thinking panel.
+///
+/// Codex sends two kinds of message in one turn: a "…하겠습니다" preamble before it calls tools,
+/// and the answer. Its internal rollout separates them with `phase` (`commentary` /
+/// `final_answer`), but **the `--json` stream's item is `{id, text, type}` — `phase` never
+/// arrives** (codex-cli 0.145, measured 2026-08-15). A parser keyed on that field therefore
+/// never fires, and the preamble is stored in front of the answer: on screen, and in the next
+/// turn's history as something the assistant said.
+///
+/// What the stream does give is order: **the last message is the answer, every earlier one is a
+/// preamble.** So one message is held back, and the arrival of the next one settles what the
+/// held one was. The `phase` check stays: if the stream ever carries the field, the split
+/// happens on the spot instead of waiting for the next message.
+#[derive(Default)]
+struct AgentMessageChannel {
+    held: Option<String>,
+}
+
+impl AgentMessageChannel {
+    /// Takes one `agent_message`. Returns the text now known to be a preamble, if any.
+    fn accept(&mut self, text: &str, phase: Option<&str>) -> Option<String> {
+        if phase == Some("commentary") {
+            return Some(text.to_string());
+        }
+        self.held.replace(text.to_string())
+    }
+
+    /// EOF — whatever is still held was the turn's last message, so it is the answer. A turn
+    /// that produced only a preamble hands that one over too: a stray sentence beats a blank
+    /// reply.
+    fn finish(&mut self) -> Option<String> {
+        self.held.take()
+    }
+}
+
 /// CODEX_HOME base directory — **on disk, not in `/tmp`**.
 ///
 /// `/tmp` on the production box is tmpfs: the rollout logs were consuming 179 MB of a 1 GB server's
@@ -540,6 +575,7 @@ impl CodexCliHandler {
 
         let mut outcome = CliRunOutcome::default();
         let mut text_parts: Vec<String> = Vec::new();
+        let mut agent_channel = AgentMessageChannel::default();
         let mut errored = false;
         let mut error_msg: Option<String> = None;
         // CLI 네이티브 계획 도구(update_plan → todo_list 아이템)는 turn 당 한 번만 "계획 정리" 표시로 통합.
@@ -631,24 +667,19 @@ impl CodexCliHandler {
                 "item.started" | "item.completed" | "item.updated" => {
                     let Some(item) = ev.get("item") else { continue };
                     let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    // agent_message (completed 만) — 신버전 codex 는 `phase` 로 채널 구분:
-                    // commentary = 작업 중 중간 코멘트("…하겠습니다") → 답변이 아니라 생각중 채널.
-                    // 옛 파서가 둘 다 답변에 합쳐 같은 말이 두 번 나오던 버그(2026-07-15 실측:
-                    // "정리할게요"+"정리했습니다"). phase 부재(구버전) = 최종 답변으로 간주.
+                    // agent_message (completed 만) — 채널 판정은 AgentMessageChannel 이 소유한다.
                     if item_type == "agent_message" && ev_type == "item.completed" {
                         if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
-                            let is_commentary =
-                                item.get("phase").and_then(|v| v.as_str()) == Some("commentary");
-                            if is_commentary {
+                            let phase = item.get("phase").and_then(|v| v.as_str());
+                            if let Some(said) = agent_channel.accept(t, phase) {
                                 if !outcome.thinking_acc.is_empty() {
                                     outcome.thinking_acc.push('\n');
                                 }
-                                outcome.thinking_acc.push_str(t);
+                                outcome.thinking_acc.push_str(&said);
                                 if let Some(tx) = emit {
-                                    let _ = tx.try_send(LlmStreamEvent::Thinking(format!("{t}\n")));
+                                    let _ =
+                                        tx.try_send(LlmStreamEvent::Thinking(format!("{said}\n")));
                                 }
-                            } else {
-                                text_parts.push(t.to_string());
                             }
                         }
                         continue;
@@ -897,6 +928,9 @@ impl CodexCliHandler {
         if errored {
             return Err(error_msg.unwrap_or_else(|| "Codex CLI 알 수 없는 에러".to_string()));
         }
+        if let Some(final_message) = agent_channel.finish() {
+            text_parts.push(final_message);
+        }
         // 각 조각 = 완결된 agent_message 한 통(item.completed 단위)이지 스트림 파편이 아니다.
         // 빈 문자열로 이으면 도구 앞 메시지와 최종 답변이 "…확인해 보겠습니다.부산에는" 처럼
         // 문장 경계 없이 붙는다(2026-07-27 실측). 메시지 사이는 문단으로 띄운다.
@@ -1071,6 +1105,61 @@ mod tests {
     fn map_thinking_none_returns_none() {
         assert_eq!(CodexCliHandler::map_thinking_to_codex(Some("none")), None);
         assert_eq!(CodexCliHandler::map_thinking_to_codex(None), None);
+    }
+
+    /// Drives the channel the way the run loop does and returns (reply, thinking).
+    fn split(messages: &[(&str, Option<&str>)]) -> (Vec<String>, Vec<String>) {
+        let mut ch = AgentMessageChannel::default();
+        let mut thinking = Vec::new();
+        for (text, phase) in messages {
+            if let Some(said) = ch.accept(text, *phase) {
+                thinking.push(said);
+            }
+        }
+        (ch.finish().into_iter().collect(), thinking)
+    }
+
+    #[test]
+    fn stream_without_phase_answers_with_the_last_message_only() {
+        // The shape codex-cli 0.145 actually emits: item = {id, text, type}, no phase.
+        let (reply, thinking) = split(&[
+            ("서울역과 코엑스의 위치를 확인하겠습니다.", None),
+            ("가장 빠른 경로는 1호선과 9호선입니다.", None),
+        ]);
+        assert_eq!(reply, vec!["가장 빠른 경로는 1호선과 9호선입니다."]);
+        assert_eq!(thinking, vec!["서울역과 코엑스의 위치를 확인하겠습니다."]);
+    }
+
+    #[test]
+    fn several_preambles_all_land_in_thinking() {
+        let (reply, thinking) = split(&[("먼저 찾겠습니다.", None), ("이어서 계산하겠습니다.", None), ("답입니다.", None)]);
+        assert_eq!(reply, vec!["답입니다."]);
+        assert_eq!(thinking, vec!["먼저 찾겠습니다.", "이어서 계산하겠습니다."]);
+    }
+
+    #[test]
+    fn phase_splits_on_the_spot_when_the_stream_carries_it() {
+        let (reply, thinking) = split(&[
+            ("확인하겠습니다.", Some("commentary")),
+            ("답입니다.", Some("final_answer")),
+        ]);
+        assert_eq!(reply, vec!["답입니다."]);
+        assert_eq!(thinking, vec!["확인하겠습니다."]);
+    }
+
+    #[test]
+    fn a_turn_with_one_message_answers_with_it() {
+        let (reply, thinking) = split(&[("부산은 맑습니다.", None)]);
+        assert_eq!(reply, vec!["부산은 맑습니다."]);
+        assert!(thinking.is_empty());
+    }
+
+    #[test]
+    fn a_turn_that_only_got_a_preamble_still_shows_it() {
+        // Aborted before the answer — a stray sentence beats a blank reply.
+        let (reply, thinking) = split(&[("조회하겠습니다.", None)]);
+        assert_eq!(reply, vec!["조회하겠습니다."]);
+        assert!(thinking.is_empty());
     }
 
     #[test]
