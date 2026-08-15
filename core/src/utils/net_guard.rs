@@ -15,6 +15,15 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::OnceLock;
 
+/// Default `User-Agent`. reqwest sends **no** UA unless one is set, and a request with no UA is
+/// what a scraper looks like: dart.fss.or.kr answers curl with 200 and answers us with a reset
+/// (2026-08-15 — five disclosure fetches died as `error sending request`, and the model, having no
+/// cause to act on, abandoned the web path). Every real client identifies itself, so we do too —
+/// one default on the shared client instead of a per-site header, since the next site that does
+/// this would be another silent failure.
+const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+     (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
 /// HTTP client for AI-controlled fetches (`network_request` tool, media referenceImage):
 /// re-validates EVERY redirect hop with `is_blocked_fetch_url`. The call-site guard only sees
 /// the initial URL — with the shared client's default policy a `302 → http://169.254.169.254/`
@@ -24,6 +33,7 @@ pub fn guarded_http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
+            .user_agent(DEFAULT_USER_AGENT)
             .timeout(std::time::Duration::from_secs(120))
             .pool_max_idle_per_host(8)
             .redirect(reqwest::redirect::Policy::custom(|attempt| {
