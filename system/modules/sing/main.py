@@ -23,7 +23,10 @@ import sys
 
 import numpy as np
 
-SR = 24000  # mono, everything resampled here on load
+# 24000 cut everything above 12 kHz — cymbals, attack transients and the top of a synth patch all
+# live up there, and the patches below are tuned by ear. Doubling costs render time and file size,
+# both of which are a spike per render rather than anything resident.
+SR = 44100  # mono, everything resampled here on load
 
 # ── score ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -87,7 +90,7 @@ def parse_score(score):
         root = note_freq(c.get("root")) if isinstance(c, dict) else None
         beats = float(c.get("beats") or 4) if isinstance(c, dict) else 0
         if root and beats > 0:
-            chords.append((root, beats))
+            chords.append((root, beats, str(c.get("quality") or "").strip()))
     style = str(score.get("style") or "trot").strip().lower()
     return spb, events, chords, style, None
 
@@ -121,20 +124,73 @@ def hat(dur=0.06):
     return np.diff(noise, prepend=0.0) * _env(n, 0.02) * 0.6  # differentiation ≈ high-pass
 
 
-def bass_note(freq, dur):
+# ── the synth backend ─────────────────────────────────────────────────────────────────────────
+#
+# What separates an instrument from a beep is mostly that its BRIGHTNESS falls while the note
+# sounds: high harmonics die before low ones. A synthesiser normally gets that from a filter with
+# its own envelope, which is a per-sample recursion — millions of Python iterations for one
+# render. Giving each harmonic its own decay rate produces the same falling brightness and stays
+# vectorised, so that is what runs here.
+#
+# The rest is the short list that buys the most identity per line: a noise transient at the attack
+# (the first few ms are half of what a listener recognises), two oscillators detuned against each
+# other (thickness), and velocity opening the timbre rather than only the volume — a harder note
+# is a brighter note, not the same note louder.
+#
+# This is the electronic half of the instrument world and it is genuinely reachable: an organ, a
+# synth bass, a pad ARE algorithms, which is why a trot backing track can live here. A saxophone
+# cannot — its identity is reed noise and body formants no harmonic recipe reaches. That is the
+# soundfont backend's half, and the two are a division of labour rather than a choice.
+
+PATCHES = {
+    # harm = harmonic amplitudes · hdecay/hslope = how fast brightness falls · detune = 2nd osc
+    # offset (× f0) · noise = attack transient level · atk/rel = amplitude envelope seconds
+    "melody": {"harm": [1.0, 0.55, 0.30, 0.16, 0.08], "hdecay": 1.6, "hslope": 1.35,
+               "detune": 0.004, "noise": 0.06, "atk": 0.012, "rel": 0.10, "gain": 0.34},
+    "chord":  {"harm": [1.0, 0.40, 0.16, 0.07], "hdecay": 0.9, "hslope": 1.2,
+               "detune": 0.010, "noise": 0.0, "atk": 0.035, "rel": 0.22, "gain": 0.15},
+    "bass":   {"harm": [1.0, 0.62, 0.28, 0.12], "hdecay": 2.4, "hslope": 1.5,
+               "detune": 0.0, "noise": 0.03, "atk": 0.006, "rel": 0.09, "gain": 0.50},
+}
+
+
+def synth_note(freq, dur, patch="bass", vel=0.8):
+    """One note of `patch` — float array of `dur` seconds, peak-normalised to the patch gain."""
+    p = PATCHES.get(patch, PATCHES["bass"])
     n = max(1, int(SR * dur))
     t = np.arange(n) / SR
-    # Three harmonics of a saw-ish tone — enough body without aliasing games.
-    x = (np.sin(2 * np.pi * freq * t)
-         + 0.5 * np.sin(2 * np.pi * 2 * freq * t)
-         + 0.25 * np.sin(2 * np.pi * 3 * freq * t))
-    a = int(SR * 0.01)
+    x = np.zeros(n)
+    # Velocity opens the timbre: the upper harmonics are the ones it reaches.
+    bright = 0.55 + 0.45 * float(np.clip(vel, 0.0, 1.0))
+    for k, amp in enumerate(p["harm"], start=1):
+        f = freq * k
+        if f > SR * 0.45:  # past Nyquist — this harmonic would alias back as a wrong pitch
+            break
+        a = amp * (bright ** (k - 1))
+        if a < 0.005:
+            continue
+        # The brightness sweep, as a per-harmonic decay instead of a filter recursion.
+        env_k = np.exp(-t * p["hdecay"] * (k ** p["hslope"]))
+        wave = np.sin(2 * np.pi * f * t)
+        if p["detune"]:
+            wave = 0.5 * (wave + np.sin(2 * np.pi * (f + p["detune"] * freq * k) * t))
+        x += a * env_k * wave
+    if p["noise"]:
+        m = min(n, int(SR * 0.012))
+        if m > 1:
+            # Fixed seed: the same score has to render the same bytes.
+            burst = np.random.default_rng(int(freq)).standard_normal(m)
+            burst = np.convolve(burst, np.ones(8) / 8.0, "same")
+            x[:m] += burst * p["noise"] * np.linspace(1.0, 0.0, m)
     env = np.ones(n)
-    env[:a] = np.linspace(0, 1, a) if a else 1
-    r = int(SR * min(0.08, dur * 0.3))
-    if r:
+    a = min(n, int(SR * p["atk"]))
+    if a > 1:
+        env[:a] = np.linspace(0, 1, a)
+    r = min(max(0, n - a), int(SR * min(p["rel"], dur * 0.35)))
+    if r > 1:
         env[-r:] = np.linspace(1, 0, r)
-    return x * env * 0.5
+    peak = float(np.max(np.abs(x))) or 1.0
+    return x * env * (p["gain"] / peak)
 
 
 # Per-style one-bar (4 beats) pattern: (instrument, beat offset).
@@ -159,9 +215,6 @@ DRUM_PATTERNS = {
 # and not a pitch.
 
 GM_PROGRAM = {"melody": 65, "chord": 4, "bass": 33}  # alto sax / e.piano / finger bass
-# What the numpy renderer can actually voice. It has one tone generator, so the difference between
-# parts here is register and level, not timbre — that is exactly the gap a soundfont closes.
-NUMPY_GAIN = {"melody": 0.34, "chord": 0.16, "bass": 0.5}
 
 
 def midi_number(name):
@@ -174,14 +227,24 @@ def freq_of_midi(m):
     return 440.0 * (2.0 ** ((m - 69) / 12.0))
 
 
-def chord_voicing(root_midi):
-    """Root position triad above the written root, plus the bass an octave below it.
+# Semitones above the root. An unknown spelling plays major rather than failing the render: a
+# wrong third is audible and fixable, a refused chord is silence the caller has to debug.
+CHORD_QUALITY = {
+    "": [0, 4, 7], "maj": [0, 4, 7], "major": [0, 4, 7],
+    "m": [0, 3, 7], "min": [0, 3, 7], "minor": [0, 3, 7],
+    "7": [0, 4, 7, 10], "dom7": [0, 4, 7, 10], "maj7": [0, 4, 7, 11],
+    "m7": [0, 3, 7, 10], "min7": [0, 3, 7, 10],
+    "dim": [0, 3, 6], "aug": [0, 4, 8],
+    "sus2": [0, 2, 7], "sus4": [0, 5, 7],
+    "6": [0, 4, 7, 9], "m6": [0, 3, 7, 9],
+}
 
-    A major triad because the score declares a root and nothing else; guessing minor from a
-    key we were not told would be worse than a plain reading the caller can override once
-    `chords` learns a quality field.
-    """
-    return [root_midi, root_midi + 4, root_midi + 7]
+
+def chord_voicing(root_midi, quality=""):
+    """Root-position chord above the written root. Trot lives on minor and dominant sevenths, so
+    a score that could only say "root" was stuck in major whatever the song actually was."""
+    semis = CHORD_QUALITY.get(str(quality or "").strip(), CHORD_QUALITY[""])
+    return [root_midi + s for s in semis]
 
 
 def build_arrangement(events, chords, style, total_beats):
@@ -198,9 +261,9 @@ def build_arrangement(events, chords, style, total_beats):
                         "pitch": m, "program": GM_PROGRAM["melody"]})
             beat += beats
     pos = 0.0
-    for root, beats in chords:
+    for root, beats, quality in chords:
         rm = int(round(69 + 12 * math.log2(root / 440.0)))
-        for p in chord_voicing(rm):
+        for p in chord_voicing(rm, quality):
             out.append({"beat": pos, "beats": beats, "part": "chord",
                         "pitch": p, "program": GM_PROGRAM["chord"]})
         # An octave below the written root — a root written at C3 plays bass at C2.
@@ -231,8 +294,7 @@ def render_arrangement(arr, spb, total_beats):
         if e["part"] == "drum":
             seg = hits[e["drum"]]
         else:
-            seg = bass_note(freq_of_midi(e["pitch"]), spb * e["beats"]) * (
-                NUMPY_GAIN[e["part"]] / 0.5)
+            seg = synth_note(freq_of_midi(e["pitch"]), spb * e["beats"], e["part"])
         out[i:i + len(seg)] += seg[: max(0, n_total - i)]
     return out
 
@@ -640,7 +702,7 @@ def action_render(inp):
     if err:
         return {"success": False, "error": err}
     total_beats = sum(b for ev in events for _, b in ev["segments"])
-    chord_beats = sum(b for _, b in chords)
+    chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
     arr = build_arrangement(events, chords, style, total_beats)
     vocal_path = str(inp.get("vocalPath") or "").strip()
@@ -712,6 +774,17 @@ def action_selftest():
     ck("score parses", None, err, err is None)
     ck("a '-' note extends the previous syllable (melisma)", 3, len(events), len(events) == 3)
 
+    # The whole render, not just the pieces: unpacking `chords` changed shape and every caller had
+    # to follow, but the selftest only reached `build_arrangement` — so `action_render` broke where
+    # nothing was looking. A check that exercises the parts and not the path is not a net.
+    demo = action_render({"action": "render", "score": score, "midiOut": True,
+                          "outPath": "data/sing/selftest-render.wav"})
+    ck("a full render succeeds end to end", True, demo.get("error") or True,
+       bool(demo.get("success")))
+    for p in ("data/sing/selftest-render.wav", "data/sing/selftest-render.mid"):
+        if os.path.exists(p):
+            os.remove(p)
+
     arr = build_arrangement(events, chords, style, 4)
     parts = sorted({e["part"] for e in arr})
     ck("the arrangement plays a tune, not just a rhythm section",
@@ -721,6 +794,19 @@ def action_selftest():
     ck("one written root becomes a triad", 3,
        sum(1 for e in arr if e["part"] == "chord"),
        sum(1 for e in arr if e["part"] == "chord") == 3)
+    ck("quality shapes the chord: a minor third where the score says so", [0, 3, 7],
+       [p - 60 for p in chord_voicing(60, "m")],
+       [p - 60 for p in chord_voicing(60, "m")] == [0, 3, 7])
+    ck("an unknown quality plays major rather than refusing", [0, 4, 7],
+       [p - 60 for p in chord_voicing(60, "weird9")],
+       [p - 60 for p in chord_voicing(60, "weird9")] == [0, 4, 7])
+    # Brightness falling over the note is what separates an instrument from a beep — measured as
+    # the high-frequency content of the head against the tail.
+    tone = synth_note(220.0, 0.8, "melody")
+    head = float(np.mean(np.abs(np.diff(tone[: SR // 8]))))
+    tail = float(np.mean(np.abs(np.diff(tone[-(SR // 8):]))))
+    ck("the synth note darkens as it decays", True, f"head={head:.4f} tail={tail:.4f}",
+       head > tail * 1.5)
     ck("bass sits an octave under the written root", midi_number("C2"),
        next(e["pitch"] for e in arr if e["part"] == "bass"),
        next(e["pitch"] for e in arr if e["part"] == "bass") == midi_number("C2"))
