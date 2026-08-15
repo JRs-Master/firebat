@@ -34,7 +34,7 @@
       {
         "id": "get_candles",
         "name": "Candles (OHLCV)",
-        "description": "바이낸스 binance 캔들 OHLCV 봉 차트 데이터 — 일봉·시간봉·분봉·월봉. Broker-neutral candles: date, open, high, low, close, volume, quote volume, trade count. 1000봉 상한을 넘어 최대 20,000봉까지 자동 페이징하므로 다년치 분석이 한 번에 끝납니다. technical-analysis 에 캐시키로 넘기십시오.",
+        "description": "바이낸스 binance 캔들 OHLCV 봉 차트 데이터",
         "params": {
           "symbol": "Pair or base asset — BTCUSDT, BTC, BTC/USDT all resolve",
           "interval": "1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M — CASE SENSITIVE, 1m is a minute and 1M is a month",
@@ -56,7 +56,7 @@
       {
         "id": "ticker_24h",
         "name": "24h statistics",
-        "description": "바이낸스 binance 24시간 통계 등락률 고가 저가 거래량 거래대금. Rolling 24-hour open, high, low, last, percent change and volume for one pair, or every pair when the symbol is omitted.",
+        "description": "바이낸스 binance 24시간 통계 등락률 고가 저가 거래량 거래대금",
         "params": {
           "symbol": "Pair or base asset; omit for all pairs (heavy)"
         },
@@ -65,7 +65,7 @@
       {
         "id": "book_ticker",
         "name": "Best bid and ask",
-        "description": "바이낸스 binance 최우선 호가 매수호가 매도호가 스프레드. Top of the order book with the resting quantities and the spread as a percentage — whether a quoted price is actually tradable.",
+        "description": "바이낸스 binance 최우선 호가 매수호가 매도호가 스프레드",
         "params": {
           "symbol": "Pair or base asset"
         },
@@ -93,7 +93,7 @@
       {
         "id": "trades",
         "name": "Recent trades",
-        "description": "바이낸스 binance 체결 내역 최근 거래 체결가 체결량 매수매도. Recent individual trades with price, quantity, time, and which side was the taker — the side that moved the price.",
+        "description": "바이낸스 binance 체결 내역 최근 거래 체결가 체결량 매수매도",
         "params": {
           "symbol": "Pair or base asset",
           "limit": "1-1000 (default 500)"
@@ -103,7 +103,7 @@
       {
         "id": "agg_trades",
         "name": "Aggregated trades",
-        "description": "바이낸스 binance 집계 체결 내역 기간 지정. Trades filled by one taker order at one price merged into a single row — cheaper and less noisy than raw trades, and it accepts a time range.",
+        "description": "바이낸스 binance 집계 체결 내역 기간 지정",
         "params": {
           "symbol": "Pair or base asset",
           "limit": "1-1000 (default 500)",
@@ -115,7 +115,7 @@
       {
         "id": "screen",
         "name": "Turnover ranking",
-        "description": "바이낸스 binance 거래대금 순위 급등 코인 종목 화면 스크리닝 랭킹. Every pair of one quote asset ranked by 24-hour turnover — the screen for what is moving right now.",
+        "description": "바이낸스 binance 거래대금 순위 급등 코인 종목 화면 스크리닝 랭킹",
         "params": {
           "quote": "Quote asset to rank within (default USDT)",
           "top": "How many rows, 1-200 (default 30)",
@@ -127,7 +127,7 @@
       {
         "id": "symbols",
         "name": "Tradable pairs",
-        "description": "바이낸스 binance 상장 종목 목록 페어 마켓 조회. Every spot pair currently trading with its base and quote asset — confirm a coin is listed before quoting it.",
+        "description": "바이낸스 binance 상장 종목 목록 페어 마켓 조회",
         "params": {
           "quote": "Only pairs with this quote asset (optional)"
         },

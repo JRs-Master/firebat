@@ -39,7 +39,7 @@
       {
         "id": "search",
         "name": "다음 검색 (웹문서·동영상·이미지·블로그·책·카페)",
-        "description": "One endpoint per `type`, returning title / link / description / datetime plus per-type extras — the same field names naver-search uses, so rows from either vendor share a table. Book search is the notable one: Naver retired theirs on 2026-07-31 and this still answers, with ISBN / publisher / author narrowing via `target`. Video search has no Naver counterpart at all. Paging caps and sort words differ per type and are handled here: `recency` and `latest` mean the same thing but only one is valid per type, so the wrong one is translated rather than refused.",
+        "description": "One endpoint per `type`, returning title / link / description / datetime plus per-type extras",
         "params": {
           "query": "Search term, required. For blog, 'blogUrl term' (space separated) searches inside one blog",
           "type": "web | vclip (video) | image | blog | book | cafe",

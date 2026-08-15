@@ -35,7 +35,7 @@
       {
         "id": "ratios",
         "name": "재무비율 계산 (수익성·안정성·성장성·밸류에이션)",
-        "description": "DART statement rows in -> profitability (margins, ROE, ROA), stability (debt ratio, current ratio, equity ratio), growth (YoY revenue/profit/assets), and with marketCap also PER/PBR/PSR (+EPS/BPS with shares). Missing accounts come back null with a note, never invented. Pass the KIS estimate-perform response as `estimates` to add analyst forecasts (E periods) next to the DART history.",
+        "description": "DART statement rows in -> profitability (margins, ROE, ROA), stability (debt ratio, current ratio, equity ratio), growth (YoY revenue/profit/assets), and with marketCap also PER/PBR/PSR (+EPS/BPS with shares)",
         "params": {
           "statements": "DART fnlttSinglAcnt/All rows (or statementsCacheKey from the dart call)",
           "marketCap": "market capitalization in KRW for valuation ratios",

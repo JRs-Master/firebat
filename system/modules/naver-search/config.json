@@ -39,7 +39,7 @@
       {
         "id": "search",
         "name": "네이버 검색 (뉴스·블로그·카페·웹문서·지식iN·백과·이미지·지역)",
-        "description": "One search endpoint per `type`. Returns title / link / description plus per-type extras. Sort vocabulary differs by type and an inapplicable value is dropped with a note rather than sent. Shopping, book and specialist-document search were shut down on 2026-07-31 with no replacement — asking for them names that instead of failing vaguely.",
+        "description": "One search endpoint per `type`",
         "params": {
           "query": "Search term, required",
           "type": "webkr | news | blog | image | cafearticle | kin | encyc | local | adult | errata",
@@ -52,7 +52,7 @@
       {
         "id": "search-trend",
         "name": "검색어 트렌드 (주제어별 통합검색 추이)",
-        "description": "Relative search interest over time for up to 5 keyword groups, each bundling up to 20 terms that are summed. Data starts 2016-01-01. ratio is scaled so the largest value in the window is 100 — it is not a search count, and two separate calls are not comparable. NOTE the `ages` vocabulary here is band numbers 1-11, which is NOT the decade scheme shopping insight uses.",
+        "description": "Relative search interest over time for up to 5 keyword groups, each bundling up to 20 terms that are summed",
         "params": {
           "keywordGroups": "[{groupName, keywords[]}] — up to 5 groups, 20 terms each",
           "startDate": "yyyy-mm-dd, 2016-01-01 or later",
@@ -66,7 +66,7 @@
       {
         "id": "shopping-categories",
         "name": "쇼핑 분야별 클릭 추이",
-        "description": "Relative shopping click trend for up to 3 category codes compared against each other. Data starts 2017-08-01. Category codes are the cat_id in a Naver Shopping category URL. NOTE the cap is 3 here, not the 5 that search trend allows, and `ages` is the decade scheme (10/20/.../60).",
+        "description": "Relative shopping click trend for up to 3 category codes compared against each other",
         "params": {
           "category": "[{name, param[]}] — up to 3 pairs",
           "startDate": "yyyy-mm-dd, 2017-08-01 or later",
@@ -80,7 +80,7 @@
       {
         "id": "shopping-category-by-device",
         "name": "쇼핑 분야 클릭 추이 — 기기별 분해",
-        "description": "One category's click trend split into PC and mobile series. Answers who shops this category, with no keyword involved. Each data row carries `group` (pc|mo), so rows repeat per period.",
+        "description": "One category's click trend split into PC and mobile series",
         "params": {
           "categoryCode": "A single category code",
           "startDate": "yyyy-mm-dd",
@@ -119,7 +119,7 @@
       {
         "id": "shopping-keywords",
         "name": "쇼핑 분야 안 키워드별 클릭 추이",
-        "description": "Click trend for up to 5 search terms inside one shopping category, compared against each other. Unlike search trend, each group holds exactly ONE term — a second term in `param` is dropped. ratio is relative within each series, so a keyword at 100 is at its own peak, not the most searched keyword.",
+        "description": "Click trend for up to 5 search terms inside one shopping category, compared against each other",
         "params": {
           "categoryCode": "A single category code",
           "keyword": "[{name, param:[oneTerm]}] — up to 5 groups, one term each",
@@ -134,7 +134,7 @@
       {
         "id": "shopping-by-device",
         "name": "쇼핑 키워드 클릭 추이 — 기기별 분해",
-        "description": "One keyword inside one category, split into PC and mobile series. Distinct from shopping-category-by-device, which splits the whole category with no keyword.",
+        "description": "One keyword inside one category, split into PC and mobile series",
         "params": {
           "categoryCode": "A single category code",
           "keywordText": "The single keyword to analyze",

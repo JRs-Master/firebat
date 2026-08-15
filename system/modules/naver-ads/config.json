@@ -46,7 +46,7 @@
       {
         "id": "keyword-tool",
         "name": "키워드 분석 (검색량·클릭수·경쟁도·연관검색어 + CPC)",
-        "description": "The keyword research entry point. Returns monthly search counts (PC and mobile), average click counts and CTR, competition index and average ad depth, plus related keywords. Entry is by hint keywords OR by industry (biztpId) OR by seasonal theme (event) OR by business channel (siteId) — at least one. Hint keywords are chunked past the vendor's 5-per-call cap. Set withBid for estimated CPC per keyword and withFlags for the low-volume/restricted/adult flags. Search counts are a 30-day SUM while clicks and CTR are a 4-week AVERAGE, so they cannot be divided into each other.",
+        "description": "The keyword research entry point",
         "params": {
           "keywords": "Hint keywords. Chunked in fives automatically; accepts rows from a previous result via keywordsCacheKey",
           "biztpId": "Industry id from biz-categories — an entry point on its own, no keywords needed",
@@ -62,7 +62,7 @@
       {
         "id": "estimate",
         "name": "입찰가·성과 추정 (CPC 계산)",
-        "description": "Where CPC comes from — the keyword tool does not return one. exposure-minimum-bid is the least you can bid and still be shown; median-bid is the middle of what is being bid; average-position-bid is the bid for a target rank; performance takes one keyword with many bids and returns the impression/click/cost curve; performance-bulk takes many keyword+bid pairs. Keyword lists are chunked past the vendor's 200-per-call cap.",
+        "description": "Where CPC comes from",
         "params": {
           "estimateType": "exposure-minimum-bid | median-bid | average-position-bid | performance | performance-bulk",
           "keywords": "Keywords to price, chunked in 200s; accepts rows via keywordsCacheKey",
@@ -75,7 +75,7 @@
       {
         "id": "managed-keywords",
         "name": "키워드 제한 상태 (저검색량·성인·노출제한·판매금지·시즌)",
-        "description": "Why a keyword has no numbers. isLowSearchVolume confirms the keyword tool masked its count as '< 10'; isRestricted / isAdult / isSellProhibit mean ads cannot run on it at all whatever its volume; isSeason means a 30-day figure taken off-season understates demand. Keywords absent from the result are simply unmanaged, which is not a restriction.",
+        "description": "Why a keyword has no numbers",
         "params": {
           "keywords": "Keywords to check, chunked automatically"
         }
@@ -83,7 +83,7 @@
       {
         "id": "biz-categories",
         "name": "업종 코드 목록 (biztpId)",
-        "description": "The industry tree behind keyword-tool's biztpId. Naver publishes it only as an asynchronous Master Report job, so this action registers the job, waits, downloads and caches it on disk. If the job is still building it returns a jobId to call back with. Pass query to filter by name, refresh to rebuild the cached copy.",
+        "description": "The industry tree behind keyword-tool's biztpId",
         "params": {
           "query": "Filter rows by industry name",
           "refresh": "Rebuild from Naver instead of using the on-disk copy",
@@ -93,7 +93,7 @@
       {
         "id": "seasonal-events",
         "name": "시즌 이벤트 코드 목록 (event)",
-        "description": "The seasonal theme codes behind keyword-tool's event parameter — 설, 추석, 장마, 캠핑, 벚꽃, 수능 and so on, with their parent category and level. Shipped with the module, so it answers without an API call or credentials. Pass query to filter by name.",
+        "description": "The seasonal theme codes behind keyword-tool's event parameter",
         "params": {
           "query": "Filter themes by Korean or English name"
         }
@@ -101,7 +101,7 @@
       {
         "id": "stats",
         "name": "내 광고 성과 통계",
-        "description": "Performance of MY running ads by campaign / adgroup / keyword / ad id. Requires ads to be running; it says nothing about keywords you do not advertise on.",
+        "description": "Performance of MY running ads by campaign / adgroup / keyword / ad id",
         "params": {
           "id": "Single entity id",
           "ids": "Multiple entity ids",

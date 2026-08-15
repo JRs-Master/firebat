@@ -3,7 +3,7 @@
     {
       "id": "city-codes",
       "name": "도시코드 목록 (버스·고속·시외·열차)",
-      "description": "The 도시코드 every bus, express, suburbs and train action needs. Each service publishes its own list under its own base, so `service` names which one to read; they have not been measured against each other. The scooter service is NOT here — its cityCode is a 지역번호 from scooter-providers.",
+      "description": "The 도시코드 every bus, express, suburbs and train action needs",
       "params": {
         "service": "Which service's list: bus-route | bus-arrival | bus-location | bus-stop | express | suburbs | train",
         "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
@@ -13,7 +13,7 @@
     {
       "id": "bus-stop-search",
       "name": "버스정류소 검색 (이름·번호)",
-      "description": "Find bus stops in a city by name or by the number posted on the sign. Returns nodeid, which every arrival and position action needs, plus the stop coordinates.",
+      "description": "Find bus stops in a city by name or by the number posted on the sign",
       "params": {
         "cityCode": "From city-codes",
         "nodeNm": "Stop name",
@@ -47,7 +47,7 @@
     {
       "id": "bus-route-search",
       "name": "버스노선 검색 (노선번호)",
-      "description": "Find routes in a city, optionally by the number on the front of the bus. Returns routeid, plus first and last departure times and the terminus names.",
+      "description": "Find routes in a city, optionally by the number on the front of the bus",
       "params": {
         "cityCode": "From city-codes",
         "routeNo": "Route number",
@@ -58,7 +58,7 @@
     {
       "id": "bus-route-stops",
       "name": "노선 경유 정류소 목록 (순서·좌표)",
-      "description": "Every stop on a route in running order, with coordinates and an up/down direction code. This is the route drawn as a line — the stop sequence a position or an arrival estimate is measured against.",
+      "description": "Every stop on a route in running order, with coordinates and an up/down direction code",
       "params": {
         "cityCode": "From city-codes",
         "routeId": "From bus-route-search",
@@ -80,7 +80,7 @@
     {
       "id": "bus-arrivals",
       "name": "정류소 실시간 도착정보 (전 노선)",
-      "description": "Live arrivals at one stop: for each approaching bus, how many stops away it is and the estimated seconds until it arrives. Refreshed every 10-20 seconds. This is the one to ask \"when is my bus\".",
+      "description": "Live arrivals at one stop: for each approaching bus, how many stops away it is and the estimated seconds until it arrives",
       "params": {
         "cityCode": "From city-codes",
         "nodeId": "From bus-stop-search or bus-stop-nearby",
@@ -103,7 +103,7 @@
     {
       "id": "bus-positions",
       "name": "노선 운행버스 실시간 위치",
-      "description": "Where every bus on a route is right now: map-matched coordinates, the stop it is at and its sequence number, and the vehicle number. Refreshed every 10-20 seconds — these are the points to put on a map.",
+      "description": "Where every bus on a route is right now: map-matched coordinates, the stop it is at and its sequence number, and the vehicle number",
       "params": {
         "cityCode": "From city-codes",
         "routeId": "From bus-route-search",
@@ -126,7 +126,7 @@
     {
       "id": "express-terminals-arr",
       "name": "고속버스 터미널 목록 (도착정보용 코드)",
-      "description": "Express bus terminals, returning tmnCd — the BARE number (010) used by the arrival actions. Note this is a different identifier from the prefixed terminalId (NAEK010) that express-schedule takes, for the same terminals.",
+      "description": "Express bus terminals, returning tmnCd",
       "params": {
         "tmnNm": "Terminal name",
         "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
@@ -146,7 +146,7 @@
     {
       "id": "express-arrivals",
       "name": "고속버스 도착예정정보 (현위치·남은시간)",
-      "description": "Express buses running between two terminals right now: departure time, operator, grade, current location name, minutes remaining and estimated arrival. Refreshed every 20 minutes.",
+      "description": "Express buses running between two terminals right now: departure time, operator, grade, current location name, minutes remaining and estimated arrival",
       "params": {
         "arrTmnCd": "From express-destinations",
         "depTmnCd": "From express-terminals-arr",
@@ -157,7 +157,7 @@
     {
       "id": "express-terminals",
       "name": "고속버스 터미널 목록 (시간표용 ID)",
-      "description": "Express bus terminals, returning terminalId — the PREFIXED id (NAEK010) that express-schedule takes. Not interchangeable with tmnCd from express-terminals-arr.",
+      "description": "Express bus terminals, returning terminalId",
       "params": {
         "terminalNm": "Terminal name",
         "limit": "Rows per request (numOfRows, default 100, max 1000). Every page the vendor reports is fetched automatically, so this is a tuning knob, not how you get the whole set.",
@@ -241,7 +241,7 @@
     {
       "id": "train-schedule",
       "name": "기차 시간표 (출발역·도착역)",
-      "description": "Trains between two stations, optionally on a date and of one type. Omitting the date reads today. This is the intercity/KTX rail service, NOT the subway: its station ids come from train-stations and look like NAT010000. A subway station id (MTR...) belongs to subway-timetable and is refused here.",
+      "description": "Trains between two stations, optionally on a date and of one type",
       "params": {
         "arrPlaceId": "From train-stations",
         "depPlaceId": "From train-stations",
@@ -284,7 +284,7 @@
     {
       "id": "subway-timetable",
       "name": "지하철역 시간표 (요일·방향별)",
-      "description": "Departure and arrival times at one station for a day type and a direction, with the terminus of each train. Subways run to schedule, so the next train is this table plus the current time — there is no live subway feed in TAGO and none is needed. Timetable coverage is uneven LINE BY LINE and cannot be predicted from the station id, the operator or the region — measured 2026-08-13 across 32 line families. Answering: 서울 1·2·3·4·5·7·8호선, 신림선, 경의중앙, 수인분당, 경춘, 경강, 동해, 대경선, 서해선, 부산김해경전철. Empty: 서울 6호선 (the one exception inside an otherwise complete operator), the 코레일 stretch of 1호선, 부산·대구·대전·인천·광주 metros, 신분당, 공항철도, GTX-A, 에버라인, 자기부상. Station, exit and exit-facility lookups DO cover the whole country; only the timetable is patchy. An empty schedule is TAGO not returning that line right now — a standing gap or a temporary outage, and the response cannot tell which. It is NOT a wrong id and NOT \"no trains\": say that it came back empty and when, and do not re-look-up the id. `subway-stations` returns one row per line at a station, so when one line is empty another line at the same station may still answer. If the line asked about is the empty one, STOP querying TAGO: no other action here carries subway timetables — train-schedule is a different service with its own NAT-prefixed station ids and will not answer for a subway station. What remains is a web search or telling the user the source does not have it; either beats more calls returning the same empty list. ⚠️ dailyTypeCode 02 (토요일) returns zero on every line measured — 8 of 8, including lines whose 01 and 03 tables are full. The code itself is live and correct: rows echo dailyTypeCode 01 and 03 back, and no undocumented alternative works (1, 2, 3, 00, 04, 05 and SAT all return nothing). So 02 is a valid slot that was never populated. Whether 03 covers Saturday as well cannot be told from the feed — so do not present 03 as a Saturday timetable. Say the Saturday table is not published and offer 03 for what it is.",
+      "description": "Departure and arrival times at one station for a day type and a direction, with the terminus of each train",
       "params": {
         "dailyTypeCode": "01=평일, 02=토요일, 03=일요일. 02 is empty on every line measured; do not silently substitute 03 for it",
         "subwayStationId": "From subway-stations",
@@ -398,7 +398,7 @@
     {
       "id": "scooter-providers",
       "name": "공유킥보드 운영사·지역 목록",
-      "description": "Which scooter operators serve which regions. This is also the ONLY source of the cityCode that `scooters` takes — a 지역번호, not the 도시코드 the bus actions use.",
+      "description": "Which scooter operators serve which regions",
       "params": {
         "cityName": "Region name, omit for all",
         "providerName": "Operator name, omit for all",

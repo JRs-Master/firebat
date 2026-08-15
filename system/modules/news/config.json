@@ -34,7 +34,7 @@
       {
         "id": "impact",
         "name": "뉴스일 주가 반응 측정 (D+1·D+5, 대조군 동반)",
-        "description": "News items (naver_search shape) + daily bars in -> per-news-day forward returns from the pre-news close, clustered by similar titles, with the all-days average as the control and optional benchmark-relative excess returns. After-close news (>= 15:30 KST) counts on the next trading day. This measures reaction; it does not claim causation, and says so when several stories share a day.",
+        "description": "News items (naver_search shape) + daily bars in -> per-news-day forward returns from the pre-news close, clustered by similar titles, with the all-days average as the control and optional benchmark-relative excess returns",
         "params": {
           "items": "naver_search news items (or itemsCacheKey)",
           "bars": "daily OHLCV rows of the stock (or barsCacheKey)",

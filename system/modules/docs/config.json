@@ -40,7 +40,7 @@
       {
         "id": "read",
         "name": "문서 읽기 (pptx·xlsx·docx·hwp·hwpx·pdf)",
-        "description": "Extract text and tables from an uploaded document — a media URL or workspace path in, {text, tables, meta} out. Works on pptx, xlsx, docx, hwp, hwpx, pdf. hwpx extracts text boxes, footnotes and equation scripts; legacy .hwp uses the rhwp engine and may extract thin from old files.",
+        "description": "Extract text and tables from an uploaded document",
         "params": {
           "path": "media URL (/user/media/<slug>.<ext>) or workspace-relative path"
         }
@@ -48,7 +48,7 @@
       {
         "id": "make_pptx",
         "name": "PPTX 만들기 (렌더 블록 → 슬라이드)",
-        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables, chart blocks become native editable charts, callouts become tinted statement bands, and timeline/compare/key_value/progress blocks each trigger their own slide archetype. Container blocks (grid/card/tabs/accordion/carousel/slideshow) are flattened into their children, so nothing authored inside one is lost. Optional master pptx (media URL) carries the corporate theme. The file lands in the media store. One call produces one complete file; calls do not append to a previous file — pass ALL blocks together in a single call. IMPORTANT: pass the blocks as this tool's arguments (or blocksCacheKey) — blocks pasted into the chat reply render a page and make NO file.",
+        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables, chart blocks become native editable charts, callouts become tinted statement bands, and timeline/compare/key_value/progress blocks each trigger their own slide archetype",
         "params": {
           "blocks": "render-block array [{type, props}] — header/text/list/table/metric/image/chart/stock_chart/callout/key_value/progress/timeline/compare, plus containers",
           "title": "deck title (title slide + filename)",
@@ -60,7 +60,7 @@
       {
         "id": "make_xlsx",
         "name": "XLSX 만들기 (표 → 시트 · 대시보드)",
-        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns). Dashboard genre: pass kpis and/or charts — or render blocks where metric blocks become KPI cards and chart blocks become native Excel charts — and a \"Dashboard\" sheet is placed first: white cards on a light slate page, laid out on one fixed 12-column grid — KPI cards up to four per row, stretched to fill the row (thick colored underline cycling blue/red/amber/green, optional emoji icon, up=red / down=blue delta) above native line/bar/pie/doughnut/combo charts that reference the data sheets' cells (chart blocks get their own data sheet). A kpi with style:\"bar\" instead becomes a progress-bar row (value + label + a live data bar against max). Ledger genre: a sheet with style:\"ledger\" is rendered as a document (centered docTitle, period line, fully ruled table, gray header) and subtotalBy inserts live [월 계]/[누 계] SUM bands per month. Any cell string starting with \"=\" stays a live formula, so pass formulas for totals and averages instead of precomputed numbers. A stock_chart block becomes a NATIVE Excel candlestick (high/low/close, or open/high/low/close when the candles carry an open) with hi-low lines and up/down bars in the Korean convention (up = red, down = blue), and its volume rides a bar group on a secondary axis. A callout block becomes a full-width amber note row at the foot of the Dashboard, so the caveat survives alongside the numbers it qualifies. A chart whose sheet or columns cannot be resolved is skipped and reported in data.notes, as is any block that has no document form. The file lands in the media store. One call produces one complete file; calls do not append to a previous file — pass ALL sheets, kpis, charts and blocks together in a single call. The response reports data.sheetRows ([{name, rows}]) so you can see whether the rows actually arrived; a sheet with 0 data rows is called out in data.notes and means the file went out incomplete.",
+        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns)",
         "params": {
           "sheets": "[{name, headers?, rows, style?, docTitle?, period?, subtotalBy?}] — a long row set goes as {name, headers, rowsCacheKey: \"<the producing call's _cacheKey>\"} instead of rows, and the server expands the cached rows into it (a 120-day candle sheet carries 120 real rows, not the 5-row inline preview). Want a window rather than the whole table? Add rowsLimit:N for the most-recent N rows, or rowsRange:{from,to} for a date window — never retype rows to trim them. style:\"ledger\" = 총계정원장 document styling with live monthly subtotals",
           "blocks": "render-block array (table → sheet, metric → KPI card, chart → native chart)",
@@ -72,7 +72,7 @@
       {
         "id": "make_docx",
         "name": "DOCX 만들기 (렌더 블록 → 보고서)",
-        "description": "Build a .docx REPORT from render blocks — the deck genre's print sibling (navy headings, one blue accent, restrained). A stream opening with a level-1 header gets a cover page (large title, date line, accent rule); section headings are ranked and a level-1 heading carries an accent underline; tables get a banded header row, thin borders and right-aligned number columns; consecutive metric blocks become one side-by-side KPI strip; key_value becomes a two-column table; callout becomes a tinted bordered box; images fit the text width; the footer carries a live page number. Containers (grid/card/tabs/accordion/carousel/slideshow) are flattened into their children. The file lands in the media store. One call produces one complete file; calls do not append to a previous file — pass ALL blocks together in a single call.",
+        "description": "Build a .docx REPORT from render blocks",
         "params": {
           "blocks": "render-block array [{type, props}] — header/text/list/table/metric/key_value/callout/image/chart/stock_chart, plus containers",
           "title": "document title (cover + filename) — a leading level-1 header block wins over it"
@@ -81,7 +81,7 @@
       {
         "id": "make_hwpx",
         "name": "HWPX 만들기 (렌더 블록 → 한글 문서)",
-        "description": "Build a .hwpx (Hancom) from render blocks via the rhwp engine, seeded from a real Hancom blank so fonts and styles are valid. Headers become bold headings, tables become real editable tables. The file lands in the media store. One call produces one complete file; calls do not append to a previous file — pass ALL blocks together in a single call.",
+        "description": "Build a .hwpx (Hancom) from render blocks via the rhwp engine, seeded from a real Hancom blank so fonts and styles are valid",
         "params": {
           "blocks": "render-block array [{type, props}] — header/text/list/table/metric",
           "title": "document title (heading + filename)"
@@ -90,7 +90,7 @@
       {
         "id": "make_pdf",
         "name": "PDF 만들기 (렌더 블록 → 보고서)",
-        "description": "Build a .pdf REPORT from render blocks — the same genre as make_docx, so the two formats of one report read alike: cover page, ranked navy headings with an accent rule under level 1, banded tables with right-aligned number columns, KPI strips from consecutive metrics, two-column key_value, tinted callout boxes, width-fitted images, page numbers in the footer; divider = page break. Containers are flattened into their children. Korean text via an embedded host font (bold face included) or the viewer-supplied CID font. The file lands in the media store. One call produces one complete file; calls do not append to a previous file — pass ALL blocks together in a single call.",
+        "description": "Build a .pdf REPORT from render blocks",
         "params": {
           "blocks": "render-block array [{type, props}] — header/text/list/table/metric/key_value/callout/image/chart/stock_chart, plus containers",
           "title": "document title (cover + filename) — a leading level-1 header block wins over it"

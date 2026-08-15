@@ -3,7 +3,7 @@
     {
       "id": "geocoding",
       "name": "주소 → 좌표 (지오코딩)",
-      "description": "Turn a Korean address or place name into latitude and longitude. `addresses` takes up to 30 in ONE call — use it instead of N single calls when placing several points on a map. This is the step that gives every route and static-map action its coordinates.",
+      "description": "Turn a Korean address or place name into latitude and longitude",
       "params": {
         "address": "주소 또는 검색어 — '서울 강남구 역삼동', '강남역'",
         "addresses": "여러 주소를 한 번에 (최대 30)"
@@ -12,7 +12,7 @@
     {
       "id": "reverse-geocoding",
       "name": "좌표 → 주소 (역지오코딩)",
-      "description": "Turn latitude and longitude back into a road-name and lot-number address. Use it to label a point the user picked or a coordinate a tool returned.",
+      "description": "Turn latitude and longitude back into a road-name and lot-number address",
       "params": {
         "lat": "위도",
         "lon": "경도"
@@ -21,7 +21,7 @@
     {
       "id": "search-address",
       "name": "주소 검색 (부분 일치)",
-      "description": "Search addresses by fragment when the full address is unknown. Returns candidates with coordinates. Page size caps at 30 here — the 45 you may remember is the PAGE cap, not the size cap, and asking for more returns a 400.",
+      "description": "Search addresses by fragment when the full address is unknown",
       "params": {
         "address": "검색어",
         "limit": "한 페이지 결과 수 (최대 30)"
@@ -30,7 +30,7 @@
     {
       "id": "search-keyword",
       "name": "장소 키워드 검색 (맛집·카페·역 등)",
-      "description": "Find places by what they are called — '강남역 카페', '판교 음식점'. Optionally bounded to a circle with lat_center/lon_center/radius, or filtered to one category group. `keywords` takes up to 30 in ONE call. Page size caps at 15 here; a larger limit returns a 400.",
+      "description": "Find places by what they are called",
       "params": {
         "keyword": "장소 키워드",
         "keywords": "여러 키워드를 한 번에 (최대 30)",
@@ -44,7 +44,7 @@
     {
       "id": "search-category",
       "name": "카테고리로 주변 검색 (편의점·주차장·병원 등)",
-      "description": "List every place of one category near a point or inside a rectangle — the way to answer '이 근처 편의점 다 찾아줘' without naming any of them. The category code is required here, unlike in keyword search.",
+      "description": "List every place of one category near a point or inside a rectangle",
       "params": {
         "categoryGroupCode": "카테고리 그룹 코드 (필수)",
         "lat_center": "중심 위도",
@@ -59,7 +59,7 @@
     {
       "id": "coord2region",
       "name": "좌표 → 행정구역 (시도·시군구·읍면동)",
-      "description": "Which administrative region a coordinate falls in, both the legal-dong and the administrative-dong answer. Use it to group points by district, or to get the 시군구 a tool needs.",
+      "description": "Which administrative region a coordinate falls in, both the legal-dong and the administrative-dong answer",
       "params": {
         "lat": "위도",
         "lon": "경도",
@@ -70,7 +70,7 @@
     {
       "id": "transcoord",
       "name": "좌표계 변환 (WGS84 ↔ TM/WTM/KTM 등)",
-      "description": "Convert one coordinate pair between coordinate systems. Note that x and y are NOT always longitude and latitude — TM and WTM are metres. Needed when another source hands you non-WGS84 coordinates.",
+      "description": "Convert one coordinate pair between coordinate systems",
       "params": {
         "x": "입력 좌표계 단위의 X",
         "y": "입력 좌표계 단위의 Y",
@@ -81,7 +81,7 @@
     {
       "id": "route-transit",
       "name": "대중교통 길찾기 (버스·지하철·환승)",
-      "description": "Public-transport directions between two coordinates — total time, fare, and the bus/subway legs with their transfers. Separate from the walk and bicycle actions because transit takes NO waypoints and no route preference. `path.points` come back as [경도, 위도], which is the order a map Polyline wants.",
+      "description": "Public-transport directions between two coordinates",
       "params": {
         "startLat": "출발 위도",
         "startLon": "출발 경도",
@@ -97,7 +97,7 @@
     {
       "id": "route-walk",
       "name": "도보 길찾기",
-      "description": "Walking directions, with up to five waypoints and a route preference (BROAD_FIRST default, SHORTEST, ACCESSIBLE). Those two options are why walking is its own action — transit routing accepts neither.",
+      "description": "Walking directions, with up to five waypoints and a route preference (BROAD_FIRST default, SHORTEST, ACCESSIBLE)",
       "params": {
         "startLat": "출발 위도",
         "startLon": "출발 경도",
@@ -133,7 +133,7 @@
     {
       "id": "static-map",
       "name": "정적 지도 이미지 (PNG)",
-      "description": "Render a map as a PNG and land it in the media store, so a map can go into a document, a report or a message. Markers place themselves and set the centre and zoom when supplied. The image is a picture: it cannot be panned or zoomed — an on-screen map the reader can move is the `map` render component instead.",
+      "description": "Render a map as a PNG and land it in the media store, so a map can go into a document, a report or a message",
       "params": {
         "centerLat": "중심 위도 (markers 없을 때 필수)",
         "centerLon": "중심 경도",
