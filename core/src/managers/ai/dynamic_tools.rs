@@ -44,15 +44,23 @@ pub struct DynamicToolRegistry {
     mcp: Arc<McpManager>,
     /// 마지막 refresh 시각. None = 아직 refresh 안 함.
     last_refresh: Mutex<Option<Instant>>,
-    /// L1 grounding 선언 — tool_name(`sysmod_<name>`) → grounded params (모듈 config 의 `grounding`).
+    /// Published tool name → the module it runs. The ONE place that mapping lives on this path.
+    ///
+    /// Every gate below needs a module, and each of them used to recover one by cutting the
+    /// `sysmod_` prefix off the tool name and swapping underscores back to hyphens — correct only
+    /// while no module name contains an underscore, and unanswerable the moment one executor
+    /// serves every module. `module_for_call` reads this map instead; the day a unified executor
+    /// arrives it reads `args.module` there and nothing else moves.
+    tool_modules: RwLock<HashMap<String, String>>,
+    /// L1 grounding 선언 — **module** → grounded params (모듈 config 의 `grounding`).
     /// refresh 마다 config 에서 재구성. FC 경로(ai.rs 도구 루프)가 dispatch 전 `grounding_for` 로 조회해
     /// `check_grounding` 강제 — MCP 경로(mcp_server `state.grounding`) 와 대칭, 같은 pure 헬퍼 공유 (#8-2).
     grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
-    /// requiresApproval 선언 — tool_name → (module, 선언 값). FC 게이트가 dispatch 전 조회 (#1-9b).
-    approval: RwLock<HashMap<String, (String, serde_json::Value)>>,
+    /// requiresApproval 선언 — **module** → 선언 값. FC 게이트가 dispatch 전 조회 (#1-9b).
+    approval: RwLock<HashMap<String, serde_json::Value>>,
     /// uiOnly 선언 — same shape. Actions a model may not call at all (screen actions).
-    ui_only: RwLock<HashMap<String, (String, serde_json::Value)>>,
-    /// Tools whose module input declares an `action` selector (multi-action modules). The
+    ui_only: RwLock<HashMap<String, serde_json::Value>>,
+    /// **Modules** whose input declares an `action` selector (multi-action modules). The
     /// discovery-first gate applies to THESE only — the judgment itself lives in
     /// `sysmod_surface::declares_action_selector`, where both transports read it.
     action_selectors: RwLock<std::collections::HashSet<String>>,
@@ -69,6 +77,7 @@ impl DynamicToolRegistry {
             module,
             mcp,
             last_refresh: Mutex::new(None),
+            tool_modules: RwLock::new(HashMap::new()),
             grounding: RwLock::new(HashMap::new()),
             approval: RwLock::new(HashMap::new()),
             ui_only: RwLock::new(HashMap::new()),
@@ -88,20 +97,28 @@ impl DynamicToolRegistry {
         crate::managers::ai::sysmod_surface::parameters_for(forms.get(module)?, actions)
     }
 
-    /// Whether this tool's module really has an action selector — the discovery gate's
-    /// applicability test. A stray `action` arg on a selector-less module is not a
-    /// multi-action call, however much it looks like one.
-    pub async fn has_action_selector(&self, tool: &str) -> bool {
-        self.action_selectors.read().await.contains(tool)
+    /// Which module a tool call runs, or `None` when the call is not a module call at all.
+    ///
+    /// The single resolution point for the FC path. Registration recorded the pairing; nothing
+    /// downstream reconstructs it from spelling. `args` is unused while one tool means one
+    /// module — it is the parameter a unified executor reads.
+    pub async fn module_for_call(&self, tool: &str, _args: &serde_json::Value) -> Option<String> {
+        self.tool_modules.read().await.get(tool).cloned()
+    }
+
+    /// Whether this module really has an action selector — the discovery gate's applicability
+    /// test. A stray `action` arg on a selector-less module is not a multi-action call, however
+    /// much it looks like one.
+    pub async fn has_action_selector(&self, module: &str) -> bool {
+        self.action_selectors.read().await.contains(module)
     }
 
     /// The actions this module declares, for a refusal that names the choice instead of just
     /// withholding it. Read from the form's own `action` enum — the same declaration the gate and
     /// the published schema use, so a renamed action can never be advertised here alone.
-    pub async fn action_choices(&self, tool: &str) -> Vec<String> {
-        let module = tool.trim_start_matches("sysmod_");
+    pub async fn action_choices(&self, module: &str) -> Vec<String> {
         let forms = self.forms.read().await;
-        let Some(form) = forms.get(module).or_else(|| forms.get(&module.replace('_', "-"))) else {
+        let Some(form) = forms.get(module) else {
             return Vec::new();
         };
         form.props
@@ -112,22 +129,22 @@ impl DynamicToolRegistry {
             .unwrap_or_default()
     }
 
-    /// FC 경로가 dispatch 전 조회 — 이 도구에 선언된 grounded params (없으면 None).
-    pub async fn grounding_for(&self, tool: &str) -> Option<Vec<GroundedParam>> {
+    /// FC 경로가 dispatch 전 조회 — 이 모듈에 선언된 grounded params (없으면 None).
+    pub async fn grounding_for(&self, module: &str) -> Option<Vec<GroundedParam>> {
         let map = self.grounding.read().await;
-        map.get(tool).cloned()
+        map.get(module).cloned()
     }
 
-    /// FC 경로가 dispatch 전 조회 — 이 도구 모듈의 requiresApproval 선언 (module, decl).
-    pub async fn approval_for(&self, tool: &str) -> Option<(String, serde_json::Value)> {
+    /// FC 경로가 dispatch 전 조회 — 이 모듈의 requiresApproval 선언.
+    pub async fn approval_for(&self, module: &str) -> Option<serde_json::Value> {
         let map = self.approval.read().await;
-        map.get(tool).cloned()
+        map.get(module).cloned()
     }
 
-    /// The `uiOnly` declaration for this tool's module, if it has one — see `is_ui_only_value`.
-    pub async fn ui_only_for(&self, tool: &str) -> Option<(String, serde_json::Value)> {
+    /// The `uiOnly` declaration for this module, if it has one — see `is_ui_only_value`.
+    pub async fn ui_only_for(&self, module: &str) -> Option<serde_json::Value> {
         let map = self.ui_only.read().await;
-        map.get(tool).cloned()
+        map.get(module).cloned()
     }
 
     /// 60초 cache 검사 후 sysmod_* / mcp_* 동적 도구 재등록. cache hit 시 즉시 return.
@@ -153,9 +170,10 @@ impl DynamicToolRegistry {
         }
         // grounding 맵은 로컬에 쌓고 끝에 한 번에 swap — clear→개별 insert 사이 rebuild 창에
         // 동시 read 가 빈 맵(fail-open)을 보는 race 회피 + write lock 획득 N회→1회.
+        let mut new_tool_modules: HashMap<String, String> = HashMap::new();
         let mut new_grounding: HashMap<String, Vec<GroundedParam>> = HashMap::new();
-        let mut new_approval: HashMap<String, (String, serde_json::Value)> = HashMap::new();
-        let mut new_ui_only: HashMap<String, (String, serde_json::Value)> = HashMap::new();
+        let mut new_approval: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut new_ui_only: HashMap<String, serde_json::Value> = HashMap::new();
         let mut new_selectors: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut new_forms: HashMap<String, ActionForm> = HashMap::new();
 
@@ -176,17 +194,19 @@ impl DynamicToolRegistry {
             // selector gate, the key canon and the gate notice each drift).
             let surface = build_surface(&entry.name, &config);
             let tool_name = surface.tool_name;
+            // The pairing, recorded once. Everything below keys by module.
+            new_tool_modules.insert(tool_name.clone(), entry.name.clone());
             if let Some(ra) = config.get("requiresApproval") {
-                new_approval.insert(tool_name.clone(), (entry.name.clone(), ra.clone()));
+                new_approval.insert(entry.name.clone(), ra.clone());
             }
             if let Some(uo) = config.get("uiOnly") {
-                new_ui_only.insert(tool_name.clone(), (entry.name.clone(), uo.clone()));
+                new_ui_only.insert(entry.name.clone(), uo.clone());
             }
             if !surface.grounding.is_empty() {
-                new_grounding.insert(tool_name.clone(), surface.grounding);
+                new_grounding.insert(entry.name.clone(), surface.grounding);
             }
             if surface.has_action_selector {
-                new_selectors.insert(tool_name.clone());
+                new_selectors.insert(entry.name.clone());
             }
             // Material for step three's form, kept by MODULE name (the tool list is rebuilt per
             // turn from what the conversation has discovered — see the overlay in ai.rs).
@@ -246,6 +266,7 @@ impl DynamicToolRegistry {
         }
 
         // 4. grounding 맵 atomic swap (rebuild 완료 후 한 번에 교체 — read 가 부분 상태 안 봄).
+        *self.tool_modules.write().await = new_tool_modules;
         *self.grounding.write().await = new_grounding;
         *self.approval.write().await = new_approval;
         *self.ui_only.write().await = new_ui_only;

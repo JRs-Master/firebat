@@ -3964,27 +3964,37 @@ impl AiManager {
                 // `action` arg on a single-action module (stock-lookup) is not a multi-action
                 // call, and its grounding hint says "call directly" — the gate was rejecting
                 // the very call the hint prescribed (2026-08-12 실측).
-                let gate_applies = match &self.dynamic_tools {
-                    Some(reg) => reg.has_action_selector(&effective_call.name).await,
-                    None => true,
+                // Which module this call runs — resolved once, from the pairing the registry
+                // recorded, and shared by all four gates below. Every one of them used to cut the
+                // `sysmod_` prefix off the tool name and swap underscores for hyphens: right only
+                // while no module name has an underscore, and unanswerable once one executor
+                // serves every module. `None` = not a module call, and the module gates skip.
+                let call_module: Option<String> = match &self.dynamic_tools {
+                    Some(reg) => {
+                        reg.module_for_call(&effective_call.name, &effective_call.arguments).await
+                    }
+                    None => None,
+                };
+                let gate_applies = match (&self.dynamic_tools, call_module.as_deref()) {
+                    (Some(reg), Some(m)) => reg.has_action_selector(m).await,
+                    // No registry to ask: the old default stands (gate on, fail closed).
+                    (None, _) => true,
+                    (Some(_), None) => false,
                 };
                 let discovery_reject: Option<String> = if !plan_replay_round
                     && gate_applies
-                    && effective_call.name.starts_with("sysmod_")
+                    && call_module.is_some()
                 {
+                    let module = call_module.clone().unwrap_or_default();
                     match effective_call.arguments.get("action").and_then(|v| v.as_str()) {
                         Some(act) if !act.is_empty() => {
-                            // The module name is handed over as the tool spells it; the store
-                            // canonicalises both sides, so no dialect stripping is needed here.
-                            let module = effective_call.name.trim_start_matches("sysmod_");
                             if crate::utils::conversation_scope::schema_ok(
                                 &tool_scope,
-                                module,
+                                &module,
                                 act,
                             ) {
                                 None
                             } else {
-                                let module = module.replace('_', "-");
                                 Some(format!(
                                     "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first — it counts for the next 30 minutes of this conversation — then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
                                 ))
@@ -3998,12 +4008,10 @@ impl AiManager {
                         // ladder — only that `limit` was unexpected. The refusal names the choice,
                         // because choosing is step two.
                         _ => {
-                            let module = effective_call.name.trim_start_matches("sysmod_");
                             let choices = match &self.dynamic_tools {
-                                Some(reg) => reg.action_choices(&effective_call.name).await,
+                                Some(reg) => reg.action_choices(&module).await,
                                 None => Vec::new(),
                             };
-                            let module = module.replace('_', "-");
                             let names = if choices.is_empty() {
                                 String::new()
                             } else {
@@ -4017,8 +4025,10 @@ impl AiManager {
                 } else {
                     None
                 };
-                let grounding_reject: Option<String> = if let Some(reg) = &self.dynamic_tools {
-                    match reg.grounding_for(&effective_call.name).await {
+                let grounding_reject: Option<String> = if let (Some(reg), Some(module)) =
+                    (&self.dynamic_tools, call_module.as_deref())
+                {
+                    match reg.grounding_for(module).await {
                         Some(g) if !g.is_empty() => crate::utils::grounding::check_grounding(
                             &effective_call.arguments,
                             &g,
@@ -4035,16 +4045,18 @@ impl AiManager {
                 // would still be the model doing it, one click removed, and the card cannot show
                 // the numbers the decision needs (2026-08-06 정책 확정: 자동매매 청산·정정은
                 // 설정 화면에서 사람이 직접).
-                let ui_only_reject: Option<String> = if let Some(reg) = &self.dynamic_tools {
-                    match reg.ui_only_for(&effective_call.name).await {
-                        Some((module_name, decl)) => {
+                let ui_only_reject: Option<String> = if let (Some(reg), Some(module_name)) =
+                    (&self.dynamic_tools, call_module.as_deref())
+                {
+                    match reg.ui_only_for(module_name).await {
+                        Some(decl) => {
                             let act = effective_call
                                 .arguments
                                 .get("action")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
                             crate::utils::pending_tools::is_ui_only_value(&decl, act).then(|| {
-                                crate::utils::pending_tools::ui_only_refusal(&module_name, act)
+                                crate::utils::pending_tools::ui_only_refusal(module_name, act)
                             })
                         }
                         None => None,
@@ -4057,9 +4069,11 @@ impl AiManager {
                 // 승인 카드 통과 = 잡에 담긴 액션(실주문 포함) 승인으로 간주(사용자 확정 2026-07-07,
                 // "오늘 TQQQ 1주 매수" → 새벽 미국장 예약 실행. cron_context 의 destructive 빌트인
                 // passthrough 와 동일 철학). hub = denied (root's account).
-                let approval_gate: Option<serde_json::Value> = if let Some(reg) = &self.dynamic_tools {
-                    match reg.approval_for(&effective_call.name).await {
-                        Some((module_name, decl)) => {
+                let approval_gate: Option<serde_json::Value> = if let (Some(reg), Some(module_name)) =
+                    (&self.dynamic_tools, call_module.as_deref())
+                {
+                    match reg.approval_for(module_name).await {
+                        Some(decl) => {
                             let act = effective_call
                                 .arguments
                                 .get("action")
