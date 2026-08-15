@@ -65,6 +65,18 @@ pub struct McpTool {
 #[async_trait::async_trait]
 pub trait McpToolHandler: Send + Sync {
     async fn call(&self, args: Value) -> Result<Value, String>;
+
+    /// The module this call targets, when it targets one.
+    ///
+    /// The gates need a module: the discovery ladder is per (module, action), grounding is
+    /// declared in a module's config, and approval is read from it at call time. They used to
+    /// recover it by string surgery on the tool name — `sysmod_kakao_map` → trim → swap `_` for
+    /// `-` → `kakao-map` — which works only while no module has an underscore in its name, and
+    /// which has no answer at all once one executor serves every module. The handler already
+    /// knows; ask it.
+    fn target_module(&self, _args: &Value) -> Option<String> {
+        None
+    }
 }
 
 /// MCP server state — 도구 registry + Vault (internal token) + AuthManager (외부 API token).
@@ -76,13 +88,16 @@ pub struct McpServerState {
     /// ModuleManager — sysmod 활성화 토글 검사 (tools/list 시점 비활성 sysmod 필터).
     /// 미설정 시 list 필터 0 (옛 호환). call-time gate 는 handler 안에서 별도 수행.
     pub module_manager: Option<Arc<ModuleManager>>,
-    /// L1 grounding 선언 — tool_name → grounded params (모듈 config 의 `grounding`).
+    /// L1 grounding 선언 — **module name** → grounded params (모듈 config 의 `grounding`).
     /// sysmod 등록 시 1회 parse. tools/call 게이트가 사용 (Fact-Provenance Firewall, plan #8-2).
+    ///
+    /// Keyed by module, not by tool name: a declaration belongs to the module that made it, and
+    /// the tool that carries it is a publishing decision that has already changed once.
     pub grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
     /// CLI 자기 홈에 떨어진 이미지의 갤러리 편입 — 도구 인자 치환에 사용(아래 게이트).
     /// 미설정 시 치환 skip(옛 동작).
     pub image_import: Option<Arc<dyn firebat_core::managers::media::IImageImportPort>>,
-    /// Tools whose module input declares an `action` selector. The discovery gate applies
+    /// **Modules** whose input declares an `action` selector. The discovery gate applies
     /// to THESE only — a volunteered `action` arg on a single-action module (stock-lookup)
     /// is not a multi-action call, and its grounding hint says "call directly"
     /// (2026-08-12 실측: the gate rejected the very call the hint prescribed).
@@ -670,14 +685,21 @@ async fn gated_tool_call(
     let scope = tool_scope_key(token);
     // CLI 로컬 이미지 경로 → 갤러리 URL (grounding 검사보다 먼저 — 치환된 값이 게이트를 통과해야).
     let args = substitute_cli_local_images(state, args).await;
+    // Which module this call targets — from the handler, which knows, rather than from the tool
+    // name, which only encodes it by convention. Both module gates below read this.
+    let target_module = handler
+        .target_module(&args)
+        .filter(|m| !m.trim().is_empty());
+
     // Discovery-first gate — before grounding on purpose: you discover the parameters before
     // you ground their values. Pipelines never pass here (internal dispatch), so unattended
     // flows stay untouched.
-    if name.starts_with("sysmod_") && state.action_selectors.read().await.contains(name) {
-        if let Some(act) = args.get("action").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
-            let module = name.trim_start_matches("sysmod_").replace('_', "-");
-            if !conversation_scope::schema_ok(&scope, &module, act) {
-                tracing::info!(target: "discovery", tool = name, action = act,
+    if let Some(module) = target_module.as_deref() {
+        let multi_action = state.action_selectors.read().await.contains(module);
+        let action = args.get("action").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+        if let (true, Some(act)) = (multi_action, action) {
+            if !conversation_scope::schema_ok(&scope, module, act) {
+                tracing::info!(target: "discovery", tool = name, module = module, action = act,
                     "discovery-first reject — schema not fetched in this conversation window");
                 return Err(format!(
                     "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first, then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
@@ -694,9 +716,10 @@ async fn gated_tool_call(
             conversation_scope::record_schema(&scope, m, a);
         }
     }
-    let grounded = {
-        let map = state.grounding.read().await;
-        map.get(name).cloned()
+    // L1 grounding — the declaration belongs to the module, so it is looked up by module.
+    let grounded = match target_module.as_deref() {
+        Some(module) => state.grounding.read().await.get(module).cloned(),
+        None => None,
     };
     if let Some(grounded) = grounded {
         if !grounded.is_empty() {
@@ -865,6 +888,13 @@ pub struct SysmodToolHandler {
 
 #[async_trait::async_trait]
 impl McpToolHandler for SysmodToolHandler {
+    /// One tool per module today, so the module is this handler's own — no parsing of the name
+    /// it happens to be published under. When one executor serves every module this reads
+    /// `args.module` instead, and the gates do not change.
+    fn target_module(&self, _args: &Value) -> Option<String> {
+        Some(self.module_name.clone())
+    }
+
     async fn call(&self, args: Value) -> Result<Value, String> {
         // Hub visitor 가드 — hub_context 활성 상태에서 allowed_sysmods 에 없는 sysmod 호출 차단.
         // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 처리해 CLI 모델
@@ -1108,19 +1138,21 @@ pub async fn register_sysmod_tools(
             .write()
             .await
             .insert(tool_name.clone(), (surface.module.clone(), surface.form.clone()));
+        // Both keyed by MODULE — see the field docs. The tool name that happens to carry a
+        // module today is a publishing decision, and the gates must not depend on it.
         if !surface.grounding.is_empty() {
             state
                 .grounding
                 .write()
                 .await
-                .insert(tool_name.clone(), surface.grounding);
+                .insert(surface.module.clone(), surface.grounding);
         }
         if surface.has_action_selector {
             state
                 .action_selectors
                 .write()
                 .await
-                .insert(tool_name.clone());
+                .insert(surface.module.clone());
         }
     }
 }
