@@ -1171,41 +1171,23 @@ impl AiManager {
                         .map(|m| crate::utils::hub_context::module_permitted_for_args(&args, m))
                         .unwrap_or(true)
                 });
-                // In SEARCH mode `module` ranks, it does not exclude.
+                // In SEARCH mode `module` ranks, it does not exclude — but the ranking does that
+                // now, inside `search_analyzed`: it scores every module and merely guarantees the
+                // named one a floor of the page. This is where that same fix used to live
+                // (2026-07-31), as a SECOND unscoped search whose rows were appended, and both
+                // running at once cost two things measured 2026-08-15:
                 //
-                // As a hard filter it let the model hide the answer from itself, and the model is the
-                // one who chose the scope. Measured 2026-07-31: asked for a golden-cross backtest it
-                // searched {module: "yfinance"} — twice — never saw technical-analysis, and rendered
-                // a hand-rolled "0 signals" as a confident answer. A warning in the response did not
-                // change that on the next run, which is the point: a preference the model states must
-                // not be able to remove a better match from what it is shown. Scoped rows still come
-                // first, so the preference is honoured in ordering rather than in visibility.
-                // (BROWSE mode — module with no query — stays an exact filter; asking what ONE module
-                // can do is a different question.)
-                if module.is_some() {
-                    if let Ok((all_rows, _, _, _, _)) =
-                        cat.search_analyzed(&query, None, limit.clamp(1, 20)).await
-                    {
-                        let scoped = module.as_deref().unwrap_or("").to_string();
-                        let known: Vec<String> = rows
-                            .iter()
-                            .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(String::from))
-                            .collect();
-                        for r in all_rows {
-                            let other_module = r
-                                .get("module")
-                                .and_then(|v| v.as_str())
-                                .is_some_and(|m| m != scoped && crate::utils::hub_context::module_permitted_for_args(&args, m));
-                            let already = r
-                                .get("id")
-                                .and_then(|v| v.as_str())
-                                .is_some_and(|id| known.iter().any(|k| k == id));
-                            if other_module && !already {
-                                rows.push(r);
-                            }
-                        }
-                    }
-                }
+                //   · two catalog queries per scoped search = two Upstage query embeddings
+                //   · duplicate rows, and more rows than `limit` — `{module:"toss-invest",
+                //     limit:4}` came back with 7, two of them the same action twice. The dedup
+                //     here read `r["id"]`, and a search row carries `module` + `action`, never
+                //     `id`, so it was always empty and nothing was ever deduped. Dead since
+                //     07-31 and invisible while the scoped search returned that module's rows
+                //     only — there was nothing to collide with until the ranking went wide.
+                //
+                // A model that asked for 5 and got 10, two of them repeats, reads the repeats as
+                // separate candidates. One ranking, `limit` rows, and a scopeNote naming the best
+                // sibling with its score. See [[feedback_guard_reads_a_field_that_never_arrives]].
                 let mut resp = serde_json::json!({
                     "actions": rows,
                     "count": rows.len(),
