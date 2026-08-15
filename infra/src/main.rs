@@ -627,6 +627,20 @@ async fn main() -> Result<()> {
             tracing::info!(target: "ws_stream", count = restored, "persisted watches restored");
         }
     }
+    // Cache entries are deleted by their owner's scope ending, and two kinds of owner can never
+    // end after a restart: a cron run the shutdown interrupted, and a conversation the 30-day
+    // retention sweep removed without naming. Boot is the only place both are decidable — and the
+    // only place it has to be, since the in-memory map behind the runaway cap starts empty here
+    // and would never see them. `get_conversation_meta_by_id` is owner-agnostic and counts
+    // soft-deleted rows as alive, which is right: a conversation in the trash can be restored.
+    {
+        let db_for_sweep = db.clone();
+        let dropped = cache_adapter
+            .sweep_orphans(&move |id| db_for_sweep.get_conversation_meta_by_id(id).is_some());
+        if dropped > 0 {
+            tracing::info!(target: "cache", dropped, "boot orphan sweep");
+        }
+    }
     let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
     // Phase B-18 Step 1.5 — ConversationManager 에 embedder + log 주입 →
     // save() 시 메시지 단위 임베딩 자동 sync + search_history cosine 검색 활성.

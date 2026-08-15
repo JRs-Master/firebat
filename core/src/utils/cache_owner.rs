@@ -31,6 +31,18 @@ pub fn cron_run(job_id: &str, run_id: &str) -> String {
     format!("cron:{}:{}", job_id.trim(), run_id.trim())
 }
 
+/// Whether this owner is a cron run. Every one of them is dead at boot: a run cannot span a
+/// restart, so nothing will ever call `drop_owner` for it again.
+pub fn is_cron_run(owner: &str) -> bool {
+    owner.starts_with("cron:")
+}
+
+/// The conversation an owner names, if it names one. Parsing lives here with the formatting, so
+/// the boot sweep cannot read a shape the writer never produces.
+pub fn conversation_id_of(owner: &str) -> Option<&str> {
+    owner.strip_prefix("conv:").filter(|s| !s.is_empty())
+}
+
 /// Run `fut` with everything it caches attributed to `owner`.
 pub async fn scope<F: std::future::Future>(owner: String, fut: F) -> F::Output {
     CACHE_OWNER.scope(Some(owner), fut).await

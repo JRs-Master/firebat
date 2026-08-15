@@ -482,6 +482,49 @@ impl SysmodCacheAdapter {
         dropped
     }
 
+    /// Delete entries whose owner can never come back for them. Call this once at boot.
+    ///
+    /// Owner-based lifetime has one failure mode: an owner that never ends. Two produce it, and
+    /// both are invisible to anything running later —
+    /// - a **cron run interrupted by the restart** never reaches its `drop_owner`, so every
+    ///   restart during a job leaves a permanent puddle;
+    /// - a conversation removed by the **30-day retention sweep**, which hard-deletes rows without
+    ///   naming them, so nothing was in a position to call `drop_owner` at all.
+    ///
+    /// Boot is the only moment both are decidable, and it has to be disk-only: the in-memory
+    /// last-access map that backs the runaway cap is empty here, so it knows nothing about
+    /// anything written before the restart. A cron owner is dead by definition; a conversation
+    /// owner is asked about. Owners in neither shape are left alone — an unrecognised owner is a
+    /// reason to keep an entry, not to delete it.
+    pub fn sweep_orphans(&self, conversation_exists: &dyn Fn(&str) -> bool) -> usize {
+        let Ok(entries) = std::fs::read_dir(&self.cache_dir) else {
+            return 0;
+        };
+        let (mut cron, mut conv) = (0usize, 0usize);
+        for e in entries.flatten() {
+            let name = e.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Some(key) = name.strip_suffix(".meta.json") else { continue };
+            let Ok(raw) = std::fs::read_to_string(e.path()) else { continue };
+            let Ok(meta) = serde_json::from_str::<CacheMeta>(&raw) else { continue };
+            let Some(owner) = meta.owner.as_deref() else { continue }; // time-owned = sweeper's
+            if crate::utils::cache_owner::is_cron_run(owner) {
+                let _ = self.drop_key(key);
+                cron += 1;
+            } else if let Some(id) = crate::utils::cache_owner::conversation_id_of(owner) {
+                if !conversation_exists(id) {
+                    let _ = self.drop_key(key);
+                    conv += 1;
+                }
+            }
+        }
+        if cron + conv > 0 {
+            tracing::info!(target: "cache", cron, conversations = conv,
+                "boot sweep — owners that will never come back");
+        }
+        cron + conv
+    }
+
     pub fn drop_key(&self, key: &str) -> InfraResult<()> {
         let _ = std::fs::remove_file(self.jsonl_path(key));
         let _ = std::fs::remove_file(self.meta_path(key));
@@ -588,6 +631,35 @@ mod tests {
         c.drop_owner(&crate::utils::cache_owner::cron_run("btc-trend", "1"));
         assert!(c.meta(&keys[0]).is_none());
         assert!(c.meta(&keys[1]).is_some(), "run 2 is still running");
+    }
+
+    /// The restart is the only thing that can clean up after an owner that never ends.
+    #[tokio::test]
+    async fn the_boot_sweep_takes_the_owners_that_can_never_come_back() {
+        let (c, _dir) = cache();
+        // Distinct params per entry — the key hashes them, and three identical calls in the same
+        // millisecond would collide onto one file and quietly test nothing.
+        async fn key_of(c: &SysmodCacheAdapter, owner: String, n: i64) -> String {
+            crate::utils::cache_owner::scope(owner, async {
+                c.data("m", "a", serde_json::json!({ "n": n }),
+                       vec![serde_json::json!({"x": 1})], None)
+                    .unwrap()
+            })
+            .await
+        }
+        let interrupted =
+            key_of(&c, crate::utils::cache_owner::cron_run("btc-trend", "17"), 1).await;
+        let purged = key_of(&c, crate::utils::cache_owner::conversation("gone"), 2).await;
+        let live = key_of(&c, crate::utils::cache_owner::conversation("here"), 3).await;
+        let timed = c
+            .data("m", "a", serde_json::json!({"t": 1}), vec![serde_json::json!({"x": 1})], None)
+            .unwrap();
+
+        assert_eq!(c.sweep_orphans(&|id| id == "here"), 2);
+        assert!(c.meta(&interrupted).is_none(), "no run survives a restart");
+        assert!(c.meta(&purged).is_none(), "its conversation is gone for good");
+        assert!(c.meta(&live).is_some(), "this conversation still exists");
+        assert!(c.meta(&timed).is_some(), "unowned entries are the sweeper's, not this pass's");
     }
 
     /// Entries written outside any scope keep the old behaviour exactly.
