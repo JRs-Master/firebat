@@ -753,21 +753,12 @@ async fn gated_tool_call(
     // for exactly as long as the conversation does. A cron turn is already inside its own run's
     // scope (`in_cron_scope`), and re-entering here would hand its entries to whatever
     // conversation the job's CLI loop happens to be bound to.
-    let result = match firebat_core::utils::cache_owner::current() {
-        Some(_) => handler.call(args).await,
-        None => match firebat_core::utils::hub_context::conversation_id_of_token(token) {
-            Some(conv) => {
-                firebat_core::utils::cache_owner::scope(
-                    firebat_core::utils::cache_owner::conversation(&conv),
-                    handler.call(args),
-                )
-                .await
-            }
-            // No conversation bound (stdio, an unregistered token) — nobody owns it, so the
-            // sweeper's clock does, exactly as before.
-            None => handler.call(args).await,
-        },
-    };
+    // Same helper the FC loop uses — the conversation is resolved from the turn token here and
+    // read off `ai_opts` there, and after that the rule is one function for both.
+    let conv = firebat_core::utils::hub_context::conversation_id_of_token(token);
+    let result =
+        firebat_core::utils::cache_owner::in_conversation(conv.as_deref(), handler.call(args))
+            .await;
     if let Ok(ref v) = result {
         // F6 — skip discovery/schema tools: their output carries documentation example ids that
         // would let a fabricated code "ground" against a doc example (mirror of the FC path).

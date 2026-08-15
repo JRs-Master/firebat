@@ -4469,7 +4469,9 @@ impl AiManager {
                             description: Some(tool_label(&effective_call.name)),
                             error_message: None,
                         });
-                        let mut result = self.dispatch_tool(effective_call).await;
+                        let mut result = self
+                            .dispatch_tool(effective_call, ai_opts.conversation_id.as_deref())
+                            .await;
                         // Remember a fence redirect (render_exec sets useFence on the rejected
                         // block) — the missing-fence nudge at turn end reads this.
                         if effective_call.name == "render"
@@ -5883,8 +5885,18 @@ impl AiManager {
     /// Phase B-16+ 에서 정적 27개 도구 (search_history / save_page / image_gen / render_*) +
     /// 동적 sysmod_* + mcp_* 핸들러 등록 후 실 매니저 메서드 호출.
     #[doc(hidden)]
-    async fn dispatch_tool(&self, call: &ToolCall) -> ToolResult {
-        match self.tools.dispatch(&call.name, &call.arguments).await {
+    async fn dispatch_tool(&self, call: &ToolCall, conversation_id: Option<&str>) -> ToolResult {
+        // Whatever this call caches belongs to the conversation — the same rule the MCP handler
+        // applies, through the same helper. Without it this path kept writing time-owned entries
+        // while the other path wrote owned ones: one transport's chat cache dying on a clock and
+        // the other's living with its conversation is exactly the drift the shared helper exists
+        // to prevent ([[feedback_dual_tool_registry]]).
+        match crate::utils::cache_owner::in_conversation(
+            conversation_id,
+            self.tools.dispatch(&call.name, &call.arguments),
+        )
+        .await
+        {
             Ok(result) => ToolResult {
                 call_id: call.id.clone(),
                 name: call.name.clone(),
