@@ -165,82 +165,50 @@ impl ThinkingConfig {
 mod thinking_tests {
     use super::*;
 
-    /// The real declarations, read at compile time. `builtin_models()` reads a registry that only
-    /// infra fills at startup, so a core-only test run sees an empty list and would assert nothing.
-    const MODELS_JSON: &str = include_str!("../../../system/llm/models.json");
-
-    fn declared() -> Vec<(String, ThinkingConfig)> {
-        let doc: serde_json::Value = serde_json::from_str(MODELS_JSON).expect("models.json parses");
-        doc["models"]
-            .as_array()
-            .expect("models array")
-            .iter()
-            .filter_map(|m| {
-                let id = m["id"].as_str()?.to_string();
-                let t = m.get("thinking")?;
-                let cfg: ThinkingConfig = serde_json::from_value(t.clone()).ok()?;
-                Some((id, cfg))
-            })
-            .collect()
+    fn cfg(levels: &[&str]) -> ThinkingConfig {
+        serde_json::from_value(serde_json::json!({
+            "kind": "reasoning",
+            "levels": levels.iter().map(|v| serde_json::json!({ "value": v })).collect::<Vec<_>>(),
+        }))
+        .expect("fixture parses")
     }
 
-    /// The extraction job used to send a hard-coded `"minimal"` and let the adapter snap it. It now
-    /// picks from the model's own declaration instead, and the two must agree on every model — or
-    /// background extraction quietly changed effort the day this landed.
+    /// Every level vocabulary the registry actually declares, measured 2026-08-15 across its 31
+    /// thinking models. Fixtures rather than the file itself: `models.json` ships by git pull with
+    /// no Rust build, and a test that read it would make an edit there able to fail a build it
+    /// cannot even trigger (CI filters on `core/**`, not `system/**`).
+    const VOCABULARIES: &[(&[&str], &str)] = &[
+        (&["low", "medium", "high", "xhigh", "max"], "low"),
+        (&["none", "low", "medium", "high", "xhigh", "max"], "low"),
+        (&["minimal", "low", "medium", "high"], "minimal"),
+        (&["none", "low", "medium", "high", "xhigh"], "low"),
+        (&["none", "minimal", "low", "medium", "high", "xhigh"], "minimal"),
+    ];
+
+    /// The cheapest level that still thinks — never `none`, which is "do not think" and is the
+    /// first declared level for 13 of the 31 models (solar-pro4 and every GPT-5.x). Taking the
+    /// head of the list there would run memory extraction with reasoning switched off.
     #[test]
-    fn the_cheapest_pick_matches_what_snapping_minimal_used_to_produce() {
-        let models = declared();
-        assert!(models.len() > 20, "expected many declaring models, saw {}", models.len());
-        for (id, cfg) in models {
-            let picked = cfg.cheapest().expect("declares levels");
-            let snapped = cfg.snap_level("minimal").expect("minimal ranks on the ladder");
-            assert_eq!(picked, snapped, "{id} disagrees");
+    fn cheapest_skips_reasoning_off() {
+        for (levels, expected) in VOCABULARIES {
+            assert_eq!(cfg(levels).cheapest().as_deref(), Some(*expected), "{levels:?}");
         }
     }
 
-    /// Why the head of the list is not simply taken: `none` means "do not think".
+    /// The extraction job used to send a hard-coded `"minimal"` for the adapter to snap. It picks
+    /// from the model's own declaration now, and on every vocabulary in the registry the two land
+    /// in the same place — which is what made the swap a no-op rather than a silent effort change.
     #[test]
-    fn none_is_never_the_cheapest_pick_when_anything_else_is_declared() {
-        let mut saw_a_none_first = false;
-        for (id, cfg) in declared() {
-            if cfg.levels.first().map(|l| l.value.as_str()) != Some("none") {
-                continue;
-            }
-            saw_a_none_first = true;
-            assert_ne!(
-                cfg.cheapest().as_deref(),
-                Some("none"),
-                "{id} would run background extraction with reasoning off"
-            );
-        }
-        assert!(saw_a_none_first, "fixture drift — no model declares `none` first any more");
-    }
-
-    /// The label is derived from the value now, so the declarations must not carry one — a
-    /// reintroduced `labels` block is the start of the 17-spellings drift all over again.
-    #[test]
-    fn no_declaration_carries_a_hand_written_label() {
-        let doc: serde_json::Value = serde_json::from_str(MODELS_JSON).unwrap();
-        for m in doc["models"].as_array().unwrap() {
-            let Some(levels) = m.pointer("/thinking/levels").and_then(|v| v.as_array()) else {
-                continue;
-            };
-            for l in levels {
-                assert!(
-                    l.get("labels").is_none(),
-                    "{} still declares labels",
-                    m["id"].as_str().unwrap_or("?")
-                );
-            }
+    fn cheapest_lands_where_snapping_minimal_did() {
+        for (levels, _) in VOCABULARIES {
+            let c = cfg(levels);
+            assert_eq!(c.cheapest(), c.snap_level("minimal"), "{levels:?}");
         }
     }
 
     #[test]
     fn an_empty_declaration_has_no_cheapest_level() {
-        let cfg: ThinkingConfig =
-            serde_json::from_value(serde_json::json!({ "kind": "reasoning", "levels": [] }))
-                .expect("empty level list parses");
-        assert_eq!(cfg.cheapest(), None);
+        assert_eq!(cfg(&[]).cheapest(), None);
     }
 }
 
