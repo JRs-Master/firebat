@@ -2540,7 +2540,14 @@ impl AiManager {
                     let retrieve_opts = retrieval_engine::RetrieveOpts {
                         query: prompt.to_string(),
                         owner: Some(owner_s.clone()),
-                        current_conv_id: conv_id,
+                        // EXCLUDE, not boost. The active conversation is already prepended in full
+                        // as `## 최근 대화 컨텍스트`, so matching it here re-sent turns the model was
+                        // reading two blocks above — and the same-conversation boost made that the
+                        // normal case, not the edge (2026-08-16: every "Related past conversations"
+                        // entry was the current turn pair). The boost belongs to the tool callers,
+                        // who asked to search and have no verbatim copy in front of them.
+                        current_conv_id: None,
+                        exclude_conv_id: conv_id,
                         limits: retrieval_engine::RetrievalLimits {
                             library: Some(0),
                             ..Default::default()

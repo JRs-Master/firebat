@@ -110,6 +110,69 @@ async fn search_history_returns_match_for_indexed_message() {
     assert!(results[0].content_preview.contains("삼성전자"));
 }
 
+/// The ambient recall path already prepends the active conversation in full, so it asks for that
+/// conversation to be left out. Boosting it there (the old behaviour) meant every retrieved
+/// "related past conversation" was the turn pair sitting two blocks higher in the same prompt.
+#[tokio::test]
+async fn search_history_can_leave_the_active_conversation_out() {
+    let (mgr, _dir) = make_manager_with_embedder();
+    let msg = serde_json::json!([{"role": "user", "content": "삼성전자 매수 75000원"}]);
+    mgr.save("admin", "c1", "거래", &msg, None).await.unwrap();
+    mgr.save("admin", "c2", "거래", &msg, None).await.unwrap();
+
+    let opts = |exclude: Option<&str>| SearchHistoryOpts {
+        exclude_conv_id: exclude.map(String::from),
+        min_score: Some(-1.0),
+        limit: Some(10),
+        ..Default::default()
+    };
+
+    let all = mgr
+        .search_history("admin", "삼성전자 매수", opts(None))
+        .await
+        .unwrap();
+    assert!(all.iter().any(|m| m.conv_id == "c1"), "baseline: c1 matches");
+    assert!(all.iter().any(|m| m.conv_id == "c2"));
+
+    let without = mgr
+        .search_history("admin", "삼성전자 매수", opts(Some("c1")))
+        .await
+        .unwrap();
+    assert!(
+        without.iter().all(|m| m.conv_id != "c1"),
+        "the excluded conversation must not come back: {without:?}"
+    );
+    assert!(
+        without.iter().any(|m| m.conv_id == "c2"),
+        "and every other conversation still can: {without:?}"
+    );
+}
+
+/// The boost is the opposite request and stays intact — a tool caller asked to search and wants
+/// the thread it is standing in ranked first.
+#[tokio::test]
+async fn search_history_still_prefers_the_current_conversation_when_asked() {
+    let (mgr, _dir) = make_manager_with_embedder();
+    let msg = serde_json::json!([{"role": "user", "content": "삼성전자 매수 75000원"}]);
+    mgr.save("admin", "c1", "거래", &msg, None).await.unwrap();
+    mgr.save("admin", "c2", "거래", &msg, None).await.unwrap();
+
+    let results = mgr
+        .search_history(
+            "admin",
+            "삼성전자 매수",
+            SearchHistoryOpts {
+                current_conv_id: Some("c2".to_string()),
+                min_score: Some(-1.0),
+                limit: Some(10),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(results[0].conv_id, "c2", "the boosted conversation ranks first: {results:?}");
+}
+
 #[tokio::test]
 async fn search_history_empty_query_returns_empty() {
     let (mgr, _dir) = make_manager_with_embedder();

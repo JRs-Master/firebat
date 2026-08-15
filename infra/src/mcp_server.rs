@@ -1998,6 +1998,9 @@ impl McpToolHandler for SearchHistoryHandler {
         let query = obj_str(&args, "query").ok_or_else(|| "query 필수".to_string())?;
         let opts = SearchHistoryOpts {
             current_conv_id: obj_str(&args, "currentConvId"),
+            // Mirrors the core handler: an explicit search hides nothing. Only the ambient recall
+            // path excludes, because it already prepends that conversation in full.
+            exclude_conv_id: None,
             limit: obj_i64(&args, "limit").map(|v| v as usize),
             within_days: obj_i64(&args, "withinDays"),
             min_score: args.get("minScore").and_then(|v| v.as_f64()).map(|v| v as f32),

@@ -74,6 +74,9 @@ pub struct RetrieveOpts {
     pub query: String,
     pub owner: Option<String>,
     pub current_conv_id: Option<String>,
+    /// Keep this conversation out of the history matches. The ambient path sets it because the
+    /// same conversation is already prepended in full; a tool caller leaves it unset.
+    pub exclude_conv_id: Option<String>,
     pub limits: RetrievalLimits,
     /// Library 검색 영역 제한 — 명시되면 그 Reference ID 만 cosine 매치 대상.
     /// 빈 Vec 또는 None = 무제한 (옛 admin 흐름 — owner 영역 전체 Reference).
@@ -466,6 +469,7 @@ impl RetrievalEngine {
                 query,
                 SearchHistoryOpts {
                     current_conv_id: opts.current_conv_id.clone(),
+                    exclude_conv_id: opts.exclude_conv_id.clone(),
                     limit: Some(lim.history),
                     min_score: Some(0.5),
                     ..Default::default()

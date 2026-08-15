@@ -131,7 +131,16 @@ pub struct ConversationWindow {
 
 #[derive(Debug, Clone, Default)]
 pub struct SearchHistoryOpts {
+    /// Scores this conversation's own messages higher — for a caller that asked to search and
+    /// wants the thread it is standing in first (the `search_history` / `search_memory` tools).
     pub current_conv_id: Option<String>,
+    /// Drops this conversation's messages entirely. The ambient recall path prepends the active
+    /// conversation verbatim as `## 최근 대화 컨텍스트`, so letting it also match here spent the
+    /// retrieval budget re-sending turns the model was already reading two blocks above — and with
+    /// `current_conv_id` boosting them by 0.2 it was not a risk but a near-certainty (measured
+    /// 2026-08-16: all three "Related past conversations" were the current turn pair).
+    /// Boost and exclude are separate fields on purpose — the two callers want opposite things.
+    pub exclude_conv_id: Option<String>,
     pub limit: Option<usize>,
     pub within_days: Option<i64>,
     pub min_score: Option<f32>,
@@ -642,6 +651,7 @@ impl ConversationManager {
 
         let mut scored: Vec<HistorySearchMatch> = rows
             .into_iter()
+            .filter(|r| opts.exclude_conv_id.as_deref() != Some(r.conv_id.as_str()))
             .map(|r| {
                 let vec = embedder.bytes_to_vec(&r.embedding);
                 let mut score = embedder.cosine(&q_vec, &vec);

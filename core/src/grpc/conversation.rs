@@ -193,6 +193,8 @@ impl ConversationService for ConversationServiceImpl {
         let args = req.into_inner();
         let opts = crate::managers::conversation::SearchHistoryOpts {
             current_conv_id: args.current_conv_id,
+            // A caller who asked to search wants everything ranked, the active thread included.
+            exclude_conv_id: None,
             limit: args.limit.map(|v| v as usize),
             within_days: args.within_days,
             min_score: args.min_score.map(|v| v as f32),

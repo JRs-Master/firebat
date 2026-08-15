@@ -2339,6 +2339,9 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let opts = crate::managers::conversation::SearchHistoryOpts {
                     current_conv_id: args.get("currentConvId").and_then(|v| v.as_str()).map(String::from),
+                    // The model asked for this search, so nothing is hidden from it — only the
+                    // ambient path excludes, and only because it already prepends that conversation.
+                    exclude_conv_id: None,
                     limit: args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize),
                     within_days: args.get("withinDays").and_then(|v| v.as_i64()),
                     min_score: args.get("minScore").and_then(|v| v.as_f64()).map(|v| v as f32),
