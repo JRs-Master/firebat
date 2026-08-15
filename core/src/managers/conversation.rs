@@ -105,6 +105,11 @@ pub struct ConversationWindowMessage {
     pub msg_idx: i64,
     pub role: String,
     pub text: String,
+    /// `includeBlocks=true` 시 그 메시지의 원본 render blocks. `text` 는 데이터 계열을
+    /// `[stock_chart data 63행]` 로 접으므로, 접힌 값이 필요하면 이 칸이 준다 —
+    /// 재조회가 아니라 되읽기(같은 시점의 같은 값).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocks: Option<serde_json::Value>,
 }
 
 /// A contiguous slice of one session, as returned to the caller of `read_messages`.
@@ -183,6 +188,7 @@ impl ConversationManager {
         from: usize,
         to: Option<usize>,
         max_chars: usize,
+        include_blocks: bool,
     ) -> Option<ConversationWindow> {
         let record = self.db.get_conversation(owner, id)?;
         let messages = record.messages.as_array().cloned().unwrap_or_default();
@@ -198,7 +204,14 @@ impl ConversationManager {
             let Some(parsed) = message_to_text(msg) else {
                 continue;
             };
-            let len = parsed.text.chars().count();
+            let blocks = if include_blocks { message_blocks(msg) } else { None };
+            // Blocks count toward the cap too — otherwise `maxChars` would bound the prose while a
+            // window quietly returned megabytes of rows, and `nextFrom` would stop meaning anything.
+            let len = parsed.text.chars().count()
+                + blocks
+                    .as_ref()
+                    .map(|b| b.to_string().chars().count())
+                    .unwrap_or(0);
             if used + len > max_chars && !out.is_empty() {
                 next_from = Some(idx);
                 break;
@@ -208,6 +221,7 @@ impl ConversationManager {
                 msg_idx: idx as i64,
                 role: parsed.role,
                 text: parsed.text,
+                blocks,
             });
         }
 
@@ -650,11 +664,7 @@ impl ConversationManager {
                 for fi in indices {
                     let msg_idx = filtered[fi].msg_idx as usize;
                     if let Some(msg) = msgs.get(msg_idx) {
-                        if let Some(blocks) = msg.get("data").and_then(|d| d.get("blocks")) {
-                            if blocks.is_array() {
-                                filtered[fi].blocks = Some(blocks.clone());
-                            }
-                        }
+                        filtered[fi].blocks = message_blocks(msg);
                     }
                 }
             }
@@ -665,6 +675,22 @@ impl ConversationManager {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+/// The render blocks a stored message carries, from whichever channel holds them: `data.blocks`
+/// (render-tool path) or the `firebat-render` fences in `content` (the primary path). Reading only
+/// `data.blocks` recovered nothing for a fence-rendered answer, which is how `includeBlocks` came
+/// back empty for exactly the messages worth reopening. One helper so `search_history` and
+/// `read_conversation` hand back the same thing.
+fn message_blocks(msg: &serde_json::Value) -> Option<serde_json::Value> {
+    if let Some(blocks) = msg.get("data").and_then(|d| d.get("blocks")) {
+        if blocks.as_array().is_some_and(|a| !a.is_empty()) {
+            return Some(blocks.clone());
+        }
+    }
+    msg.get("content")
+        .and_then(|v| v.as_str())
+        .and_then(crate::managers::ai::render_exec::fence_blocks)
+}
 
 /// Embedding sync core — standalone (no `&self`) so the background task in `append()` can run it from
 /// cloned Arcs. Compares the message array against stored embeddings, re-embeds new/changed messages

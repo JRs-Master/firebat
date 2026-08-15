@@ -2424,7 +2424,8 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             Pass the convId from search_history or list_conversations. `from`/`to` are message \
             indices (`to` exclusive, omit for the end); search_history's msgIdx tells you where a \
             match sits, so read around it. Long ranges are cut at a character cap and the response \
-            says where to resume (nextFrom)."
+            says where to resume (nextFrom). Text folds a chart or table's rows to a marker like \
+            `[stock_chart data 63행]`; includeBlocks returns those rows."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -2433,7 +2434,10 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 "convId": {"type": "string"},
                 "from": {"type": "integer", "description": "first message index (default 0)"},
                 "to": {"type": "integer", "description": "end index, exclusive (default: end of session)"},
-                "maxChars": {"type": "integer", "description": "character cap for the window (default 12000)"}
+                "maxChars": {"type": "integer", "description": "character cap for the window (default 12000)"},
+                // The rows are in the stored message, so this reads back the values that were shown
+                // rather than fetching current ones — the distinction that matters for a snapshot.
+                "includeBlocks": {"type": "boolean", "description": "also return the render blocks (chart/table rows) each message carries, as they were shown"}
             }
         }),
         source: "core".to_string(),
@@ -2461,7 +2465,11 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .map(|n| n as usize)
                     .unwrap_or(12_000)
                     .clamp(500, 60_000);
-                match conversation.read_messages(&owner, &conv_id, from, to, max_chars) {
+                let include_blocks = args
+                    .get("includeBlocks")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                match conversation.read_messages(&owner, &conv_id, from, to, max_chars, include_blocks) {
                     Some(window) => {
                         let mut out = serde_json::to_value(window).unwrap_or_default();
                         if let Some(obj) = out.as_object_mut() {

@@ -1260,7 +1260,7 @@ pub fn fence_to_plaintext(text: &str) -> String {
         match parse_fence_json(body) {
             Some(v) => {
                 let mut collected = String::new();
-                collect_text_values(&v, "", &mut collected);
+                collect_text_values(&v, "", "", &mut collected);
                 out.push_str(collected.trim());
             }
             // parse 실패 = 그냥 본문(JSON 마커만 떼고) — raw JSON 보다 나음.
@@ -1272,35 +1272,180 @@ pub fn fence_to_plaintext(text: &str) -> String {
     out
 }
 
+/// An array is a data series, not prose, when it is both long and bulky. Folding it costs nothing a
+/// reader wanted: this walk keeps strings and drops numbers, so a 63-row candle set contributed 63
+/// ISO dates and not one price — the tokens of the data without its values. The rows themselves stay
+/// in the stored message and come back on demand (`fence_blocks` → `read_conversation`/
+/// `search_history` with `includeBlocks`), so nothing has to be fetched again.
+///
+/// Deliberately a shape test, not a component list: a table of 5 rows is an illustration and
+/// survives, any component's 60-row series folds, and a new component needs no entry anywhere.
+const SERIES_MIN_ROWS: usize = 8;
+const SERIES_MAX_CHARS: usize = 400;
+
 /// Recursively collect human-readable string values from a render block tree, skipping structural
 /// identifier values (`type` / `name` = component ids like "header"/"component", pure noise).
-fn collect_text_values(v: &Value, key: &str, out: &mut String) {
+/// `block` = the `type` of the nearest enclosing render block, carried so a folded series can name
+/// what it belonged to.
+fn collect_text_values(v: &Value, key: &str, block: &str, out: &mut String) {
     match v {
         Value::String(s) => {
-            if !matches!(key, "type" | "name") && !s.trim().is_empty() {
-                if !out.is_empty() {
-                    out.push(' ');
-                }
-                out.push_str(s.trim());
+            let s = s.trim();
+            if matches!(key, "type" | "name") || s.is_empty() {
+                return;
+            }
+            // The pointer back to the rows — worth keeping, but only if it reads as one.
+            if key == "dataCacheKey" {
+                push_token(out, &format!("key={}", s));
+            } else {
+                push_token(out, s);
             }
         }
         Value::Object(o) => {
+            let block = o.get("type").and_then(|t| t.as_str()).unwrap_or(block);
             for (k, val) in o {
-                collect_text_values(val, k, out);
+                collect_text_values(val, k, block, out);
             }
         }
         Value::Array(a) => {
+            let mut inner = String::new();
             for val in a {
-                collect_text_values(val, key, out);
+                collect_text_values(val, key, block, &mut inner);
+            }
+            // A render block names itself in `type`; a data row never does. Without this test the
+            // list of blocks is itself "long and bulky", so a ten-section prose answer would fold
+            // to a marker and lose every word of it.
+            let is_block_list = a.iter().any(|e| e.get("type").is_some());
+            if !is_block_list && a.len() >= SERIES_MIN_ROWS && inner.chars().count() > SERIES_MAX_CHARS
+            {
+                let label = if block.is_empty() {
+                    key.to_string()
+                } else if key.is_empty() {
+                    block.to_string()
+                } else {
+                    format!("{} {}", block, key)
+                };
+                push_token(out, &format!("[{} {}행]", label, a.len()));
+            } else {
+                push_token(out, &inner);
             }
         }
         _ => {}
     }
 }
 
+/// Space-separated append — the separator belongs between tokens, not before the first one.
+fn push_token(out: &mut String, token: &str) {
+    if token.is_empty() {
+        return;
+    }
+    if !out.is_empty() {
+        out.push(' ');
+    }
+    out.push_str(token);
+}
+
+/// The render blocks carried by a message's `content` fences. The fence is the primary channel —
+/// the render tool's `data.blocks` is the other — so a reader that only looks at `data.blocks`
+/// recovers nothing for a fence-rendered answer, which is most of them.
+pub fn fence_blocks(text: &str) -> Option<Value> {
+    if !text.contains(FENCE_OPEN) && !text.contains(TAG_OPEN) {
+        return None;
+    }
+    let mut all: Vec<Value> = Vec::new();
+    let mut rest = text;
+    while let Some(region) = find_fence_region(rest) {
+        if let Some(v) = parse_fence_json(&rest[region.body_start..region.body_end]) {
+            match v {
+                Value::Array(items) => all.extend(items),
+                Value::Object(ref o) => match o.get("blocks").and_then(|b| b.as_array()) {
+                    Some(items) => all.extend(items.iter().cloned()),
+                    None => all.push(v),
+                },
+                _ => {}
+            }
+        }
+        rest = &rest[region.end..];
+    }
+    (!all.is_empty()).then(|| Value::Array(all))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Wrap a block list in the canonical fence so the tests exercise the real entry point.
+    fn fenced(blocks: Value) -> String {
+        format!("앞말\n```firebat-render\n{}\n```\n뒷말", blocks)
+    }
+
+    /// 63 candles used to contribute 63 ISO dates and not one price — the walk keeps strings and
+    /// drops numbers. That is the tokens of the data without its values, so it folds.
+    #[test]
+    fn a_long_series_folds_instead_of_spilling_its_labels() {
+        let rows: Vec<Value> = (1..=63)
+            .map(|d| serde_json::json!({"date": format!("2026-08-{:02}", d), "close": 70000 + d}))
+            .collect();
+        let text = fenced(serde_json::json!([
+            {"type": "stock_chart", "props": {"title": "삼성전자 일봉", "data": rows}}
+        ]));
+        let plain = fence_to_plaintext(&text);
+        assert!(plain.contains("[stock_chart data 63행]"), "got: {plain}");
+        assert!(!plain.contains("2026-08-01"), "the dates must not survive: {plain}");
+        assert!(plain.contains("삼성전자 일봉"), "the title is prose and stays: {plain}");
+        assert!(plain.contains("앞말") && plain.contains("뒷말"));
+    }
+
+    /// The threshold is size, not component identity — a five-row table is an illustration.
+    #[test]
+    fn a_small_table_keeps_every_cell() {
+        let text = fenced(serde_json::json!([
+            {"type": "table", "props": {
+                "headers": ["종목", "종가"],
+                "rows": [["삼성전자", "71000"], ["SK하이닉스", "205000"], ["NAVER", "168000"]]
+            }}
+        ]));
+        let plain = fence_to_plaintext(&text);
+        assert!(plain.contains("SK하이닉스"), "got: {plain}");
+        assert!(!plain.contains("행]"), "nothing to fold here: {plain}");
+    }
+
+    /// The block list is itself long and bulky. Folding it would eat a ten-section prose answer,
+    /// so the row test has to exclude anything that names itself with `type`.
+    #[test]
+    fn a_long_prose_answer_is_not_a_data_series() {
+        let blocks: Vec<Value> = (1..=12)
+            .map(|i| serde_json::json!({
+                "type": "text",
+                "props": {"content": format!("{i}번째 문단입니다. 접히면 안 되는 실제 답변 본문이 여기에 들어갑니다.")}
+            }))
+            .collect();
+        let plain = fence_to_plaintext(&fenced(Value::Array(blocks)));
+        assert!(plain.contains("1번째 문단"), "got: {plain}");
+        assert!(plain.contains("12번째 문단"), "got: {plain}");
+        assert!(!plain.contains("행]"), "prose must never fold: {plain}");
+    }
+
+    /// The fold is only safe because the rows come back. `data.blocks` covers the render-tool path;
+    /// this covers the fence path, which is the one most answers take.
+    #[test]
+    fn fence_blocks_returns_the_rows_the_text_folded() {
+        let rows: Vec<Value> = (1..=63)
+            .map(|d| serde_json::json!({"date": format!("2026-08-{:02}", d), "close": 70000 + d}))
+            .collect();
+        let text = fenced(serde_json::json!([
+            {"type": "stock_chart", "props": {"title": "삼성전자 일봉", "data": rows}}
+        ]));
+        let recovered = fence_blocks(&text).expect("the fence carries blocks");
+        let data = &recovered[0]["props"]["data"];
+        assert_eq!(data.as_array().map(|a| a.len()), Some(63));
+        assert_eq!(data[0]["close"], 70001, "the numbers the text dropped are here");
+    }
+
+    #[test]
+    fn fence_blocks_is_none_without_a_fence() {
+        assert!(fence_blocks("그냥 평문 답변입니다").is_none());
+    }
 
     /// The measured 2026-08-08 shape: a middle block whose `props` object never closes. The
     /// whole-document chain fails (the balance repair appends the closer at end-of-document),

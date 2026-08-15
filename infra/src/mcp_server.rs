@@ -2008,9 +2008,10 @@ impl McpToolHandler for ReadConversationHandler {
             .map(|v| v as usize)
             .unwrap_or(12_000)
             .clamp(500, 60_000);
+        let include_blocks = obj_bool(&args, "includeBlocks").unwrap_or(false);
         match self
             .conversation
-            .read_messages(&owner, &conv_id, from, to, max_chars)
+            .read_messages(&owner, &conv_id, from, to, max_chars, include_blocks)
         {
             Some(window) => Ok(serde_json::json!({"success": true, "data": window})),
             None => Ok(serde_json::json!({
@@ -2551,8 +2552,10 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     state.register(McpTool {
         name: "read_conversation".into(),
         description: core_desc("read_conversation", "Read a range of messages from one session, in order. `to` is exclusive; omit \
-            for the end. Long ranges stop at a character cap and report nextFrom. inputSchema: \
-            {owner?, convId, from?, to?, maxChars?}.").into(),
+            for the end. Long ranges stop at a character cap and report nextFrom. Text folds a \
+            chart or table's rows to a marker like `[stock_chart data 63행]`; includeBlocks returns \
+            those rows as they were shown. inputSchema: {owner?, convId, from?, to?, maxChars?, \
+            includeBlocks?}.").into(),
         input_schema: core_schema("read_conversation", schema_object(serde_json::json!({"convId": {"type":"string"}}))),
         handler: Arc::new(ReadConversationHandler { conversation: deps.conversation }),
     }).await;
