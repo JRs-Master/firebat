@@ -1,107 +1,99 @@
-//! `render_*` 도구 이름 → 컴포넌트 타입 매핑 single source.
+//! `render_*` tool name → component type.
 //!
-//! 옛 TS `lib/render-map.ts` 1:1 port.
+//! Derived from `components.json`, which is the one place a component exists. The map used to be
+//! thirty hand-written inserts kept "in sync" with that file by a test that counted them, and it
+//! had drifted: the catalog held 44 components and this map named 30, so the fourteen newest —
+//! every study card, every live component, `function_plot` — resolved to nothing on the CLI
+//! adapters that read it. A list copied from reality diverges from it; the fix is to stop copying
+//! ([[feedback_derive_dont_maintain_lists]]).
 //!
-//! AI 가 `render_table` / `render_chart` / `render_alert` 등 호출 시 어떤 컴포넌트로 렌더할지 결정.
-//! mcp/internal-server / cli adapter / result_processor 등 여러 곳이 본 매핑 단일 사용.
-//!
-//! 이전 (옛 TS): ai-manager / cli-gemini / cli-claude-code / cli-codex 4군데에 동일 매핑
-//!              hardcoded → 새 컴포넌트 추가 시 4군데 수정.
-//! 변경: 본 모듈 한 곳만 수정 → 자동 반영 (일반 로직).
+//! Consumers: `result_processor` (both directions), the three CLI adapters (claude-code / codex /
+//! gemini) resolving a pending tool call, and `ai.rs`.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-/// `render_*` 도구 이름 → 컴포넌트 타입 매핑.
-/// components.json render 컴포넌트 동기 (30 entries — quiz/quiz_group/plan_card 포함, 2026-06-12).
+/// The one entry that is NOT a component: `render_alert` is the old name for `render_callout`,
+/// whose renderer is still `AlertComp` on the frontend. An alias has to be declared because
+/// nothing derives it — but it is one line, not thirty.
+const ALIASES: &[(&str, &str)] = &[("render_alert", "Alert")];
+
+/// `render_*` tool name → component type (PascalCase), one entry per catalog component.
 pub fn render_tool_map() -> &'static HashMap<&'static str, &'static str> {
     static MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     MAP.get_or_init(|| {
         let mut m = HashMap::new();
-        m.insert("render_stock_chart", "StockChart");
-        m.insert("render_table", "Table");
-        m.insert("render_alert", "Alert");
-        m.insert("render_callout", "Callout");
-        m.insert("render_badge", "Badge");
-        m.insert("render_progress", "Progress");
-        m.insert("render_header", "Header");
-        m.insert("render_text", "Text");
-        m.insert("render_list", "List");
-        m.insert("render_divider", "Divider");
-        m.insert("render_countdown", "Countdown");
-        m.insert("render_chart", "Chart");
-        m.insert("render_image", "Image");
-        m.insert("render_card", "Card");
-        m.insert("render_grid", "Grid");
-        m.insert("render_metric", "Metric");
-        m.insert("render_timeline", "Timeline");
-        m.insert("render_compare", "Compare");
-        m.insert("render_key_value", "KeyValue");
-        m.insert("render_status_badge", "StatusBadge");
-        m.insert("render_map", "Map");
-        m.insert("render_diagram", "Diagram");
-        m.insert("render_math", "Math");
-        m.insert("render_code", "Code");
-        m.insert("render_slideshow", "Slideshow");
-        m.insert("render_lottie", "Lottie");
-        m.insert("render_network", "Network");
-        m.insert("render_quiz", "Quiz");
-        m.insert("render_quiz_group", "QuizGroup");
-        m.insert("render_plan_card", "PlanCard");
+        for c in crate::managers::ai::component_registry::components() {
+            // The catalog is 'static, so its component types borrow directly; only the
+            // `render_`-prefixed key is new, and it is created once per process.
+            let key: &'static str = Box::leak(format!("render_{}", c.name).into_boxed_str());
+            m.insert(key, c.component_type.as_str());
+        }
+        for (alias, component_type) in ALIASES {
+            m.insert(*alias, *component_type);
+        }
         m
     })
 }
 
-/// `Component → render_<tool>` 역방향 매핑 (옛 TS `Object.entries` reverse 패턴 1:1).
-/// `render` 단일 도구의 `result.component` 분기에서 사용 (component 이름 → tool 이름 매칭).
+/// `Component → render_<tool>` — used where a result names the component and the caller needs the
+/// tool name back. Components sharing a type (the alias) collapse; the canonical name wins.
 pub fn render_tool_inverse_map() -> &'static HashMap<&'static str, &'static str> {
     static INV: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     INV.get_or_init(|| {
-        render_tool_map()
-            .iter()
-            .map(|(k, v)| (*v, *k))
-            .collect()
+        // Canonical names first, aliases only where they answer for nothing — HashMap iteration
+        // order is arbitrary, so "whichever came last" is not an answer.
+        let mut inv: HashMap<&'static str, &'static str> = HashMap::new();
+        let aliases: Vec<&str> = ALIASES.iter().map(|(a, _)| *a).collect();
+        for (tool, component_type) in render_tool_map() {
+            if !aliases.contains(tool) {
+                inv.insert(*component_type, *tool);
+            }
+        }
+        for (alias, component_type) in ALIASES {
+            inv.entry(*component_type).or_insert(*alias);
+        }
+        inv
     })
 }
 
-/// 변형 매칭 helper — AI 가 다양한 형태로 호출해도 자동 정규화.
-///   - `"render_table"` (정확) → `Some("render_table")`
-///   - `"render-table"` (kebab) → `Some("render_table")`
-///   - `"table"` (접두사 누락) → `Some("render_table")`
+/// Tolerant lookup — the model may write the name three ways:
+///   - `"render_table"` (exact)      → `Some("render_table")`
+///   - `"render-table"` (kebab)      → `Some("render_table")`
+///   - `"table"` (prefix omitted)    → `Some("render_table")`
 ///
-/// `mcp_firebat_render_table` 같은 Gemini CLI prefix 는 호출자가 사전에 strip.
+/// A Gemini-CLI prefix like `mcp_firebat_render_table` is stripped by the caller beforehand.
 pub fn normalize_render_name(name: &str) -> Option<&'static str> {
     let stripped = name.trim();
     if stripped.is_empty() {
         return None;
     }
     let map = render_tool_map();
+    let hit = |candidate: &str| map.get_key_value(candidate).map(|(k, _)| *k);
 
-    // 정확 매칭
-    if let Some(_) = map.get(stripped) {
-        return map.keys().find(|k| **k == stripped).copied();
-    }
-    // kebab → snake
-    let snake = stripped.replace('-', "_");
-    if let Some(_) = map.get(snake.as_str()) {
-        return map.keys().find(|k| **k == snake.as_str()).copied();
-    }
-    // render_ 접두사 누락 → 자동 추가
-    let with_prefix = format!("render_{}", snake);
-    if let Some(_) = map.get(with_prefix.as_str()) {
-        return map.keys().find(|k| **k == with_prefix.as_str()).copied();
-    }
-    None
+    hit(stripped)
+        .or_else(|| hit(&stripped.replace('-', "_")))
+        .or_else(|| hit(&format!("render_{}", stripped.replace('-', "_"))))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The map IS the catalog — not a copy of it that a number has to police.
     #[test]
-    fn render_map_has_30_entries() {
-        // components.json render 컴포넌트와 동기 — quiz/quiz_group/plan_card 추가(2026-06-12) + render_alert alias.
-        assert_eq!(render_tool_map().len(), 30);
+    fn render_map_covers_every_catalog_component() {
+        let map = render_tool_map();
+        for c in crate::managers::ai::component_registry::components() {
+            let key = format!("render_{}", c.name);
+            assert_eq!(
+                map.get(key.as_str()),
+                Some(&c.component_type.as_str()),
+                "{key} missing or wrong — the map no longer derives from the catalog"
+            );
+        }
+        let expected = crate::managers::ai::component_registry::components().len() + ALIASES.len();
+        assert_eq!(map.len(), expected, "map holds entries no component declares");
     }
 
     #[test]
@@ -114,12 +106,23 @@ mod tests {
         assert_eq!(m.get("render_image"), Some(&"Image"));
     }
 
+    /// The components the hand-written map had been missing since they were added.
+    #[test]
+    fn render_map_reaches_the_components_the_copy_had_dropped() {
+        let m = render_tool_map();
+        for name in ["render_vocab", "render_passage", "render_function_plot", "render_live_chart"] {
+            assert!(m.contains_key(name), "{name} unresolvable");
+        }
+    }
+
     #[test]
     fn inverse_map_roundtrip() {
         let inv = render_tool_inverse_map();
         assert_eq!(inv.get("Table"), Some(&"render_table"));
         assert_eq!(inv.get("StockChart"), Some(&"render_stock_chart"));
         assert_eq!(inv.get("Map"), Some(&"render_map"));
+        // Callout owns its type; the `render_alert` alias must not claim it.
+        assert_eq!(inv.get("Callout"), Some(&"render_callout"));
     }
 
     #[test]
@@ -138,7 +141,6 @@ mod tests {
     fn normalize_missing_prefix() {
         assert_eq!(normalize_render_name("table"), Some("render_table"));
         assert_eq!(normalize_render_name("chart"), Some("render_chart"));
-        // kebab + prefix 누락
         assert_eq!(normalize_render_name("stock-chart"), Some("render_stock_chart"));
     }
 

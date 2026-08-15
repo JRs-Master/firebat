@@ -1011,6 +1011,40 @@ impl AiManager {
         // Discovery classification rides per_turn_limit declarations (search_module_actions 참조)
         // — leaving this undeclared would leak it into the action class (stall 재개방·배너 억제).
         self.tools.set_per_turn_limit("get_component_schema", 8);
+
+        // list_components — the rung the component ladder was missing. Modules have
+        // `list_system_modules`; components had search and get but no way to ask what the palette
+        // IS, so "what can you draw?" was answerable only from whatever prose happened to be
+        // resident. Derived from the catalog, so it cannot go stale, and delivered as a tool
+        // result rather than sitting in every turn's prompt.
+        let list_handler = crate::managers::tool::make_handler(move |_args: serde_json::Value| async move {
+            let rows: Vec<serde_json::Value> = component_registry::components()
+                .iter()
+                .map(|c| {
+                    // First sentence only: the list is a trigger, the schema is the get step.
+                    let purpose = c
+                        .description
+                        .split_once(". ")
+                        .map(|(head, _)| head)
+                        .unwrap_or(&c.description)
+                        .trim();
+                    serde_json::json!({ "name": c.name, "purpose": purpose })
+                })
+                .collect();
+            Ok(serde_json::json!({
+                "components": rows,
+                "count": rows.len(),
+                "next": "Call get_component_schema {\"name\":\"<component>\"} for the props schema before writing the firebat-render fence.",
+            }))
+        });
+        self.tools.register_handler("list_components", list_handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "list_components".to_string(),
+            description: "Every render component, with a one-line purpose each. The whole palette when a search would only narrow it.".to_string(),
+            parameters: serde_json::json!({ "type": "object", "properties": {} }),
+            source: "core".to_string(),
+        });
+        self.tools.set_per_turn_limit("list_components", 8);
         self
     }
 

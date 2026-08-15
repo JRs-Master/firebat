@@ -395,7 +395,14 @@ pub fn render_blocks(
                 failed.push(serde_json::json!({
                     "idx": idx,
                     "type": block_type,
-                    "error": format!("알 수 없는 컴포넌트 '{}'. components.json 의 26 종 중 하나여야", block_type),
+                    // The count came from the catalog even when it was written by hand — and it
+                    // was wrong by eighteen. Ask the catalog.
+                    "error": format!(
+                        "no component named '{}'. Call search_components(query) or \
+                         list_components() — the catalog holds {}.",
+                        block_type,
+                        component_registry::components().len()
+                    ),
                 }));
                 continue;
             }
