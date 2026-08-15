@@ -421,16 +421,24 @@ impl TaskExecutor for StubTaskExecutor {
 /// away. `None` when the name merely occurs — which is most of the time, because tool names are
 /// ordinary English words living inside longer ordinary English words.
 ///
-/// Two shapes count, both unambiguous:
-///   `sing(...)`          — call syntax, optional space before the paren
-///   `"tool": "sing"`     — a JSON step someone pasted into prose (also `name`/`action`)
+/// Every match must first be a WHOLE WORD — that alone is what kills `using` / `closing` /
+/// `parsing`, which is the whole reason this function exists. What counts after that depends on
+/// whether the name could be English:
 ///
-/// A bare mention does not. "Summarise the closing prices" is not a call of `sing`, and refusing
-/// to register a pipeline over it is a false refusal that nobody can act on: the instruction has
-/// no tool in it to remove.
+///   `save_page`, `sysmod_kiwoom_quote`  — an identifier (has `_`). A whole-word mention IS the
+///                                          mistake: "1) sysmod_kiwoom_quote 호출 2) save_page"
+///                                          is a plan written into an instruction, and nobody
+///                                          writes that word by accident.
+///   `sing`, `render`, `tts`, `execute`   — an ordinary word. Needs a call shape:
+///                                          `sing(...)` or a JSON `"tool": "sing"` field.
+///
+/// A bare mention of the second kind does not count. "Summarise the closing prices" is not a call
+/// of `sing`, and refusing to register a pipeline over it is a false refusal nobody can act on:
+/// the instruction has no tool in it to remove.
 fn tool_call_shape_in(instruction: &str, tool: &str) -> Option<&'static str> {
     let bytes = instruction.as_bytes();
     let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
+    let identifier_shaped = tool.contains('_');
     for (at, _) in instruction.match_indices(tool) {
         // Whole word only — this alone is what kills `using` / `closing` / `parsing`.
         if at > 0 && is_word(bytes[at - 1]) {
@@ -439,6 +447,9 @@ fn tool_call_shape_in(instruction: &str, tool: &str) -> Option<&'static str> {
         let end = at + tool.len();
         if end < bytes.len() && is_word(bytes[end]) {
             continue;
+        }
+        if identifier_shaped {
+            return Some("도구 id");
         }
         // Shape 1 — call syntax.
         let rest = instruction[end..].trim_start();
@@ -1176,7 +1187,7 @@ mod tests {
             "render the summary as bullet points",
             "search the notes for a matching phrase",
         ] {
-            for tool in ["sing", "render", "search_library", "tts"] {
+            for tool in ["sing", "render", "tts", "execute"] {
                 assert_eq!(
                     tool_call_shape_in(innocent, tool),
                     None,
@@ -1184,6 +1195,20 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// An identifier is not something anyone writes by accident.
+    ///
+    /// `sysmod_kiwoom_quote` and `save_page` have underscores, so a whole-word mention is already
+    /// the mistake the guard is for: a plan written into an instruction instead of into steps.
+    /// The English-word tools need a call shape; these do not.
+    #[test]
+    fn an_underscored_tool_id_is_the_mistake_on_sight() {
+        let plan = "1) sysmod_kiwoom_quote 호출 2) save_page";
+        assert_eq!(tool_call_shape_in(plan, "sysmod_kiwoom_quote"), Some("도구 id"));
+        assert_eq!(tool_call_shape_in(plan, "save_page"), Some("도구 id"));
+        // Still a whole-word test — a longer id that merely contains a shorter one is not it.
+        assert_eq!(tool_call_shape_in("call sysmod_kiwoom_quote_v2 first", "sysmod_kiwoom_quote"), None);
     }
 
     #[test]

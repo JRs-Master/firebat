@@ -70,7 +70,30 @@ fn validate_llm_transform_with_tool_hint_rejected() {
         model: None,
     }];
     let err = mgr.validate_pipeline(&steps).unwrap();
-    assert!(err.contains("도구명"));
+    // The message names the tool it found. The instruction names two, and which one is reported
+    // depends on registry iteration order — so assert that it named one of them, not which.
+    // (The old assertion matched the word "도구명" in a sentence that has since been rewritten:
+    // it pinned the wording instead of the finding.)
+    assert!(err.contains("LLM_TRANSFORM"), "{err}");
+    assert!(
+        err.contains("sysmod_kiwoom_quote") || err.contains("save_page"),
+        "the refusal must name the tool it found: {err}"
+    );
+}
+
+/// The guard must not refuse an instruction that merely contains a tool NAME inside an English
+/// word. `sing` is a registered tool, so `using` / `closing` / `parsing` used to trip it — the
+/// autotrade review job failed on that for fifteen consecutive runs.
+#[test]
+fn validate_llm_transform_allows_english_words_that_contain_a_tool_name() {
+    let mgr = make_manager_with_tools();
+    let steps = vec![PipelineStep::LlmTransform {
+        instruction: "Summarise the closing prices, noting any parsing errors".to_string(),
+        input_data: None,
+        input_map: None,
+        model: None,
+    }];
+    assert!(mgr.validate_pipeline(&steps).is_none(), "false refusal on ordinary prose");
 }
 
 #[test]
