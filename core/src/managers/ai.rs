@@ -1209,7 +1209,10 @@ impl AiManager {
                 let mut resp = serde_json::json!({
                     "actions": rows,
                     "count": rows.len(),
-                    "next": "Rows with kind=\"action\": call get_action_schema(module, action) for exact params + call envelope before invoking. A row's `paramNames` is a NAME LIST, not the form — no types, no required, no envelope, and not always all of them; a call assembled from it alone is refused before dispatch. Rows with kind=\"stream\": this is a live realtime subscription — call stream_watch_start({module, stream, args}) and render the returned topic with a live_chart / live_feed component (a REST action can only give a static snapshot, never live data). Identifiers are MODULE-SCOPED — an action/stream belongs only to the module in its own row; never reuse a name from one module on another. Only the catalogedModules are searchable — an action of any OTHER module will never appear here; call that module directly instead of re-searching.",
+                    // Every row carries `schemaCall`, so the step is in the row rather than in a
+                    // paragraph repeated on each search. What is left is the one fact a row cannot
+                    // hold: names belong to their own module.
+                    "next": "Send a row's `schemaCall` to get its parameters. An action id belongs only to the module in its own row.",
                 });
                 // 실제로 검색된 질의를 되돌려준다 — OOV 토큰은 조용히 떨궈지고 있었는데(로그에만
                 // 남음) 모델은 그걸 몰라서 "왜 엉뚱한 게 나오지"를 시행착오로 풀었다. 2026-07-27
@@ -1230,11 +1233,11 @@ impl AiManager {
                          or topic words. If the results look off, re-search with capability terms only."
                     );
                 }
-                // catalogedModules only on cross-module searches — a module-scoped search already
-                // resolved its module; repeating the 18-name list every call is token noise.
-                if module.is_none() {
-                    resp["catalogedModules"] = serde_json::json!(cataloged);
-                }
+                // `catalogedModules` is not repeated here. It answers "which modules can this
+                // search see", which matters when a search finds nothing — and the zero-result
+                // branches above already send it. On a search that DID find rows it is 420 chars
+                // of module names the tool list already carries.
+                let _ = &cataloged;
                 Ok(resp)
             }
         });

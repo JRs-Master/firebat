@@ -1163,10 +1163,13 @@ impl ModuleActionCatalog {
                     // 소모). stream 행은 이미 `tool` 을 주고 있었는데 action 행에만 없었다.
                     "tool": sysmod_tool_name(module_name.as_str().unwrap_or_default()),
                     "name": m.name,
-                    "domain": m.extra.get("domain").cloned().unwrap_or_default(),
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
                     "score": score,
                 });
+                // `domain` on a module that declares none was a `null` on every row.
+                if let Some(d) = m.extra.get("domain").filter(|v| !v.is_null()) {
+                    row["domain"] = d.clone();
+                }
                 // `display` when the entry has one — see the note where it is built. Falls back to
                 // the embedded document for entries that predate it.
                 let source = m
@@ -1208,9 +1211,9 @@ impl ModuleActionCatalog {
                         row["paramNamesMore"] = serde_json::json!(param_names.len() - PARAM_CAP);
                     }
                 }
-                if let Some(req) = m.extra.get("required") {
-                    row["required"] = req.clone();
-                }
+                // `required` is not repeated per row: for a selector module it is `["action"]` on
+                // every single one, and the real contract — the values a call is refused without —
+                // arrives with the schema as `fill`.
                 if m.extra.get("uiOnly").and_then(|v| v.as_bool()) == Some(true) {
                     row["uiOnly"] = serde_json::Value::Bool(true);
                     row["uiOnlyNote"] = serde_json::Value::String(
