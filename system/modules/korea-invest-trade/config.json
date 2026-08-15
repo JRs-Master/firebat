@@ -553,7 +553,7 @@
           "cancel_order",
           "place_order"
         ],
-        "description": "한투 계좌·주문 API ID 직접 호출 (예: v1_국내주식-001 현금주문). place_order · cancel_order · list_open_orders · list_fills · get_balance = 증권사 중립 계약 — 이 증권사의 API ID 를 몰라도 되는 표준 호출. 국내·해외는 `market` 으로 가릅니다. 시세·차트는 이 모듈에 없습니다 — `korea-invest` 모듈입니다."
+        "description": "한투 계좌·주문 API ID 직접 호출 (예: v1_국내주식-001 현금주문). place_order · cancel_order · list_open_orders · list_fills · get_balance = 증권사 중립 계약 — 이 증권사의 API ID 를 몰라도 되는 표준 호출. 국내·해외는 `market` 으로 가릅니다."
       },
       "query": {
         "type": "object",

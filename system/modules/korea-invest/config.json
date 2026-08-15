@@ -327,7 +327,7 @@
           "해외주식-055",
           "get_candles"
         ],
-        "description": "한투 시세 API ID 직접 호출 (예: v1_국내주식-008). get_candles = 증권사 중립 캔들 계약(국내·해외는 `market` 으로 가릅니다). 주문·잔고 액션은 이 모듈에 없습니다 — `korea-invest-trade` 모듈입니다."
+        "description": "한투 시세 API ID 직접 호출 (예: v1_국내주식-008). get_candles = 증권사 중립 캔들 계약(국내·해외는 `market` 으로 가릅니다)."
       },
       "query": {
         "type": "object",

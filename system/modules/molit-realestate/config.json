@@ -77,7 +77,7 @@
       },
       "lawdCd": {
         "type": "string",
-        "description": "시군구 5자리 법정동코드 (예: 11680=서울 강남구). 지역명만 알면 {action:\"lookup\", query:\"지역명\"} 으로 먼저 조회"
+        "description": "시군구 5자리 법정동코드 (예: 11680=서울 강남구). `lookup` 액션이 지역명으로 발급합니다"
       },
       "dealYmd": {
         "type": "string",

@@ -57,7 +57,7 @@
           "market-indicator-candles",
           "investor-trading"
         ],
-        "description": "토스증권 시세 API. 주문·계좌·보유종목은 이 모듈에 없습니다 — `toss-invest-trade` 모듈입니다."
+        "description": "토스증권 시세 API."
       },
       "accountSeq": {
         "type": "integer",

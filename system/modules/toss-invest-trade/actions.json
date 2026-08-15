@@ -52,7 +52,7 @@
  {
   "id": "buying-power",
   "name": "매수 가능 금액 조회",
-  "description": "현금 매수 가능 금액 (미수 제외) — 주문 생성 직전 호출 권장",
+  "description": "현금 매수 가능 금액 (미수 제외)",
   "domain": "주문정보",
   "method": "GET",
   "path": "/buying-power",
@@ -64,7 +64,7 @@
  {
   "id": "sellable-quantity",
   "name": "매도 가능 수량 조회",
-  "description": "종목 매도 가능 수량 — 매도 주문 직전 호출 권장",
+  "description": "종목 매도 가능 수량",
   "domain": "주문정보",
   "method": "GET",
   "path": "/sellable-quantity",

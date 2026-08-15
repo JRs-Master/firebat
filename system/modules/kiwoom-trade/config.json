@@ -161,7 +161,7 @@
           "list_fills",
           "get_balance"
         ],
-        "description": "키움 계좌·주문 API ID 직접 호출 (예: kt10000 매수 / kt00018 잔고). place_order · cancel_order · list_open_orders · list_fills · get_balance = 증권사 중립 계약 — 이 증권사의 API ID 를 몰라도 되는 표준 호출. 시세·차트·조건검색은 이 모듈에 없습니다 — `kiwoom` 모듈입니다."
+        "description": "키움 계좌·주문 API ID 직접 호출 (예: kt10000 매수 / kt00018 잔고). place_order · cancel_order · list_open_orders · list_fills · get_balance = 증권사 중립 계약 — 이 증권사의 API ID 를 몰라도 되는 표준 호출."
       },
       "params": {
         "type": "object",

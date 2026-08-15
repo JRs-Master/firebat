@@ -98,7 +98,7 @@
           "signals",
           "backtest"
         ],
-        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 **stock_chart 에 바로 넣을 annotations 배열**로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선). 좌표를 손으로 조립하지 마세요 — 이 액션을 쓰면 채팅과 페이지가 같은 그림을 얻습니다. 반환 = `blocks[0].props`(annotations + futureSlots) + `summary`. / `indicators` = 고전 지표 묶음(이동평균·MACD·RSI·볼린저·스토캐스틱·일목균형표) — `latest`(문장용) + `series`(차트 오버레이용). **신호 판정은 하지 않습니다.** / `signals` = **`rules` 필수**(전략 선언 없이 부르면 거부됩니다) — 선언한 규칙이 참인 봉을 찾아 `buyPoints`/`sellPoints`(차트에 그대로 넣으면 ↑↓ 화살표)와 **백테스트**(`backtest` — 체결 기록·승률·누적수익·최대낙폭을 수수료·세금·슬리피지·손절·익절까지 반영해 계산)를 반환. 이동평균 교차(골든크로스/데드크로스)·지표 조건 매매의 성과 검증이 이 액션입니다 — 봉을 받아 손으로 계산하지 마세요. 전략은 코드가 아니라 `rules` 인자로 받으므로 모듈이 투자 의견을 갖지 않습니다. 지금 시점 주문 판단에는 `firedOnLastBar` 만 쓰세요. backtest = signals 와 같은 계산이되 질문이 다릅니다 — 무엇이 발동했나가 아니라 그 규칙이 돈을 벌었겠나. 수수료·세금·슬리피지·손절·익절을 반영한 성적만 돌려주고 차트 좌표는 뺍니다(규칙·비용 파라미터는 signals 와 동일). reach_levels = 현재가에서 ATR 배수만큼 떨어진 각 가격에 **그 봉들 자신의 과거로 잰 도달 확률**을 붙여 돌려줍니다(차트 주석 + 표). 고점을 찍는 액션이 아니라 분할청산 칸을 정하기 위한 것입니다. reach_cone = the same question asked as a curve instead of a point: how wide the move has been by bar t, for t across the whole horizon, drawn as a cone that opens from today's session open (intraday) or the last close. Width is measured as c·ATR·sqrt(t) with c taken from the bars you pass, and the summary says how well sqrt(t) actually fits them. Use this rather than reach_levels when the horizon is long relative to the bar: a fixed-horizon reach probability converges to 1 and stops carrying information (measured: +/-1 ATR within 60 daily bars is 100% of 2,371 windows). What still carries it is time, so each rung also reports the median bars to first touch."
+        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 stock_chart annotations 배열로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선) — `blocks[0].props`(annotations + futureSlots) + `summary` / `indicators` = 고전 지표 값(이동평균·MACD·RSI·볼린저·스토캐스틱·일목균형표) — `latest`(문장용) + `series`(차트 오버레이용) / `signals` = `rules` 로 선언한 조건이 참인 봉을 찾아 `buyPoints`/`sellPoints` 와 백테스트(체결 기록·승률·누적수익·최대낙폭을 수수료·세금·슬리피지·손절·익절까지 반영)를 반환. 이동평균 교차(골든크로스·데드크로스)·지표 조건 매매의 성과 검증. 전략은 코드가 아니라 `rules` 인자라 모듈이 투자 의견을 갖지 않습니다 / backtest = signals 와 같은 계산에서 성적만 — 차트 좌표 없이 수익률·승률·낙폭(규칙·비용 파라미터는 signals 와 동일) / reach_levels = 현재가에서 ATR 배수만큼 떨어진 각 가격에 그 봉들 자신의 과거로 잰 도달 확률을 붙인 표·차트 주석. 분할청산 칸 산정용 / reach_cone = 같은 질문을 점이 아니라 곡선으로 — 봉 t 까지의 이동 폭을 t 전 구간에 대해 재어 오늘 시가(장중) 또는 마지막 종가에서 열리는 원뿔. 폭은 넘긴 봉에서 구한 c 로 c·ATR·√t, 요약이 √t 적합도를 함께 말합니다. 각 칸의 첫 도달까지 걸린 중앙 봉 수도 냅니다"
       },
       "bars": {
         "type": "array",
@@ -111,7 +111,7 @@
       },
       "threshold": {
         "type": "number",
-        "description": "스윙으로 인정할 최소 반전 폭(%) = 급(degree)의 프록시. **생략 권장** — 생략 시 데이터 변동폭에 비례해 자동 산정되어, 20일·120일·240일 차트가 각자 알맞은 급을 잡습니다. 고정값을 넣으면 짧은 차트는 피벗 0개, 긴 차트는 잔물결 수십 개가 됩니다. 참고: 엘리엇 이론에 표준 %는 없습니다(급은 원래 기간으로 정의) — 이 값은 우리 프록시입니다."
+        "description": "스윙으로 인정할 최소 반전 폭(%) = 급(degree)의 프록시. 생략하면 데이터 변동폭에 비례해 자동 산정되어 20일·120일·240일 차트가 각자 알맞은 급을 잡고, 고정값을 넣으면 짧은 차트는 피벗 0개· 긴 차트는 잔물결 수십 개가 됩니다. 엘리엇 이론에 표준 %는 없습니다(급은 원래 기간으로 정의) — 이 값은 우리 프록시입니다"
       },
       "thresholds": {
         "type": "array",
@@ -334,7 +334,7 @@
     "properties": {
       "barRange": {
         "type": "object",
-        "description": "{count, from, to} — 이 답이 어느 기간에 대한 것인지. **답변에 기간과 급을 반드시 함께 밝히세요**('240일 일봉, 8% 급 기준 3파'). 둘 없이 '지금 3파'는 의미가 없는 문장입니다"
+        "description": "{count, from, to} — 이 답이 어느 기간에 대한 것인지. 기간과 급이 없는 '3파'는 가리키는 대상이 없는 말입니다"
       },
       "pivots": {
         "type": "array",
@@ -346,7 +346,7 @@
       },
       "candidates": {
         "type": "array",
-        "description": "라벨링 후보 — [{structure, labels, pivots:[{i,price,label,tentative}], complete, inProgress, guidelineFit, confidence, evidencePivots, ratios, followsImpulseEndingAt?, notes}]. **추진파와 조정파를 함께** 담습니다. `structure` = impulse(1-2-3-4-5) / zigzag / flat / expanded-flat (+`-running` 변형) / triangle(A-B-C-D-E). 완결과 진행 중을 모두 담습니다(complete:false + inProgress:'3' = 3파 진행 중). 하드룰(2파 100% 미만 되돌림 / 3파 최단 아님 / 4파 1파 미겹침)은 **끝난 파동에 대해서만** 판정 — '3파 최단'은 5파가 나와야 알 수 있으므로 진행 중 카운트를 미리 탈락시키지 않습니다. `guidelineFit`(0~1) = 교과서 비율 근접도, `confidence` = guidelineFit × 증거량(설명하는 피벗 수) — **정렬 기준은 confidence** 입니다(3피벗 조각이 비율 하나 맞았다고 완결 구조를 밀어내지 않도록). **`projectedPath`** = {points:[{i|barsAhead, price, label}], note} — **현재 위치에서 이어지는 예상 경로**: 진행 중인 파동이 어디서 끝나고(비율 목표) 그다음 반등이 어디까지 가는지. 차트에 kind:\"path\", projected:true 로 **그대로 넣으세요** — 사용자가 보고 싶은 건 '다음에 어디로'라 이게 제일 중요합니다. 이미 지나친 비율은 건너뛰고 다음 단계를 씁니다(3파가 1.618 을 넘었으면 2.618). 시간축은 앞선 다리 봉 수의 중앙값 추정입니다. `channel` = {label, base, parallel, slopePerBar, projectedTarget} — **엘리엇 채널**(추진파는 2-4 기준선 + 3 통과 평행선, 조정파는 A-C 기준선 + B 통과 평행선). 파동 비율이 정해져 있다는 성질의 귀결이라 5파 종착 지점이 기하학적으로 나옵니다. **삼각형은 예외** — 두 경계선(A-C · B-D)이 **수렴**하므로 평행 채널이 없습니다(`convergingSlopes` + `apex:{barsAhead,price}` 반환, `projectedTarget` 없음). 삼각형의 가격 목표는 채널이 아니라 `projectedPath` 의 **스러스트**(삼각형 최대 폭 A-B 를 E 에서 투영 — thrust, 표준 용어)이고 apex 는 시간 목표입니다(스러스트는 대개 apex 도달 전에 나옵니다). E 가 A-C 선을 넘었으면 목표 대신 **삼각형 무효 가능** 경고가 실립니다. base·parallel 은 각각 [시작 {i,price}, 끝 {barsAhead,price}] 두 점이라 **stock_chart annotations 에 kind:\"path\", projected:true 로 그대로 두 줄 넣으면** 미래 구간까지 이어집니다(꺾은선 파동 골격과 함께 그리세요 — 골격은 지나온 길, 채널은 갈 길). `invalidation` = {price, beyond, reason} — **이 카운트가 틀렸다고 판정되는 가격**(하드룰에서 그대로 도출). 목표가보다 실용적이므로 답변에 반드시 함께 제시하세요. `followsImpulseEndingAt` 이 있으면 그 조정이 직전 추진파 종료점에서 이어진다는 뜻이라 '5파 완결 후 ABC 조정 중'으로 읽으면 됩니다. 어느 후보·어느 급을 택할지는 판단이므로 모델이 고르되 근거를 밝히고, **목록 밖 카운트를 지어내지 마세요**"
+        "description": "라벨링 후보 — [{structure, labels, pivots:[{i,price,label,tentative}], complete, inProgress, guidelineFit, confidence, evidencePivots, ratios, followsImpulseEndingAt?, notes}]. 추진파와 조정파를 함께 담습니다. `structure` = impulse(1-2-3-4-5) / zigzag / flat / expanded-flat (+`-running` 변형) / triangle(A-B-C-D-E). 완결과 진행 중을 모두 담습니다(complete:false + inProgress:'3' = 3파 진행 중). 하드룰(2파 100% 미만 되돌림 / 3파 최단 아님 / 4파 1파 미겹침)은 끝난 파동에 대해서만 판정합니다 — '3파 최단'은 5파가 나와야 알 수 있어 진행 중 카운트는 탈락시키지 않습니다. `guidelineFit`(0~1) = 교과서 비율 근접도, `confidence` = guidelineFit × 증거량(설명하는 피벗 수)이고 정렬 기준은 confidence 입니다. `projectedPath` = {points:[{i|barsAhead, price, label}], note} — 진행 중인 파동이 어디서 끝나고 그다음 반등이 어디까지 가는지의 예상 경로. 차트에는 kind:\"path\", projected:true 로 들어갑니다. 이미 지나친 비율은 건너뛰고 다음 단계를 씁니다(3파가 1.618 을 넘었으면 2.618). 시간축은 앞선 다리 봉 수의 중앙값 추정입니다. `channel` = {label, base, parallel, slopePerBar, projectedTarget} — 엘리엇 채널(추진파는 2-4 기준선 + 3 통과 평행선, 조정파는 A-C 기준선 + B 통과 평행선)이라 5파 종착 지점이 기하학적으로 나옵니다. 삼각형은 두 경계선(A-C · B-D)이 수렴해 평행 채널이 없고 `convergingSlopes` + `apex:{barsAhead,price}` 를 냅니다(`projectedTarget` 없음) — 가격 목표는 `projectedPath` 의 스러스트(삼각형 최대 폭 A-B 를 E 에서 투영)이고 apex 는 시간 목표입니다. E 가 A-C 선을 넘었으면 목표 대신 삼각형 무효 가능 경고가 실립니다. base·parallel 은 각각 [시작 {i,price}, 끝 {barsAhead,price}] 두 점이라 stock_chart annotations 에 kind:\"path\", projected:true 로 두 줄이 그대로 들어가 미래 구간까지 이어집니다. `invalidation` = {price, beyond, reason} — 이 카운트가 틀렸다고 판정되는 가격(하드룰에서 그대로 도출). `followsImpulseEndingAt` 이 있으면 그 조정이 직전 추진파 종료점에서 이어진다는 뜻입니다('5파 완결 후 ABC 조정 중')"
       },
       "targets": {
         "type": "array",
@@ -386,7 +386,7 @@
       },
       "backtest": {
         "type": "object",
-        "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·grossPct 비용전·returnPct 비용후) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 표(table) + metric 으로 보여 주면 규칙의 값어치가 화살표보다 잘 읽힙니다. 가정을 반드시 함께 밝히세요. 각 체결의  = rule(규칙) / stop(손절) / take(익절) / trailing 이라 무엇이 포지션을 끝냈는지 구분됩니다."
+        "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·grossPct 비용전·returnPct 비용후) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 각 체결의 exit = rule(규칙) / stop(손절) / take(익절) / trailing 이라 무엇이 포지션을 끝냈는지 구분됩니다."
       },
       "firedOnLastClosedBar": {
         "type": "array",

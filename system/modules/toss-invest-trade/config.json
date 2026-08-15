@@ -77,7 +77,7 @@
           "list-conditional-orders",
           "conditional-order-detail"
         ],
-        "description": "토스증권 계좌·주문 API. 시세·캔들은 이 모듈에 없습니다 — `toss-invest` 모듈입니다."
+        "description": "토스증권 계좌·주문 API."
       },
       "accountSeq": {
         "type": "integer",
