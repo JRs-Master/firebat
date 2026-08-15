@@ -57,20 +57,21 @@ impl INetworkPort for ReqwestNetworkAdapter {
             }
         }
 
-        let response = builder
-            .send()
-            .await
-            .map_err(|e| format!("HTTP fetch 실패: {e}"))?;
+        // `{e}` alone keeps only reqwest's outer sentence and drops `source()`, which is where the
+        // reason lives (dns error / connection reset / invalid certificate). A failure with no
+        // cause in it is one the model can only give up on — 2026-08-15, five DART fetches.
+        let response = builder.send().await.map_err(|e| {
+            format!("HTTP fetch failed: {}", firebat_core::utils::error_chain::with_causes(&e))
+        })?;
         let status = response.status();
         let response_headers: std::collections::HashMap<String, String> = response
             .headers()
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
             .collect();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| format!("body read 실패: {e}"))?;
+        let text = response.text().await.map_err(|e| {
+            format!("body read failed: {}", firebat_core::utils::error_chain::with_causes(&e))
+        })?;
         let body_value: serde_json::Value =
             serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
 
