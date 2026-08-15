@@ -46,7 +46,7 @@
       {
         "id": "keyword-tool",
         "name": "키워드 분석 (검색량·클릭수·경쟁도·연관검색어 + CPC)",
-        "description": "The keyword research entry point",
+        "description": "The keyword research entry point. Returns monthly search counts (PC and mobile), average click counts and CTR, competition index and average ad depth, plus related keywords",
         "params": {
           "keywords": "Hint keywords. Chunked in fives automatically; accepts rows from a previous result via keywordsCacheKey",
           "biztpId": "Industry id from biz-categories — an entry point on its own, no keywords needed",

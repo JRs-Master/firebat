@@ -21,7 +21,7 @@
     {
       "id": "search-address",
       "name": "주소 검색 (부분 일치)",
-      "description": "Search addresses by fragment when the full address is unknown",
+      "description": "Search addresses by fragment when the full address is unknown. Returns candidates with coordinates",
       "params": {
         "address": "검색어",
         "limit": "한 페이지 결과 수 (최대 30)"

@@ -39,7 +39,7 @@
       {
         "id": "search",
         "name": "네이버 검색 (뉴스·블로그·카페·웹문서·지식iN·백과·이미지·지역)",
-        "description": "One search endpoint per `type`",
+        "description": "One search endpoint per `type`. Returns title / link / description plus per-type extras",
         "params": {
           "query": "Search term, required",
           "type": "webkr | news | blog | image | cafearticle | kin | encyc | local | adult | errata",

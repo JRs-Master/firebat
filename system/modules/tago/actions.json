@@ -13,7 +13,7 @@
     {
       "id": "bus-stop-search",
       "name": "버스정류소 검색 (이름·번호)",
-      "description": "Find bus stops in a city by name or by the number posted on the sign",
+      "description": "Find bus stops in a city by name or by the number posted on the sign. Returns nodeid, which every arrival and position action needs, plus the stop coordinates",
       "params": {
         "cityCode": "From city-codes",
         "nodeNm": "Stop name",
@@ -47,7 +47,7 @@
     {
       "id": "bus-route-search",
       "name": "버스노선 검색 (노선번호)",
-      "description": "Find routes in a city, optionally by the number on the front of the bus",
+      "description": "Find routes in a city, optionally by the number on the front of the bus. Returns routeid, plus first and last departure times and the terminus names",
       "params": {
         "cityCode": "From city-codes",
         "routeNo": "Route number",
