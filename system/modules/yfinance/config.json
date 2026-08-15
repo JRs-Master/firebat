@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Yahoo Finance free API — dedicated to **backtesting, financial time series, options chains, and multi-symbol batch downloads**. No API key required.\n\n**Role split** (complements korea-invest / kiwoom):\n- Prefer yfinance for: **backtests (60+ years of daily history)**, **quarterly/annual financial time series (5–10 year trends)**, **options chains** (calls/puts × strike, premium, OI), and **multi-symbol batch downloads** (yf.download). Areas korea-invest / kiwoom cannot cover or cover weakly.\n- Prefer korea-invest for: **real-time quotes (no 15–20 min delay)**, **buy/sell orders**, order book, and Korean ETN/ETF (including newly listed instruments with alphanumeric codes like 0011T0). yfinance does not support real-time data or order placement.\n- Prefer kiwoom for: Korea-specific flow data (foreign ownership ratio, institutional net buying, sector flow) and volume/change ranking.\n\nSame symbol, different intent: \"Apple current price\" → korea-invest, \"Apple 10-year backtest\" → yfinance, \"Apple quarterly revenue trend\" → yfinance, \"Buy Apple\" → korea-invest.\n\n**One call = one symbol** (only the download action accepts multiple). For multiple symbols, split into N EXECUTE steps. **Rate limit**: Yahoo's unofficial API has a safe ceiling of ~30 requests per minute.\n\n**Symbol code patterns**:\n- US: AAPL, MSFT (no suffix)\n- KOSPI: 005930.KS=Samsung Electronics; KOSDAQ: 035720.KQ=Kakao\n- Japan: 7203.T=Toyota; UK: BARC.L=Barclays\n- FX: KRW=X (USD/KRW), JPYKRW=X\n- Indices: ^KS11=KOSPI, ^KQ11=KOSDAQ, ^GSPC=S&P500, ^IXIC=Nasdaq\n- Crypto: BTC-USD, ETH-USD\n- Commodities: GC=F (gold), CL=F (crude oil)",
+  "description": "Yahoo Finance 무료 API — 60년치 일봉, 분기·연간 재무 시계열, 옵션 체인, 다종목 일괄 다운로드. **실시간 시세와 주문은 없습니다** — 실시간 시세는 korea-invest·kiwoom·toss-invest, 주문은 *-trade 모듈입니다. 비공식 API라 분당 30회 안쪽으로 부르십시오.",
   "aliases": [
     "야후파이낸스",
     "yahoo finance",
@@ -90,7 +90,7 @@
       },
       "symbol": {
         "type": "string",
-        "description": "Symbol code (e.g., AAPL, 005930.KS, ^GSPC, BTC-USD). Required by every action except 'download', which takes either this or the symbols array."
+        "description": "Symbol code. US = bare (AAPL, MSFT). KOSPI = .KS, KOSDAQ = .KQ (005930.KS, 035720.KQ); Japan .T (7203.T), UK .L (BARC.L). FX = KRW=X, JPYKRW=X. Indices = ^KS11, ^KQ11, ^GSPC, ^IXIC. Crypto = BTC-USD. Commodities = GC=F (gold), CL=F (crude). Required by every action except 'download', which takes either this or the symbols array."
       },
       "symbols": {
         "type": "array",

@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.1.0",
-  "description": "Telegram bot — bidirectional (webhook + AI responses) and one-way (message and media delivery). Sending needs NO chatId — omitted = the configured default chat (TELEGRAM_CHAT_ID); never ask the user for a chat ID unless they want a DIFFERENT recipient. For 24/7 bot notifications, event alerts, server status pushes, and mobile remote control. Setup: get a token from BotFather → obtain a chat ID (@get_id_bot or getUpdates after /start) → save to Vault → activate via the 'Register webhook' button. Commands are processed only for owners on the whitelist (for security).",
+  "description": "Telegram bot — 알림 발송과 양방향 응답(webhook). chatId 를 생략하면 설정된 기본 대화로 갑니다 — 다른 수신자가 아닌 한 사용자에게 chat ID 를 묻지 마십시오.",
   "tags": [
     "텔레그램",
     "telegram",

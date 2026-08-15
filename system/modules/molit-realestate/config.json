@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "국토교통부 실거래가 통합 — data.go.kr RTMSDataSvc 13 시리즈 (아파트 매매·전월세·분양권 / 연립다세대 / 오피스텔 / 단독·다가구 / 토지 / 상업업무용 / 공장창고). 시군구 5자리 (LAWD_CD) + 계약년월 6자리 (DEAL_YMD) 입력. 지역명만 알면 {action:\"lookup\", query:\"지역명\"} 으로 lawdCd 먼저 조회 (행안부 행정표준코드 라이브 — 코드를 기억으로 추측하면 grounding 게이트가 거부). 단일 키 (DATA_GO_KR_API_KEY) — kma-weather 와 공유.",
+  "description": "국토교통부 실거래가 — 아파트 매매·전월세·분양권, 연립다세대, 오피스텔, 단독·다가구, 토지, 상업업무용, 공장창고. 시군구 5자리(LAWD_CD) + 계약년월 6자리가 필요하고, 지역명만 알면 `{action:\"lookup\", query:\"지역명\"}` 으로 먼저 조회하십시오 — 기억으로 추측한 코드는 grounding 게이트가 거부합니다.",
   "aliases": [
     "국토부",
     "국토교통부",

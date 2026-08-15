@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "fundamental-analysis",
-  "description": "기본적분석 계산기 — DART 재무제표(dart financial/financialAll 결과)를 받아 수익성·안정성·성장성 비율과 (시총을 주면) PER·PBR·PSR 밸류에이션을 계산합니다. ta 가 봉을 받아 지표를 내듯, fa 는 재무 rows 를 받아 비율을 냅니다. 한투 종목추정실적(국내주식-187)을 estimates 로 주면 증권사 예상실적(매출·영업이익·순이익·EPS·PER·ROE 전망)을 과거실적과 나란히 정규화합니다. 데이터 수집은 dart·korea-invest 모듈, 계산은 여기 — 없는 값은 지어내지 않고 null 로 표시합니다.",
+  "description": "기본적분석 계산기 — DART 재무제표 rows 를 받아 수익성·안정성·성장성 비율과 (시총을 주면) PER·PBR·PSR 을 계산합니다. 한투 종목추정실적을 주면 증권사 전망을 과거실적과 나란히 정규화합니다. 수집은 dart·korea-invest, 계산은 여기 — 없는 값은 지어내지 않고 null 입니다.",
   "aliases": [
     "기본적분석",
     "재무분석",

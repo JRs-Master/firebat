@@ -517,8 +517,10 @@ fn repo_root() -> PathBuf {
 /// tags, and "길찾기" — the word for exactly that — was dropped before ranking. Nine modules were
 /// in that state, dart with 82 actions among them.
 ///
-/// The gate is membership, and tags do not join the per-row semantic text, so a long list costs
-/// nothing and blurs nothing. There is no reason for a module to have none.
+/// Since 2026-08-15 tags ARE part of the per-row semantic text — gate and ranker read one
+/// document — so a tag is no longer free: a generic word like `조회` now pulls every action of
+/// that module toward every query containing it. Aliases and capability words, not filler. There
+/// is still no reason for a module to have none.
 #[test]
 fn every_module_declares_the_words_its_questions_arrive_in() {
     let mut missing = Vec::new();

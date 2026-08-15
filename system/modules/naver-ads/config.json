@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "키워드 검색량(PC/모바일)·클릭수·CPC·경쟁도·연관검색어 분석 + 업종/시즌별 키워드 발굴 — 네이버 검색광고 API. keyword-tool(키워드 검색량 PC/모바일·클릭수·클릭률·경쟁도·연관검색어 + CPC·제한플래그 동시 조회), estimate(최소노출/중간 입찰가 = CPC, 입찰가별 예상성과), managed-keywords(저검색량·성인·노출제한·판매금지·시즌 플래그), biz-categories(업종 코드), seasonal-events(시즌 이벤트 코드), stats(내 광고 성과), bizmoney(잔액), list-campaigns/adgroups/keywords/ads(관리), raw(직접 호출).",
+  "description": "네이버 검색광고 API — 키워드 검색량(PC/모바일)·클릭수·CPC·경쟁도·연관검색어와 입찰가별 예상성과, 업종·시즌 키워드 발굴, 내 광고 성과·잔액·캠페인 관리.",
   "aliases": [
     "네이버",
     "네이버광고",

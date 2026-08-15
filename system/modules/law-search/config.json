@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "국가법령정보 Open API (open.law.go.kr). 3가지 액션: search(목록 검색), detail(본문 조회), article(조항호목 조회). 8가지 target: law(법령), prec(판례), admrul(행정규칙), ordin(자치법규), detc(헌재결정례), expc(법령해석례), trty(조약), lsHistory(연혁법령). 법률 자문 시 검색→본문 조회로 조문/판결문 기반 답변 가능. 조항호목 조회로 특정 조문만 정밀 조회 가능.",
+  "description": "국가법령정보 Open API — 법령·판례·행정규칙·자치법규·헌재결정례·법령해석례·조약·연혁법령을 검색(search)·본문 조회(detail)·조항호목 조회(article)합니다.",
   "aliases": [
     "법제처",
     "국가법령정보"

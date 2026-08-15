@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "news-impact",
-  "description": "뉴스 영향 측정 — naver_search 뉴스 결과와 일봉을 받아, 뉴스가 뜬 날 주가가 얼마나 움직였는지(D+1·D+5 수익률)를 잽니다. 대조군(전체 평일 평균)과 벤치마크(지수) 대비 초과수익을 함께 내서, '오르게 한 뉴스인지'가 감이 아니라 측정이 되게 합니다. 유사 제목은 묶고 날짜별 보도량 타임라인도 냅니다. 수집은 naver_search, 해석은 대화 몫.",
+  "description": "뉴스 영향 측정 — 뉴스 결과와 일봉을 받아 뉴스가 뜬 날의 주가 반응(D+1·D+5)을 대조군·벤치마크 대비로 잽니다. 수집은 naver-search, 해석은 대화 몫입니다.",
   "aliases": [
     "뉴스분석",
     "뉴스영향",

@@ -11,7 +11,7 @@
   "providerType": "compute",
   "capability": "auto-trading",
   "accountFrom": "broker",
-  "description": "Runs declared trading strategies on a bar-close or tick trigger and owns the per-strategy ledger. Signals come from technical-analysis and orders/balances from a broker module (stock-trading); this module decides quantity, tracks average cost and reconciles against the broker. An account is named by the broker module's alias, and that account decides real vs mock. Actions: cycle (one decision pass), reconcile, report/positions/orders/ledger (read the ledger), halt (kill switch), selftest. Tags: autotrade trading strategy ledger average cost position sizing risk limits reconciliation backtest 자동매매 매매전략 원장 평단가 포지션 리스크관리",
+  "description": "Runs declared trading strategies on a bar-close or tick trigger and owns the per-strategy ledger. Signals come from technical-analysis, orders and balances from a broker module; this module decides quantity, tracks average cost and reconciles against the broker.",
   "aliases": [
     "자동매매",
     "오토트레이드"

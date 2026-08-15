@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "audio-synthesis",
-  "description": "노래 합성 DSP — 악보(음표+가사 음절)와 말한 목소리(wav)를 받아 음정·박자를 악보대로 재합성하고(오토튠 창법), 드럼·베이스 반주를 합성해 믹스한 노래 wav 를 만듭니다. S1 = DSP 엔진(파일 경로 in/out). 채팅에서 부르는 표면(TTS→이 모듈→media 저장을 잇는 sing 코어 도구)은 후속 브리지 — 모델이 이 모듈을 직접 부를 일은 아직 없습니다. 반주만 필요하면 vocalPath 없이 render 를 부르면 됩니다.",
+  "description": "노래 합성 DSP — 악보(음표+가사 음절)와 말한 목소리 wav 를 받아 음정·박자를 악보대로 재합성하고 반주를 얹어 노래 wav 를 만듭니다. 채팅에서 부르는 표면은 `sing` 코어 도구입니다.",
   "aliases": [
     "노래",
     "보컬",

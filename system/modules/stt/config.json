@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "api",
   "capability": "speech-to-text",
-  "description": "음성 받아적기(STT) — 채팅 녹음 버튼이나 미디어에 올린 오디오 파일(webm·mp3·wav·m4a·ogg)을 텍스트로 전사합니다. OpenAI 전사 API 사용. 녹음 URL 을 mediaPath 로 넘기면 됩니다.",
+  "description": "음성 받아적기(STT) — 채팅 녹음이나 미디어에 올린 오디오(webm·mp3·wav·m4a·ogg)를 텍스트로 전사합니다. 녹음 URL 을 mediaPath 로 넘기면 됩니다.",
   "aliases": [
     "받아적기",
     "전사",

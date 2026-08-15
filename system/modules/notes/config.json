@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Built-in Firebat notes — markdown file-based (data/notes/*.md). AI autonomously reads/writes/searches. No external sync (by design). Integrates with other Firebat tools (e.g. sysmod_calendar) via data and tool chains.",
+  "description": "Firebat 내장 노트 — 마크다운 파일 기반(data/notes/*.md) 읽기·쓰기·검색. 외부 동기화는 없습니다.",
   "tags": [
     "노트",
     "메모",
