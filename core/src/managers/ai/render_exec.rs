@@ -1302,7 +1302,15 @@ fn collect_text_values(v: &Value, key: &str, block: &str, out: &mut String) {
             }
         }
         Value::Object(o) => {
-            let block = o.get("type").and_then(|t| t.as_str()).unwrap_or(block);
+            // A component block spells its kind in `name` and says only "component" in `type`, so
+            // the type alone labelled a chart, a table and a passage identically — `[component data
+            // 62행]` told a later reader nothing about what it had folded. The name is the block's
+            // own word for itself, so no mapping table is needed here.
+            let block = match o.get("type").and_then(|t| t.as_str()) {
+                Some("component") => o.get("name").and_then(|n| n.as_str()).unwrap_or("component"),
+                Some(t) => t,
+                None => block,
+            };
             for (k, val) in o {
                 collect_text_values(val, k, block, out);
             }
@@ -1381,19 +1389,57 @@ mod tests {
 
     /// 63 candles used to contribute 63 ISO dates and not one price — the walk keeps strings and
     /// drops numbers. That is the tokens of the data without its values, so it folds.
+    ///
+    /// ⚠️ The envelope here is the one that is actually stored — `type:"component"` with the kind in
+    /// `name`. An earlier fixture wrote `type:"stock_chart"`, a shape nothing produces, and that is
+    /// exactly why the marker shipped saying `[component data 62행]` for every component alike.
     #[test]
     fn a_long_series_folds_instead_of_spilling_its_labels() {
         let rows: Vec<Value> = (1..=63)
             .map(|d| serde_json::json!({"date": format!("2026-08-{:02}", d), "close": 70000 + d}))
             .collect();
         let text = fenced(serde_json::json!([
-            {"type": "stock_chart", "props": {"title": "삼성전자 일봉", "data": rows}}
+            {"type": "component", "name": "StockChart",
+             "props": {"title": "삼성전자 일봉", "data": rows}}
         ]));
         let plain = fence_to_plaintext(&text);
-        assert!(plain.contains("[stock_chart data 63행]"), "got: {plain}");
+        assert!(plain.contains("[StockChart data 63행]"), "got: {plain}");
         assert!(!plain.contains("2026-08-01"), "the dates must not survive: {plain}");
         assert!(plain.contains("삼성전자 일봉"), "the title is prose and stays: {plain}");
         assert!(plain.contains("앞말") && plain.contains("뒷말"));
+    }
+
+    /// Two components in one answer must fold to two distinguishable markers — the defect this
+    /// replaces made both of them read `[component data N행]`.
+    #[test]
+    fn each_component_folds_under_its_own_name() {
+        let candles: Vec<Value> = (1..=63)
+            .map(|d| serde_json::json!({"date": format!("2026-08-{:02}", d), "close": 70000 + d}))
+            .collect();
+        let cells: Vec<Value> = (1..=40)
+            .map(|i| serde_json::json!([format!("항목 {i} 이름이 제법 길게 들어갑니다"), "12,345"]))
+            .collect();
+        let text = fenced(serde_json::json!([
+            {"type": "component", "name": "StockChart", "props": {"data": candles}},
+            {"type": "component", "name": "Table", "props": {"rows": cells}}
+        ]));
+        let plain = fence_to_plaintext(&text);
+        assert!(plain.contains("[StockChart data 63행]"), "got: {plain}");
+        assert!(plain.contains("[Table rows 40행]"), "got: {plain}");
+    }
+
+    /// A block that names its kind in `type` (the render-tool path) keeps labelling from `type`.
+    #[test]
+    fn a_typed_block_still_labels_from_its_type() {
+        let rows: Vec<Value> = (1..=63)
+            .map(|d| serde_json::json!({"date": format!("2026-08-{:02}", d), "close": 70000 + d}))
+            .collect();
+        let text = fenced(serde_json::json!([{"type": "stock_chart", "props": {"data": rows}}]));
+        assert!(
+            fence_to_plaintext(&text).contains("[stock_chart data 63행]"),
+            "got: {}",
+            fence_to_plaintext(&text)
+        );
     }
 
     /// The threshold is size, not component identity — a five-row table is an illustration.
@@ -1434,7 +1480,8 @@ mod tests {
             .map(|d| serde_json::json!({"date": format!("2026-08-{:02}", d), "close": 70000 + d}))
             .collect();
         let text = fenced(serde_json::json!([
-            {"type": "stock_chart", "props": {"title": "삼성전자 일봉", "data": rows}}
+            {"type": "component", "name": "StockChart",
+             "props": {"title": "삼성전자 일봉", "data": rows}}
         ]));
         let recovered = fence_blocks(&text).expect("the fence carries blocks");
         let data = &recovered[0]["props"]["data"];

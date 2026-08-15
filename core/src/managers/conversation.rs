@@ -106,7 +106,7 @@ pub struct ConversationWindowMessage {
     pub role: String,
     pub text: String,
     /// The message's own render blocks, when `includeBlocks` asked for them. `text` folds a data
-    /// series to a marker like `[stock_chart data 63행]`, so this is where the folded values come
+    /// series to a marker like `[StockChart data 63행]`, so this is where the folded values come
     /// back — read again, not fetched again, which is the difference between the value that was
     /// shown and whatever the source says now.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -895,11 +895,16 @@ fn block_to_text(b: &serde_json::Value) -> Option<String> {
     let bo = b.as_object()?;
     let block_type = bo.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match block_type {
+        // The same fence treatment `content` gets. Both channels carry the same answer, so the
+        // dedup below only works if they are comparable — while this arm returned the raw markdown,
+        // a folded `content` never matched it and BOTH survived: the read-back window, the
+        // embedding corpus and `<RETRIEVED_CONTEXT>` each carried the answer twice, the second copy
+        // spilling the very rows the fold had just taken out (measured 2026-08-16, 63 candles).
         "text" => bo
             .get("text")
             .and_then(|v| v.as_str())
-            .filter(|t| !t.trim().is_empty())
-            .map(|t| t.to_string()),
+            .map(crate::managers::ai::render_exec::fence_to_plaintext)
+            .filter(|t| !t.trim().is_empty()),
         "Image" | "image" => {
             let mut img_parts: Vec<String> = Vec::new();
             for k in ["alt", "prompt", "filenameHint"] {
@@ -1059,6 +1064,41 @@ mod tests {
         });
         let p = message_to_text(&msg).unwrap();
         assert_eq!(p.text, "좋아, 내가 맞혀볼게\n1번째 질문: 살아 있는 것이야?");
+    }
+
+    /// The measured 2026-08-16 shape: a charted answer whose fence sits in BOTH channels. The
+    /// window used to hand back the answer twice, the second copy carrying the 63 rows the fold had
+    /// just removed — the marker promised a fold while the same response undid it.
+    #[test]
+    fn message_to_text_folds_the_block_copy_too_instead_of_spilling_the_fence() {
+        let rows: Vec<serde_json::Value> = (1..=63)
+            .map(|d| serde_json::json!({"date": format!("2026-08-{:02}", d), "close": 70000 + d}))
+            .collect();
+        let answer = format!(
+            "삼성전자 일봉입니다.\n\n```firebat-render\n{}\n```\n\n기준일은 8월 14일입니다.",
+            serde_json::json!([
+                {"type": "component", "name": "StockChart", "props": {"data": rows}}
+            ])
+        );
+        let msg = serde_json::json!({
+            "role": "assistant",
+            "content": answer,
+            "data": {"blocks": [{"type": "text", "text": answer}]}
+        });
+        let p = message_to_text(&msg).unwrap();
+        assert!(
+            !p.text.contains("```firebat-render"),
+            "the raw fence must not ride back in: {}",
+            p.text
+        );
+        assert!(!p.text.contains("2026-08-01"), "folded rows must stay folded: {}", p.text);
+        assert_eq!(
+            p.text.matches("삼성전자 일봉입니다").count(),
+            1,
+            "the answer must appear once: {}",
+            p.text
+        );
+        assert!(p.text.contains("[StockChart data 63행]"), "got: {}", p.text);
     }
 
     #[test]

@@ -2425,7 +2425,7 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             indices (`to` exclusive, omit for the end); search_history's msgIdx tells you where a \
             match sits, so read around it. Long ranges are cut at a character cap and the response \
             says where to resume (nextFrom). Text folds a chart or table's rows to a marker like \
-            `[stock_chart data 63행]`; includeBlocks returns those rows."
+            `[StockChart data 63행]`; includeBlocks returns those rows."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
