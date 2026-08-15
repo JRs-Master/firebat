@@ -2979,11 +2979,10 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "list_accounts".to_string(),
         description: concat!(
-            "Every registered brokerage account, across all modules at once. Balances, deposits and ",
-            "returns differ per account, so for those questions read this first and pass the alias you ",
-            "want as `account` — omitting it runs as the primary account, which silently answers about ",
-            "a different one. Narrow with `mode` (real|mock) and `market` (kr|us…); with no filter you ",
-            "get all of them. Never returns credentials — alias, mode, markets and account number only.",
+            "Every registered brokerage account, across all modules. Balances, deposits and returns ",
+            "differ per account, so read this first and pass the alias you want as `account` — ",
+            "omitting it runs as the primary account and silently answers about a different one. ",
+            "Narrow with `mode` (real|mock) and `market` (kr|us…). Never returns credentials.",
         )
         .to_string(),
         parameters: serde_json::json!({
