@@ -109,15 +109,7 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
 fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "tts".to_string(),
-        description: "Generate listening audio (TTS) from a script and return a playable URL — for \
-            listening-comprehension practice (put the url in a `listening` component's audioUrl). You \
-            choose only the script and, for dialogues, each speaker's accent + gender (inferred from the \
-            dialogue); the provider and concrete voices come from settings / auto-assignment. Assign \
-            per-speaker accents realistic to the target test or context. Multi-speaker: write the script \
-            as 'Name: line' per turn and list \
-            those names in `speakers`. Put `[pause: N]` on its own line to insert N seconds of silence \
-            at that point (e.g. the marking gap between timed exam items, or a repeat-after-me pause). \
-            Cached — the same script+voice is reused without re-generating. Returns { url }."
+        description: "Text to listening audio; returns { url } for a `listening` component's audioUrl. You choose the script and, for dialogues, each speaker's accent and gender (realistic to the target test); provider and voices come from settings. Multi-speaker: write 'Name: line' per turn and list those names in `speakers`. A line of `[pause: N]` inserts N seconds of silence. Cached — the same script and voice is not regenerated."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -258,17 +250,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "sing".to_string(),
-        description: "Compose and SING a short song (autotune-robot vocal over a synthesized \
-            band). YOU write the score: bpm (60-160 fits most), style (trot|ballad|march|none — \
-            picks the drum pattern), notes[] = {syl, note, beats} where syl is ONE sung syllable \
-            ('-' extends the previous syllable across pitches, a melisma), note is a pitch name \
-            like 'G4', beats counts quarter notes; chords[] = {root, beats} drives the bass line \
-            (e.g. C3/G3/A3/F3). Keep it short: 8-32 notes, one verse. Returns { url } — put it \
-            in a `listening` component's audioUrl so it plays in chat. Honesty: you cannot \
-            recall a real song's melody accurately — if asked for an existing song, say your \
-            melody is a NEW composition inspired by it, never claim it is the original tune. \
-            The voice is deliberately robotic-cute (TTS retuned to pitch); tell the user that \
-            is the charm."
+        description: "Compose and SING a short song (autotune vocal over a synthesized band). YOU write the score: bpm (60-160), style (trot|ballad|march|none, picks the drum pattern), notes[] = {syl, note, beats} where syl is ONE sung syllable ('-' extends the previous one across pitches), note is a pitch name like 'G4', beats counts quarter notes; chords[] = {root, beats} drives the bass. 8-32 notes, one verse. Returns { url } — put it in a `listening` component's audioUrl. You cannot recall a real melody: if asked for an existing song, say yours is a NEW composition inspired by it, never the original tune."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -411,13 +393,7 @@ fn register_memory_file_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // memory_save — create or update one operational-memory entry (overwrites same name).
     tools.register(ToolDefinition {
         name: "memory_save".to_string(),
-        description: "Save a durable operational-memory entry (reusable lesson / how-to / preference). \
-            Overwrites an entry with the same name. description = one-line summary (shown in the index). \
-            content = full body. category: user|feedback|project|reference = operational knowledge \
-            (injected into your context every turn — what you should always follow). \
-            category 'idea' = a developer-facing Firebat improvement suggestion you log while operating \
-            (friction/missing feature/awkward flow); it is NOT injected back, the operator reviews it. \
-            Use this for stable knowledge & ideas, not transient facts (use save_entity_fact for facts)."
+        description: "A durable operational-memory entry — a reusable lesson, how-to or preference. Overwrites the same name. `description` = the one line shown in the index; `content` = the body. category user|feedback|project|reference is injected into your context every turn (what you should always follow); category 'idea' is a Firebat improvement you noticed while operating — it is NOT injected back, the operator reads it. Stable knowledge only; a fact about a subject goes to save_entity_fact."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -586,12 +562,7 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // get_skill — full manual by slug. The main on-demand load (slug from the <SKILLS_AVAILABLE> index).
     tools.register(ToolDefinition {
         name: "get_skill".to_string(),
-        description: "Load the full manual for a skill by slug. Slugs come from the \
-            <SKILLS_AVAILABLE> index. Before doing a task that matches an available skill, get it and \
-            follow it. A skill is a case manual — how to use tools/templates for that case (design \
-            themes, tool-usage procedures, response styles, etc.). A large skill splits its detail \
-            into reference documents: the manual body lists them, and you load one at a time with \
-            `reference`. Read the reference instead of guessing what it contains."
+        description: "Load a skill's full manual by slug; slugs come from the <SKILLS_AVAILABLE> index. Before a task an available skill covers, load it and follow it — the index line is a trigger, not a summary. A large skill keeps its detail in reference documents that the manual lists; load one with `reference` rather than guessing what it holds."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -660,13 +631,7 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_skill — create or update one skill (overwrites same slug). Authoring.
     tools.register(ToolDefinition {
         name: "save_skill".to_string(),
-        description: "Save a skill (case manual) — overwrites the same slug. kind = design | \
-            tool-usage | procedure | persona | policy. description = one-line 'when to use' + \
-            trigger keywords/tags ONLY — never summarize HOW (a recipe-flavored description \
-            makes models act from the index line and skip the manual). content = the manual \
-            (markdown: which tools/templates, steps, output, pitfalls). Use when you've worked \
-            out a reusable way to handle a recurring case. Context-conditional guidance belongs \
-            here (a skill), not always-on memory_save."
+        description: "Save a case manual, overwriting the same slug. kind = design | tool-usage | procedure | persona | policy. `description` = when to use it plus trigger words ONLY — never summarize HOW, because a recipe-flavoured index line makes models act from the index and skip the manual. `content` = the manual itself (which tools and templates, steps, output, pitfalls). Context-conditional guidance belongs here, not in always-on memory_save."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -842,7 +807,7 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "stream_watch_start".to_string(),
-            description: "Start a persistent realtime watch declared in a module's config ws.streams. Events flow to the event bus (topic in the result) and, with notify:'telegram', as Telegram messages. To SHOW events live in chat, render a live_feed (events) or live_chart (numeric tick, valueField dot-path) component with the returned topic. Idempotent: the same module+stream+args returns the existing watch. Survives server restarts until stream_watch_stop.".to_string(),
+            description: "Start a persistent realtime watch declared in a module's config `ws.streams`. Events go to the event bus under the returned topic, and with notify:'telegram' to Telegram as well. To show them live in chat, render live_feed (events) or live_chart (numeric tick, valueField dot-path) with that topic. Survives restarts until stream_watch_stop.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1424,7 +1389,7 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
     tools.register_tool(
         ToolDefinition {
             name: "start_build".to_string(),
-            description: "Call when building an app/page via the standard steps (requirements→design→refine→implement) — returns a new build session + the step-1 (requirements) instruction. Use this to start any multi-step build, regardless of plan mode. (A simple one-off page is fine with just save_page.) To MODIFY an existing published page/app on user request, pass targetSlug — the flow becomes change-scope→apply (the existing spec is loaded and edited, not rebuilt).".to_string(),
+            description: "Start a multi-step build of an app or page (requirements → design → refine → implement) — returns a session and the requirements instruction. Use it for any multi-step build regardless of plan mode; a simple one-off page needs only save_page. To MODIFY a published page, pass targetSlug — the flow becomes change-scope → apply and the existing spec is edited rather than rebuilt.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1597,7 +1562,7 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "suggest".to_string(),
-            description: "사용자에게 다음 행동 제안 칩 제시. suggestions = 짧은 문자열 배열.".to_string(),
+            description: "Next-action chips. Item forms: a plain string = standalone shortcut, sends IMMEDIATELY on click and cannot combine with other groups · {type:'toggle', label, options[] (required, non-empty), defaults?, single?} = a group submitted with the card's other groups under ONE Send button (multi-select; single:true = one-pick that STILL coexists with other groups) · {type:'input', label, placeholder?} = free text, same submit. Choose the form by whether the choices can coexist, never by habit. Applies to every suggest, build steps included.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": { "suggestions": { "type": "array", "items": { "type": "string" } } },
@@ -1690,7 +1655,7 @@ fn register_cache_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // cache_grep — 조건 필터 (9 op)
     tools.register(ToolDefinition {
         name: "cache_grep".to_string(),
-        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation (e.g. `close`, `meta.symbol`), op=eq/ne/gt/gte/lt/lte/contains/in, value=comparison value. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate. Date ranges work: an ISO date or timestamp string (`2025-07-31`, `2026-07-31 09:00`) compares chronologically with gt/gte/lt/lte, so filter a period here instead of paging through offsets to find its boundaries.".to_string(),
+        description: "Filter rows inside a cached sysmod result (`_cacheKey`) instead of re-fetching. field = dot notation, op = eq/ne/gt/gte/lt/lte/contains/in. An ISO date or timestamp string ('2026-07-31', '2026-07-31 09:00') compares chronologically, so filter a period here rather than paging offsets to find its edges. Rendering the full data = dataCacheKey in the fence; aggregates = cache_aggregate.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -2567,7 +2532,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_entity — name+type upsert
     tools.register(ToolDefinition {
         name: "save_entity".to_string(),
-        description: "Save the identity of a tracked subject — one thing you'll want to recall later. The `name` is the BARE NOUN for the thing itself (it answers 'what is it?') — NOT what it's doing, its current state, a plan/strategy/method applied to it, a time period, or any other qualifier. All of those go in facts (save_entity_fact), never in the name. Self-check: if the name reads as 'THING + descriptor' (a thing plus a method/activity/status/attribute), keep ONLY the thing as the entity and move the descriptor to a fact. Merges into an existing entity when the name or any alias matches, so the same subject never duplicates — a qualifier baked into the name silently splits one subject into separate entities and breaks recall.".to_string(),
+        description: "The identity of a tracked subject — one thing you will want to recall later. `name` is the BARE NOUN for the thing itself, never what it is doing, its state, a plan or method applied to it, a period, or any other qualifier — those are facts (save_entity_fact). Self-check: if the name reads as 'THING + descriptor', keep only the thing and move the descriptor to a fact. Name and aliases are the dedup key, so a qualifier baked into the name silently splits one subject in two and breaks recall.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -2620,7 +2585,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_entity_fact — entity timeline 저장
     tools.register(ToolDefinition {
         name: "save_entity_fact".to_string(),
-        description: "Record a durable statement about a tracked entity — something that stays true about it OUTSIDE this conversation (state, attribute, decision, position, goal). NEVER log conversation activity ('the user asked/requested/wants to see X') — the conversation itself is already stored elsewhere; a fact must stand on its own when read later. Include figures/dates in content when present. factType groups the entity's facts: REUSE the label you see in <TRACKED_ENTITIES> or the entity's timeline for the same kind of statement — stable labels are what make value updates supersede cleanly. Set supersede=true when this is a NEW VALUE of a state the entity already has (an updated figure/level/status) so the old value retires into history instead of coexisting. Set explicit=true ONLY when the user explicitly asked to remember it; autonomous saves omit it and start at lower confidence until repeated observations promote them. Numeric time-series (price history, chart data) do NOT belong here.".to_string(),
+        description: "A durable statement about a tracked entity — something still true OUTSIDE this conversation (state, attribute, decision, position, goal). NEVER conversation activity ('the user asked X'): a fact has to stand on its own later. Put figures and dates in `content`. `factType` groups an entity's facts, so REUSE the labels already in <TRACKED_ENTITIES>/timeline. supersede=true when this is a new VALUE of a state the entity already has (the old one retires into history). explicit=true only when the user asked to remember. Numeric time series (price history) do not belong here.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {

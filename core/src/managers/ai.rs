@@ -1226,7 +1226,7 @@ impl AiManager {
         self.tools.register_handler("search_module_actions", search_handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "search_module_actions".to_string(),
-            description: "Find module ACTIONS (broker/API modules with hundreds of cryptic action IDs). Two modes: (1) SEARCH — pass `query` describing what data/operation you need → ranked candidates across all cataloged modules, or one module via `module`. (2) BROWSE — pass `module` with NO `query` → that module's full action index, unranked; if the module is large you get its `domains` first, then call again with `{module, domain}`. Use BROWSE when you want to see what a module can do; use SEARCH when you know what you need. Either way, call get_action_schema for exact params before invoking — never guess an action ID. Results flag requiresApproval (real-money orders).".to_string(),
+            description: "Find module ACTIONS (broker/API modules carry hundreds of cryptic action ids). SEARCH = pass `query` for ranked candidates across every cataloged module, narrowed but never hidden by `module`. BROWSE = pass `module` with NO `query` for that module's full index; a large module answers with its `domains` first, then call again with {module, domain}. Rows flag requiresApproval (real-money orders) and carry the get_action_schema call to make next — never guess an action id.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1654,7 +1654,7 @@ impl AiManager {
         self.tools.register_handler("search_media", handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "search_media".to_string(),
-            description: "Semantic search over the media gallery by generation prompt / filename (meaning-based — a description of the image works, exact words not required). Use to find an existing image before generating a new one. Each hit carries its embeddable `url` — to SHOW a found image in chat, put that url in an image block's src. Failed generations are excluded by default; pass includeFailed:true only to LIST failures or regenerate one (their rows carry status \"error\", no url — regenerate via regenerate_image with the slug, never embed them).".to_string(),
+            description: "Semantic search over the media gallery by generation prompt or filename — a description of the image works, exact words are not needed. Use it to find an existing image before generating a new one. Each hit carries an embeddable `url` for an image block's src. Failed generations are excluded unless includeFailed:true; those rows have status \"error\" and no url — regenerate one via regenerate_image with its slug, never embed it.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

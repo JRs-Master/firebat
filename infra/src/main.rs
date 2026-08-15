@@ -1015,13 +1015,7 @@ async fn main() -> Result<()> {
         tool_manager.register_tool(
             firebat_core::managers::tool::ToolDefinition {
                 name: "read_ticks".to_string(),
-                description: "Read collected 1-second tick bars (pre-candle order flow: OHLC, \
-                    buy/sell volume split, per-second trade count and any stream-declared extras \
-                    like strength). Rows exist only for symbols a running stream watch collects \
-                    (the stream's config declares `tick1s`). Args: module (broker module that \
-                    owns the stream, e.g. kiwoom), symbol, mock (practice host stream, default \
-                    false), count (newest N rows, default 600, max 3600), before (14-digit UTC \
-                    datetime key to page into the past). Keys `t` are 14-digit UTC."
+                description: "Collected 1-second tick bars — pre-candle order flow: OHLC, buy/sell volume split, trades per second, plus whatever the stream declares. Rows exist only for symbols a running watch collects (the stream config declares `tick1s`). Args: module (the broker module owning the stream), symbol, mock (default false), count (newest N, default 600, max 3600), before (14-digit UTC key to page backwards). `t` keys are 14-digit UTC."
                     .to_string(),
                 parameters: serde_json::json!({
                     "type": "object",

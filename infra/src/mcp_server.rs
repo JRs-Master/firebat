@@ -2225,34 +2225,42 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // The machine schema comes from the core registry wherever a core definition exists. The
     // explicit registrations below used to carry hand-trimmed copies; a trimmed copy is a second
     // source, and today's measured cost was a model sending a shape the trimmed schema invited
-    // and the parser refused (propose_plan, steps item type dropped in the copy). Descriptions
-    // stay bespoke — some are deliberately tuned for the hosted-MCP surface — but the contract a
-    // model validates against is single-sourced.
-    let core_defs: std::collections::HashMap<String, serde_json::Value> = deps
+    // and the parser refused (propose_plan, steps item type dropped in the copy).
+    //
+    // Descriptions used to be exempt from that, on the grounds that some were tuned for the
+    // hosted-MCP surface. Measured 2026-08-15: `suggest` published 967 chars of chip contract
+    // here and 45 chars in the core registry — "suggestions = 짧은 문자열 배열" — so on the FC
+    // path the model was told the toggle and input forms do not exist. That is not tuning, that
+    // is one surface not knowing what the other offers. Descriptions single-source too; the
+    // literal stays only as the fallback for a tool the core registry does not define.
+    let core_defs: std::collections::HashMap<String, (String, serde_json::Value)> = deps
         .tool_manager
         .list(&ToolListFilter { source: Some("core".to_string()), name_prefix: None })
         .into_iter()
-        .map(|d| (d.name, d.parameters))
+        .map(|d| (d.name, (d.description, d.parameters)))
         .collect();
     let core_schema = |name: &str, fallback: serde_json::Value| -> serde_json::Value {
-        core_defs.get(name).cloned().unwrap_or(fallback)
+        core_defs.get(name).map(|(_, p)| p.clone()).unwrap_or(fallback)
+    };
+    let core_desc = |name: &str, fallback: &str| -> String {
+        core_defs.get(name).map(|(d, _)| d.clone()).filter(|d| !d.is_empty()).unwrap_or_else(|| fallback.to_string())
     };
 
     state.register(McpTool {
         name: "list_pages".into(),
-        description: "전체 페이지 메타 목록 반환 (slug / status / project / updatedAt 등).".into(),
+        description: core_desc("list_pages", "전체 페이지 메타 목록 반환 (slug / status / project / updatedAt 등).").into(),
         input_schema: core_schema("list_pages", schema_object(serde_json::json!({}))),
         handler: Arc::new(ListPagesHandler { page: deps.page.clone() }),
     }).await;
     state.register(McpTool {
         name: "get_page".into(),
-        description: "단일 페이지 전체 spec 조회. inputSchema: {slug}.".into(),
+        description: core_desc("get_page", "단일 페이지 전체 spec 조회. inputSchema: {slug}.").into(),
         input_schema: core_schema("get_page", schema_object(serde_json::json!({"slug": {"type": "string"}}))),
         handler: Arc::new(GetPageHandler { page: deps.page.clone() }),
     }).await;
     state.register(McpTool {
         name: "save_page".into(),
-        description: "페이지 spec 저장 (생성/덮어쓰기). inputSchema: {slug, spec, status?, project?, visibility?, password?}. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 선언된 모듈만)을 실행해 결과 블록을 _baked 로 채운다 — 정기 갱신 페이지는 이 블록 + 크론 targetPath 'rebake:<slug>' 가 표준(SAVE_PAGE 파이프라인 재발행·agent 재발행 불필요). props 의 dataCacheKey 도 저장 시 실제 데이터로 구워진다(1회 스냅샷 — 갱신은 안 됨).".into(),
+        description: core_desc("save_page", "페이지 spec 저장 (생성/덮어쓰기). inputSchema: {slug, spec, status?, project?, visibility?, password?}. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 선언된 모듈만)을 실행해 결과 블록을 _baked 로 채운다 — 정기 갱신 페이지는 이 블록 + 크론 targetPath 'rebake:<slug>' 가 표준(SAVE_PAGE 파이프라인 재발행·agent 재발행 불필요). props 의 dataCacheKey 도 저장 시 실제 데이터로 구워진다(1회 스냅샷 — 갱신은 안 됨).").into(),
         input_schema: core_schema("save_page", schema_object(serde_json::json!({
             "slug": {"type": "string"},
             "spec": firebat_core::managers::page::PageManager::page_spec_schema(),
@@ -2265,7 +2273,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "delete_page".into(),
-        description: "페이지 삭제. inputSchema: {slug}.".into(),
+        description: core_desc("delete_page", "페이지 삭제. inputSchema: {slug}.").into(),
         input_schema: core_schema("delete_page", schema_object(serde_json::json!({"slug": {"type": "string"}}))),
         handler: Arc::new(DeletePageHandler { page: deps.page }),
     }).await;
@@ -2273,25 +2281,25 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Storage
     state.register(McpTool {
         name: "read_file".into(),
-        description: "파일 내용 읽기. inputSchema: {path}.".into(),
+        description: core_desc("read_file", "파일 내용 읽기. inputSchema: {path}.").into(),
         input_schema: core_schema("read_file", schema_object(serde_json::json!({"path": {"type": "string"}}))),
         handler: Arc::new(ReadFileHandler { storage: deps.storage.clone() }),
     }).await;
     state.register(McpTool {
         name: "write_file".into(),
-        description: "파일 생성/덮어쓰기. inputSchema: {path, content}.".into(),
+        description: core_desc("write_file", "파일 생성/덮어쓰기. inputSchema: {path, content}.").into(),
         input_schema: core_schema("write_file", schema_object(serde_json::json!({"path": {"type": "string"}, "content": {"type": "string"}}))),
         handler: Arc::new(WriteFileHandler { storage: deps.storage.clone() }),
     }).await;
     state.register(McpTool {
         name: "delete_file".into(),
-        description: "파일 삭제. inputSchema: {path}.".into(),
+        description: core_desc("delete_file", "파일 삭제. inputSchema: {path}.").into(),
         input_schema: core_schema("delete_file", schema_object(serde_json::json!({"path": {"type": "string"}}))),
         handler: Arc::new(DeleteFileHandler { storage: deps.storage.clone() }),
     }).await;
     state.register(McpTool {
         name: "list_dir".into(),
-        description: "디렉토리 항목 목록. inputSchema: {path}.".into(),
+        description: core_desc("list_dir", "디렉토리 항목 목록. inputSchema: {path}.").into(),
         input_schema: core_schema("list_dir", schema_object(serde_json::json!({"path": {"type": "string"}}))),
         handler: Arc::new(ListDirHandler { storage: deps.storage }),
     }).await;
@@ -2299,7 +2307,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Module
     state.register(McpTool {
         name: "execute".into(),
-        description: "⚠️ 시스템 모듈은 sysmod_* 사용. user/modules 사용자 정의 모듈 실행 전용. inputSchema: {path, inputData}.".into(),
+        description: core_desc("execute", "⚠️ 시스템 모듈은 sysmod_* 사용. user/modules 사용자 정의 모듈 실행 전용. inputSchema: {path, inputData}.").into(),
         input_schema: core_schema("execute", schema_object(serde_json::json!({
             "path": {"type": "string"},
             "inputData": {"type": "object"}
@@ -2312,7 +2320,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // core/src/tool_registry.rs 의 schedule_task schema 와 일관성 유지.
     state.register(McpTool {
         name: "schedule_task".into(),
-        description: "크론 / 일회성 작업 예약 — 특정 시각·주기에 작업을 자동 실행한다(스케줄). 단지 날짜·약속을 기록만 할 거면 sysmod_calendar(캘린더)를 써라. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 만 지정한다. 'mode' 같은 별도 field 는 넣지 마라 — schema 에 없다.".into(),
+        description: core_desc("schedule_task", "크론 / 일회성 작업 예약 — 특정 시각·주기에 작업을 자동 실행한다(스케줄). 단지 날짜·약속을 기록만 할 거면 sysmod_calendar(캘린더)를 써라. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 만 지정한다. 'mode' 같은 별도 field 는 넣지 마라 — schema 에 없다.").into(),
         input_schema: core_schema("schedule_task", schema_object(serde_json::json!({
             "jobId": {"type": "string", "description": "고유 job id (이미 있는 jobId 면 덮어쓰기)"},
             "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 아래 pipeline 필드 사용(이때 targetPath 는 라벨). 'rebake:<slug>' = 그 페이지의 module 블록 바인딩을 재실행해 데이터만 갱신(LLM 0 — 정기 갱신 페이지의 표준)"},
@@ -2330,25 +2338,25 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // 혼동돼 cron 이름으로 통일 (둘 다 ScheduleManager 백엔드).
     state.register(McpTool {
         name: "cancel_cron_job".into(),
-        description: "cron / 예약 잡 해제. inputSchema: {jobId}.".into(),
+        description: core_desc("cancel_cron_job", "cron / 예약 잡 해제. inputSchema: {jobId}.").into(),
         input_schema: core_schema("cancel_cron_job", schema_object(serde_json::json!({"jobId": {"type": "string"}}))),
         handler: Arc::new(CancelCronJobHandler { schedule: deps.schedule.clone() }),
     }).await;
     state.register(McpTool {
         name: "list_cron_jobs".into(),
-        description: "등록된 cron / 1회 예약 / delay 잡 목록.".into(),
+        description: core_desc("list_cron_jobs", "등록된 cron / 1회 예약 / delay 잡 목록.").into(),
         input_schema: core_schema("list_cron_jobs", schema_object(serde_json::json!({}))),
         handler: Arc::new(ListCronJobsHandler { schedule: deps.schedule.clone() }),
     }).await;
     state.register(McpTool {
         name: "run_cron_job".into(),
-        description: "예약 작업 즉시 실행 (one-shot). inputSchema: {jobId}.".into(),
+        description: core_desc("run_cron_job", "예약 작업 즉시 실행 (one-shot). inputSchema: {jobId}.").into(),
         input_schema: core_schema("run_cron_job", schema_object(serde_json::json!({"jobId": {"type": "string"}}))),
         handler: Arc::new(RunCronJobHandler { schedule: deps.schedule }),
     }).await;
     state.register(McpTool {
         name: "run_task".into(),
-        description: "파이프라인 즉시 실행 (예약 아님). inputSchema: {pipeline: [step, ...]}.".into(),
+        description: core_desc("run_task", "파이프라인 즉시 실행 (예약 아님). inputSchema: {pipeline: [step, ...]}.").into(),
         input_schema: core_schema("run_task", schema_object(serde_json::json!({"pipeline": firebat_core::managers::task::pipeline_param_schema()}))),
         handler: Arc::new(RunTaskHandler { task: deps.task }),
     }).await;
@@ -2356,7 +2364,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // SysmodCache drill-in — 큰 sysmod 응답의 `_cacheKey` 부분 조회 (yfinance/한투/키움/DART 시계열).
     state.register(McpTool {
         name: "cache_read".into(),
-        description: "sysmod `_cacheKey` 의 records 페이지네이션 조회. 큰 시계열 응답에서 일부만 가져올 때 offset/limit 으로 자르기. inputSchema: {cacheKey, offset?, limit?}.".into(),
+        description: core_desc("cache_read", "sysmod `_cacheKey` 의 records 페이지네이션 조회. 큰 시계열 응답에서 일부만 가져올 때 offset/limit 으로 자르기. inputSchema: {cacheKey, offset?, limit?}.").into(),
         input_schema: core_schema("cache_read", schema_object(serde_json::json!({
             "cacheKey": {"type": "string", "description": "sysmod 응답의 `_cacheKey` 값"},
             "offset": {"type": "integer", "description": "시작 인덱스 (기본 0)"},
@@ -2366,7 +2374,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "cache_grep".into(),
-        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation, op=eq/ne/gt/gte/lt/lte/contains/in. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate. Date ranges work: an ISO date or timestamp string (`2025-07-31`, `2026-07-31 09:00`) compares chronologically with gt/gte/lt/lte, so filter a period here instead of paging through offsets to find its boundaries. inputSchema: {cacheKey, field, op, value}.".into(),
+        description: core_desc("cache_grep", "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation, op=eq/ne/gt/gte/lt/lte/contains/in. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate. Date ranges work: an ISO date or timestamp string (`2025-07-31`, `2026-07-31 09:00`) compares chronologically with gt/gte/lt/lte, so filter a period here instead of paging through offsets to find its boundaries. inputSchema: {cacheKey, field, op, value}.").into(),
         input_schema: core_schema("cache_grep", schema_object(serde_json::json!({
             "cacheKey": {"type": "string"},
             "field": {"type": "string", "description": "field path, dot notation"},
@@ -2377,7 +2385,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "cache_aggregate".into(),
-        description: "sysmod `_cacheKey` records 집계. op=count/sum/avg/min/max, field=숫자 필드 경로(count 는 무시). inputSchema: {cacheKey, field, op}.".into(),
+        description: core_desc("cache_aggregate", "sysmod `_cacheKey` records 집계. op=count/sum/avg/min/max, field=숫자 필드 경로(count 는 무시). inputSchema: {cacheKey, field, op}.").into(),
         input_schema: core_schema("cache_aggregate", schema_object(serde_json::json!({
             "cacheKey": {"type": "string"},
             "field": {"type": "string", "description": "숫자 필드 경로 (점 표기)"},
@@ -2387,7 +2395,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "cache_drop".into(),
-        description: "sysmod `_cacheKey` 캐시 삭제. inputSchema: {cacheKey}.".into(),
+        description: core_desc("cache_drop", "sysmod `_cacheKey` 캐시 삭제. inputSchema: {cacheKey}.").into(),
         input_schema: core_schema("cache_drop", schema_object(serde_json::json!({"cacheKey": {"type": "string"}}))),
         handler: Arc::new(CacheDropHandler { cache: deps.cache.clone() }),
     }).await;
@@ -2395,13 +2403,13 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Secret / Mcp
     state.register(McpTool {
         name: "request_secret".into(),
-        description: "API 키/시크릿 조회 (등록 여부 + 값). inputSchema: {name}.".into(),
+        description: core_desc("request_secret", "API 키/시크릿 조회 (등록 여부 + 값). inputSchema: {name}.").into(),
         input_schema: core_schema("request_secret", schema_object(serde_json::json!({"name": {"type": "string"}}))),
         handler: Arc::new(RequestSecretHandler { secret: deps.secret }),
     }).await;
     state.register(McpTool {
         name: "mcp_call".into(),
-        description: "외부 MCP 서버 도구 호출. inputSchema: {server, tool, arguments?}.".into(),
+        description: core_desc("mcp_call", "외부 MCP 서버 도구 호출. inputSchema: {server, tool, arguments?}.").into(),
         input_schema: core_schema("mcp_call", schema_object(serde_json::json!({
             "server": {"type": "string"},
             "tool": {"type": "string"},
@@ -2413,7 +2421,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Memory tier
     state.register(McpTool {
         name: "save_entity".into(),
-        description: "Save the identity of a tracked subject — one thing you'll want to recall later. The `name` is the BARE NOUN for the thing itself (answers 'what is it?') — NOT what it's doing, its state, a plan/strategy/method applied to it, a time period, or any qualifier; those go in facts (save_entity_fact), never the name. Self-check: if the name reads as 'THING + descriptor', keep ONLY the thing as the entity and move the descriptor to a fact. Name + aliases is the dedup key — a qualifier baked into the name splits one subject into duplicates and breaks recall.".into(),
+        description: core_desc("save_entity", "Save the identity of a tracked subject — one thing you'll want to recall later. The `name` is the BARE NOUN for the thing itself (answers 'what is it?') — NOT what it's doing, its state, a plan/strategy/method applied to it, a time period, or any qualifier; those go in facts (save_entity_fact), never the name. Self-check: if the name reads as 'THING + descriptor', keep ONLY the thing as the entity and move the descriptor to a fact. Name + aliases is the dedup key — a qualifier baked into the name splits one subject into duplicates and breaks recall.").into(),
         input_schema: core_schema("save_entity", schema_object(serde_json::json!({
             "name": {"type":"string", "description": "Bare canonical noun for the subject itself — no method/strategy/status/time/attribute mixed in (those are facts). Stable across mentions (dedup key)."},
             "aliases": {"type":"array", "items": {"type":"string"}, "description": "Alternative forms of the same subject — abbreviations, codes/tickers, alternate spellings, language variants — so later mentions merge instead of duplicating."}
@@ -2422,43 +2430,43 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "save_entity_fact".into(),
-        description: "Record a durable statement about a tracked entity — something that stays true OUTSIDE this conversation (state, attribute, decision, position, goal). NEVER log conversation activity ('the user asked/requested X') — a fact must stand on its own later. Include figures/dates in content. factType groups the entity's facts: REUSE existing labels (see <TRACKED_ENTITIES>/timeline) so the same kind groups together. supersede=true when this is a NEW VALUE of a state the entity already has (old value retires into history). explicit=true ONLY when the user explicitly asked to remember. Numeric time-series (price history) do NOT belong here.".into(),
+        description: core_desc("save_entity_fact", "Record a durable statement about a tracked entity — something that stays true OUTSIDE this conversation (state, attribute, decision, position, goal). NEVER log conversation activity ('the user asked/requested X') — a fact must stand on its own later. Include figures/dates in content. factType groups the entity's facts: REUSE existing labels (see <TRACKED_ENTITIES>/timeline) so the same kind groups together. supersede=true when this is a NEW VALUE of a state the entity already has (old value retires into history). explicit=true ONLY when the user explicitly asked to remember. Numeric time-series (price history) do NOT belong here.").into(),
         input_schema: core_schema("save_entity_fact", schema_object(serde_json::json!({"entityId": {"type":"integer"}, "content": {"type":"string"}, "factType": {"type":"string"}, "supersede": {"type":"boolean"}, "explicit": {"type":"boolean"}}))),
         handler: Arc::new(SaveEntityFactHandler { entity: deps.entity.clone() }),
     }).await;
     state.register(McpTool {
         name: "search_entities".into(),
-        description: "Search tracked entities (subjects the user asked to remember or the system observed — people, companies, stocks, projects) by name/alias/type, semantic. Use when the user references a subject you might already know. Next step: search_entity_facts / search_events. inputSchema: {query, type?, limit?}.".into(),
+        description: core_desc("search_entities", "Search tracked entities (subjects the user asked to remember or the system observed — people, companies, stocks, projects) by name/alias/type, semantic. Use when the user references a subject you might already know. Next step: search_entity_facts / search_events. inputSchema: {query, type?, limit?}.").into(),
         input_schema: core_schema("search_entities", schema_object(serde_json::json!({}))),
         handler: Arc::new(SearchEntitiesHandler { entity: deps.entity.clone() }),
     }).await;
     state.register(McpTool {
         name: "search_entity_facts".into(),
-        description: "Search durable facts attached to entities (states, attributes, decisions — e.g. an average purchase price). Use to look up what is known about a subject BEFORE answering from memory; superseded/low-confidence facts are filtered automatically. inputSchema: {query, entityId?, factType?, limit?}.".into(),
+        description: core_desc("search_entity_facts", "Search durable facts attached to entities (states, attributes, decisions — e.g. an average purchase price). Use to look up what is known about a subject BEFORE answering from memory; superseded/low-confidence facts are filtered automatically. inputSchema: {query, entityId?, factType?, limit?}.").into(),
         input_schema: core_schema("search_entity_facts", schema_object(serde_json::json!({}))),
         handler: Arc::new(SearchEntityFactsHandler { entity: deps.entity.clone() }),
     }).await;
     state.register(McpTool {
         name: "get_entity_timeline".into(),
-        description: "Entity 의 사실 + 이벤트 시간순. inputSchema: {entityId, limit?, offset?, orderBy?}.".into(),
+        description: core_desc("get_entity_timeline", "Entity 의 사실 + 이벤트 시간순. inputSchema: {entityId, limit?, offset?, orderBy?}.").into(),
         input_schema: core_schema("get_entity_timeline", schema_object(serde_json::json!({"entityId": {"type":"integer"}}))),
         handler: Arc::new(EntityTimelineHandler { entity: deps.entity }),
     }).await;
     state.register(McpTool {
         name: "save_event".into(),
-        description: "Record something that happened (or is scheduled) in the WORLD at a point in time — a trade executed, a release/announcement, a decision the user made, a milestone. NEVER log conversation activity ('user asked about X') — requests/Q&A live in conversation history, not here. Reuse the same type for the same kind of occurrence; link entityIds. explicit=true only when the user explicitly asked to remember.".into(),
+        description: core_desc("save_event", "Record something that happened (or is scheduled) in the WORLD at a point in time — a trade executed, a release/announcement, a decision the user made, a milestone. NEVER log conversation activity ('user asked about X') — requests/Q&A live in conversation history, not here. Reuse the same type for the same kind of occurrence; link entityIds. explicit=true only when the user explicitly asked to remember.").into(),
         input_schema: core_schema("save_event", schema_object(serde_json::json!({"type": {"type":"string"}, "title": {"type":"string"}, "entityIds": {"type":"array"}, "explicit": {"type":"boolean"}}))),
         handler: Arc::new(SaveEventHandler { episodic: deps.episodic.clone() }),
     }).await;
     state.register(McpTool {
         name: "search_events".into(),
-        description: "Search recorded events (things that happened or are scheduled in the world — announcements, fills, user life events). Use for when-did-X-happen questions about tracked subjects. inputSchema: {query, type?, entityId?, limit?}.".into(),
+        description: core_desc("search_events", "Search recorded events (things that happened or are scheduled in the world — announcements, fills, user life events). Use for when-did-X-happen questions about tracked subjects. inputSchema: {query, type?, entityId?, limit?}.").into(),
         input_schema: core_schema("search_events", schema_object(serde_json::json!({}))),
         handler: Arc::new(SearchEventsHandler { episodic: deps.episodic.clone() }),
     }).await;
     state.register(McpTool {
         name: "list_recent_events".into(),
-        description: "최근 Event 목록. inputSchema: ListRecentOpts.".into(),
+        description: core_desc("list_recent_events", "최근 Event 목록. inputSchema: ListRecentOpts.").into(),
         input_schema: core_schema("list_recent_events", schema_object(serde_json::json!({}))),
         handler: Arc::new(ListRecentEventsHandler { episodic: deps.episodic }),
     }).await;
@@ -2466,20 +2474,20 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Conversation
     state.register(McpTool {
         name: "search_history".into(),
-        description: "Semantic search over prior conversations — matches ONE message per hit, so the \
+        description: core_desc("search_history", "Semantic search over prior conversations — matches ONE message per hit, so the \
             result is a fragment plus its convId/msgIdx. Read around a hit with read_conversation; \
             when hits are useless or empty, fall back to list_conversations. inputSchema: {owner?, \
-            query, currentConvId?, limit?, withinDays?, minScore?, includeBlocks?}.".into(),
+            query, currentConvId?, limit?, withinDays?, minScore?, includeBlocks?}.").into(),
         input_schema: core_schema("search_history", schema_object(serde_json::json!({"query": {"type":"string"}}))),
         handler: Arc::new(SearchHistoryHandler { conversation: deps.conversation.clone() }),
     }).await;
     state.register(McpTool {
         name: "list_conversations".into(),
-        description: "List the caller's own chat sessions, newest first. A session holds many \
+        description: core_desc("list_conversations", "List the caller's own chat sessions, newest first. A session holds many \
             messages and its title comes from the opening line, so it often does not name the \
             topic — narrow by time, then read the session. since/until accept YYYY-MM-DD (read as \
             UTC) or epoch ms; for a local-day window pass epoch ms. inputSchema: {owner?, limit?, \
-            since?, until?}.".into(),
+            since?, until?}.").into(),
         input_schema: core_schema("list_conversations", schema_object(serde_json::json!({
             "limit": {"type": "integer"},
             "since": {"type": "string"},
@@ -2489,15 +2497,15 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "read_conversation".into(),
-        description: "Read a range of messages from one session, in order. `to` is exclusive; omit \
+        description: core_desc("read_conversation", "Read a range of messages from one session, in order. `to` is exclusive; omit \
             for the end. Long ranges stop at a character cap and report nextFrom. inputSchema: \
-            {owner?, convId, from?, to?, maxChars?}.".into(),
+            {owner?, convId, from?, to?, maxChars?}.").into(),
         input_schema: core_schema("read_conversation", schema_object(serde_json::json!({"convId": {"type":"string"}}))),
         handler: Arc::new(ReadConversationHandler { conversation: deps.conversation }),
     }).await;
     state.register(McpTool {
         name: "search_library".into(),
-        description: "라이브러리(업로드 자료) 검색 — E5(의미) + BM25(정확 토큰) 하이브리드. 질문이 업로드 자료와 관련될 가능성이 있으면 명시 지시 없이 호출하라. 결과가 비거나 부실하면 같은 쿼리 반복 대신 키워드를 바꿔 재검색. inputSchema: {query, owner?, referenceIds?, limit?}.".into(),
+        description: core_desc("search_library", "라이브러리(업로드 자료) 검색 — E5(의미) + BM25(정확 토큰) 하이브리드. 질문이 업로드 자료와 관련될 가능성이 있으면 명시 지시 없이 호출하라. 결과가 비거나 부실하면 같은 쿼리 반복 대신 키워드를 바꿔 재검색. inputSchema: {query, owner?, referenceIds?, limit?}.").into(),
         input_schema: core_schema("search_library", schema_object(serde_json::json!({"query": {"type":"string"}}))),
         handler: Arc::new(SearchLibraryHandler { library: deps.library }),
     }).await;
@@ -2508,13 +2516,13 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // 로 두면 옛 substring 판이 이름을 선점해 FC↔MCP drift (2026-07-07 갓벽 sweep).
     state.register(McpTool {
         name: "regenerate_image".into(),
-        description: "갤러리 이미지 재생성 — 기존 slug 의 prompt/model/size/aspectRatio 메타 그대로 재실행. inputSchema: {slug}.".into(),
+        description: core_desc("regenerate_image", "갤러리 이미지 재생성 — 기존 slug 의 prompt/model/size/aspectRatio 메타 그대로 재실행. inputSchema: {slug}.").into(),
         input_schema: core_schema("regenerate_image", schema_object(serde_json::json!({"slug": {"type": "string"}}))),
         handler: Arc::new(RegenerateImageHandler { media: deps.media.clone() }),
     }).await;
     state.register(McpTool {
         name: "image_gen".into(),
-        description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환, 백그라운드 완성. NOT for mathematical function graphs — the `function_plot` render component draws those exactly and instantly. inputSchema: GenerateImageInput.".into(),
+        description: core_desc("image_gen", "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환, 백그라운드 완성. NOT for mathematical function graphs — the `function_plot` render component draws those exactly and instantly. inputSchema: GenerateImageInput.").into(),
         input_schema: core_schema("image_gen", schema_object(serde_json::json!({
             "prompt": {"type":"string"},
             "size": {"type":"string"},
@@ -2528,7 +2536,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // AI 메타
     state.register(McpTool {
         name: "suggest".into(),
-        description: "Present next-action suggestion chips. suggestions = array; each item is one of: a string (standalone shortcut chip — sends IMMEDIATELY on click, cannot combine with other groups), or {type:'toggle', label, options:[...], defaults?:[...], single?:bool} (a select group submitted together with the card's other groups via one Send button — multi-select by default; set single:true for a single-pick radio that STILL coexists with other groups under that one submit; options is REQUIRED and non-empty), or {type:'input', label, placeholder?} (free text, also part of the one submit). Pick the type per the choice: pick-many => toggle; exactly one-of-many that must coexist with other groups in a single submit => toggle with single:true; a standalone immediate shortcut (e.g. 'proceed with the recommendation') => string; open-ended => input. Do NOT hardcode single vs multi — judge by whether the choices can coexist. Applies to every suggest use, build steps included.".into(),
+        description: core_desc("suggest", "Present next-action suggestion chips. suggestions = array; each item is one of: a string (standalone shortcut chip — sends IMMEDIATELY on click, cannot combine with other groups), or {type:'toggle', label, options:[...], defaults?:[...], single?:bool} (a select group submitted together with the card's other groups via one Send button — multi-select by default; set single:true for a single-pick radio that STILL coexists with other groups under that one submit; options is REQUIRED and non-empty), or {type:'input', label, placeholder?} (free text, also part of the one submit). Pick the type per the choice: pick-many => toggle; exactly one-of-many that must coexist with other groups in a single submit => toggle with single:true; a standalone immediate shortcut (e.g. 'proceed with the recommendation') => string; open-ended => input. Do NOT hardcode single vs multi — judge by whether the choices can coexist. Applies to every suggest use, build steps included.").into(),
         input_schema: core_schema("suggest", schema_object(serde_json::json!({"suggestions": {"type":"array"}}))),
         handler: Arc::new(SuggestHandler),
     }).await;
@@ -2558,7 +2566,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "network_request".into(),
-        description: "가벼운 HTTP 요청. inputSchema: {url, method?, headers?, body?, timeoutMs?}.".into(),
+        description: core_desc("network_request", "가벼운 HTTP 요청. inputSchema: {url, method?, headers?, body?, timeoutMs?}.").into(),
         input_schema: core_schema("network_request", schema_object(serde_json::json!({"url": {"type":"string"}}))),
         handler: Arc::new(NetworkRequestHandler {
             network: deps.network,
