@@ -218,9 +218,10 @@ async fn registered_tool_count() {
     // skill_file: 4 (get/list/save/delete_skill — search_skills 는 AiManager 시맨틱 판) + tts: 1 +
     // sing: 1 (compose-and-sing — TTS take retuned to a score over a synthesized band) +
     // stream_watch: 3 (start/stop/list — 실시간 감시) +
-    // accounts: 1 (list_accounts — every registered account, across modules) = 67
-    assert_eq!(stats.total, 67);
-    assert_eq!(stats.by_source.get("core").copied(), Some(67));
+    // accounts: 1 (list_accounts — every registered account, across modules) +
+    // tool_schema: 1 (get_tool_schema — the contract for a tool that publishes an open schema) = 68
+    assert_eq!(stats.total, 68);
+    assert_eq!(stats.by_source.get("core").copied(), Some(68));
 }
 
 #[tokio::test]
@@ -369,6 +370,11 @@ const FORMLESS_BY_DESIGN: &[(&str, &str)] = &[
     // list would cost more context than the whole tool surface.
     ("save_page.spec.body.props", "per-component props — the component catalog carries those forms"),
     ("save_template.config.spec.body.props", "same per-component props as save_page"),
+    // The pipeline grammar is not published on these two — it is 10,653 characters of contract
+    // that most turns never open, so the slot says where to get it and get_tool_schema returns it
+    // whole. Open plus a pointer, never a trimmed copy of the steps (2026-08-15).
+    ("run_task.pipeline", "step grammar comes from get_tool_schema(run_task), not the tool list"),
+    ("schedule_task.pipeline", "step grammar comes from get_tool_schema(schedule_task)"),
     // Pipeline step slots whose value belongs to whatever the step calls.
     ("schedule_task.pipeline.arguments", "arguments for a tool on ANOTHER server"),
     ("run_task.pipeline.arguments", "arguments for a tool on ANOTHER server"),
