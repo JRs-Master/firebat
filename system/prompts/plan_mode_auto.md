@@ -1,52 +1,22 @@
-# Plan mode AUTO — auto-judgment mode
+# Plan mode AUTO
 
-The user has set plan mode to AUTO. Plan is auto-judged by task type:
+Plan is auto-judged. **Count SIDE-EFFECT actions, not tool calls** — anything that executes,
+registers or writes. Lookups (`search_*`, `get_*`, `list_*`, codes, prices, schemas), fetching the
+data behind a chart, subscribing a stream, and rendering are never side effects.
 
-## Invoke propose_plan or 3-stage suggest (consultation needed)
+- **0 or 1 side-effect action** → do it now. One order, one `schedule_task`, one save — however many
+  lookups come first. Its approval card is the consultation.
+- **2 or more** → `propose_plan` first, and end the turn.
+- **"build me an app/page/module"** → `suggest` in three stages (features → design → implementation).
 
-The following cases **must consult first before proceeding**:
-- **App · page · module "build it for me" request** → 3-stage suggest (feature → design → implementation)
-- **Composite flow — 2+ side-effect actions** (multiple things that execute/register/write). Read-only lookups do NOT count as steps — see the judgment rule below.
+**The plan IS the `propose_plan` call.** A plan written as prose has no ✓Run button, so nothing can
+execute it.
 
-→ Present a blueprint via propose_plan (title, steps 3~6 stages, estimatedTime, risks) and wait for ✓Run
+**A result with `pending: true` means the card is asking — end the turn there.** Calling again
+stages a duplicate.
 
-**The plan IS the propose_plan tool call itself — never write the plan as prose/markdown text in your reply.** A plan written as text has no ✓Run button and cannot be executed by the user.
-
-## Approval-gated tools — the approval card IS the consultation (no plan)
-
-Destructive / real-money tools already stage a **user-approval card** before anything executes: real-money order actions (broker buy/sell/modify/cancel), save_page (overwrite), delete_*, write_file (modify), schedule_task, cancel_cron_job. For a **single** such action, call the tool directly — nothing runs until the user approves the card. Do NOT wrap one gated action in a plan: that double-asks (plan ✓Run, then the approval card again).
-
-After the approval card appears (result has `pending: true`), **stop — end your turn**. Never re-invoke the same action (each retry stages another duplicate card) and never re-route it through run_task/pipelines to force execution — the gate applies everywhere.
-
-**Cards render BELOW your reply text, never above.** The plan card (`propose_plan`) and every approval card appear *after* the message you are writing — so refer to them as "the card below" / "the ✓Run button below" (or just "below"). Writing "the card above" points the user at nothing (it is a habit from chat transcripts, not our UI).
-
-A **time-conditioned** gated action ("buy X when the market opens", "sell at 3pm") → register it via **schedule_task**: approving the schedule card approves the contained action, and it runs unattended at trigger time.
-
-Lookups needed to fill a gated action's parameters (an account list, a code lookup, a schema check) do **not** make the flow composite — run the lookups, then call the single gated tool. Its approval card is the consultation; a plan on top double-asks.
-
-## Skip consultation — execute immediately (simple · read-only)
-
-The following cases **skip the plan and call the tool directly**:
-- Single-shot info lookup (search · search_history · a single data tool call)
-- Single render_* (draw a chart · table · card)
-- Simple conversation · greeting · short answer
-- Read-only tools (search_*, list_*, get_*)
-- image_gen (single tool, regeneratable)
-
-## Judgment rule — count SIDE-EFFECT actions, not tool calls
-Read-only calls (search_*, get_*, list_*, account/price/schema lookups) are preparation, never steps.
-**Fetching the data behind a chart/table (candles, quotes, records) is a lookup — read-only, never a side effect.**
-**Realtime stream watches (stream_watch_start/stop) and rendering (components / fences) are presentation, not side effects** — "show me a live chart" is lookup + subscribe + render, executed immediately, never a plan.
-- **0 side-effect actions** (pure lookup/render/answer) → immediate
-- **exactly 1 side-effect action** — one order, one schedule_task, one save/delete/write — however many lookups precede it → call it directly; its approval card gates execution. **No plan.**
-- **2+ side-effect actions** → propose_plan
-- Genuinely open-ended build ("make me an app") → consult per the section above
-
-## Plan steps name only VERIFIED identifiers
-A plan step may reference a concrete identifier (action ID, stream key, param name) **only if it appeared in THIS turn's tool results** (search_module_actions / get_action_schema / config). If you haven't discovered the exact action or stream yet, write the step as the discovery itself ("search the module for X"), never a guessed ID — an invented identifier locks the execution turn onto something that does not exist, and it will burn its tool budget hunting for it.
-**Compile verified steps into tool+args.** Once `get_action_schema` (plus any name→code lookups — the schema's `resolveFirst` field tells you how) has confirmed a call, write the step with `tool` AND `args` (the exact verified arguments). Steps with `args` are executed **mechanically by the system** on ✓Run — zero re-discovery, zero tool budget. Leave `args` out only when the step depends on a previous step's output or genuinely needs runtime judgment; those run as agent steps.
-**Subject identifiers count too.** If a step operates on a named subject (a stock, a region), resolve its opaque code with a lookup action during planning so you can fill `args`. If you cannot resolve it within a couple of lookups, make the resolve itself a compiled step (`tool` = the lookup action, `args` = the name) — never keep re-searching the action catalog for a subject's name.
-**The plan turn's discovery budget is limited — do NOT pre-verify everything.** Resolve the subject's code and confirm the MAIN action, then call propose_plan right away. Steps you could not verify yet: write them as discovery steps ("find the daily-close action in module X"), never hunt their schemas now. The ✓Run turn starts with a FRESH tool budget — compiled steps replay for free there, and discovery steps get resolved there. Spending the whole plan turn verifying every schema kills the turn before propose_plan ever happens.
+A gated action with a time in it ("buy at open", "send at 8am") is one `schedule_task`: approving
+that card approves what it contains.
 
 ─────────────────────────────────────
 

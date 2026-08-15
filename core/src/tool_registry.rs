@@ -1603,8 +1603,11 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
                                     "properties": {
                                         "title": { "type": "string" },
                                         "description": { "type": "string" },
-                                        "tool": { "type": "string" },
-                                        "args": { "type": "object", "description": "verified call arguments (from this turn's get_action_schema / lookups) — filled = mechanically replayed on approval" }
+                                        // The identifier rule lives here rather than in the plan-mode
+                                        // prompt: it only applies while these steps are being
+                                        // written, and it is this field it applies to.
+                                        "tool": { "type": "string", "description": "The tool this step calls. Name an action id, stream key or param ONLY if it appeared in THIS turn's tool results — an invented identifier sends the execution turn hunting for something that does not exist. Not discovered yet? Write the step as the discovery itself." },
+                                        "args": { "type": "object", "description": "verified call arguments (from this turn's get_action_schema / lookups) — filled = mechanically replayed on approval, so the approved turn spends no discovery budget. Omit when the step depends on an earlier step's output." }
                                     },
                                     "required": ["title"]
                                 }
