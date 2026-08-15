@@ -40,21 +40,31 @@ fn pb(v: Arc<dyn IVaultPort>) -> PromptBuilder {
     PromptBuilder::new(v)
 }
 
+/// The base prompt still carries the contracts the CODE depends on.
+///
+/// This used to list section headings — "Tool usage principles", "Scheduling", "Page generation
+/// guide" — which made it a hand-copied table of contents. The 2026-08-15 diet cut the prompt
+/// from 46,914 to 4,870 characters by removing case law, and every one of those headings went
+/// with it, so the test failed for the one change it should have waved through.
+///
+/// What a prompt test can usefully pin is what breaks silently if it disappears: the shapes a
+/// parser reads and the protocols a response speaks. Section names are prose and may be rewritten
+/// freely; these strings may not.
 #[test]
-fn base_prompt_contains_tool_system_sections() {
+fn base_prompt_carries_the_contracts_the_code_parses() {
     let (v, _dir) = vault();
     let pb = pb(v);
     let prompt = pb.build(None, None, None);
-    assert!(prompt.contains("Firebat is an AI agent"));
-    assert!(prompt.contains("Tool usage principles"));
-    assert!(prompt.contains("Component rendering"));
-    // 2026-07-14 diet: authoring detail (incl. "Reusable 5 rules") moved to system skills;
-    // tool_system keeps a Module authoring section that points at get_skill("module-authoring").
-    assert!(prompt.contains("Module authoring"));
-    assert!(prompt.contains("module-authoring"));
-    assert!(prompt.contains("Scheduling"));
-    assert!(prompt.contains("Pipeline"));
-    assert!(prompt.contains("Page generation guide"));
+    assert!(prompt.contains("Firebat is an AI agent"), "the opening line identifies the prompt");
+    // The fence the reply parser reads, and the prop that makes the server inject cached rows.
+    assert!(prompt.contains("```firebat-render"), "render fence grammar");
+    assert!(prompt.contains("dataCacheKey"), "the prop the server fills from the cache");
+    // The key protocol: responses hand one over, cache_read / cache_grep take it back.
+    assert!(prompt.contains("_cacheKey"), "cache key protocol");
+    // The ladder `conversation_scope` actually enforces — a call whose schema was not fetched in
+    // the window is refused before it runs.
+    assert!(prompt.contains("search_module_actions"), "ladder step one");
+    assert!(prompt.contains("get_action_schema"), "ladder step two");
 }
 
 /// The system prompt guides by stating consequences, not by issuing bans (user's call, 2026-08-14).
@@ -136,9 +146,14 @@ fn timezone_override_via_vault() {
     let pb = pb(v);
     let prompt = pb.build(None, None, None);
     assert!(prompt.contains("America/New_York"));
-    let scheduling_section_idx = prompt.find("Timezone:").expect("Timezone section required");
-    let scheduling_section = &prompt[scheduling_section_idx..scheduling_section_idx + 200];
-    assert!(scheduling_section.contains("America/New_York"));
+    // The zone is stated next to the clock, so a model reading "now" reads it in the right zone.
+    // (The old anchor was a "Timezone:" label that the 2026-08-15 diet folded into this line.)
+    let idx = prompt.find("Current time:").expect("the prompt states the current time");
+    let line: String = prompt[idx..].lines().next().unwrap_or_default().to_string();
+    assert!(
+        line.contains("America/New_York"),
+        "the clock must carry its zone, or `now` is ambiguous: {line}"
+    );
 }
 
 #[test]
@@ -166,9 +181,12 @@ fn cron_agent_prelude_prepended() {
     assert!(prompt.contains("job-2026-04-25-stock-weekly"));
     assert!(prompt.contains("주간 증시 일정"));
     assert!(prompt.contains("while the user is away"));
+    // Anchored on the base prompt's opening line rather than a section heading: headings are
+    // prose and were all rewritten by the 2026-08-15 diet, which turned this ordering check into
+    // a panic on `unwrap`.
     let prelude_idx = prompt.find("Cron Agent mode").unwrap();
-    let base_idx = prompt.find("Tool usage principles").unwrap();
-    assert!(prelude_idx < base_idx);
+    let base_idx = prompt.find("Firebat is an AI agent").expect("base prompt present");
+    assert!(prelude_idx < base_idx, "the prelude goes before the base prompt");
 }
 
 #[test]
