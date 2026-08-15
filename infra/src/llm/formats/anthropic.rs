@@ -533,7 +533,7 @@ mod thinking_contract_tests {
     }
 
     fn levels() -> serde_json::Value {
-        serde_json::json!([{ "value": "high", "labels": { "en": "High" } }])
+        serde_json::json!([{ "value": "high" }])
     }
 
     fn off_opts() -> LlmCallOpts {

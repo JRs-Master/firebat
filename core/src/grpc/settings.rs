@@ -319,9 +319,12 @@ impl SettingsService for SettingsServiceImpl {
                     levels: t
                         .levels
                         .into_iter()
+                        // `labels` is retired — the display name is derived from the value now.
+                        // The proto field stays for wire compatibility with clients that have not
+                        // been rebuilt; it goes out empty and nothing reads it.
                         .map(|l| ThinkingLevelPb {
                             value: l.value,
-                            labels: l.labels,
+                            labels: Default::default(),
                         })
                         .collect(),
                 }),

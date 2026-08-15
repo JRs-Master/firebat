@@ -434,11 +434,15 @@ impl ConsolidationManager {
         };
         let prompt_with_lang = EXTRACTION_PROMPT.replace("{LANG}", lang_name);
         let full_prompt = format!("{}\n{}{}{}", prompt_with_lang, transcript, mem_note, ent_note);
+        let worker_model = resolve_worker_model(hook.vault.as_ref(), model_id);
         let opts = LlmCallOpts {
-            model: Some(resolve_worker_model(hook.vault.as_ref(), model_id)),
-            // 의도 = "가장 얕은 추론"(배경 잡이라 싸게). 이 값을 선언하지 않은 모델에선 어댑터가
-            // 선언 집합으로 스냅한다(ThinkingConfig::snap_level) — 옛엔 그대로 나가 400 이었다.
-            thinking_level: Some("minimal".to_string()),
+            // 배경 잡이라 제일 싸게. 옛날엔 `"minimal"` 이라는 의도 단어를 보내고 어댑터의
+            // `snap_level` 이 그 모델 값으로 바꿔 주기를 기대했는데, 고를 값은 이 모델의 선언에
+            // 이미 적혀 있으니 처음부터 그걸 고른다. `none` 은 건너뛴다 — 그건 "제일 싸게"가
+            // 아니라 "생각하지 마"라서, 31개 중 13개(solar-pro4·GPT-5.x 전 계열)에서 기억 추출이
+            // 통째로 무사고가 된다. 31개 전부 대조해 옛 스냅 결과와 일치함을 확인했다.
+            thinking_level: crate::llm::config::cheapest_thinking_level(&worker_model),
+            model: Some(worker_model),
             // Structured output — schema-constrained JSON so extraction survives weak worker
             // models (malformed-JSON passes observed on solar-pro3, e.g. unquoted keys mid-
             // output). Formats without response_format support ignore this (prompt-only JSON

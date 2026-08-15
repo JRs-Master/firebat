@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { X, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
-import { useLang, useTranslations } from '../../../lib/i18n';
+import { useTranslations } from '../../../lib/i18n';
 import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../lib/json-normalize';
 import { Tooltip } from './Tooltip';
@@ -91,7 +91,6 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved, load
   const isPageMode = !!pageSlug;
   // Rust core::llm::config::builtin_models() 단일 source — fetch + module-cache.
   const { models: AI_MODELS } = useAiModels();
-  const { lang: thinkingLang } = useLang();
   const [content, setContent]   = useState('');
   const [original, setOriginal] = useState('');
   const [loading, setLoading]   = useState(true);
@@ -889,7 +888,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved, load
                             className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-slate-600/30 transition-colors"
                           >
                             {localThinking === l.value && <Check size={11} className="text-slate-400" />}
-                            <span className="text-slate-200">{thinkingLevelLabel(l, thinkingLang)}</span>
+                            <span className="text-slate-200">{thinkingLevelLabel(l)}</span>
                           </button>
                         ))}
                       </div>

@@ -6,7 +6,7 @@
  *
  * thinking 정보 포함 (2026-05-13 확장) — 옛 types.ts hardcoded
  * THINKING_LEVELS / getThinkingKind / filterThinkingLevels 폐기. 각 모델의
- * `thinking.kind` + `thinking.levels[i].labels[lang]` 직접 사용.
+ * `thinking.kind` + `thinking.levels[i].value` 직접 사용 (표시 이름은 값에서 파생).
  *
  * 사용:
  *   const { models, ready } = useAiModels();
@@ -21,7 +21,13 @@ import { apiGet } from '../../../lib/api-fetch';
 
 export type AiModelThinkingLevel = {
   value: string;
-  labels: Record<string, string>; // { ko: '...', en: '...' }
+  /**
+   * Retired. 158 hand-written label entries across 31 models produced 17 spellings of 7 values —
+   * `high` read as "High", "High (높음)" and "High (높음, 기본)" depending on which model you had
+   * selected. The name is a function of the value, so it is derived now (`thinkingLevelLabel`) and
+   * the field is left unread until the proto field can be dropped.
+   */
+  labels?: Record<string, string>;
 };
 
 export type AiModelThinking = {
@@ -94,7 +100,19 @@ export function invalidateAiModelsCache(queryClient: ReturnType<typeof useQueryC
   queryClient.invalidateQueries({ queryKey: QUERY_KEY });
 }
 
-/** 활성 lang 으로 label lookup. fallback chain: lang → en → ko → value raw. */
-export function thinkingLevelLabel(level: AiModelThinkingLevel, lang: string): string {
-  return level.labels[lang] || level.labels.en || level.labels.ko || level.value;
+/** Display name for a level — the declared value, capitalized. See `AiModelThinkingLevel.labels`. */
+export function thinkingLevelLabel(level: AiModelThinkingLevel): string {
+  const v = level.value;
+  return v === 'xhigh' ? 'XHigh' : v.charAt(0).toUpperCase() + v.slice(1);
+}
+
+/// The level to start a model on when nothing has been chosen for it yet.
+///
+/// The lowest it declares, except `none` — that one is "reasoning off", not "cheap reasoning", and
+/// landing there by default would silently switch thinking off for the 13 models that offer it
+/// (solar-pro4 and the whole GPT-5.x family). Same rule the consolidation job picks by, derived
+/// from the same declared list on both sides rather than written down twice.
+export function baselineThinkingLevel(thinking: AiModelThinking | undefined): string {
+  const levels = thinking?.levels ?? [];
+  return (levels.find(l => l.value !== 'none') ?? levels[0])?.value ?? '';
 }

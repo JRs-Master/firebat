@@ -28,9 +28,11 @@ export type SettingsSchema = {
   'firebat_plan_mode': 'off' | 'auto' | 'always';
   'firebat_active_conv': string;
   'firebat_last_model_by_category': Record<string, string>;
-  'firebat_thinking_level': string;
-  /** 모델별 마지막 thinking level — 카테고리별 모델 기억 (firebat_last_model_by_category) 패턴과 동일.
-   *  모델 전환 후 그 모델 다시 선택 시 이전 thinking 복원. fallback: firebat_thinking_level (글로벌 default). */
+  /** 모델별 마지막 thinking level — `firebat_last_model_by_category` 와 같은 패턴, 이제 배선도 같다:
+   *  볼트 `system:llm:last-thinking-by-model` 이 진실이고 여기는 그 로컬 사본이다. 서버 저장이 없던
+   *  동안엔 기기마다 다른 값을 들고 있었다(모델은 따라오는데 thinking 만 안 따라옴).
+   *  ⚠️ 값은 반드시 그 모델이 선언한 레벨 — 드롭다운이 models.json 으로 그려지고, 모델이 바뀌면
+   *  상태를 그 목록 안으로 되돌리므로 범위 밖 값은 애초에 만들어지지 않는다. */
   'firebat_last_thinking_by_model': Record<string, string>;
   /** 입력 모드 — 'text' 면 일반 LLM 채팅, 'image' 면 입력창 텍스트를 prompt 로 직접 image_gen.
    *  LLM 우회 → 비용 절감 + timeout 위험 0. 갤러리 자동 갱신은 SSE gallery:refresh 가 처리. */
@@ -43,7 +45,6 @@ const DEFAULTS: SettingsSchema = {
   'firebat_plan_mode': 'off',
   'firebat_active_conv': '',
   'firebat_last_model_by_category': {},
-  'firebat_thinking_level': 'medium',
   'firebat_last_thinking_by_model': {},
   'firebat_input_mode': 'text',
 };

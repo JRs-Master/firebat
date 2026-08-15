@@ -12,6 +12,7 @@ pub const VK_SYSTEM_AI_ASSISTANT_MODEL: &str = "system:ai-router:model";
 pub const VK_SYSTEM_AI_ROUTER_ENABLED: &str = "system:ai-router:enabled";
 pub const VK_LLM_ANTHROPIC_CACHE: &str = "system:llm:anthropic-cache";
 pub const VK_SYSTEM_LAST_MODEL_BY_CATEGORY: &str = "system:llm:last-by-category";
+pub const VK_SYSTEM_LAST_THINKING_BY_MODEL: &str = "system:llm:last-thinking-by-model";
 pub const VK_ADMIN_ID: &str = "FIREBAT_ADMIN_ID";
 pub const VK_ADMIN_PASSWORD: &str = "FIREBAT_ADMIN_PASSWORD";
 pub const VK_COST_BUDGET: &str = "system:cost:budget";

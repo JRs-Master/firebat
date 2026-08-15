@@ -6,7 +6,7 @@ import { ConversationMeta } from './components/Sidebar';
 //
 // Thinking 모드 — 옛 THINKING_LEVELS / getThinkingKind / filterThinkingLevels (hardcoded prefix
 // 기반) 폐기 (2026-05-13). 각 모델 entry 의 `thinking` 필드 (JSON registry single source) 사용.
-// frontend: `model.thinking?.kind` + `model.thinking?.levels[i].labels[lang]`.
+// frontend: `model.thinking?.kind` + `model.thinking?.levels[i].value` (표시 이름은 값에서 파생).
 
 /** 모델 thinking 지원 종류 — Rust LlmModelConfig.thinking.kind 와 1:1. */
 export type ThinkingKind = 'reasoning' | 'thinking' | 'extendedThinking';

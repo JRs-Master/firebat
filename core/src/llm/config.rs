@@ -108,6 +108,16 @@ fn default_true() -> bool {
 /// Thinking effort ladder — 백엔드 값의 강도 순서. 스냅 계산에만 쓴다(전송 값은 문자열 그대로).
 const THINKING_LADDER: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
+/// The cheapest level that still thinks, for the model with this id — `None` when the model is
+/// unknown or declares no thinking. Thin lookup; the rule is `ThinkingConfig::cheapest`.
+pub fn cheapest_thinking_level(model_id: &str) -> Option<String> {
+    builtin_models()
+        .into_iter()
+        .find(|m| m.id == model_id)?
+        .thinking?
+        .cheapest()
+}
+
 impl ThinkingConfig {
     /// 요청 레벨을 **이 모델이 선언한 레벨** 중 하나로 스냅한다.
     ///
@@ -118,6 +128,22 @@ impl ThinkingConfig {
     ///
     /// 규칙 = ladder 상 가장 가까운 선언 레벨, **동률이면 위쪽**(품질 쪽이 안전 — `minimal` 은
     /// "추론 끄기"가 아니라 "가장 얕은 추론"이 의도라 `none` 보다 `low` 가 맞다).
+    /// The cheapest level that still thinks — what a background job should pick.
+    ///
+    /// The lowest declared level, skipping `none`: that one means "reasoning off", not "reasoning
+    /// cheaply", and 13 of the 31 declaring models put it first (solar-pro4 and every GPT-5.x), so
+    /// taking the head of the list would quietly switch memory extraction's thinking off on all of
+    /// them. Picking from the model's own declaration makes the value legal by construction, which
+    /// is why the extraction job no longer names a level and hopes `snap_level` fixes it — that
+    /// hope is how a hard-coded `"minimal"` reached GPT-5.6 as a 400 and took extraction with it.
+    pub fn cheapest(&self) -> Option<String> {
+        self.levels
+            .iter()
+            .find(|l| l.value != "none")
+            .or_else(|| self.levels.first())
+            .map(|l| l.value.clone())
+    }
+
     pub fn snap_level(&self, requested: &str) -> Option<String> {
         if self.levels.is_empty() {
             return Some(requested.to_string()); // 선언 없음 = 검증 불가, 그대로 통과(하위호환)
@@ -135,14 +161,98 @@ impl ThinkingConfig {
     }
 }
 
+#[cfg(test)]
+mod thinking_tests {
+    use super::*;
+
+    /// The real declarations, read at compile time. `builtin_models()` reads a registry that only
+    /// infra fills at startup, so a core-only test run sees an empty list and would assert nothing.
+    const MODELS_JSON: &str = include_str!("../../../system/llm/models.json");
+
+    fn declared() -> Vec<(String, ThinkingConfig)> {
+        let doc: serde_json::Value = serde_json::from_str(MODELS_JSON).expect("models.json parses");
+        doc["models"]
+            .as_array()
+            .expect("models array")
+            .iter()
+            .filter_map(|m| {
+                let id = m["id"].as_str()?.to_string();
+                let t = m.get("thinking")?;
+                let cfg: ThinkingConfig = serde_json::from_value(t.clone()).ok()?;
+                Some((id, cfg))
+            })
+            .collect()
+    }
+
+    /// The extraction job used to send a hard-coded `"minimal"` and let the adapter snap it. It now
+    /// picks from the model's own declaration instead, and the two must agree on every model — or
+    /// background extraction quietly changed effort the day this landed.
+    #[test]
+    fn the_cheapest_pick_matches_what_snapping_minimal_used_to_produce() {
+        let models = declared();
+        assert!(models.len() > 20, "expected many declaring models, saw {}", models.len());
+        for (id, cfg) in models {
+            let picked = cfg.cheapest().expect("declares levels");
+            let snapped = cfg.snap_level("minimal").expect("minimal ranks on the ladder");
+            assert_eq!(picked, snapped, "{id} disagrees");
+        }
+    }
+
+    /// Why the head of the list is not simply taken: `none` means "do not think".
+    #[test]
+    fn none_is_never_the_cheapest_pick_when_anything_else_is_declared() {
+        let mut saw_a_none_first = false;
+        for (id, cfg) in declared() {
+            if cfg.levels.first().map(|l| l.value.as_str()) != Some("none") {
+                continue;
+            }
+            saw_a_none_first = true;
+            assert_ne!(
+                cfg.cheapest().as_deref(),
+                Some("none"),
+                "{id} would run background extraction with reasoning off"
+            );
+        }
+        assert!(saw_a_none_first, "fixture drift — no model declares `none` first any more");
+    }
+
+    /// The label is derived from the value now, so the declarations must not carry one — a
+    /// reintroduced `labels` block is the start of the 17-spellings drift all over again.
+    #[test]
+    fn no_declaration_carries_a_hand_written_label() {
+        let doc: serde_json::Value = serde_json::from_str(MODELS_JSON).unwrap();
+        for m in doc["models"].as_array().unwrap() {
+            let Some(levels) = m.pointer("/thinking/levels").and_then(|v| v.as_array()) else {
+                continue;
+            };
+            for l in levels {
+                assert!(
+                    l.get("labels").is_none(),
+                    "{} still declares labels",
+                    m["id"].as_str().unwrap_or("?")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_empty_declaration_has_no_cheapest_level() {
+        let cfg: ThinkingConfig =
+            serde_json::from_value(serde_json::json!({ "kind": "reasoning", "levels": [] }))
+                .expect("empty level list parses");
+        assert_eq!(cfg.cheapest(), None);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThinkingLevel {
     /// 백엔드에 전달되는 값 ("none" / "minimal" / "low" / "medium" / "high" / "xhigh" / "max").
+    ///
+    /// 표시 이름은 이 값에서 파생한다(frontend `thinkingLevelLabel`). 옛 `labels` 필드는 모델마다
+    /// 손으로 적혀 **158개**였고, 값 7종이 표기 17종으로 갈라져 있었다 — 같은 `high` 가 고른 모델에
+    /// 따라 "High" · "High (높음)" · "High (높음, 기본)" 로 보였다. 이름이 값의 함수라 목록을
+    /// 유지할 이유가 없다. [[feedback_derive_dont_maintain_lists]]
     pub value: String,
-    /// 언어별 표시 라벨 — `{ "ko": "Medium (중간, 기본)", "en": "Medium (balanced)" }`.
-    /// frontend 의 활성 lang 으로 lookup, fallback chain = en → ko → value raw.
-    /// sysmod `settings_fields.i18n` 패턴과 일관 — JSON 1 file 자기완결, language/*.json 추가 수정 0.
-    pub labels: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

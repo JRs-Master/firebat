@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react'
 import { sortByName } from '../../../lib/util/sort-name';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Server, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus, ScrollText, Volume2 } from 'lucide-react';
 import { McpServer } from '../types';
-import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
+import { useAiModels, thinkingLevelLabel, baselineThinkingLevel } from '../hooks/use-ai-models';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
@@ -281,16 +281,29 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       .catch(() => { if (alive) setTzPreview(null); });
     return () => { alive = false; };
   }, [userTimezone]);
-  const [thinkingLevel, setThinkingLevel] = useState('low');
+  const [thinkingLevel, setThinkingLevel] = useState('');
 
-  // draft 모델 변경 시 그 모델에 기억된 thinking 복원(탭 전환 시 그 카테고리 직전 thinking 미리보기).
+  // The level always belongs to the model on screen.
+  //
+  // This used to restore only when the model had a remembered level, and otherwise left the
+  // previous model's level in place — which is the ONE way a level the model never declared could
+  // exist at all, since the dropdown is built from that model's own list. `max` carried from
+  // solar-pro4 onto a model without it, the dropdown quietly displayed something else, and the two
+  // disagreed from then on. Restoring or resetting on every model change closes that door: no
+  // out-of-set value is ever held, so none can be shown or remembered.
   useEffect(() => {
-    const remembered = lastThinkingByModel[draftModel];
-    if (remembered && remembered !== thinkingLevel) setThinkingLevel(remembered);
+    if (!draftModel) return;
+    const entry = aiModelsList.find(m => m.value === draftModel);
+    if (!entry?.thinking) return; // 이 모델은 thinking 자체가 없다 — 드롭다운도 안 나온다
+    const declared = entry.thinking.levels.some(l => l.value === lastThinkingByModel[draftModel]);
+    const next = declared
+      ? lastThinkingByModel[draftModel]
+      : baselineThinkingLevel(entry.thinking);
+    if (next && next !== thinkingLevel) setThinkingLevel(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftModel]);
+  }, [draftModel, aiModelsList]);
 
-  // thinkingLevel 변경 시 현재 draft 모델 키에 기억(localStorage). 활성 적용은 저장 버튼(persistSettings).
+  // 그 모델의 선택으로 기억. 활성 적용은 저장 버튼(persistSettings) — 기억 자체도 같이 저장된다.
   useEffect(() => {
     if (!draftModel || !thinkingLevel) return;
     if (lastThinkingByModel[draftModel] === thinkingLevel) return;
@@ -481,6 +494,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         if (!data?.success) return;
         if (data.timezone) setUserTimezone(data.timezone);
         if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
+        // The per-model memory now lives in the vault beside `lastModelByCategory`, so a second
+        // device restores the level along with the model instead of falling back to whatever the
+        // global happened to be.
+        if (data.lastThinkingByModel && typeof data.lastThinkingByModel === 'object') {
+          setLastThinkingByModel(data.lastThinkingByModel);
+        }
         if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
         if (data.embedCatalogProvider === 'local' || data.embedCatalogProvider === 'solar') setEmbedCatalogProvider(data.embedCatalogProvider);
         if (['none', 'solar', 'gemini'].includes(data.libraryParseProvider)) setLibraryParseProvider(data.libraryParseProvider);
@@ -760,6 +779,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       ttsVoice,
       ttsAlignProvider,
       lastModelByCategory: nextLastModelByCategory,
+      // Every value in here came from a dropdown built out of that model's declared levels, so the
+      // map cannot hold a level its model does not offer.
+      lastThinkingByModel,
       aiRouterEnabled,
       memoryAutoSave,
       embedCatalogProvider,
@@ -1117,10 +1139,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             const thinkingKind = modelEntry?.thinking?.kind;
             const thinkingOptions = (modelEntry?.thinking?.levels ?? []).map(l => ({
               value: l.value,
-              label: thinkingLevelLabel(l, uiLang),
+              label: thinkingLevelLabel(l),
             }));
-            const thinkingValid = thinkingOptions.some(l => l.value === thinkingLevel);
-            const thinkingValue = thinkingValid ? thinkingLevel : (thinkingOptions[0]?.value ?? 'medium');
+            // No display-side correction. It existed because the state could hold a level this
+            // model never declared; the effect that keeps state and model together removed that
+            // possibility, and correcting only the display is what let the screen and the saved
+            // value disagree in the first place.
             const thinkingLabel = thinkingKind === 'reasoning' ? 'Reasoning (OpenAI)'
               : thinkingKind === 'thinking' ? 'Thinking (Gemini)'
               : 'Extended Thinking (Claude)';
@@ -1443,7 +1467,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 {/* Thinking — 모델 드롭다운 바로 아래. API / CLI 둘 다 동일 위치. */}
                 {thinkingKind && thinkingOptions.length > 0 && (
                   <Field label={thinkingLabel}>
-                    <SelectInput value={thinkingValue} onChange={setThinkingLevel} options={thinkingOptions} />
+                    <SelectInput value={thinkingLevel} onChange={setThinkingLevel} options={thinkingOptions} />
                   </Field>
                 )}
 

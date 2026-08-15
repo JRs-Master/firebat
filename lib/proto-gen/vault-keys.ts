@@ -12,6 +12,7 @@ export const VK_SYSTEM_AI_ASSISTANT_MODEL = "system:ai-router:model";
 export const VK_SYSTEM_AI_ROUTER_ENABLED = "system:ai-router:enabled";
 export const VK_LLM_ANTHROPIC_CACHE = "system:llm:anthropic-cache";
 export const VK_SYSTEM_LAST_MODEL_BY_CATEGORY = "system:llm:last-by-category";
+export const VK_SYSTEM_LAST_THINKING_BY_MODEL = "system:llm:last-thinking-by-model";
 export const VK_ADMIN_ID = "FIREBAT_ADMIN_ID";
 export const VK_ADMIN_PASSWORD = "FIREBAT_ADMIN_PASSWORD";
 export const VK_COST_BUDGET = "system:cost:budget";

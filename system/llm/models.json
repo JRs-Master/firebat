@@ -33,39 +33,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ],
         "onWhenOmitted": true,
@@ -100,39 +80,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -165,39 +125,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ],
         "onWhenOmitted": true,
@@ -232,39 +172,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ],
         "onWhenOmitted": true
@@ -297,39 +217,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -354,40 +254,24 @@
         "kind": "thinking",
         "levels": [
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           }
         ]
       },
       "execMode": "api",
       "category": "api-google",
       "pricing": {
-        "input": 2.0,
-        "output": 12.0,
+        "input": 2,
+        "output": 12,
         "cachedInput": 0.2
       }
     },
@@ -408,32 +292,16 @@
         "kind": "thinking",
         "levels": [
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           }
         ]
       },
@@ -441,7 +309,7 @@
       "category": "api-google",
       "pricing": {
         "input": 1.5,
-        "output": 9.0,
+        "output": 9,
         "cachedInput": 0.15
       }
     },
@@ -482,32 +350,16 @@
         "kind": "thinking",
         "levels": [
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           }
         ]
       },
@@ -531,32 +383,16 @@
         "kind": "thinking",
         "levels": [
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           }
         ]
       },
@@ -602,46 +438,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (사고 없음)",
-              "en": "None"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 — 가장 어려운 작업)",
-              "en": "Max (hardest tasks)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -672,46 +484,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (사고 없음)",
-              "en": "None"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 — 가장 어려운 작업)",
-              "en": "Max (hardest tasks)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -742,46 +530,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (사고 없음)",
-              "en": "None"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 — 가장 어려운 작업)",
-              "en": "Max (hardest tasks)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -812,46 +576,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
+            "value": "none"
           },
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           }
         ]
       },
@@ -881,46 +621,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
+            "value": "none"
           },
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           }
         ]
       },
@@ -950,46 +666,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
+            "value": "none"
           },
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           }
         ]
       },
@@ -1015,46 +707,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 끔)",
-              "en": "None (reasoning off)"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "XHigh",
-              "en": "XHigh"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max",
-              "en": "Max"
-            }
+            "value": "max"
           }
         ],
         "defaultLevel": "low"
@@ -1081,39 +749,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1135,39 +783,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1189,39 +817,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1243,39 +851,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1297,39 +885,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1351,39 +919,19 @@
         "kind": "extendedThinking",
         "levels": [
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간)",
-              "en": "Medium"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음, 기본)",
-              "en": "High (default)"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 예산)",
-              "en": "Max (highest budget)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1405,32 +953,16 @@
         "kind": "thinking",
         "levels": [
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           }
         ]
       },
@@ -1452,32 +984,16 @@
         "kind": "thinking",
         "levels": [
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           }
         ]
       },
@@ -1499,32 +1015,16 @@
         "kind": "thinking",
         "levels": [
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
+            "value": "minimal"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           }
         ]
       },
@@ -1546,39 +1046,19 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           }
         ]
       },
@@ -1600,46 +1080,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (사고 없음)",
-              "en": "None"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 — 가장 어려운 작업)",
-              "en": "Max (hardest tasks)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1662,46 +1118,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (사고 없음)",
-              "en": "None"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 — 가장 어려운 작업)",
-              "en": "Max (hardest tasks)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1724,46 +1156,22 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (사고 없음)",
-              "en": "None"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           },
           {
-            "value": "max",
-            "labels": {
-              "ko": "Max (최대 — 가장 어려운 작업)",
-              "en": "Max (hardest tasks)"
-            }
+            "value": "max"
           }
         ]
       },
@@ -1786,39 +1194,19 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           }
         ]
       },
@@ -1840,39 +1228,19 @@
         "kind": "reasoning",
         "levels": [
           {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
+            "value": "none"
           },
           {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
+            "value": "low"
           },
           {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
+            "value": "medium"
           },
           {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
+            "value": "high"
           },
           {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
+            "value": "xhigh"
           }
         ]
       },

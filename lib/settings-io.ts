@@ -15,7 +15,7 @@ import {
   VK_SYSTEM_AI_ROUTER_ENABLED, VK_SYSTEM_UI_LANG,
   VK_SYSTEM_EMBED_CATALOG_PROVIDER, VK_SYSTEM_LIBRARY_PARSE_PROVIDER, VK_SYSTEM_RETENTION_ENABLED,
   VK_SYSTEM_RETENTION_DAYS,
-  VK_SYSTEM_MEMORY_AUTO_SAVE,
+  VK_SYSTEM_MEMORY_AUTO_SAVE, VK_SYSTEM_LAST_THINKING_BY_MODEL,
 } from './proto-gen/vault-keys';
 import { getGeminiKey, setGeminiKey } from './api-gen/secret';
 import {
@@ -48,6 +48,7 @@ export async function loadSettings(owner?: string) {
     embedProviderRes, parseProviderRes, retentionEnabledRes,
     retentionDaysRes,
     memoryAutoSaveRes,
+    lastThinkingByModelRes,
   ] = await Promise.all([
     getGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED }),
     getTimezone({}),
@@ -74,6 +75,11 @@ export async function loadSettings(owner?: string) {
     getGeminiKey({ key: VK_SYSTEM_RETENTION_ENABLED }),
     getGeminiKey({ key: VK_SYSTEM_RETENTION_DAYS }),
     getGeminiKey({ key: VK_SYSTEM_MEMORY_AUTO_SAVE }),
+    // Which level was last chosen for each model. Its sibling `lastModelByCategory` has always
+    // been server-side, so the model came back right on a second device while the level did not —
+    // the same click, half of it following the user around. Generic vault key: the shape is a JSON
+    // map with a dynamic key set, exactly like the sibling, and no RPC of its own is needed.
+    getGeminiKey({ key: VK_SYSTEM_LAST_THINKING_BY_MODEL }),
   ]);
 
   const routerEnabledRaw = routerEnabledRes.ok ? routerEnabledRes.data : null;
@@ -96,6 +102,20 @@ export async function loadSettings(owner?: string) {
     aiModels: aiModelsRes.ok ? aiModelsRes.data : null,
     userPrompt: userPromptRes.ok ? userPromptRes.data : '',
     lastModelByCategory: lastModelByCategoryRes.ok ? lastModelByCategoryRes.data : '',
+    // Parsed here rather than in the modal, so a corrupt or absent value reads as "no memory yet"
+    // instead of throwing inside a settings load. Same shape as `lastModelByCategory`.
+    lastThinkingByModel: (() => {
+      const raw = lastThinkingByModelRes.ok ? lastThinkingByModelRes.data : '';
+      if (!raw) return {} as Record<string, string>;
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, string>)
+          : {};
+      } catch {
+        return {} as Record<string, string>;
+      }
+    })(),
     imageModel: imageModelRes.ok ? imageModelRes.data : '',
     imageModels: imageModelsRes.ok ? imageModelsRes.data : null,
     imageDefaultSize: imageDefaultSizeRes.ok ? imageDefaultSizeRes.data : null,
@@ -162,6 +182,12 @@ export async function saveSettings(body: Record<string, any>, owner?: string) {
   }
   if (body.lastModelByCategory && typeof body.lastModelByCategory === 'object') {
     await setLastModelByCategory({ byCategoryJson: JSON.stringify(body.lastModelByCategory ?? {}) });
+  }
+  if (body.lastThinkingByModel && typeof body.lastThinkingByModel === 'object') {
+    await setGeminiKey({
+      key: VK_SYSTEM_LAST_THINKING_BY_MODEL,
+      value: JSON.stringify(body.lastThinkingByModel),
+    });
   }
   if (typeof body.imageModel === 'string' && body.imageModel) {
     await setImageModel({ model: body.imageModel });
