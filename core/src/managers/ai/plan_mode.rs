@@ -16,12 +16,23 @@ use crate::prompt_store;
 
 /// PlanMode 별 시스템 프롬프트 prefix. 옛 TS `planModePrefix` 1:1.
 /// 매 호출 시 i18n lookup — 사용자 lang task-local 자동 적용.
+/// PlanMode 별 prefix = **공통 + 그 모드의 차이분**.
+///
+/// Raising the card is one procedure — `propose_plan` or the three suggest stages, the card IS the
+/// call, `pending` ends the turn, `planExecuteId` executes. The mode decides only WHEN. Both files
+/// used to carry their own copy of that procedure, which is how AUTO ended up shorter than ALWAYS
+/// even though AUTO is the one that has to judge: the shared two thirds hid the difference, and a
+/// trim of one file silently dropped the suggest formats from the other.
 pub fn prefix(mode: PlanMode) -> String {
-    match mode {
-        PlanMode::Off => String::new(),
+    if matches!(mode, PlanMode::Off) {
+        return String::new();
+    }
+    let when = match mode {
         PlanMode::Auto => prompt_store::get("plan_mode_auto"),
         PlanMode::Always => prompt_store::get("plan_mode_always"),
-    }
+        PlanMode::Off => unreachable!(),
+    };
+    format!("{}\n{}", prompt_store::get("plan_mode_common"), when)
 }
 
 /// LLM 호출 직전 user prompt 에 설정하는 hint — Gemini 가 시스템 프롬프트 무시 시 fallback.
