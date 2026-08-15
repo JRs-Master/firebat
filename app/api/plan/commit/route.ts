@@ -29,6 +29,13 @@ export const POST = withAuth(async (req: NextRequest) => {
 
   try {
     let result: { success: boolean; data?: unknown; error?: string };
+    // Set when the attempt may have left the building. A pending is normally kept on failure so
+    // the user can retry, which is right for a write that either happened or did not — but an
+    // approval-gated module action is a real order, and "the exchange refused it" is not the same
+    // as "we never sent it". Measured 2026-08-15: a test card sent five live Upbit orders, one
+    // per click, all refused for being under the minimum, and the card stayed armed the whole
+    // time. A second attempt has to be a second decision, not a second click.
+    let dispatched = false;
     // 2026-05-14 A1-full Step 2b: pending.args 가 typed PendingActionArgs tagged enum.
     // discriminator `name` 이 args 안에 있음 (옛 top-level pending.name 폐기).
     const args = pending.args as unknown as Record<string, unknown> & { name: string };
@@ -39,6 +46,9 @@ export const POST = withAuth(async (req: NextRequest) => {
         // model's input verbatim through the normal module path.
         const moduleName = args.module as string;
         const input = (args.input as Record<string, unknown>) ?? {};
+        // Marked before the await: a transport error can also mean the request reached the broker
+        // and the answer was lost. Silence is not zero.
+        dispatched = true;
         const r = await runModuleRpc({ module: moduleName, dataJson: JSON.stringify(input) } as any);
         if (!r.ok) { result = { success: false, error: r.message }; break; }
         const out = r.data as any;
@@ -151,9 +161,11 @@ export const POST = withAuth(async (req: NextRequest) => {
         result = { success: false, error: `지원하지 않는 도구: ${args.name}` };
     }
 
-    // 성공 시에만 pending 소비 (실패 시 재시도 가능)
-    if (result.success) await consumePending({ planId });
-    return NextResponse.json(result);
+    // 성공했거나, 부작용이 이미 나갔을 수 있으면 소비 — 실패 재시도는 부작용 없는 도구만.
+    if (result.success || dispatched) await consumePending({ planId });
+    // `dispatched` 를 함께 돌려준다: 카드가 사라진 이유가 "됐다" 인지 "보냈는데 거부됐다" 인지
+    // 화면이 구분해서 말할 수 있어야 한다.
+    return NextResponse.json(result.success ? result : { ...result, dispatched });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ success: false, error: msg }, { status: 500 });

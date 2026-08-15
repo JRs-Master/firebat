@@ -417,6 +417,49 @@ impl TaskExecutor for StubTaskExecutor {
     }
 }
 
+/// Whether `instruction` (already lowercased) reads as a CALL of `tool`, and which shape gave it
+/// away. `None` when the name merely occurs — which is most of the time, because tool names are
+/// ordinary English words living inside longer ordinary English words.
+///
+/// Two shapes count, both unambiguous:
+///   `sing(...)`          — call syntax, optional space before the paren
+///   `"tool": "sing"`     — a JSON step someone pasted into prose (also `name`/`action`)
+///
+/// A bare mention does not. "Summarise the closing prices" is not a call of `sing`, and refusing
+/// to register a pipeline over it is a false refusal that nobody can act on: the instruction has
+/// no tool in it to remove.
+fn tool_call_shape_in(instruction: &str, tool: &str) -> Option<&'static str> {
+    let bytes = instruction.as_bytes();
+    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
+    for (at, _) in instruction.match_indices(tool) {
+        // Whole word only — this alone is what kills `using` / `closing` / `parsing`.
+        if at > 0 && is_word(bytes[at - 1]) {
+            continue;
+        }
+        let end = at + tool.len();
+        if end < bytes.len() && is_word(bytes[end]) {
+            continue;
+        }
+        // Shape 1 — call syntax.
+        let rest = instruction[end..].trim_start();
+        if rest.starts_with('(') {
+            return Some("name(...)");
+        }
+        // Shape 2 — a JSON field naming it as the tool. The quote has to be the character right
+        // before the name, so a quoted word in ordinary prose does not qualify on its own.
+        if at > 0 && bytes[at - 1] == b'"' && instruction[end..].starts_with('"') {
+            let before = instruction[..at - 1].trim_end();
+            let before = before.strip_suffix(':').unwrap_or(before).trim_end();
+            for key in ["\"tool\"", "\"name\"", "\"action\""] {
+                if before.ends_with(key) {
+                    return Some("\"tool\": \"name\"");
+                }
+            }
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineResult {
@@ -462,7 +505,7 @@ impl TaskManager {
         self.status = Some(status);
         self
     }
-    /// 등록된 도구 이름 (lowercase) — instruction substring 매칭용.
+    /// 등록된 도구 이름 (lowercase) — instruction 안 **도구 호출 모양** 매칭용.
     /// 새 도구 추가 시 자동 hint — 옛 TS 의 const TOOL_HINTS 12개 hardcode 제거.
     fn registered_tool_hints(&self) -> Vec<String> {
         let Some(tools) = &self.tools else {
@@ -476,6 +519,12 @@ impl TaskManager {
     }
 
     /// 옛 TS validatePipeline Rust port — 7-step 별 필수 field 검증.
+    ///
+    /// ⚠️ The LLM_TRANSFORM guard below matches a tool CALL, not a tool NAME. It used to be
+    /// `instruction.contains(name)`, and `sing` is a registered tool — so `using`, `closing`,
+    /// `parsing`, `rising` and `analysing` each tripped it. The autotrade review job ran its nine
+    /// steps and was marked failed every hour for exactly that reason (15/15 runs in the window
+    /// measured 2026-08-15), with an empty `output` because nothing had actually gone wrong.
     pub fn validate_pipeline(&self, steps: &[PipelineStep]) -> Option<String> {
         // LLM_TRANSFORM instruction 안에 도구 호출 패턴이 보이면 거부 — 흔한 설계 실수 방어.
         // 옛 TS 의 hardcoded list 12개 → ToolManager 등록 도구 동적 조회로 일반화.
@@ -511,8 +560,8 @@ impl TaskManager {
                     }
                     let lower = instruction.to_lowercase();
                     for hint in &tool_hints {
-                        if lower.contains(hint) {
-                            return Some(format!("[Step {n}] LLM_TRANSFORM instruction 안에 도구명 \"{hint}\" 이 보입니다. LLM_TRANSFORM 은 텍스트 변환만 가능합니다 — 도구 호출은 별도 EXECUTE/MCP_CALL/SAVE_PAGE step 으로 분리하세요."));
+                        if let Some(shape) = tool_call_shape_in(&lower, hint) {
+                            return Some(format!("[Step {n}] LLM_TRANSFORM instruction 이 도구 \"{hint}\" 를 호출하는 모양입니다 ({shape}). LLM_TRANSFORM 은 텍스트 변환만 가능합니다 — 도구 호출은 별도 EXECUTE/MCP_CALL/SAVE_PAGE step 으로 분리하세요."));
                         }
                     }
                 }
@@ -1111,6 +1160,47 @@ fn parse_spec_if_string(spec: Value) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The guard fires on a tool CALL. A tool NAME inside an English word is not one.
+    ///
+    /// `sing` is a registered tool, so the old `contains` test refused any instruction with
+    /// `using`, `closing`, `parsing`, `rising` or `analysing` in it — which is most prose about
+    /// prices. The autotrade review job hit it every hour: nine of nine steps executed, marked
+    /// failed, empty output, for fifteen consecutive runs.
+    #[test]
+    fn a_tool_name_inside_a_word_is_not_a_tool_call() {
+        for innocent in [
+            "summarise the closing prices using the daily bars",
+            "rank the rising symbols and note the parsing errors",
+            "analysing the trend, describe what changed",
+            "render the summary as bullet points",
+            "search the notes for a matching phrase",
+        ] {
+            for tool in ["sing", "render", "search_library", "tts"] {
+                assert_eq!(
+                    tool_call_shape_in(innocent, tool),
+                    None,
+                    "false refusal on {innocent:?} for tool {tool:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_two_call_shapes_are_still_caught() {
+        assert_eq!(tool_call_shape_in("then sing(\"a song\")", "sing"), Some("name(...)"));
+        assert_eq!(tool_call_shape_in("call render (blocks)", "render"), Some("name(...)"));
+        assert_eq!(
+            tool_call_shape_in("emit {\"tool\": \"sing\", \"args\": {}}", "sing"),
+            Some("\"tool\": \"name\"")
+        );
+        assert_eq!(
+            tool_call_shape_in("{\"name\":\"tts\",\"input\":{}}", "tts"),
+            Some("\"tool\": \"name\"")
+        );
+        // A quoted word in prose is not a step declaration.
+        assert_eq!(tool_call_shape_in("the word \"sing\" appears twice", "sing"), None);
+    }
 
     #[test]
     fn foreach_deserializes_and_names_itself() {
