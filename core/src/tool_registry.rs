@@ -82,6 +82,7 @@ pub struct CoreToolHandlers {
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
 /// AiManager.process_with_tools 가 dispatch 호출 시 매니저 메서드 자동 호출.
 pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
+    register_tool_schema_tool(tools);
     register_page_tools(tools, &h);
     register_storage_tools(tools, &h);
     register_schedule_tools(tools, &h);
@@ -1081,7 +1082,10 @@ fn register_task_library_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             description: "파이프라인 즉시 실행 (예약 아님). pipeline = step 배열. 예약·반복은 schedule_task 사용.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
-                "properties": { "pipeline": crate::managers::task::pipeline_param_schema() },
+                "properties": { "pipeline": {
+                    "type": "array",
+                    "description": "Pipeline steps. The step grammar is NOT published here — call get_tool_schema(\"run_task\") for it and write the steps from that, never from memory."
+                } },
                 "required": ["pipeline"]
             }),
             source: "core".to_string(),
@@ -2114,7 +2118,7 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 "title": {"type": "string"},
                 "description": {"type": "string"},
                 "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "매 trigger 같은 절차=pipeline(권장 — 런타임 LLM 0 또는 합성 1회) / 매 trigger 런타임 판단 필요=agent"},
-                "pipeline": crate::managers::task::pipeline_param_schema(),
+                "pipeline": {"type": "array", "description": "Pipeline steps. The step grammar is NOT published here — call get_tool_schema(\"schedule_task\") for it and write the steps from that, never from memory."},
                 "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 매 trigger 받는 자연어 지시문"}
             },
             "required": ["jobId", "targetPath"]
@@ -3151,3 +3155,80 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 }
 
 // Tests 이관 — `infra/tests/tool_registry_test.rs` (integration test).
+
+/// `get_tool_schema` — the contract for a tool that publishes an open schema.
+///
+/// A published schema may be complete, or it may be open with a pointer to this. What it must
+/// never be is a trimmed copy: a copy says "these are the parameters" while the validator wants
+/// more, which is how propose_plan lost the `steps` item type and the parser refused the shape
+/// the copy invited. So nothing is trimmed here — the pipeline grammar is 10,653 characters of
+/// contract that most turns never open, and it is handed over whole, at the moment it is needed.
+///
+/// Safe because the pipeline is validated where it is registered, not by the published schema:
+/// `CronScheduleOptions.pipeline` is `Option<Vec<PipelineStep>>`, so a malformed pipeline fails
+/// `schedule_task` at registration rather than at 3am on its first fire.
+///
+/// Derived from the registry, so it cannot drift from what the tools actually accept.
+fn register_tool_schema_tool(tools: &Arc<ToolManager>) {
+    tools.register(ToolDefinition {
+        name: "get_tool_schema".to_string(),
+        description: "The full parameter contract for one tool. Some tools publish an open schema \
+                      and say so — call this for those before writing the arguments, the same step \
+                      as get_action_schema one level up. Never guess the shape of an open schema."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "required": ["tool"],
+            "properties": {
+                "tool": {"type": "string", "description": "tool name, exactly as published"}
+            }
+        }),
+        source: "core".to_string(),
+    });
+    let weak = Arc::downgrade(tools);
+    tools.register_handler(
+        "get_tool_schema",
+        make_handler(move |args| {
+            let weak = weak.clone();
+            async move {
+                let name = args
+                    .get("tool")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let Some(tm) = weak.upgrade() else {
+                    return Err("tool registry unavailable".to_string());
+                };
+                let found = tm
+                    .list(&crate::managers::tool::ToolListFilter { source: None, name_prefix: None })
+                    .into_iter()
+                    .find(|d| d.name == name);
+                match found {
+                    Some(d) => Ok(serde_json::json!({
+                        "tool": d.name,
+                        "description": d.description,
+                        "parameters": d.parameters,
+                    })),
+                    // Names come from the published list, so a miss is a typo or a stale memory —
+                    // say which names are near instead of leaving it to another round.
+                    None => {
+                        let near: Vec<String> = tm
+                            .list(&crate::managers::tool::ToolListFilter { source: None, name_prefix: None })
+                            .into_iter()
+                            .map(|d| d.name)
+                            .filter(|n| {
+                                !name.is_empty() && (n.contains(&name) || name.contains(n.as_str()))
+                            })
+                            .take(5)
+                            .collect();
+                        Err(if near.is_empty() {
+                            format!("no tool named '{name}'")
+                        } else {
+                            format!("no tool named '{name}' — did you mean {}?", near.join(", "))
+                        })
+                    }
+                }
+            }
+        }),
+    );
+}
