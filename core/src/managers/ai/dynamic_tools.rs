@@ -68,6 +68,13 @@ pub struct DynamicToolRegistry {
     /// names. Held per module (not per tool) because the overlay that fills the tool's
     /// `parameters` runs per turn, keyed by what THIS conversation discovered.
     forms: RwLock<HashMap<String, ActionForm>>,
+    /// Modules whose config has been read into the four declaration maps above.
+    ///
+    /// Without it, a map miss has two meanings that must never be confused: "this module declares
+    /// no approval" and "this module's config was never read". The maps only answer the first, and
+    /// every gate treats a miss as permission — so the second silently disarms them. This set is
+    /// what tells them apart. See [[feedback_absence_is_not_consent]].
+    known: RwLock<std::collections::HashSet<String>>,
 }
 
 impl DynamicToolRegistry {
@@ -83,7 +90,51 @@ impl DynamicToolRegistry {
             ui_only: RwLock::new(HashMap::new()),
             action_selectors: RwLock::new(std::collections::HashSet::new()),
             forms: RwLock::new(HashMap::new()),
+            known: RwLock::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Guarantee this module's declarations are loaded before a gate reads them.
+    ///
+    /// `refresh` builds them for every module it scans, switched off ones included, so the usual
+    /// answer is "already known" and this costs one read lock. The miss path is a module the last
+    /// scan did not see — installed since, or named through the executor, which takes its module
+    /// from `args` and so can reach one the tool list never carried. Reading the config now is a
+    /// disk read on a path that runs at most once per module; treating the empty map as a clean
+    /// bill of health would run an unapproved order.
+    async fn ensure_known(&self, module: &str) {
+        if self.known.read().await.contains(module) {
+            return;
+        }
+        // Both scopes, because a user module reaches the gates the same way a system one does.
+        let config = match self.module.get_module_config("system", module).await {
+            Some(c) => Some(c),
+            None => self.module.get_module_config("user", module).await,
+        };
+        // Recorded either way: a name with no config on disk is not a module, and re-reading the
+        // filesystem for it on every call would be the same miss forever.
+        self.known.write().await.insert(module.to_string());
+        let Some(config) = config else { return };
+        self.absorb_declarations(module, &config).await;
+    }
+
+    /// Fold one module's gate declarations into the maps. The parse comes from `build_surface`, the
+    /// same reader registration uses, so the live path and the scanned path cannot disagree.
+    async fn absorb_declarations(&self, module: &str, config: &serde_json::Value) {
+        let surface = build_surface(module, config);
+        if let Some(ra) = config.get("requiresApproval") {
+            self.approval.write().await.insert(module.to_string(), ra.clone());
+        }
+        if let Some(uo) = config.get("uiOnly") {
+            self.ui_only.write().await.insert(module.to_string(), uo.clone());
+        }
+        if !surface.grounding.is_empty() {
+            self.grounding.write().await.insert(module.to_string(), surface.grounding);
+        }
+        if surface.has_action_selector {
+            self.action_selectors.write().await.insert(module.to_string());
+        }
+        self.forms.write().await.insert(module.to_string(), surface.form);
     }
 
     /// The typed form for the actions this conversation has already discovered, or `None` while
@@ -93,6 +144,7 @@ impl DynamicToolRegistry {
         module: &str,
         actions: &[String],
     ) -> Option<serde_json::Value> {
+        self.ensure_known(module).await;
         let forms = self.forms.read().await;
         crate::managers::ai::sysmod_surface::parameters_for(forms.get(module)?, actions)
     }
@@ -118,6 +170,7 @@ impl DynamicToolRegistry {
     /// test. A stray `action` arg on a selector-less module is not a multi-action call, however
     /// much it looks like one.
     pub async fn has_action_selector(&self, module: &str) -> bool {
+        self.ensure_known(module).await;
         self.action_selectors.read().await.contains(module)
     }
 
@@ -125,6 +178,7 @@ impl DynamicToolRegistry {
     /// withholding it. Read from the form's own `action` enum — the same declaration the gate and
     /// the published schema use, so a renamed action can never be advertised here alone.
     pub async fn action_choices(&self, module: &str) -> Vec<String> {
+        self.ensure_known(module).await;
         let forms = self.forms.read().await;
         let Some(form) = forms.get(module) else {
             return Vec::new();
@@ -139,18 +193,21 @@ impl DynamicToolRegistry {
 
     /// FC 경로가 dispatch 전 조회 — 이 모듈에 선언된 grounded params (없으면 None).
     pub async fn grounding_for(&self, module: &str) -> Option<Vec<GroundedParam>> {
+        self.ensure_known(module).await;
         let map = self.grounding.read().await;
         map.get(module).cloned()
     }
 
     /// FC 경로가 dispatch 전 조회 — 이 모듈의 requiresApproval 선언.
     pub async fn approval_for(&self, module: &str) -> Option<serde_json::Value> {
+        self.ensure_known(module).await;
         let map = self.approval.read().await;
         map.get(module).cloned()
     }
 
     /// The `uiOnly` declaration for this module, if it has one — see `is_ui_only_value`.
     pub async fn ui_only_for(&self, module: &str) -> Option<serde_json::Value> {
+        self.ensure_known(module).await;
         let map = self.ui_only.read().await;
         map.get(module).cloned()
     }
@@ -184,18 +241,16 @@ impl DynamicToolRegistry {
         let mut new_ui_only: HashMap<String, serde_json::Value> = HashMap::new();
         let mut new_selectors: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut new_forms: HashMap<String, ActionForm> = HashMap::new();
+        let mut new_known: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // 2. sysmod scan + register
         let modules = self.module.list_system_modules().await;
         for entry in modules {
-            // 활성화 토글 검사 — Vault `system:module:<name>:settings.enabled` (default true).
-            if !self.module.is_enabled(&entry.name) {
-                continue;
-            }
             // config.json 의 input schema 추출
             let Some(config) = self.module.get_module_config("system", &entry.name).await else {
                 continue;
             };
+            new_known.insert(entry.name.clone());
             // The whole derivation — tool name, description (+tags), thin params, selector
             // judgment, grounding — comes from the shared builder. The MCP transport reads the same
             // one, so a gate is planted once instead of twice (that duplication is what let the
@@ -204,6 +259,11 @@ impl DynamicToolRegistry {
             let tool_name = surface.tool_name;
             // The pairing, recorded once. Everything below keys by module.
             new_tool_modules.insert(tool_name.clone(), entry.name.clone());
+            // Declarations are collected for EVERY scanned module, switched off ones included, and
+            // only the registration below is skipped for those. The toggle used to skip both, which
+            // meant a module enabled after the scan came back with empty gate maps — and an empty
+            // approval map reads as "no approval needed". Being off is a reason not to publish a
+            // tool; it was never a reason to forget the module declares an order action.
             if let Some(ra) = config.get("requiresApproval") {
                 new_approval.insert(entry.name.clone(), ra.clone());
             }
@@ -219,6 +279,11 @@ impl DynamicToolRegistry {
             // Material for step three's form, kept by MODULE name (the tool list is rebuilt per
             // turn from what the conversation has discovered — see the overlay in ai.rs).
             new_forms.insert(entry.name.clone(), surface.form);
+            // Vault `system:module:<name>:settings.enabled` (default true). Past this point is
+            // publication and dispatch, which the toggle does govern.
+            if !self.module.is_enabled(&entry.name) {
+                continue;
+            }
             self.tools.register(ToolDefinition {
                 name: tool_name.clone(),
                 description: surface.description,
@@ -280,6 +345,7 @@ impl DynamicToolRegistry {
         *self.ui_only.write().await = new_ui_only;
         *self.action_selectors.write().await = new_selectors;
         *self.forms.write().await = new_forms;
+        *self.known.write().await = new_known;
 
         // 5. cache 갱신
         let mut last = self.last_refresh.lock().await;

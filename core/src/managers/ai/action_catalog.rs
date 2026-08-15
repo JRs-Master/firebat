@@ -998,6 +998,25 @@ pub(crate) fn sysmod_tool_name(_module: &str) -> String {
     crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL.to_string()
 }
 
+/// The one answer both discovery tools give for a module the owner switched off. Neither "no such
+/// module" nor silence would be true: the capability exists and the index knows it, so a model told
+/// either of those re-words the query or reaches for the module tool directly. Say which of the two
+/// it is, and that no amount of searching changes it.
+pub fn disabled_module_response(module: &str) -> serde_json::Value {
+    serde_json::json!({
+        "success": false,
+        "actions": [],
+        "count": 0,
+        "matchStatus": "disabled",
+        "error": format!(
+            "module '{module}' is switched off, so its actions cannot be listed, searched or \
+             called. The capability exists — this is a setting, not a missing feature — so \
+             re-searching or calling the module tool will not reach it."
+        ),
+        "next": "Say that the module is off and can be switched on in settings, or use a different module.",
+    })
+}
+
 pub struct ModuleActionCatalog {
     catalog: RefreshingCatalog,
     /// Kept for read-time detail the index must not freeze — registered accounts change with a
@@ -1104,8 +1123,16 @@ impl ModuleActionCatalog {
         let dropped = outcome.dropped_tokens;
         let searched_with = outcome.searched_with;
         let embedder = outcome.embedder;
-        let mut rows: Vec<serde_json::Value> = outcome
-            .matches
+        // Discovery must not offer what dispatch will refuse — see `module_enabled`.
+        let mut matches = outcome.matches;
+        matches.retain(|m| {
+            m.extra
+                .get("module")
+                .and_then(|v| v.as_str())
+                .map(|name| self.module_enabled(name))
+                .unwrap_or(true)
+        });
+        let mut rows: Vec<serde_json::Value> = matches
             .into_iter()
             .map(|m| {
                 // Streams (F4) carry `stream`/`kind` instead of `action` — the row tells the model
@@ -1469,10 +1496,27 @@ impl ModuleActionCatalog {
         self.catalog.has_prefix(&format!("{}:", module)).await
     }
 
+    /// Whether the owner has this module switched on. Discovery must not offer what dispatch will
+    /// refuse: `is_enabled` is a live vault read while the index is built once and rebuilt on a
+    /// fingerprint, so a module turned off after boot kept ranking in every search and was then
+    /// rejected by `ModuleManager::run` three rounds later — the rungs of one ladder disagreeing.
+    ///
+    /// Read here rather than at each call site, for the same reason the accounts detail is: every
+    /// discovery surface (search, browse, list, schema, and the shadow TurnBrief) comes through
+    /// this type, and a check copied into four handlers is a check that drifts — which is exactly
+    /// how the hub scope filter drifted from the dispatch gate before it was centralized.
+    pub fn module_enabled(&self, module: &str) -> bool {
+        self.module.is_enabled(module)
+    }
+
     /// Distinct cataloged module names — lets search/schema responses say definitively
     /// which modules are indexed (uncataloged module = call it directly, stop searching).
     pub async fn cataloged_modules(&self) -> Vec<String> {
-        self.catalog.id_prefixes().await
+        let mut names = self.catalog.id_prefixes().await;
+        // A disabled module is not a module this search can see — advertising it here would send
+        // the model at a door the dispatch gate is holding shut.
+        names.retain(|m| self.module_enabled(m));
+        names
     }
 
     /// 한 모듈의 액션 **목록**(순위 없음, params 없음) — 의미검색이 아니라 색인 열람.
@@ -1488,6 +1532,9 @@ impl ModuleActionCatalog {
         module: &str,
         domain: Option<&str>,
     ) -> Vec<serde_json::Value> {
+        if !self.module_enabled(module) {
+            return Vec::new();
+        }
         let tool = sysmod_tool_name(module);
         self.catalog
             .entries_with_prefix(&format!("{}:", module))

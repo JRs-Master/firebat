@@ -1093,6 +1093,13 @@ impl AiManager {
                         }
                     });
                 if let Some(m) = module.as_deref() {
+                    // Checked before the "no catalog" branch: `cataloged` now excludes disabled
+                    // modules, so without this a switched-off module would be reported as having
+                    // no catalog — sending the model to call the module tool directly, which the
+                    // dispatch gate then refuses. Two different problems, two different answers.
+                    if !cat.module_enabled(m) {
+                        return Ok(crate::managers::ai::action_catalog::disabled_module_response(m));
+                    }
                     if !cataloged.contains(&m.to_string()) {
                         return Ok(serde_json::json!({
                             "actions": [],
@@ -1297,6 +1304,11 @@ impl AiManager {
                         "success": false,
                         "error": format!("module '{module}' is not available in this workspace."),
                     }));
+                }
+                // Same order as the search handler, and for the same reason: the "uncataloged"
+                // branch below would otherwise claim a switched-off module has no catalog.
+                if !cat.module_enabled(&module) {
+                    return Ok(crate::managers::ai::action_catalog::disabled_module_response(&module));
                 }
                 let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 match cat.schema(&module, &action).await {

@@ -102,6 +102,13 @@ pub struct McpServerState {
     /// is not a multi-action call, and its grounding hint says "call directly"
     /// (2026-08-12 실측: the gate rejected the very call the hint prescribed).
     pub action_selectors: RwLock<std::collections::HashSet<String>>,
+    /// Modules whose config has been parsed into `grounding` / `action_selectors` / `forms`.
+    ///
+    /// Those three maps only distinguish "declares nothing" from "declares something"; both gates
+    /// read a miss as permission. This set adds the third state — "never read" — so a module the
+    /// boot scan did not see (installed since, or named through the executor, which takes its
+    /// module from the call) is parsed before it is judged rather than waved through.
+    pub known_modules: RwLock<std::collections::HashSet<String>>,
     /// Step-three form material per sysmod tool: `tool_name → (module, ActionForm)`.
     ///
     /// The FC registry has published the typed form since `a6ed5a95`; this path did not, so a CLI
@@ -124,6 +131,38 @@ impl McpServerState {
             image_import: None,
             action_selectors: RwLock::new(std::collections::HashSet::new()),
             forms: RwLock::new(HashMap::new()),
+            known_modules: RwLock::new(std::collections::HashSet::new()),
+        }
+    }
+
+    /// Parse a module's gate declarations if the boot scan never did — see `known_modules`.
+    /// Uses the same `build_surface` reader as registration, so the live path and the scanned path
+    /// cannot come to different conclusions about the same config.
+    pub async fn ensure_module_declarations(&self, module: &str) {
+        if self.known_modules.read().await.contains(module) {
+            return;
+        }
+        let Some(mm) = self.module_manager.as_ref() else { return };
+        let config = match mm.get_module_config("system", module).await {
+            Some(c) => Some(c),
+            None => mm.get_module_config("user", module).await,
+        };
+        // Marked either way — a name with no config is not a module, and re-reading the disk for
+        // it on every call would repeat the same miss forever.
+        self.known_modules.write().await.insert(module.to_string());
+        let Some(config) = config else { return };
+        let surface = sysmod_surface::build_surface(module, &config);
+        if !surface.grounding.is_empty() {
+            self.grounding
+                .write()
+                .await
+                .insert(module.to_string(), surface.grounding);
+        }
+        if surface.has_action_selector {
+            self.action_selectors
+                .write()
+                .await
+                .insert(module.to_string());
         }
     }
 
@@ -665,6 +704,12 @@ async fn gated_tool_call(
         .target_module(&args)
         .filter(|m| !m.trim().is_empty());
 
+    // Both module gates below read maps that the boot scan fills. Make sure this module is in
+    // them before either one concludes it declared nothing.
+    if let Some(module) = target_module.as_deref() {
+        state.ensure_module_declarations(module).await;
+    }
+
     // Discovery-first gate — before grounding on purpose: you discover the parameters before
     // you ground their values. Pipelines never pass here (internal dispatch), so unattended
     // flows stay untouched.
@@ -1157,6 +1202,12 @@ pub async fn register_sysmod_tools(
                 .await
                 .insert(surface.module.clone());
         }
+        // Scanned — so a later miss genuinely means "not seen at boot", not "declares nothing".
+        state
+            .known_modules
+            .write()
+            .await
+            .insert(surface.module.clone());
     }
 
     // The rung itself — the same handler, with no module of its own, so every gate it carries
