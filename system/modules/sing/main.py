@@ -147,32 +147,145 @@ DRUM_PATTERNS = {
 }
 
 
-def render_accompaniment(spb, total_beats, chords, style):
-    """Drums on the style's bar pattern + bass following the chord roots. Returns float array."""
-    n_total = int(SR * spb * total_beats) + int(SR * 0.5)
-    out = np.zeros(n_total)
-    hits = {"kick": kick(), "snare": snare(), "hat": hat()}
-    pattern = DRUM_PATTERNS.get(style, DRUM_PATTERNS["trot"])
-    bar = 0.0
-    while bar < total_beats:
-        for inst, off in pattern:
-            beat = bar + off
-            if beat >= total_beats:
-                continue
-            i = int(SR * spb * beat)
-            h = hits[inst]
-            out[i:i + len(h)] += h[: max(0, n_total - i)]
-        bar += 4.0
+# ── arrangement — one event list, several renderers ───────────────────────────────────────────
+#
+# The score says what the song IS; this says what the band PLAYS. Both renderers below read this
+# list and nothing else, so a part added here (melody, chord voicing, a counter-line later) shows
+# up in the wav and in the .mid without being written twice — and a third renderer (a real
+# synthesiser reading the .mid) is a reader of the same list, not a rewrite of the arrangement.
+#
+# `program` is a General MIDI program number so the meaning survives the trip to any synth; the
+# numpy renderer maps it onto the timbre it has. Drums carry a name instead, since they are a kit
+# and not a pitch.
+
+GM_PROGRAM = {"melody": 65, "chord": 4, "bass": 33}  # alto sax / e.piano / finger bass
+# What the numpy renderer can actually voice. It has one tone generator, so the difference between
+# parts here is register and level, not timbre — that is exactly the gap a soundfont closes.
+NUMPY_GAIN = {"melody": 0.34, "chord": 0.16, "bass": 0.5}
+
+
+def midi_number(name):
+    """'G4' -> 67. None if unreadable — same spelling rules as `note_freq`."""
+    f = note_freq(name)
+    return None if f is None else int(round(69 + 12 * math.log2(f / 440.0)))
+
+
+def freq_of_midi(m):
+    return 440.0 * (2.0 ** ((m - 69) / 12.0))
+
+
+def chord_voicing(root_midi):
+    """Root position triad above the written root, plus the bass an octave below it.
+
+    A major triad because the score declares a root and nothing else; guessing minor from a
+    key we were not told would be worse than a plain reading the caller can override once
+    `chords` learns a quality field.
+    """
+    return [root_midi, root_midi + 4, root_midi + 7]
+
+
+def build_arrangement(events, chords, style, total_beats):
+    """Score -> flat list of {beat, beats, part, pitch|drum, program}. Beats, not samples: the
+    renderers turn them into whatever they count in (samples here, ticks in the MIDI writer)."""
+    out = []
+    # Melody — the notes the voice sings, also given to an instrument. Without this an
+    # instrumental render (no vocalPath) had rhythm and bass and no tune at all.
+    beat = 0.0
+    for ev in events:
+        for freq, beats in ev["segments"]:
+            m = int(round(69 + 12 * math.log2(freq / 440.0)))
+            out.append({"beat": beat, "beats": beats, "part": "melody",
+                        "pitch": m, "program": GM_PROGRAM["melody"]})
+            beat += beats
     pos = 0.0
     for root, beats in chords:
+        rm = int(round(69 + 12 * math.log2(root / 440.0)))
+        for p in chord_voicing(rm):
+            out.append({"beat": pos, "beats": beats, "part": "chord",
+                        "pitch": p, "program": GM_PROGRAM["chord"]})
         # An octave below the written root — a root written at C3 plays bass at C2.
-        seg = bass_note(root / 2.0, spb * beats)
-        i = int(SR * spb * pos)
-        out[i:i + len(seg)] += seg[: max(0, n_total - i)]
+        out.append({"beat": pos, "beats": beats, "part": "bass",
+                    "pitch": rm - 12, "program": GM_PROGRAM["bass"]})
         pos += beats
         if pos >= total_beats:
             break
+    bar = 0.0
+    while bar < total_beats:
+        for inst, off in DRUM_PATTERNS.get(style, DRUM_PATTERNS["trot"]):
+            if bar + off < total_beats:
+                out.append({"beat": bar + off, "beats": 0.25, "part": "drum", "drum": inst})
+        bar += 4.0
+    out.sort(key=lambda e: (e["beat"], e["part"]))
     return out
+
+
+def render_arrangement(arr, spb, total_beats):
+    """The numpy backend — every part of `arr` mixed into one float array."""
+    n_total = int(SR * spb * total_beats) + int(SR * 0.5)
+    out = np.zeros(n_total)
+    hits = {"kick": kick(), "snare": snare(), "hat": hat()}
+    for e in arr:
+        i = int(SR * spb * e["beat"])
+        if i >= n_total:
+            continue
+        if e["part"] == "drum":
+            seg = hits[e["drum"]]
+        else:
+            seg = bass_note(freq_of_midi(e["pitch"]), spb * e["beats"]) * (
+                NUMPY_GAIN[e["part"]] / 0.5)
+        out[i:i + len(seg)] += seg[: max(0, n_total - i)]
+    return out
+
+
+def write_midi(arr, bpm, path):
+    """The MIDI backend — the same arrangement as a .mid, for any synth worth more than ours.
+
+    Optional dependency on purpose: this is the one output that needs no audio stack at all, so a
+    missing `mido` must degrade to "no .mid this time" rather than failing the render.
+    """
+    try:
+        import mido
+    except ImportError:
+        return None, "mido 미설치 — .mid 산출은 건너뜁니다 (wav 는 정상)"
+    tpb = 480
+    mid = mido.MidiFile(ticks_per_beat=tpb)
+    # One track per part: a synth that lets you pick instruments per track can, and the drum
+    # channel (9) is fixed by the standard rather than by us.
+    for part in ("melody", "chord", "bass", "drum"):
+        rows = [e for e in arr if e["part"] == part]
+        if not rows:
+            continue
+        tr = mido.MidiTrack()
+        mid.tracks.append(tr)
+        tr.append(mido.MetaMessage("track_name", name=part, time=0))
+        if part == "drum":
+            ch = 9
+        else:
+            ch = {"melody": 0, "chord": 1, "bass": 2}[part]
+            tr.append(mido.Message("program_change", channel=ch,
+                                   program=rows[0]["program"], time=0))
+        # (tick, on/off) pairs, then one pass in time order — MIDI deltas are relative, so the
+        # note-offs have to be interleaved rather than appended per note.
+        marks = []
+        for e in rows:
+            start = int(round(e["beat"] * tpb))
+            pitch = 36 if part == "drum" and e["drum"] == "kick" else \
+                38 if part == "drum" and e["drum"] == "snare" else \
+                42 if part == "drum" else e["pitch"]
+            marks.append((start, 1, pitch))
+            marks.append((start + max(1, int(round(e["beats"] * tpb))), 0, pitch))
+        marks.sort(key=lambda m: (m[0], m[1]))
+        prev = 0
+        for tick, on, pitch in marks:
+            tr.append(mido.Message("note_on" if on else "note_off", channel=ch,
+                                   note=max(0, min(127, pitch)),
+                                   velocity=90 if on else 0, time=tick - prev))
+            prev = tick
+    mid.tracks[0].insert(0, mido.MetaMessage("set_tempo",
+                                             tempo=mido.bpm2tempo(bpm), time=0))
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    mid.save(path)
+    return path, None
 
 
 # ── vocal retune (numpy floor; pyworld when available) ─────────────────────────────────────────
@@ -529,9 +642,13 @@ def action_render(inp):
     total_beats = sum(b for ev in events for _, b in ev["segments"])
     chord_beats = sum(b for _, b in chords)
     total_beats = max(total_beats, chord_beats)
-    band = render_accompaniment(spb, total_beats, chords, style)
-    mix = band * 0.45
+    arr = build_arrangement(events, chords, style, total_beats)
     vocal_path = str(inp.get("vocalPath") or "").strip()
+    # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
+    # tune, and dropping it was why an instrumental render came out as rhythm and bass only.
+    if vocal_path:
+        arr = [e for e in arr if e["part"] != "melody"]
+    mix = render_arrangement(arr, spb, total_beats) * 0.45
     if vocal_path:
         if not os.path.isfile(vocal_path):
             return {"success": False,
@@ -544,14 +661,27 @@ def action_render(inp):
         h = hashlib.sha1(json.dumps(score, sort_keys=True).encode()).hexdigest()[:12]
         out_path = f"data/sing/out-{h}.wav"
     write_wav(out_path, mix)
+    # The .mid beside the wav — same arrangement, played by whatever the listener owns. Our one
+    # tone generator is the ceiling on the wav; it is not a ceiling on this.
+    midi_out = str(inp.get("midiOutPath") or "").strip()
+    if not midi_out and inp.get("midiOut"):
+        midi_out = out_path.rsplit(".", 1)[0] + ".mid"
+    midi_written, midi_note = (None, None)
+    if midi_out:
+        midi_written, midi_note = write_midi(arr, 60.0 / spb, midi_out)
     data = {
         "outPath": out_path,
         "seconds": round(len(mix) / SR, 2),
         "events": len(events),
+        "parts": sorted({e["part"] for e in arr}),
         "style": style,
         "vocal": bool(vocal_path),
         "backend": "pyworld" if (vocal_path and try_pyworld()) else "numpy",
     }
+    if midi_written:
+        data["midiPath"] = midi_written
+    if midi_note:
+        data["midiNote"] = midi_note
     if parsed_from:
         # The caller composed nothing — show what the MIDI became so the bridge (TTS lyric
         # order) and the user can see and correct the parse.
@@ -582,11 +712,34 @@ def action_selftest():
     ck("score parses", None, err, err is None)
     ck("a '-' note extends the previous syllable (melisma)", 3, len(events), len(events) == 3)
 
-    band = render_accompaniment(spb, 4, chords, style)
+    arr = build_arrangement(events, chords, style, 4)
+    parts = sorted({e["part"] for e in arr})
+    ck("the arrangement plays a tune, not just a rhythm section",
+       ["bass", "chord", "drum", "melody"], parts,
+       parts == ["bass", "chord", "drum", "melody"])
+    # A chord written as one root has to reach the ear as a chord.
+    ck("one written root becomes a triad", 3,
+       sum(1 for e in arr if e["part"] == "chord"),
+       sum(1 for e in arr if e["part"] == "chord") == 3)
+    ck("bass sits an octave under the written root", midi_number("C2"),
+       next(e["pitch"] for e in arr if e["part"] == "bass"),
+       next(e["pitch"] for e in arr if e["part"] == "bass") == midi_number("C2"))
+
+    band = render_arrangement(arr, spb, 4)
     ck("accompaniment covers the bar", int(SR * spb * 4), len(band),
        abs(len(band) - SR * spb * 4) <= SR)
     ck("accompaniment is not silence and not NaN", True,
        bool(np.max(np.abs(band)) > 0.01), np.max(np.abs(band)) > 0.01 and not np.any(np.isnan(band)))
+
+    # The .mid is the point of the arrangement layer — a missing `mido` degrades, never fails.
+    mid_path = os.path.join("data", "sing", "selftest.mid")
+    written, note = write_midi(arr, 60.0 / spb, mid_path)
+    ck("midi written (or cleanly skipped when mido is absent)", True,
+       f"{written or note}", bool(written) or bool(note))
+    if written:
+        ck("midi file is non-empty", True, os.path.getsize(written) > 0,
+           os.path.getsize(written) > 0)
+        os.remove(written)
 
     t = np.arange(int(SR * 0.4)) / SR
     tone = np.sin(2 * np.pi * 220.0 * t)

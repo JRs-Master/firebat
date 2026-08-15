@@ -108,6 +108,14 @@
           "null"
         ],
         "description": "Workspace-relative output wav path. Default data/sing/out-<hash>.wav"
+      },
+      "midiOut": {
+        "type": "boolean",
+        "description": "Also write the arrangement as a .mid beside the wav. The wav is limited by this module's one tone generator; the .mid is not — open it in anything and the parts (melody / chord / bass / drums) arrive on their own tracks."
+      },
+      "midiOutPath": {
+        "type": "string",
+        "description": "Workspace-relative .mid path. Implies midiOut. Default = the wav path with a .mid extension."
       }
     }
   },
