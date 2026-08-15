@@ -337,6 +337,13 @@ pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
 /// 거부(기본 deny): request_secret/network_request(③deny Vault·SSRF) / run_module·execute(sysmod allow 우회) /
 ///       schedule_task·run_task·run_cron_job(배경 실행·남용) / *_module·mcp_*·log(admin). 명시 허용에 없으면 차단 = fail-safe.
 pub fn permits_tool(name: &str, allowed_sysmods: &[String]) -> bool {
+    // The executor rung is a mechanism, so the question it answers is not "may you use this tool"
+    // but "may you use THAT module" — and the module is in the call, not the name. Visible here,
+    // decided by `module_permitted_for_args` at dispatch, on both transports. Refusing it here
+    // instead would take every module away from a hub that is allowed some.
+    if name == crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL {
+        return true;
+    }
     if let Some(sysmod) = name.strip_prefix("sysmod_") {
         // MCP 도구명은 모듈명의 dash 를 underscore 로 바꿔 등록한다(kma-weather → sysmod_kma_weather).
         // 비교 전 underscore → dash 복원 — 안 하면 다단어 sysmod(kma-weather/naver-search/law-search 등)가
@@ -614,6 +621,30 @@ mod tests {
         // The sidebar pair is always reachable — a hub without notes and calendar is not a hub.
         assert!(permits_tool("sysmod_notes", &[]));
         assert!(permits_tool("sysmod_calendar", &[]));
+    }
+
+    /// The executor rung is visible to a hub, and the module it names is what gets judged.
+    ///
+    /// The per-module tool list used to enforce the allowlist by omission: a tool a hub could not
+    /// see was a module it could not call. One rung for everything removes that, so the grant has
+    /// to be checked against the call's own `module` — and if this test ever reads the other way,
+    /// a widget reaches every broker the operator has registered.
+    #[test]
+    fn the_rung_is_visible_and_the_module_it_names_is_judged() {
+        let allowed = vec!["yfinance".to_string()];
+        assert!(
+            permits_tool(crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL, &allowed),
+            "refusing the rung takes every module away from a hub that is allowed some"
+        );
+        let args = serde_json::json!({
+            "_hubScope": "hub:demo:sess-1",
+            "_allowedSysmods": ["yfinance"],
+        });
+        assert!(module_permitted_for_args(&args, "yfinance"));
+        assert!(
+            !module_permitted_for_args(&args, "kiwoom-trade"),
+            "the rung must not become a way past the per-module grant"
+        );
     }
 
     /// Discovery answers from the same allowlist the call is judged by. Seeing an action and being

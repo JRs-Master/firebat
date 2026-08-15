@@ -2955,6 +2955,64 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
 }
 
 fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    // run_module_action — the one rung every system module is executed through.
+    //
+    // A mechanism, not a capability: the twin of `execute` for user modules. Thirty-five
+    // `sysmod_<name>` tools used to be published on both transports (15,942 characters of
+    // always-resident list, measured 2026-08-15) for a surface `search_module_actions` already
+    // answers — and publishing them was itself a way around the ladder, because a module visible
+    // in the list can be called without discovering anything. Those tools stay REGISTERED, so
+    // cached client lists, stored plans and pipelines that name them keep working; they simply
+    // leave the published list.
+    //
+    // Registered here rather than beside the sysmod tools so there is one definition: the core
+    // registry auto-syncs to hosted MCP, which is the rule the two transports kept breaking
+    // ([[feedback_dual_tool_registry]]).
+    tools.register(ToolDefinition {
+        name: crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL.to_string(),
+        description: crate::managers::ai::sysmod_surface::exec_description(),
+        parameters: crate::managers::ai::sysmod_surface::exec_parameters(),
+        source: "core".to_string(),
+    });
+    let module = h.module.clone();
+    tools.register_handler(
+        crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL,
+        make_handler(move |args: serde_json::Value| {
+            let module = module.clone();
+            async move {
+                let Some(name) = args
+                    .get("module")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                else {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "error": "`module` is required. search_module_actions(query) returns it on every row.",
+                    }));
+                };
+                let name = name.to_string();
+                // Hub visitors reach the rung (it is a mechanism), so the allowlist is applied to
+                // the module the call names. Without this the rung would be a way past the
+                // per-module grant that the old per-module tool list enforced by omission.
+                if !crate::utils::hub_context::module_permitted_for_args(&args, &name) {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "error": format!("이 hub 에서는 '{name}' 모듈을 사용할 수 없습니다."),
+                    }));
+                }
+                // `module` addressed the rung, not the module — it must not reach the sandbox,
+                // where input validation would reject it as an unexpected property.
+                let mut payload = args.clone();
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.remove("module");
+                }
+                let result = module.run(&name, &payload).await?;
+                Ok(serde_json::to_value(&result).unwrap_or(serde_json::Value::Null))
+            }
+        }),
+    );
+
     // list_system_modules
     tools.register(ToolDefinition {
         name: "list_system_modules".to_string(),

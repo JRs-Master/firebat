@@ -193,6 +193,44 @@ async fn dispatch_list_cron_jobs_empty() {
     assert_eq!(result.as_array().unwrap().len(), 0);
 }
 
+/// The rung refuses a call that names no module rather than guessing one.
+///
+/// Every gate downstream is keyed by module — the discovery ladder, grounding, uiOnly and
+/// requiresApproval all look one up. A call with no module resolves to nothing, so a silent
+/// default here would be a call nobody gated.
+#[tokio::test]
+async fn the_module_rung_refuses_a_call_that_names_no_module() {
+    let (tools, _dir) = make_setup().await;
+    let exec = firebat_core::managers::ai::sysmod_surface::MODULE_EXEC_TOOL;
+    let result = tools.dispatch(exec, &serde_json::json!({"action": "quote"})).await.unwrap();
+    assert_eq!(result["success"], false);
+    assert!(
+        result["error"].as_str().unwrap_or("").contains("module"),
+        "the refusal must say what is missing: {result}"
+    );
+    // Blank counts as absent — a whitespace module would resolve to no config and no declaration.
+    let blank = tools.dispatch(exec, &serde_json::json!({"module": "   "})).await.unwrap();
+    assert_eq!(blank["success"], false);
+}
+
+/// The rung publishes a form, and `module` is in it.
+///
+/// It is the one thing the executor can name in advance; everything else is per action and
+/// arrives from get_action_schema, which is the ladder working as intended.
+#[tokio::test]
+async fn the_module_rung_publishes_its_only_knowable_field() {
+    let (tools, _dir) = make_setup().await;
+    let exec = firebat_core::managers::ai::sysmod_surface::MODULE_EXEC_TOOL;
+    let def = tools
+        .list(&firebat_core::managers::tool::ToolListFilter::default())
+        .into_iter()
+        .find(|d| d.name == exec)
+        .expect("the rung must be registered — the catalog rows point at it");
+    assert_eq!(def.parameters["required"][0], "module");
+    assert!(def.parameters["properties"]["module"].is_object());
+    assert_eq!(def.parameters["additionalProperties"], true, "per-action params ride the top level");
+}
+
 #[tokio::test]
 async fn dispatch_unknown_tool_returns_error() {
     let (tools, _dir) = make_setup().await;
@@ -209,7 +247,10 @@ async fn registered_tool_count() {
     // conversation: 4 (search_history/search_memory + list_conversations/read_conversation — the
     //   two steps that widen a single-message hit into the session around it) +
     // entity: 5 + episodic: 3 + consolidation: 2 +
-    // module: 3 + mcp: 2 (mcp_call 포함) + cache: 4 (read/grep/aggregate/drop) +
+    // module: 4 (list_system_modules/list_user_modules/get_module_config + run_module_action —
+    //   the one rung every system module is executed through, so the 35 per-module tools can
+    //   leave the published list on both transports) +
+    // mcp: 2 (mcp_call 포함) + cache: 4 (read/grep/aggregate/drop) +
     // task_library: 3 (run_task/search_library/library_extract_structured) +
     // meta: 3 (render/suggest/propose_plan) +
     // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) +
@@ -219,9 +260,9 @@ async fn registered_tool_count() {
     // sing: 1 (compose-and-sing — TTS take retuned to a score over a synthesized band) +
     // stream_watch: 3 (start/stop/list — 실시간 감시) +
     // accounts: 1 (list_accounts — every registered account, across modules) +
-    // tool_schema: 1 (get_tool_schema — the contract for a tool that publishes an open schema) = 68
-    assert_eq!(stats.total, 68);
-    assert_eq!(stats.by_source.get("core").copied(), Some(68));
+    // tool_schema: 1 (get_tool_schema — the contract for a tool that publishes an open schema) = 69
+    assert_eq!(stats.total, 69);
+    assert_eq!(stats.by_source.get("core").copied(), Some(69));
 }
 
 #[tokio::test]

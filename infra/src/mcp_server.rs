@@ -218,45 +218,19 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
             .unwrap_or(false);
         return on && !firebat_core::utils::hub_context::is_hub_context_active();
     }
-    let Some(mm) = &state.module_manager else {
-        return true;
-    };
-    let Some(rest) = tool_name.strip_prefix("sysmod_") else {
-        return true;
-    };
-    // 모듈명 경계가 도구이름만으론 모호하다 — 두-단어 모듈(browser-scrape)이 `browser_scrape` 로 등록되고
-    // 도메인 분리 도구는 `<module>_<domain>` 형태라, 첫 토막만 보면 모듈명을 못 잡는다.
-    // (옛 버그: `sysmod_browser_scrape` → candidate `browser` 로 검사 → 그런 모듈 없음 → default true → disabled 무시.)
-    // 정공 = rest 의 세그먼트 prefix 들을 dash 로 이어 실제 config(is_enabled)에 묻는다. 명시적으로 비활성인
-    // prefix 가 하나라도 있으면 그 모듈이 꺼진 것 → 숨김. 미존재 이름은 default true 라 무영향.
-    let segs: Vec<&str> = rest.split('_').collect();
-    // 1. 전역 비활성 모듈 제외 (config is_enabled). 명시적으로 disabled 인 prefix 가 하나라도 있으면 숨김.
-    for n in 1..=segs.len() {
-        if !mm.is_enabled(&segs[..n].join("-")) {
-            return false;
-        }
-    }
-    // 2. hub 활성 시 — sysmod 가 allowed_sysmods ∪ CORE_SYSMODS 에 없으면 hub 도구목록에서도 제외.
-    //    옛 버그: 전역 ON 이지만 hub 미허용인 sysmod(telegram 등)가 목록엔 남아 AI 가 호출 → 실행 게이트
-    //    (is_sysmod_blocked_for_hub, 373)에 막혀 "허용 안 됨" + 턴 낭비. FC 경로(permits_tool)와 일관되게 목록에서 제외.
+    // Per-module tools left the published list when the executor rung arrived. Their size was the
+    // smaller half of it: a module visible in the list can be called without discovering anything,
+    // which is the ladder undone at the one place it is supposed to be unskippable.
     //
-    //    A tenant is no exception (2026-08-03). This was the last site keeping
-    //    `full_tools → show everything`, and it is the path a CLI model reads its tool list from —
-    //    so `sysmod_kiwoom-trade` sat there in plain view, the model called it, and the dispatch
-    //    gate refused. Exactly the waste the comment above exists to prevent, revived for tenants
-    //    alone, and leaking which trading tools the operator holds while it did so. The day a
-    //    tenant has its own vault this comes back — together with the FC filter and the discovery
-    //    tools, never one of the three on its own.
+    // They stay REGISTERED and callable — `tools/call` never consults this function — because
+    // cached client tool lists, stored plan steps and cron pipelines all name them. Publication
+    // and dispatch are different layers.
     //
-    //    One judgement, `permits_tool`. The copy that used to be here walked dash-joined prefixes,
-    //    which is how step 1 above answers "which segment is the real module name" — reused as a
-    //    permission test it hands a short module's grant to every longer one. `kiwoom` on the
-    //    allowlist admitted `sysmod_kiwoom_trade`. A second hole, open independently of the
-    //    full_tools exemption, and closed by putting the rule in one place.
-    if let Some(allowed) = firebat_core::utils::hub_context::active_allowed_sysmods() {
-        if !firebat_core::utils::hub_context::permits_tool(tool_name, &allowed) {
-            return false;
-        }
+    // The enabled toggle and the hub allowlist that used to be decided here are decided at call
+    // time by the handler, which is where they always mattered: a hosted client caches this list
+    // once, so a toggle flipped afterwards was never going to reach it.
+    if tool_name.starts_with("sysmod_") {
+        return false;
     }
     true
 }
@@ -882,41 +856,70 @@ pub fn build_router(state: Arc<McpServerState>) -> Router {
 /// SysmodToolHandler — system/modules 의 sysmod 자동 등록. 옛 mcp/internal-server.ts:589-668 1:1.
 /// ModuleManager.run(name, data) 위임 — Rust ModuleService.Run 의 단순 분기 활용 (path 형태는 sandboxExecute).
 pub struct SysmodToolHandler {
-    pub module_name: String,
+    /// The module this handler was registered for, or `None` on the shared executor rung
+    /// (`run_module_action`), where each call names its own module.
+    pub module_name: Option<String>,
     pub module_manager: Arc<ModuleManager>,
+}
+
+impl SysmodToolHandler {
+    /// The module a call runs: this handler's own, else the one the call names.
+    fn module_of(&self, args: &Value) -> Option<String> {
+        if let Some(m) = &self.module_name {
+            return Some(m.clone());
+        }
+        args.get("module")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    }
 }
 
 #[async_trait::async_trait]
 impl McpToolHandler for SysmodToolHandler {
-    /// One tool per module today, so the module is this handler's own — no parsing of the name
-    /// it happens to be published under. When one executor serves every module this reads
-    /// `args.module` instead, and the gates do not change.
-    fn target_module(&self, _args: &Value) -> Option<String> {
-        Some(self.module_name.clone())
+    /// The gates ask here rather than parsing the published name. One handler per module answers
+    /// with its own; the executor answers with the call's.
+    fn target_module(&self, args: &Value) -> Option<String> {
+        self.module_of(args)
     }
 
     async fn call(&self, args: Value) -> Result<Value, String> {
+        let Some(module_name) = self.module_of(&args) else {
+            return Ok(serde_json::json!({
+                "success": false,
+                "error": "`module` is required. search_module_actions(query) returns it on every row.",
+            }));
+        };
+        // `module` addressed the rung, not the module — the sandbox would reject it as an
+        // unexpected property. Removed only when the call supplied it.
+        let mut args: Value = args;
+        if self.module_name.is_none() {
+            if let Some(o) = args.as_object_mut() {
+                o.remove("module");
+            }
+        }
         // Hub visitor 가드 — hub_context 활성 상태에서 allowed_sysmods 에 없는 sysmod 호출 차단.
         // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 처리해 CLI 모델
         // (supports_mcp=true) 의 자체 MCP loop 에서는 우회된다. 본 가드 = MCP path 보안용.
-        if firebat_core::utils::hub_context::is_sysmod_blocked_for_hub(&self.module_name) {
+        if firebat_core::utils::hub_context::is_sysmod_blocked_for_hub(&module_name) {
             return Ok(serde_json::json!({
                 "success": false,
                 "error": format!(
                     "이 hub 에서는 sysmod '{}' 사용이 허용되지 않습니다.",
-                    self.module_name
+                    module_name
                 ),
             }));
         }
         // 활성화 토글 가드 — 사용자가 시스템 설정에서 OFF 한 sysmod 는 호출 시점 차단.
         // tools/list 는 시작 시점 1회 등록이라 캐시된 도구 list 가 enabled 토글 변경 반영 0
         // (CLI 모드 / hosted MCP 가 list 캐시 보유). 호출 시점 가드가 single source of truth.
-        if !self.module_manager.is_enabled(&self.module_name) {
+        if !self.module_manager.is_enabled(&module_name) {
             return Ok(serde_json::json!({
                 "success": false,
                 "error": format!(
                     "모듈 '{}' 가 비활성화되어 있습니다. 시스템 설정에서 활성화 후 다시 시도하세요.",
-                    self.module_name
+                    module_name
                 ),
             }));
         }
@@ -936,13 +939,13 @@ impl McpToolHandler for SysmodToolHandler {
         if !action_name.is_empty() {
             let cfg = match self
                 .module_manager
-                .get_module_config("user", &self.module_name)
+                .get_module_config("user", &module_name)
                 .await
             {
                 Some(c) => Some(c),
                 None => {
                     self.module_manager
-                        .get_module_config("system", &self.module_name)
+                        .get_module_config("system", &module_name)
                         .await
                 }
             };
@@ -955,7 +958,7 @@ impl McpToolHandler for SysmodToolHandler {
                 return Ok(serde_json::json!({
                     "success": false,
                     "error": firebat_core::utils::pending_tools::ui_only_refusal(
-                        &self.module_name, action_name),
+                        &module_name, action_name),
                     "uiOnly": true,
                 }));
             }
@@ -965,13 +968,13 @@ impl McpToolHandler for SysmodToolHandler {
         {
             let cfg = match self
                 .module_manager
-                .get_module_config("user", &self.module_name)
+                .get_module_config("user", &module_name)
                 .await
             {
                 Some(c) => Some(c),
                 None => {
                     self.module_manager
-                        .get_module_config("system", &self.module_name)
+                        .get_module_config("system", &module_name)
                         .await
                 }
             };
@@ -990,11 +993,11 @@ impl McpToolHandler for SysmodToolHandler {
                 }
                 let pargs = firebat_core::utils::pending_tools::PendingActionArgs::RunModule(
                     firebat_core::utils::pending_tools::RunModuleArgs {
-                        module: self.module_name.clone(),
+                        module: module_name.clone(),
                         input: data.clone(),
                     },
                 );
-                let summary = format!("실행 승인: {} · {}", self.module_name, action_name);
+                let summary = format!("실행 승인: {} · {}", module_name, action_name);
                 let plan_id = firebat_core::utils::pending_tools::create_pending_scoped(
                     pargs, &summary, None,
                 );
@@ -1007,14 +1010,14 @@ impl McpToolHandler for SysmodToolHandler {
                 }));
             }
         }
-        match self.module_manager.run(&self.module_name, &data).await {
+        match self.module_manager.run(&module_name, &data).await {
             Ok(output) => {
                 if output.success {
                     Ok(serde_json::json!({ "success": true, "data": output.data }))
                 } else {
                     // i18n lookup — sysmod 의 응답 `{success: false, errorKey: "X.Y", errorParams: {...}}`
                     // → `module.{module_name}.X.Y` 의 i18n 변환. fallback: 옛 raw error string.
-                    let error_msg = resolve_sysmod_error(&self.module_name, &output);
+                    let error_msg = resolve_sysmod_error(&module_name, &output);
                     Ok(serde_json::json!({
                         "success": false,
                         "error": error_msg,
@@ -1126,7 +1129,7 @@ pub async fn register_sysmod_tools(
             description,
             input_schema: surface.thin_parameters,
             handler: Arc::new(SysmodToolHandler {
-                module_name: surface.module.clone(),
+                module_name: Some(surface.module.clone()),
                 module_manager: module_manager.clone(),
             }),
         };
@@ -1155,6 +1158,24 @@ pub async fn register_sysmod_tools(
                 .insert(surface.module.clone());
         }
     }
+
+    // The rung itself — the same handler, with no module of its own, so every gate it carries
+    // (hub allowlist, enabled toggle, uiOnly, requiresApproval) runs for an executor call exactly
+    // as it does for a per-module one. Registering the core definition through the auto-sync
+    // proxy instead would have routed around all four, and one of them is what stands between a
+    // model and a live order.
+    let exec = sysmod_surface::MODULE_EXEC_TOOL;
+    state
+        .register(McpTool {
+            name: exec.to_string(),
+            description: sysmod_surface::exec_description(),
+            input_schema: sysmod_surface::exec_parameters(),
+            handler: Arc::new(SysmodToolHandler {
+                module_name: None,
+                module_manager: module_manager.clone(),
+            }),
+        })
+        .await;
 }
 
 /// RenderUnifiedHandler — 단일 `render` 도구 (옵션 E hybrid, 2026-05-14).
@@ -2903,6 +2924,56 @@ mod parity_tests {
         // …and the FC path derives byte-for-byte the same thing from the same material.
         let fc = sysmod_surface::parameters_for(&surface.form, &["ratios".to_string()]).unwrap();
         assert_eq!(after, fc, "the two transports must publish one form");
+    }
+
+    /// Publication and dispatch are different layers, and this is the line between them.
+    ///
+    /// The 35 per-module tools leave `tools/list` — their size was the smaller half; the real cost
+    /// was that a module in the list can be called without discovering anything. They stay
+    /// registered, because `tools/call` never asks this question and stored plans, cron pipelines
+    /// and cached client lists all name them.
+    #[test]
+    fn the_per_module_tools_leave_the_list_and_the_rung_takes_their_place() {
+        let state = Arc::new(McpServerState::new(Arc::new(NoVault)));
+        assert!(!is_tool_visible(&state, "sysmod_kiwoom"));
+        assert!(!is_tool_visible(&state, "sysmod_korea_invest_trade"));
+        assert!(is_tool_visible(&state, sysmod_surface::MODULE_EXEC_TOOL));
+        assert!(is_tool_visible(&state, "render"), "non-module tools are untouched");
+    }
+
+    /// The gates ask the handler which module a call targets. On the rung that answer comes from
+    /// the call — and if it ever stopped doing so, `requiresApproval` would find no declaration
+    /// and a live order would dispatch without a card.
+    #[test]
+    fn the_rung_reports_the_module_the_call_names() {
+        let handler = SysmodToolHandler {
+            module_name: None,
+            module_manager: bare_module_manager(),
+        };
+        let args = serde_json::json!({"module": "upbit-trade", "action": "place_order"});
+        assert_eq!(handler.target_module(&args), Some("upbit-trade".to_string()));
+        // No module named = nothing to gate on, and the call is refused rather than guessed at.
+        assert_eq!(handler.target_module(&serde_json::json!({"action": "x"})), None);
+        assert_eq!(handler.target_module(&serde_json::json!({"module": "  "})), None);
+
+        // A per-module registration still answers with its own, whatever the args say.
+        let pinned = SysmodToolHandler {
+            module_name: Some("kiwoom".to_string()),
+            module_manager: bare_module_manager(),
+        };
+        assert_eq!(pinned.target_module(&args), Some("kiwoom".to_string()));
+    }
+
+    /// A ModuleManager over the real adapters pointed at a temp dir — the handler needs one to
+    /// exist, and these tests never reach it. Hand-written port stubs would be six more copies of
+    /// a trait that changes.
+    fn bare_module_manager() -> Arc<ModuleManager> {
+        let dir = std::env::temp_dir();
+        Arc::new(ModuleManager::new(
+            Arc::new(crate::adapters::sandbox::ProcessSandboxAdapter::new(dir.clone())),
+            Arc::new(crate::adapters::storage::LocalStorageAdapter::new(&dir)),
+            Arc::new(NoVault),
+        ))
     }
 
     struct NoopHandler;

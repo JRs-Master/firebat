@@ -988,11 +988,14 @@ impl CatalogSource for ModuleActionSource {
     }
 }
 
-/// 모듈명 → 실제로 노출되는 sysmod 도구 이름. `mcp_server` 등록 규칙(`sysmod_<name>`, dash→
-/// underscore)의 단일 소스를 발견 응답 쪽에서도 그대로 쓴다 — 두 곳이 어긋나면 모델이 없는
-/// 도구를 부른다.
-pub(crate) fn sysmod_tool_name(module: &str) -> String {
-    format!("sysmod_{}", module.replace('-', "_"))
+/// 모듈을 실행하는 도구 이름 — 발견 응답이 모델에게 건네는 그 이름.
+///
+/// Every module runs through one rung now, so this no longer varies by module; the module rides
+/// the call's `module` argument instead. The function stays because the discovery response and
+/// the registration must never disagree — that mismatch points the model at a tool that does not
+/// exist, which is exactly what a half-done version of this change produced.
+pub(crate) fn sysmod_tool_name(_module: &str) -> String {
+    crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL.to_string()
 }
 
 pub struct ModuleActionCatalog {
@@ -1433,6 +1436,12 @@ impl ModuleActionCatalog {
             })
         } else {
             let mut arguments = serde_json::Map::new();
+            // One rung for every module, so the call has to say WHICH — first, because it is what
+            // the rung dispatches on.
+            arguments.insert(
+                "module".to_string(),
+                serde_json::Value::String(module.to_string()),
+            );
             // A selector-less module has no action to send; sending one there is its own error.
             // `required` names the selector first for the modules that have one.
             let has_selector = out
@@ -1709,6 +1718,27 @@ mod action_fragment_tests {
         assert!(clipped.chars().count() <= 141);
         assert!(clipped.ends_with('…'));
         assert_eq!(clip_row_desc("  짧은 설명  "), "짧은 설명");
+    }
+}
+
+#[cfg(test)]
+mod handover_tests {
+    use super::*;
+
+    /// Discovery hands over a tool name, and that name must be one that exists.
+    ///
+    /// A half-done version of the executor change pointed every row at a tool nothing registered,
+    /// which breaks every module call at once — the reason it was reverted on 2026-08-15. This
+    /// pins the two ends together: the name the rows hand over is the constant the registries
+    /// register under.
+    #[test]
+    fn the_rows_name_the_rung_that_is_actually_registered() {
+        assert_eq!(
+            sysmod_tool_name("kakao-map"),
+            crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL
+        );
+        // The module no longer varies the answer — it rides the arguments instead.
+        assert_eq!(sysmod_tool_name("kakao-map"), sysmod_tool_name("korea-invest-trade"));
     }
 }
 

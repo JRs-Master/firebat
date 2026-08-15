@@ -169,6 +169,44 @@ pub fn thin_parameters() -> serde_json::Value {
     })
 }
 
+/// The one rung every module is executed through.
+///
+/// Thirty-eight `sysmod_<name>` tools were published on both transports — 28,851 characters of
+/// always-resident tool list for a surface the ladder already answers, and a way around the
+/// ladder besides: a module visible in the list can be called without discovering anything. The
+/// tools stay registered (cached client lists, stored plans and pipelines call them by name) and
+/// leave the published list.
+pub const MODULE_EXEC_TOOL: &str = "run_module_action";
+
+/// The executor's published form. `module` is the only thing it can name in advance — everything
+/// else is per action and comes from `get_action_schema`, which is the point.
+pub fn exec_parameters() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "required": ["module"],
+        "additionalProperties": true,
+        "properties": {
+            "module": {
+                "type": "string",
+                "description": "Module name as search_module_actions spelled it (kakao-map, korea-invest-trade)."
+            },
+            "action": {
+                "type": "string",
+                "description": "The action, for modules that take one. Omit for single-action modules."
+            }
+        },
+        "description": "Runs one module action. search_module_actions(query) → get_action_schema(module, action) → call with `module`, `action` and that schema's parameters at the top level."
+    })
+}
+
+/// The executor's description — what the rung is, in one line.
+pub fn exec_description() -> String {
+    "Runs an action on any system module — market data, weather, maps, documents, messaging, \
+     analysis. Find one with search_module_actions(query), then get_action_schema(module, action) \
+     for its parameters."
+        .to_string()
+}
+
 /// The parameters to publish for one module right now — the single decision both transports make.
 ///
 /// Two transports asking the same question two ways is how the surfaces drifted before; this is

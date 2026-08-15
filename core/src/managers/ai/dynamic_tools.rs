@@ -102,7 +102,15 @@ impl DynamicToolRegistry {
     /// The single resolution point for the FC path. Registration recorded the pairing; nothing
     /// downstream reconstructs it from spelling. `args` is unused while one tool means one
     /// module — it is the parameter a unified executor reads.
-    pub async fn module_for_call(&self, tool: &str, _args: &serde_json::Value) -> Option<String> {
+    pub async fn module_for_call(&self, tool: &str, args: &serde_json::Value) -> Option<String> {
+        if tool == crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL {
+            return args
+                .get("module")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+        }
         self.tool_modules.read().await.get(tool).cloned()
     }
 

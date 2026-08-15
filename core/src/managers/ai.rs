@@ -2305,6 +2305,11 @@ impl AiManager {
                     }
                 }
             }
+            // The per-module tools leave the PUBLISHED list — they remain registered, so a stored
+            // plan step, a cron pipeline or a replayed call still dispatches by name. Every module
+            // is reached through `run_module_action`, which the core registry publishes, and which
+            // cannot be called without naming a module the discovery step handed over.
+            tools_built.retain(|t| !t.name.starts_with("sysmod_"));
             auto_tools = tools_built;
             &auto_tools
         } else {
