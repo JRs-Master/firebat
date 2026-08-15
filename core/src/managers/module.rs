@@ -2506,6 +2506,48 @@ impl ModuleManager {
         None
     }
 
+    /// A fingerprint of every module directory's contents — file names, sizes and mtimes, with no
+    /// file read and no JSON parse.
+    ///
+    /// The action catalog needs to tell an untouched five minutes from an edited one. Before this
+    /// it could not, so it re-read and re-parsed forty configs on a timer and a module installed
+    /// at runtime still had to wait out the clock. Whole directories rather than `config.json`
+    /// alone, because a module's action catalog may live in a separate file the config only names;
+    /// listing the directory covers both without this having to know which.
+    ///
+    /// A directory that cannot be listed contributes nothing, which is correct in both directions:
+    /// it is also contributing nothing to `load()`, and it starts contributing the moment it
+    /// appears.
+    pub async fn module_dirs_fingerprint(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for root in ["system/modules", "system/services", "user/modules"] {
+            let Ok(dirs) = self.storage.list_dir(root).await else {
+                continue;
+            };
+            for d in dirs.iter().filter(|d| d.is_directory) {
+                let path = format!("{}/{}", root, d.name);
+                let Ok(files) = self.storage.list_dir(&path).await else {
+                    continue;
+                };
+                for f in files.iter().filter(|f| !f.is_directory) {
+                    parts.push(format!(
+                        "{}/{}:{}:{}",
+                        path,
+                        f.name,
+                        f.size.unwrap_or(0),
+                        f.modified_ms.unwrap_or(0)
+                    ));
+                }
+            }
+        }
+        // Directory order is filesystem order, which is not stable across machines or rescans.
+        parts.sort();
+        use sha1::{Digest, Sha1};
+        let mut hasher = Sha1::new();
+        hasher.update(parts.join("\n").as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
     /// config.json `packages` 배열 → background install. `upgrade=true` 시 `pip install --upgrade`.
     /// 반환값: spawn 한 StatusManager job_id 목록 (이미 설치 / 진행 중 패키지 제외).
     pub async fn install_packages(

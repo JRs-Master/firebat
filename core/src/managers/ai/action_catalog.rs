@@ -29,8 +29,9 @@ use crate::managers::module::ModuleManager;
 use crate::ports::{IEmbedderCachePort, IEmbedderPort};
 use crate::utils::pending_tools::requires_approval_value;
 
-/// Rebuild TTL — config/actions.json changes land via git pull; embeddings are hash-cached so a
-/// rebuild only re-reads JSON (re-embeds nothing when unchanged).
+/// How long to go without asking whether the module tree changed — a debounce, not a rebuild
+/// schedule. Past it, `ModuleActionSource::fingerprint` is compared and only a different answer
+/// costs a rebuild; a toggle, which moves nothing on disk, announces itself through `invalidate`.
 const REBUILD_TTL: Duration = Duration::from_secs(300);
 
 /// What a module is actually CALLED — its name plus whatever people call it instead.
@@ -986,6 +987,11 @@ impl CatalogSource for ModuleActionSource {
         }
         entries
     }
+
+    /// Everything `load` reads lives in the module directories, so their listing is the answer.
+    async fn fingerprint(&self) -> Option<String> {
+        Some(self.module.module_dirs_fingerprint().await)
+    }
 }
 
 /// 모듈을 실행하는 도구 이름 — 발견 응답이 모델에게 건네는 그 이름.
@@ -1507,6 +1513,13 @@ impl ModuleActionCatalog {
     /// how the hub scope filter drifted from the dispatch gate before it was centralized.
     pub fn module_enabled(&self, module: &str) -> bool {
         self.module.is_enabled(module)
+    }
+
+    /// Force the next read to rebuild — for a change the fingerprint cannot see because it is not
+    /// on disk. Installing a module through the UI writes files (the fingerprint catches that);
+    /// enabling one writes a vault key, and nothing on disk moves.
+    pub async fn invalidate(&self) {
+        self.catalog.invalidate().await;
     }
 
     /// Distinct cataloged module names — lets search/schema responses say definitively

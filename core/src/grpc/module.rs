@@ -35,11 +35,16 @@ pub struct ModuleServiceImpl {
     dynamic_tools: Option<Arc<DynamicToolRegistry>>,
     /// 옵션 — 토글 시 모듈이 선언한 스케줄 등록/철회. 스케줄러는 Core 를 통해서만 닿는다.
     core: Option<Arc<crate::core_facade::Core>>,
+    /// The discovery index. Its rebuild trigger is a fingerprint of the module directories, and a
+    /// toggle writes a vault key — nothing on disk moves — so the fingerprint cannot see it. The
+    /// tool registry has always been invalidated here; the index is the other half of the same
+    /// event, and without it a module switched on stayed unsearchable until the debounce expired.
+    action_catalog: Option<Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>>,
 }
 
 impl ModuleServiceImpl {
     pub fn new(manager: Arc<ModuleManager>) -> Self {
-        Self { manager, dynamic_tools: None, core: None }
+        Self { manager, dynamic_tools: None, core: None, action_catalog: None }
     }
 
     /// 토글 / settings 변경 직후 AI 가 즉시 갱신된 도구 목록 인식하도록 cache invalidate 연결.
@@ -54,9 +59,23 @@ impl ModuleServiceImpl {
         self
     }
 
+    pub fn with_action_catalog(
+        mut self,
+        catalog: Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>,
+    ) -> Self {
+        self.action_catalog = Some(catalog);
+        self
+    }
+
+    /// Both surfaces a toggle changes: which tools exist, and which actions can be found. They are
+    /// invalidated together because a model that can search an action it cannot call — or call one
+    /// it cannot find — is looking at two answers to the same question.
     async fn invalidate_tools_cache(&self) {
         if let Some(reg) = &self.dynamic_tools {
             reg.invalidate().await;
+        }
+        if let Some(cat) = &self.action_catalog {
+            cat.invalidate().await;
         }
     }
 }

@@ -31,7 +31,8 @@ use crate::managers::tool::{make_handler, ToolDefinition, ToolListFilter, ToolMa
 use crate::ports::InfraResult;
 use crate::utils::grounding::GroundedParam;
 
-/// Cache TTL — 옛 TS 60초 1:1.
+/// How long to go without asking whether the module tree changed. Once a rebuild interval (옛 TS
+/// 60초 1:1), now a debounce on the fingerprint check — see `refresh`.
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// 동적 도구 source 식별자 — ToolManager.unregister 시 filter 용.
@@ -44,6 +45,8 @@ pub struct DynamicToolRegistry {
     mcp: Arc<McpManager>,
     /// 마지막 refresh 시각. None = 아직 refresh 안 함.
     last_refresh: Mutex<Option<Instant>>,
+    /// The module tree's fingerprint as of the last rebuild — see `refresh`.
+    fingerprint: Mutex<Option<String>>,
     /// Published tool name → the module it runs. The ONE place that mapping lives on this path.
     ///
     /// Every gate below needs a module, and each of them used to recover one by cutting the
@@ -84,6 +87,7 @@ impl DynamicToolRegistry {
             module,
             mcp,
             last_refresh: Mutex::new(None),
+            fingerprint: Mutex::new(None),
             tool_modules: RwLock::new(HashMap::new()),
             grounding: RwLock::new(HashMap::new()),
             approval: RwLock::new(HashMap::new()),
@@ -212,15 +216,32 @@ impl DynamicToolRegistry {
         map.get(module).cloned()
     }
 
-    /// 60초 cache 검사 후 sysmod_* / mcp_* 동적 도구 재등록. cache hit 시 즉시 return.
+    /// Re-register the `sysmod_*` / `mcp_*` tools when something has actually changed.
+    ///
+    /// This used to rebuild every 60 seconds unconditionally: forty configs re-read and re-parsed,
+    /// and every connected MCP server re-listed, whether or not a byte had moved. The window is now
+    /// a debounce on a cheap question — has the module tree changed? — and the rebuild happens only
+    /// when the answer is yes. The two changes a directory listing cannot see are both announced
+    /// instead: `ModuleService` invalidates on a toggle (a vault write), `McpService` on a server
+    /// added or removed. Hand-editing `mcp.json` under the server now needs a restart, which is
+    /// what every other config on that box already needs.
     pub async fn refresh(&self) {
-        // cache 검사 — 60초 안이면 skip
         {
             let last = self.last_refresh.lock().await;
             if let Some(t) = *last {
                 if t.elapsed() < CACHE_TTL {
                     return;
                 }
+            }
+        }
+        // Past the debounce: a listing walk, not a rebuild. Only a changed tree pays for the rest.
+        let fresh = self.module.module_dirs_fingerprint().await;
+        {
+            let seen = self.fingerprint.lock().await;
+            if seen.as_deref() == Some(fresh.as_str()) {
+                drop(seen);
+                *self.last_refresh.lock().await = Some(Instant::now());
+                return;
             }
         }
 
@@ -348,12 +369,16 @@ impl DynamicToolRegistry {
         *self.known.write().await = new_known;
 
         // 5. cache 갱신
+        *self.fingerprint.lock().await = Some(fresh);
         let mut last = self.last_refresh.lock().await;
         *last = Some(Instant::now());
     }
 
     /// 강제 invalidation — sysmod 활성/비활성 토글 또는 외부 MCP 서버 추가/제거 시 호출.
+    /// The fingerprint goes too: a toggle leaves the module tree byte-identical, so keeping it
+    /// would make the very next refresh decide nothing had changed.
     pub async fn invalidate(&self) {
+        *self.fingerprint.lock().await = None;
         let mut last = self.last_refresh.lock().await;
         *last = None;
     }

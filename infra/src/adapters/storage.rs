@@ -108,9 +108,20 @@ impl IStoragePort for LocalStorageAdapter {
                 .file_type()
                 .await
                 .map_err(|e| format!("file_type 실패: {e}"))?;
+            // Metadata is best-effort: a listing must not fail because one entry vanished between
+            // the scan and the stat, and a store that reports no mtime simply reports None.
+            let meta = entry.metadata().await.ok();
+            let modified_ms = meta.as_ref().and_then(|m| m.modified().ok()).and_then(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_millis() as i64)
+            });
+            let size = meta.as_ref().map(|m| m.len());
             entries.push(DirEntry {
                 name,
                 is_directory: file_type.is_dir(),
+                modified_ms,
+                size,
             });
         }
         Ok(entries)

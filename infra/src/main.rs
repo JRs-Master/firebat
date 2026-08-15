@@ -1356,6 +1356,9 @@ async fn main() -> Result<()> {
         grpc::project::ProjectServiceImpl::new(project_manager, page_manager.clone());
     let module_service = grpc::module::ModuleServiceImpl::new(module_manager.clone())
         .with_dynamic_tools(dynamic_tools_registry.clone())
+        // The discovery index rebuilds on a fingerprint of the module directories; a toggle moves
+        // nothing on disk, so it has to be told.
+        .with_action_catalog(action_catalog.clone())
         .with_core(core.clone());
     // modules = module 블록 publish-bake (pending 승인 commit·hub·admin 라우트 전부 이 Save 경유).
     let page_service =
@@ -1371,7 +1374,10 @@ async fn main() -> Result<()> {
         grpc::conversation::ConversationServiceImpl::new(conversation_manager.clone())
             .with_db(db.clone())
             .with_media(media_manager.clone());
-    let mcp_service = grpc::mcp::McpServiceImpl::new(mcp_manager.clone());
+    // Adding or removing a server changes the published tool list, and the registry's rescan is
+    // now gated on the module tree's fingerprint, which says nothing about MCP servers.
+    let mcp_service = grpc::mcp::McpServiceImpl::new(mcp_manager.clone())
+        .with_dynamic_tools(dynamic_tools_registry.clone());
     let entity_service = grpc::entity::EntityServiceImpl::new(entity_manager.clone());
     let episodic_service = grpc::episodic::EpisodicServiceImpl::new(episodic_manager.clone());
     let consolidation_service =

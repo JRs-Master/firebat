@@ -18,6 +18,16 @@ pub type InfraResult<T> = Result<T, String>;
 pub struct DirEntry {
     pub name: String,
     pub is_directory: bool,
+    /// Last-modified time, epoch ms, when the backing store reports one.
+    ///
+    /// Here so a caller can ask "did this change?" without reading and parsing every file. The
+    /// action catalog was rebuilding on a five-minute timer for want of exactly this: no way to
+    /// tell a quiet five minutes from an edited one, so it re-read forty configs either way and a
+    /// module added at runtime still waited out the clock.
+    pub modified_ms: Option<i64>,
+    /// Size in bytes, from the same metadata call as `modified_ms`. Paired with it because a
+    /// same-second edit leaves the timestamp alone; together they miss far less.
+    pub size: Option<u64>,
 }
 
 /// 바이너리 파일 read 결과 — base64 + mime + size. 옛 TS readBinary 1:1.

@@ -143,3 +143,37 @@ async fn switching_a_module_off_removes_its_tool() {
         "switching it off withdraws the tool"
     );
 }
+
+/// A toggle leaves the module tree byte-identical, so the rebuild trigger cannot be the
+/// fingerprint alone — `invalidate` has to clear it too, or the very next refresh concludes
+/// nothing changed and the withdrawn tool comes back.
+#[tokio::test]
+async fn invalidate_rebuilds_even_though_the_tree_is_unchanged() {
+    let (dir, tools, module, registry) = setup();
+    write_module(dir.path(), "paper-trade", &trading_config());
+    module.set_settings("paper-trade", &serde_json::json!({ "enabled": false }));
+    registry.refresh().await;
+    assert!(!tool_names(&tools).iter().any(|n| n.contains("paper-trade")));
+
+    module.set_settings("paper-trade", &serde_json::json!({ "enabled": true }));
+    registry.invalidate().await;
+    registry.refresh().await;
+    assert!(
+        tool_names(&tools).iter().any(|n| n.contains("paper-trade")),
+        "switching it back on republishes the tool"
+    );
+}
+
+/// The other trigger: a module that appears on disk. Nothing announces it, so the fingerprint is
+/// what has to notice.
+#[tokio::test]
+async fn a_module_written_after_the_build_is_registered_on_the_next_rebuild() {
+    let (dir, tools, _module, registry) = setup();
+    registry.refresh().await;
+    assert!(tool_names(&tools).is_empty());
+
+    write_module(dir.path(), "paper-trade", &trading_config());
+    registry.invalidate().await; // stand in for the debounce expiring
+    registry.refresh().await;
+    assert!(tool_names(&tools).iter().any(|n| n.contains("paper-trade")));
+}

@@ -699,6 +699,17 @@ impl SemanticCatalog {
 #[async_trait::async_trait]
 pub trait CatalogSource: Send + Sync {
     async fn load(&self) -> Vec<CatalogEntry>;
+
+    /// A cheap value that changes whenever `load()` would return something different — for a
+    /// disk-backed source, the names, sizes and mtimes of the files it reads.
+    ///
+    /// `None` means the source cannot answer, and the TTL decides alone (the old behaviour).
+    /// A source that CAN answer turns the timer into a debounce on this check instead of a
+    /// rebuild schedule: an untouched catalog is never re-read, and an edited one does not wait
+    /// out the remaining clock.
+    async fn fingerprint(&self) -> Option<String> {
+        None
+    }
 }
 
 /// SemanticCatalog + a TTL-gated source rebuild — the standard shape for dynamic domains
@@ -709,6 +720,8 @@ pub struct RefreshingCatalog {
     source: Arc<dyn CatalogSource>,
     ttl: std::time::Duration,
     built_at: tokio::sync::Mutex<Option<std::time::Instant>>,
+    /// The source's fingerprint as of the last build — see `CatalogSource::fingerprint`.
+    fingerprint: tokio::sync::Mutex<Option<String>>,
 }
 
 impl RefreshingCatalog {
@@ -724,6 +737,7 @@ impl RefreshingCatalog {
             source,
             ttl,
             built_at: tokio::sync::Mutex::new(None),
+            fingerprint: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -748,14 +762,33 @@ impl RefreshingCatalog {
         {
             let built = self.built_at.lock().await;
             if let Some(t) = *built {
+                // Inside the window nothing is checked at all — the TTL's remaining job is to keep
+                // a burst of calls in one turn from stat-walking the source once each.
                 if t.elapsed() < self.ttl {
                     return;
                 }
             }
         }
+        // Past the window, the question is whether anything actually changed. A source that can
+        // answer saves the whole rebuild when the answer is no, and — more to the point — a source
+        // that says yes is rebuilt now rather than at the end of some later window.
+        let fresh = self.source.fingerprint().await;
+        if fresh.is_some() && fresh == *self.fingerprint.lock().await {
+            *self.built_at.lock().await = Some(std::time::Instant::now());
+            return;
+        }
         let entries = self.source.load().await;
         self.catalog.set_entries(entries).await;
+        *self.fingerprint.lock().await = fresh;
         *self.built_at.lock().await = Some(std::time::Instant::now());
+    }
+
+    /// Drop the build so the next read reloads — for changes the fingerprint cannot see, which is
+    /// anything not on disk. The enable toggle is a vault write; `ModuleService` already calls the
+    /// dynamic-tool registry's `invalidate` on it and this is its other half.
+    pub async fn invalidate(&self) {
+        *self.built_at.lock().await = None;
+        *self.fingerprint.lock().await = None;
     }
 
     pub async fn query(

@@ -19,11 +19,34 @@ use crate::proto::{
 
 pub struct McpServiceImpl {
     manager: Arc<McpManager>,
+    /// Optional — adding or removing a server changes the published tool list, so the dynamic
+    /// registry is told rather than left to notice.
+    ///
+    /// `DynamicToolRegistry::invalidate` has always documented "external MCP server added/removed"
+    /// as one of its triggers, and no caller ever did it: the periodic rescan covered the gap by
+    /// re-listing every server's tools on a timer. Now that the rescan is gated on a fingerprint
+    /// of the module directories — which says nothing about MCP servers — the documented trigger
+    /// has to be a real one.
+    dynamic_tools: Option<Arc<crate::managers::ai::dynamic_tools::DynamicToolRegistry>>,
 }
 
 impl McpServiceImpl {
     pub fn new(manager: Arc<McpManager>) -> Self {
-        Self { manager }
+        Self { manager, dynamic_tools: None }
+    }
+
+    pub fn with_dynamic_tools(
+        mut self,
+        registry: Arc<crate::managers::ai::dynamic_tools::DynamicToolRegistry>,
+    ) -> Self {
+        self.dynamic_tools = Some(registry);
+        self
+    }
+
+    async fn invalidate_tools_cache(&self) {
+        if let Some(reg) = &self.dynamic_tools {
+            reg.invalidate().await;
+        }
     }
 }
 
@@ -91,6 +114,7 @@ impl McpService for McpServiceImpl {
             .add_server(config)
             .await
             .map_err(TonicStatus::internal)?;
+        self.invalidate_tools_cache().await;
         Ok(Response::new(McpAddServerResponse {}))
     }
 
@@ -103,6 +127,7 @@ impl McpService for McpServiceImpl {
             .remove_server(&name)
             .await
             .map_err(TonicStatus::internal)?;
+        self.invalidate_tools_cache().await;
         Ok(Response::new(McpRemoveServerResponse {}))
     }
 
