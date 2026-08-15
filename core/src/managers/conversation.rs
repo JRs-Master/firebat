@@ -142,6 +142,13 @@ pub struct ConversationManager {
     /// IEmbedderPort 옵션 — 설정되어 있으면 임베딩 sync + 검색 활성. 없으면 stub.
     embedder: Option<Arc<dyn IEmbedderPort>>,
     log: Option<Arc<dyn ILogPort>>,
+    /// The sysmod result cache, so a conversation takes its working set with it when it is
+    /// permanently deleted. A chat's cached rows are reachable for as long as the conversation is,
+    /// which is why they are owned rather than timed — see `utils::cache_owner`.
+    ///
+    /// ⚠️ Wired to the explicit delete only. The 30-day retention sweep hard-deletes rows without
+    /// naming them, so entries owned by a conversation it removes are left to the runaway cap.
+    cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
 }
 
 impl ConversationManager {
@@ -150,7 +157,17 @@ impl ConversationManager {
             db,
             embedder: None,
             log: None,
+            cache: None,
         }
+    }
+
+    /// Cache handle — a permanently deleted conversation takes its cached tool results with it.
+    pub fn with_cache(
+        mut self,
+        cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
+    ) -> Self {
+        self.cache = Some(cache);
+        self
     }
 
     /// Embedder 주입 — 주입되면 메시지 sync + cosine 검색 활성. 옛 TS 의 IEmbedderPort 의존성 위치.
@@ -407,6 +424,11 @@ impl ConversationManager {
     /// 휴지통에서 명시 클릭 또는 30일 retention cron 이 호출.
     pub fn permanent_delete(&self, owner: &str, id: &str) -> InfraResult<()> {
         if self.db.permanent_delete_conversation(owner, id) {
+            // The conversation's cached tool results are owned by it, so this is what ends them —
+            // no clock does. See `utils::cache_owner`.
+            if let Some(cache) = &self.cache {
+                cache.drop_owner(&crate::utils::cache_owner::conversation(id));
+            }
             Ok(())
         } else {
             Err(crate::i18n::t(

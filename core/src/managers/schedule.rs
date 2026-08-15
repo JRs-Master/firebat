@@ -35,6 +35,35 @@ pub struct ScheduleHooks {
     pub status: Arc<StatusManager>,
     /// EventManager — cron 완료 SSE 발행 (옛 TS core/index.ts:1384 notifyCronComplete 패턴).
     pub event: Arc<EventManager>,
+    /// The sysmod result cache, so a run can take its own entries with it when it ends.
+    ///
+    /// A run's cache keys are reachable by exactly one reader — the run — and it is gone the
+    /// moment this returns. They used to sit for two hours on a clock that knew nothing about
+    /// that, ~900 of them per half hour from the autotrade loops, each one re-read and re-parsed
+    /// by the sweeper every 60 seconds. `None` = the old behaviour (time-owned).
+    pub cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
+}
+
+/// Run one cron execution under both identities it has: the job (approval gates read this) and
+/// the cache owner (its entries die with the run). One helper so the three modes cannot drift —
+/// a mode that entered only the first would leave its cache behind forever, since an owned entry
+/// is not the sweeper's to delete.
+async fn in_cron_scope<F: std::future::Future>(
+    hooks: Option<&ScheduleHooks>,
+    job_id: &str,
+    run_id: &str,
+    fut: F,
+) -> F::Output {
+    let owner = crate::utils::cache_owner::cron_run(job_id, run_id);
+    let out = crate::utils::cron_context::scope(
+        job_id.to_string(),
+        crate::utils::cache_owner::scope(owner.clone(), fut),
+    )
+    .await;
+    if let Some(cache) = hooks.and_then(|h| h.cache.as_ref()) {
+        cache.drop_owner(&owner);
+    }
+    out
 }
 
 pub struct ScheduleManager {
@@ -430,6 +459,9 @@ impl ScheduleManager {
         let mut output: Option<serde_json::Value> = None;
         let mut steps_total: Option<i64> = None;
         let mut steps_executed: Option<i64> = None;
+        // Identifies THIS execution, so finishing it cannot delete the cache of a run that
+        // overlaps it (a slow 5-minute loop meeting the next tick).
+        let run_id = crate::utils::time::now_ms().to_string();
 
         let hooks = self.hooks.as_ref();
 
@@ -472,8 +504,10 @@ impl ScheduleManager {
                 // flag — a chat turn running at the same moment must not inherit this job's
                 // approval bypass. The CLI's own MCP loop gets the same identity via a per-turn
                 // token (issued in ai.rs when `cron_agent` is set).
-                match crate::utils::cron_context::scope(
-                    info.job_id.clone(),
+                match in_cron_scope(
+                    self.hooks.as_ref(),
+                    &info.job_id,
+                    &run_id,
                     core.run_cron_agent(&prompt, &ai_opts),
                 )
                 .await
@@ -540,8 +574,10 @@ impl ScheduleManager {
                 // (사용자 확정 2026-07-07). The identity is scoped to THIS job's execution future
                 // — the unattended gates read it off the await chain, and a chat turn running at
                 // the same moment inherits nothing (the process-wide counter's measured hole).
-                let pipe_result = crate::utils::cron_context::scope(
-                    info.job_id.clone(),
+                let pipe_result = in_cron_scope(
+                    self.hooks.as_ref(),
+                    &info.job_id,
+                    &run_id,
                     core.run_cron_pipeline(steps),
                 )
                 .await;
@@ -604,8 +640,10 @@ impl ScheduleManager {
                 // Same standing as the agent and pipeline modes: approving the schedule approved
                 // what the job does. This mode was the one without the guard, so a module that
                 // needed an approval-gated action here got a card nobody was present to answer.
-                match crate::utils::cron_context::scope(
-                    info.job_id.clone(),
+                match in_cron_scope(
+                    self.hooks.as_ref(),
+                    &info.job_id,
+                    &run_id,
                     h.sandbox
                         .execute(&info.target_path, &input, &SandboxExecuteOpts::default()),
                 )

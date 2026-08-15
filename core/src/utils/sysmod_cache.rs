@@ -44,8 +44,25 @@ pub struct CacheMeta {
     pub record_count: usize,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
+    /// When the clock would delete this — meaningful only for a time-owned entry (`owner: None`).
+    /// An owned entry keeps the field so an old reader still gets a number, but nothing enforces
+    /// it: `owner` decides, and the number would be a second, disagreeing answer.
     #[serde(rename = "expiresAt")]
     pub expires_at: i64,
+    /// Whose working set this belongs to — `conv:<id>`, `cron:<job>:<run>`, or `None` for nobody.
+    ///
+    /// `None` is what every entry written before this existed says, and it means the old
+    /// behaviour: the sweeper's clock owns it. See `utils::cache_owner`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+impl CacheMeta {
+    /// Whether this entry is past its end. An owned entry has no end in time — the scope that owns
+    /// it does, and `drop_owner` is what fires then.
+    fn is_expired(&self, now: i64) -> bool {
+        self.owner.is_none() && now >= self.expires_at
+    }
 }
 
 pub struct SysmodCacheAdapter {
@@ -113,7 +130,9 @@ impl SysmodCacheAdapter {
             let Some(key) = name.strip_suffix(".meta.json") else { continue };
             let Ok(raw) = std::fs::read_to_string(e.path()) else { continue };
             let Ok(meta) = serde_json::from_str::<CacheMeta>(&raw) else { continue };
-            if now > meta.expires_at + SWEEP_GRACE_MS {
+            // Owned entries are not the clock's to delete — their scope ending is (`drop_owner`).
+            // The runaway cap in `touch` is the only backstop if a scope never ends.
+            if meta.owner.is_none() && now > meta.expires_at + SWEEP_GRACE_MS {
                 let _ = self.drop_key(key);
             }
         }
@@ -173,6 +192,9 @@ impl SysmodCacheAdapter {
             record_count: records.len(),
             created_at: now,
             expires_at,
+            // Ambient — the four call paths that reach here know nothing about conversations or
+            // cron runs, and should not have to. See `utils::cache_owner`.
+            owner: crate::utils::cache_owner::current(),
         };
         let meta_raw = serde_json::to_string_pretty(&meta)
             .map_err(|e| format!("meta 직렬화: {e}"))?;
@@ -244,7 +266,8 @@ impl SysmodCacheAdapter {
     pub fn meta(&self, key: &str) -> Option<CacheMeta> {
         let raw = std::fs::read_to_string(self.meta_path(key)).ok()?;
         let meta: CacheMeta = serde_json::from_str(&raw).ok()?;
-        (meta.expires_at > now_ms()).then_some(meta)
+        let now = now_ms();
+        (!meta.is_expired(now)).then_some(meta)
     }
 
     fn is_valid(&self, key: &str) -> bool {
@@ -428,6 +451,37 @@ impl SysmodCacheAdapter {
         }))
     }
 
+    /// Delete every entry an owner had — the one call any trigger makes.
+    ///
+    /// A cron run calls it when it returns, a conversation calls it when it is permanently
+    /// deleted, and anything added later calls the same thing. Returns how many pairs went, so a
+    /// caller can log a number instead of hoping.
+    pub fn drop_owner(&self, owner: &str) -> usize {
+        let owner = owner.trim();
+        if owner.is_empty() {
+            return 0; // an empty owner would match nothing, but say so rather than scan
+        }
+        let Ok(entries) = std::fs::read_dir(&self.cache_dir) else {
+            return 0;
+        };
+        let mut dropped = 0;
+        for e in entries.flatten() {
+            let name = e.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Some(key) = name.strip_suffix(".meta.json") else { continue };
+            let Ok(raw) = std::fs::read_to_string(e.path()) else { continue };
+            let Ok(meta) = serde_json::from_str::<CacheMeta>(&raw) else { continue };
+            if meta.owner.as_deref() == Some(owner) {
+                let _ = self.drop_key(key);
+                dropped += 1;
+            }
+        }
+        if dropped > 0 {
+            tracing::info!(target: "cache", owner = owner, dropped, "owner scope ended");
+        }
+        dropped
+    }
+
     pub fn drop_key(&self, key: &str) -> InfraResult<()> {
         let _ = std::fs::remove_file(self.jsonl_path(key));
         let _ = std::fs::remove_file(self.meta_path(key));
@@ -495,6 +549,56 @@ mod tests {
         assert_eq!(result["total"], 3);
         assert_eq!(result["records"].as_array().unwrap().len(), 2);
         assert_eq!(result["records"][0]["id"], 2);
+    }
+
+    /// An owned entry is not the clock's to delete — its scope ending is.
+    #[tokio::test]
+    async fn an_owned_entry_outlives_the_clock_and_dies_with_its_owner() {
+        let (c, _dir) = cache();
+        let owner = crate::utils::cache_owner::cron_run("btc-trend", "17");
+        let key = crate::utils::cache_owner::scope(owner.clone(), async {
+            // A TTL already in the past: a time-owned entry would be gone on the next read.
+            c.data("upbit", "candles", serde_json::json!({}),
+                   vec![serde_json::json!({"c": 1})], Some(-1))
+                .unwrap()
+        })
+        .await;
+
+        assert!(c.meta(&key).is_some(), "the owner decides, not expires_at");
+        assert_eq!(c.drop_owner(&owner), 1);
+        assert!(c.meta(&key).is_none(), "the scope ended, so the entry did");
+    }
+
+    /// Two runs of the same job must not delete each other — the run id is what separates them.
+    #[tokio::test]
+    async fn ending_one_run_leaves_the_other_runs_entries() {
+        let (c, _dir) = cache();
+        let mut keys = Vec::new();
+        for run in ["1", "2"] {
+            let owner = crate::utils::cache_owner::cron_run("btc-trend", run);
+            keys.push(
+                crate::utils::cache_owner::scope(owner, async {
+                    c.data("upbit", "candles", serde_json::json!({"r": run}),
+                           vec![serde_json::json!({"c": 1})], None)
+                        .unwrap()
+                })
+                .await,
+            );
+        }
+        c.drop_owner(&crate::utils::cache_owner::cron_run("btc-trend", "1"));
+        assert!(c.meta(&keys[0]).is_none());
+        assert!(c.meta(&keys[1]).is_some(), "run 2 is still running");
+    }
+
+    /// Entries written outside any scope keep the old behaviour exactly.
+    #[test]
+    fn an_unowned_entry_still_expires_on_the_clock() {
+        let (c, _dir) = cache();
+        let key = c
+            .data("test", "list", serde_json::json!({}),
+                  vec![serde_json::json!({"a": 1})], Some(-1))
+            .unwrap();
+        assert!(c.meta(&key).is_none(), "no owner = the clock decides");
     }
 
     #[test]

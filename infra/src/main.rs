@@ -633,6 +633,8 @@ async fn main() -> Result<()> {
     let conversation_manager = Arc::new(
         ConversationManager::new(db.clone())
             .with_embedder(embedder.clone())
+            // A conversation owns its cached tool results; deleting it for good ends them.
+            .with_cache(cache_adapter.clone())
             .with_log(Arc::new(firebat_core::utils::category_logger::CategoryLogger::new(
                 logger.clone(),
                 "conversation",
@@ -1084,6 +1086,8 @@ async fn main() -> Result<()> {
                 )),
                 status: status_manager.clone(),
                 event: event_manager.clone(),
+                // So a finished run takes its cache entries with it — see `in_cron_scope`.
+                cache: Some(cache_adapter.clone()),
             },
         ),
     );
