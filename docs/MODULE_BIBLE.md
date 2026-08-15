@@ -267,7 +267,7 @@ node scripts/gen.mjs             # _apis.json → config + index
 - `actions.json` 엔트리 = `{ id, name, description, domain?, tags?: [...], params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
   - ⚠️ **`envelope` 은 폐기** (2026-08-15). 호출 봉투를 산문으로 적던 자리인데, `get_action_schema` 가 **조립된 `call`**(도구명 + `action` 채움 + `fill` = 없으면 거부되는 값 이름)을 내주므로 문장에서 모양을 유추할 이유가 없어졌다.
 
-- **⭐ 액션이 여럿이면 카탈로그를 쓴다 (신규 모듈 필수)**. 파생 폴백은 authoring 0 이 목적이지 품질 목표가 아니다 — 파생은 액션별 설명이 없어서 **`action.description` 덩어리에서 조각을 긁고**, 못 찾으면 모듈 설명 첫 절을 쓰고, 거기에 파라미터 enum 값을 덧붙인다. 액션이 많을수록 문서가 서로 닮아 **검색이 못 가른다**(2026-08-06 upbit: 캔들 일/주/월 세 액션이 같은 문서가 됐다). 2026-08-15 실측 = 35모듈 중 **18개가 카탈로그 없음**, 그중 dart 82액션·upbit-trade 33·kma-weather 28.
+- **⭐ 액션이 여럿이면 카탈로그를 쓴다 (신규 모듈 필수)**. 파생 폴백은 authoring 0 이 목적이지 품질 목표가 아니다 — 파생은 액션별 설명이 없어서 **`action.description` 덩어리에서 조각을 긁고**, 못 찾으면 모듈 설명을 쓰고, 거기에 파라미터 enum 값을 덧붙인다. 액션이 많을수록 문서가 서로 닮아 **검색이 못 가른다**(2026-08-06 upbit: 캔들 일/주/월 세 액션이 같은 문서가 됐다). 2026-08-15 실측 = 35모듈 중 **18개가 카탈로그 없음**, 그중 dart 82액션·upbit-trade 33·kma-weather 28.
   - 이미 `action.description` 에 `이름=설명 / 이름=설명` 형식으로 적어 뒀다면 그걸 **쪼개서** `actions.json` 으로 옮기면 된다(dart 는 82개 전부가 그 형식이라 커버리지 100%).
 
 - **`tags` 는 두 층이고 뜻이 다르다** (둘 다 **string 배열**, 둘 다 임베딩에 들어간다 — 2026-08-15)

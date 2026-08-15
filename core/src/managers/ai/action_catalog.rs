@@ -161,12 +161,17 @@ impl ModuleActionSource {
         // is the same one the list used to print, and it is already written to lead with capability
         // nouns rather than a provider name (2026-08-13, five modules rewritten), which is exactly
         // what makes it dense enough to repeat per action.
-        let module_clause = first_clause(
-            config
-                .get("description")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
+        // The document names both halves of what a row is: the module (name, description, tags)
+        // and the action (name, description, tags). The module NAME was the one piece missing —
+        // rows carried the action name and the module's prose, so a query that says the module
+        // out loud matched only through tags.
+        let module_clause = format!(
+            "{} {}",
+            name,
+            config.get("description").and_then(|v| v.as_str()).unwrap_or_default().trim()
+        )
+        .trim()
+        .to_string();
         let actions: Vec<serde_json::Value> = if let Some(file) =
             decl.get("file").and_then(|v| v.as_str())
         {
@@ -762,7 +767,7 @@ fn derive_entries_from_input(
                 // `search` on a news query, 2026-07-28 실측). Only the module's identity clause is
                 // kept as a last resort, never its type enumerations.
                 let mut sem = if frag.is_empty() {
-                    format!("{} {}", act, first_clause(&module_blurb))
+                    format!("{} {}", act, module_blurb.trim())
                 } else {
                     frag
                 };
@@ -777,7 +782,7 @@ fn derive_entries_from_input(
                 // (2026-08-06 실측). Keep the soup in `description` (the embedded document) and
                 // hand the row a clean `display`.
                 let display = if sem.trim().is_empty() {
-                    first_clause(&module_blurb)
+                    module_blurb.trim().to_string()
                 } else {
                     sem.trim().to_string()
                 };
@@ -811,17 +816,6 @@ fn derive_entries_from_input(
             vocab: tag_words.clone(),
         }],
     }
-}
-
-/// Module blurb's identity clause — up to the first `—`/`(`/`.`/newline. The rest is usually a
-/// type enumeration that homogenizes every action's document (see `derive_entries_from_input`).
-fn first_clause(blurb: &str) -> String {
-    let cut = blurb
-        .char_indices()
-        .find(|(_, c)| *c == '—' || *c == '(' || *c == '\n' || *c == '.')
-        .map(|(i, _)| i)
-        .unwrap_or(blurb.len());
-    blurb[..cut].trim().to_string()
 }
 
 /// Enum values declared on this action's params, flattened for the search document. Reads the
@@ -1678,13 +1672,19 @@ mod action_fragment_tests {
         assert_eq!(derive_action_fragment(blob2, "a-x", &["a-b-c", "a-x"]), "넓은 것");
     }
 
-    /// 모듈 공통 설명은 **첫 절만** — 뒤의 타입 열거가 모든 액션 문서를 동질화한다.
+    /// 모듈 설명은 **통째로** 색인된다 (2026-08-15). 첫 절만 떼던 것은 설명이 사용법까지
+    /// 담고 있어 타입 열거가 모든 액션 문서를 동질화하던 시절의 방어였는데, 설명을 "무슨
+    /// 모듈인가 + 형제와의 경계" 두 문장으로 줄이면서 그 전제가 사라졌다. 그리고 잘라 내던
+    /// 뒷문장이 바로 경계 문장 — 오선택을 막는 신호라 벡터에 있는 편이 낫다.
     #[test]
-    fn module_blurb_first_clause_only() {
-        let blurb = "네이버 검색 + 데이터랩 API — 텍스트·뉴스·해석 용도 (주가 뉴스·블로그·쇼핑 키워드). 검색: webkr/blog/news";
-        let c = first_clause(blurb);
-        assert_eq!(c, "네이버 검색 + 데이터랩 API");
-        assert!(!c.contains("뉴스"), "열거가 새면 안 된다: {c}");
+    fn module_blurb_enters_whole() {
+        let cfg = serde_json::json!({
+            "description": "키움증권 **시세·차트** — 국내주식 현재가·호가·차트. \
+                            **주문·잔고는 이 모듈에 없습니다 — `kiwoom-trade` 입니다.**"
+        });
+        let blurb = cfg["description"].as_str().unwrap().trim();
+        assert!(blurb.contains("kiwoom-trade"), "경계 문장이 문서에 남아야 한다");
+        assert!(blurb.contains("현재가"), "본문도 남아야 한다");
     }
 
     /// 액션 고유 열거값이 검색 문서에 들어가야 — `search` 의 type=[news, …] 가 뉴스 질의를 잡는다.
