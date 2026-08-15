@@ -216,10 +216,10 @@ mod thinking_tests {
 pub struct ThinkingLevel {
     /// 백엔드에 전달되는 값 ("none" / "minimal" / "low" / "medium" / "high" / "xhigh" / "max").
     ///
-    /// 표시 이름은 이 값에서 파생한다(frontend `thinkingLevelLabel`). 옛 `labels` 필드는 모델마다
-    /// 손으로 적혀 **158개**였고, 값 7종이 표기 17종으로 갈라져 있었다 — 같은 `high` 가 고른 모델에
-    /// 따라 "High" · "High (높음)" · "High (높음, 기본)" 로 보였다. 이름이 값의 함수라 목록을
-    /// 유지할 이유가 없다. [[feedback_derive_dont_maintain_lists]]
+    /// The display name is derived from this (frontend `thinkingLevelLabel`). The old `labels`
+    /// field was hand-written per model — **158 entries** turning 7 values into 17 spellings, so
+    /// the same `high` read as "High", "High (높음)" or "High (높음, 기본)" depending on which
+    /// model was selected. A name that is a function of the value is not a list worth keeping.
     pub value: String,
 }
 

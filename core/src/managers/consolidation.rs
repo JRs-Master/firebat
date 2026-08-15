@@ -436,11 +436,13 @@ impl ConsolidationManager {
         let full_prompt = format!("{}\n{}{}{}", prompt_with_lang, transcript, mem_note, ent_note);
         let worker_model = resolve_worker_model(hook.vault.as_ref(), model_id);
         let opts = LlmCallOpts {
-            // 배경 잡이라 제일 싸게. 옛날엔 `"minimal"` 이라는 의도 단어를 보내고 어댑터의
-            // `snap_level` 이 그 모델 값으로 바꿔 주기를 기대했는데, 고를 값은 이 모델의 선언에
-            // 이미 적혀 있으니 처음부터 그걸 고른다. `none` 은 건너뛴다 — 그건 "제일 싸게"가
-            // 아니라 "생각하지 마"라서, 31개 중 13개(solar-pro4·GPT-5.x 전 계열)에서 기억 추출이
-            // 통째로 무사고가 된다. 31개 전부 대조해 옛 스냅 결과와 일치함을 확인했다.
+            // As cheap as this model goes — it is a background job. It used to send the intent
+            // word `"minimal"` and hope the adapter's `snap_level` mapped it onto something this
+            // model declares; the value to pick is already written in that declaration, so it is
+            // picked directly. `none` is skipped: that means "do not think", not "think cheaply",
+            // and it is the first declared level for 13 of the 31 models (solar-pro4 and every
+            // GPT-5.x), which would run memory extraction with reasoning off. Verified equal to
+            // the old snap result on all 31.
             thinking_level: crate::llm::config::cheapest_thinking_level(&worker_model),
             model: Some(worker_model),
             // Structured output — schema-constrained JSON so extraction survives weak worker

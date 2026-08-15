@@ -82,6 +82,20 @@ CORE_BIBLE 제2장의 26개 포트와 짝을 이루는 infra 어댑터. **운영
   - **명시 envelope** (모듈 opt-in): 모듈이 `data._cache = {records, sysmod, action, params, ttlSec}` + 풍부한 preview 형제 필드 (예: yfinance 의 `firstDate` / `lastDate`) 를 포함하면 sandbox 가 이를 인식해 cache 저장 + `_cache` 제거 + `_cacheKey` / `_cacheMeta` 주입.
   - **auto-cache fallback** (모듈 변경 0): 명시 envelope 없을 때 sandbox 가 `data` 안에서 가장 큰 배열을 자동 추출 — **중첩 스캔** (2026-07-08 일반화: `data.result.records` 처럼 중첩돼 있어도 object 하강으로 찾음, 깊이 캡 4·배열 안 하강 X — 모듈 envelope 모양 무관). 길이 `AUTO_CACHE_THRESHOLD`(30) 이상이면 cache 저장 + 첫 `AUTO_CACHE_PREVIEW`(5) 개로 in-place truncate + 최상위 `_cacheKey` / `_cacheMeta {fieldName: "result.records" 점 표기, totalCount, autoCached:true}` 주입. **배열이 없으면 가장 큰 문자열**(≥8000자, 중첩 포함)을 줄 단위 `{line,text}` 레코드로 캐시 + 1500자 프리뷰 (firecrawl 등 긴 본문, 02b0e02) — `cache_grep` 으로 키워드 검색. 한 응답당 1개(동률 = 얕은 경로 우선). **admin · hub 공통 경로** (모든 sysmod 자동 혜택 — 스프레드형 kiwoom/korea-invest 든 중첩형 toss 든 동일).
   - 명시 envelope 처리에서 `_cacheKey` 가 이미 주입된 경우 auto-cache 는 skip — 모듈 의도 우선.
+- **캐시 엔트리 수명 = 시계가 아니라 소유자** (2026-08-16). `CacheMeta.owner` = `conv:<id>` /
+  `cron:<job>:<run>` / `None`. 소멸 통로는 **`drop_owner` 하나**이고 시간은 그중 한 트리거로 강등된다
+  (`None` = 아무도 안 가짐 = 스위퍼의 시계 담당 = 이전 동작, 옛 meta 전부 여기).
+  - **크론 = 실행 종료 시 삭제.** 잡이 끝나면 그 키를 부를 자가 없다 — 시간이 잘못된 단위였다.
+    `schedule.rs::in_cron_scope` 가 신원 둘(잡 = 승인 게이트 / 실행 = 캐시)을 함께 진입시킨다.
+  - **채팅 = 대화와 생사.** `ConversationManager::permanent_delete` 가 지운다. FC(`ai.rs::dispatch_tool`)
+    와 MCP(`gated_tool_call`)가 **`cache_owner::in_conversation` 한 함수**를 공유 — 크론 스코프 안이면
+    그게 이기고(실행 엔트리가 끝날 스코프 없는 대화로 넘어가는 것 방지), 대화가 없으면 무소유.
+  - **부팅 고아 청소 필수** (`sweep_orphans`, main.rs). 소유 엔트리는 스위퍼가 안 지우는데 폭주 캡이
+    보는 last-access 맵은 **메모리라 재시작하면 빈다.** 거기 걸리는 둘 = 끊긴 크론 실행(부팅 시점의
+    `cron:*` 은 정의상 전부 고아) + retention 이 이름 없이 지운 대화. 디스크만 보고 판정하며, **모르는
+    소유자 형태는 남긴다**(이해 못 하는 건 지울 이유가 아니다). 휴지통 대화는 살아 있는 것으로 친다.
+  - ⚠️ **시계열 재사용은 이 캐시가 아니라 `SqliteTimeseriesAdapter` 몫** — 캐시 키는 응답 하나라
+    "1~3월은 있고 4월만 없다"를 표현할 수 없다. 여기서 재사용을 재발명하지 말 것.
 
 ### 4. LLM Adapter (`infra/src/llm/adapter.rs` + `infra/src/llm/formats/*.rs`)
 - `ILlmPort` 구현은 **ConfigDrivenAdapter 단일** (tokio + reqwest + serde_json + rusqlite). 프로바이더별 개별 어댑터 금지 — `config.format` → 등록된 FormatHandler 로 HashMap dispatch.

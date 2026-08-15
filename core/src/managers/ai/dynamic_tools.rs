@@ -31,8 +31,8 @@ use crate::managers::tool::{make_handler, ToolDefinition, ToolListFilter, ToolMa
 use crate::ports::InfraResult;
 use crate::utils::grounding::GroundedParam;
 
-/// How long to go without asking whether the module tree changed. Once a rebuild interval (옛 TS
-/// 60초 1:1), now a debounce on the fingerprint check — see `refresh`.
+/// How long to go without asking whether the module tree changed. Once a rebuild interval (60s,
+/// carried over from the TS original), now a debounce on the fingerprint check — see `refresh`.
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// 동적 도구 source 식별자 — ToolManager.unregister 시 filter 용.

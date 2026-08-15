@@ -105,9 +105,10 @@ pub struct ConversationWindowMessage {
     pub msg_idx: i64,
     pub role: String,
     pub text: String,
-    /// `includeBlocks=true` 시 그 메시지의 원본 render blocks. `text` 는 데이터 계열을
-    /// `[stock_chart data 63행]` 로 접으므로, 접힌 값이 필요하면 이 칸이 준다 —
-    /// 재조회가 아니라 되읽기(같은 시점의 같은 값).
+    /// The message's own render blocks, when `includeBlocks` asked for them. `text` folds a data
+    /// series to a marker like `[stock_chart data 63행]`, so this is where the folded values come
+    /// back — read again, not fetched again, which is the difference between the value that was
+    /// shown and whatever the source says now.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocks: Option<serde_json::Value>,
 }

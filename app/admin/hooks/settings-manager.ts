@@ -28,11 +28,12 @@ export type SettingsSchema = {
   'firebat_plan_mode': 'off' | 'auto' | 'always';
   'firebat_active_conv': string;
   'firebat_last_model_by_category': Record<string, string>;
-  /** 모델별 마지막 thinking level — `firebat_last_model_by_category` 와 같은 패턴, 이제 배선도 같다:
-   *  볼트 `system:llm:last-thinking-by-model` 이 진실이고 여기는 그 로컬 사본이다. 서버 저장이 없던
-   *  동안엔 기기마다 다른 값을 들고 있었다(모델은 따라오는데 thinking 만 안 따라옴).
-   *  ⚠️ 값은 반드시 그 모델이 선언한 레벨 — 드롭다운이 models.json 으로 그려지고, 모델이 바뀌면
-   *  상태를 그 목록 안으로 되돌리므로 범위 밖 값은 애초에 만들어지지 않는다. */
+  /** Last thinking level per model — the same pattern as `firebat_last_model_by_category`, and now
+   *  the same wiring too: the vault key `system:llm:last-thinking-by-model` is the truth and this
+   *  is its local copy. While there was no server side, each device held a different answer — the
+   *  model followed the user across devices and the level did not.
+   *  ⚠️ Values are always levels the model declares: the dropdown is built from models.json and a
+   *  model change resets the state into that model's list, so an out-of-set value never exists. */
   'firebat_last_thinking_by_model': Record<string, string>;
   /** 입력 모드 — 'text' 면 일반 LLM 채팅, 'image' 면 입력창 텍스트를 prompt 로 직접 image_gen.
    *  LLM 우회 → 비용 절감 + timeout 위험 0. 갤러리 자동 갱신은 SSE gallery:refresh 가 처리. */
