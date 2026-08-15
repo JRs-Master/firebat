@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "DART 전자공시(opendart.fss.or.kr) — 한국 기업의 공시·재무제표·지분·정기보고서 세부. 회사명↔종목코드↔corp_code 매핑은 action='lookup'. **시세·주문은 없습니다** — 한투(korea-invest)·키움(kiwoom)입니다. 1일 20,000회.",
+  "description": "DART 전자공시(opendart.fss.or.kr) — 한국 기업의 공시·재무제표·지분·정기보고서 세부, 그리고 회사명↔종목코드↔corp_code 매핑(action='lookup'). 1일 20,000회.",
   "tags": [
     "금융감독원",
     "전자공시시스템",

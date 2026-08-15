@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "다음(Daum) 검색 — 웹문서·동영상·이미지·블로그·책·카페. naver-search 와 같은 필드 이름으로 돌려줍니다. **책은 네이버가 종료해 여기가 유일한 경로이고 동영상 검색은 네이버에 아예 없습니다.** 뉴스는 다음에 없으니 naver-search, 장소는 kakao-map 입니다.",
+  "description": "다음(Daum) 검색 — 웹문서·동영상·이미지·블로그·책·카페. naver-search 와 같은 필드 이름으로 돌려줍니다. 책과 동영상은 네이버에 없는 검색 유형입니다.",
   "aliases": [
     "다음",
     "다음검색",

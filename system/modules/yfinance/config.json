@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Yahoo Finance 무료 API — 60년치 일봉, 분기·연간 재무 시계열, 옵션 체인, 다종목 일괄 다운로드. **실시간 시세와 주문은 없습니다** — 실시간 시세는 korea-invest·kiwoom·toss-invest, 주문은 *-trade 모듈입니다. 비공식 API라 분당 30회 안쪽으로 부르십시오.",
+  "description": "Yahoo Finance 무료 API — 60년치 일봉, 분기·연간 재무 시계열, 옵션 체인, 다종목 일괄 다운로드. 비공식 API로 분당 약 30회 한도이고, 실시간 시세와 주문 기능은 없습니다.",
   "aliases": [
     "야후파이낸스",
     "yahoo finance",

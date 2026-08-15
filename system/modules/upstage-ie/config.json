@@ -3,7 +3,7 @@
   "type": "data",
   "scope": "system",
   "version": "1.0.0",
-  "description": "문서(영수증·명함·청구서·계약서) → 구조화 JSON 추출. URL 또는 base64 로 넘긴 PDF·이미지를 스키마대로 뽑고, 스키마를 안 주면 문서에서 자동 생성합니다. **라이브러리에 올린 문서는 library_extract_structured 입니다** — 여기는 라이브러리 밖 일회성 문서용.",
+  "description": "문서(영수증·명함·청구서·계약서) → 구조화 JSON 추출. URL 또는 base64 로 넘긴 PDF·이미지를 스키마대로 뽑고, 스키마를 안 주면 문서에서 자동 생성합니다. 라이브러리 밖 일회성 문서용.",
   "aliases": [
     "업스테이지",
     "Upstage"

@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "Firecrawl 웹 스크레이퍼 — scrape(단일 URL)·crawl(사이트 전체)·map(URL 목록)·extract(LLM 구조화 추출). JS 렌더링과 브라우저 조작이 필요한 페이지용이고, 정적으로 받아지는 페이지는 network_request 로 충분합니다.",
+  "description": "Firecrawl 웹 스크레이퍼 — scrape(단일 URL)·crawl(사이트 전체)·map(URL 목록)·extract(LLM 구조화 추출). JS 렌더링과 브라우저 조작(클릭·입력·스크롤·스크린샷)을 지원합니다.",
   "tags": [
     "웹스크래핑",
     "스크래핑",

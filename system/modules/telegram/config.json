@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.1.0",
-  "description": "Telegram bot — 알림 발송과 양방향 응답(webhook). chatId 를 생략하면 설정된 기본 대화로 갑니다 — 다른 수신자가 아닌 한 사용자에게 chat ID 를 묻지 마십시오.",
+  "description": "Telegram bot — 알림 발송과 양방향 응답(webhook). chatId 를 생략하면 설정된 기본 대화로 갑니다.",
   "tags": [
     "텔레그램",
     "telegram",

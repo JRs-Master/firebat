@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Firebat 내장 캘린더 — 날짜와 일정을 **기록만** 합니다. 시간이 되면 무언가를 자동 실행해야 한다면 이게 아니라 schedule_task(크론)입니다.",
+  "description": "Firebat 내장 캘린더 — 날짜와 일정을 기록합니다. 실행 기능은 없습니다.",
   "tags": [
     "캘린더",
     "달력",
