@@ -358,17 +358,25 @@ impl ModuleActionSource {
                 // An action's tags are what it DOES, in the words someone would ask in —
                 // 국내주식주문 / 한국주식주문 / 주식주문. These are what let a query land on ONE
                 // row instead of on a module, and they are the half a module could never supply.
-                let action_tags: Vec<String> = a
-                    .get("tags")
-                    .and_then(|t| t.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let str_list = |key: &str| -> Vec<String> {
+                    a.get(key)
+                        .and_then(|t| t.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                let action_tags: Vec<String> = str_list("tags");
+                // Other names the executor answers to for this same action — the venue's own word
+                // (binance takes `klines` for `get_candles`). Publishing a row per name would
+                // advertise one capability twice, so the alias rides this row's search text
+                // instead: a question that says "klines" lands on the action that serves it, and
+                // the declaration is what tells the audit the missing row was deliberate.
+                let action_aliases: Vec<String> = str_list("aliases");
                 Some(CatalogEntry {
                     id: format!("{}:{}", name, id),
                     name: a_name,
@@ -378,6 +386,7 @@ impl ModuleActionSource {
                         .iter()
                         .cloned()
                         .chain(action_tags)
+                        .chain(action_aliases)
                         .chain(std::iter::once(id.clone()))
                         .collect(),
                 })

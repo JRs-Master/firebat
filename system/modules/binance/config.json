@@ -35,7 +35,10 @@
         "id": "get_candles",
         "name": "Candles (OHLCV)",
         "description": "바이낸스 binance 캔들 OHLCV 봉 차트 데이터",
-        "domain": "시세"
+        "domain": "시세",
+        "aliases": [
+          "klines"
+        ]
       },
       {
         "id": "ticker",

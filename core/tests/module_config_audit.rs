@@ -617,6 +617,86 @@ fn every_action_catalog_file_names_runnable_actions() {
     assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
 }
 
+/// The other direction: an action the module can RUN must be one discovery offers.
+///
+/// Every check above asks whether a declaration names something real. None asked whether something
+/// real is named, and that gap has the same shape as the ones they catch — silence. Add an action
+/// to `input.properties.action.enum`, forget the catalog row, and the module answers to a name no
+/// search will ever produce: no error, no log, and the capability is simply invisible.
+///
+/// A deliberate omission is declared as such. binance accepts `klines` because that is Binance's
+/// own word for `get_candles`, and publishing both would advertise one capability twice — so the
+/// entry lists it under `aliases`, where the loader also folds it into the row's search text. The
+/// point is that the file now distinguishes "on purpose" from "forgotten", which prose in the
+/// action description could not.
+#[test]
+fn every_runnable_action_is_discoverable() {
+    let mut problems = Vec::new();
+    let mut audited = 0usize;
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+
+        let Some(enum_actions) = config
+            .pointer("/input/properties/action/enum")
+            .and_then(|v| v.as_array())
+        else {
+            continue; // no selector — the module is one action, always discoverable
+        };
+
+        // Rows come from the same two places the loader reads: an inline list, or the named file.
+        let rows: Vec<Value> = if let Some(list) =
+            config.pointer("/actionCatalog/actions").and_then(|v| v.as_array())
+        {
+            list.clone()
+        } else if let Some(file) = config.pointer("/actionCatalog/file").and_then(|v| v.as_str()) {
+            let Ok(craw) = fs::read_to_string(dir.join(file)) else { continue };
+            let Ok(cat) = serde_json::from_str::<Value>(&craw) else { continue };
+            match firebat_core::managers::ai::action_catalog::catalog_rows(&cat) {
+                Some(l) => l,
+                None => continue,
+            }
+        } else {
+            continue; // no catalog: entries are derived FROM the enum, so it cannot miss one
+        };
+        audited += 1;
+
+        let mut covered: BTreeSet<String> = BTreeSet::new();
+        for e in &rows {
+            if let Some(id) = e.get("id").and_then(|v| v.as_str()) {
+                covered.insert(id.to_string());
+            }
+            for a in e.get("aliases").and_then(|v| v.as_array()).unwrap_or(&vec![]) {
+                if let Some(a) = a.as_str() {
+                    covered.insert(a.to_string());
+                }
+            }
+        }
+        let missing: Vec<&str> = enum_actions
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter(|a| !covered.contains(*a))
+            .collect();
+        if !missing.is_empty() {
+            problems.push(format!(
+                "{name}: runs {} action(s) discovery never offers — {}. Add a catalog row, or list \
+                 it under an existing row's `aliases` if that is deliberate.",
+                missing.len(),
+                missing
+                    .iter()
+                    .take(8)
+                    .map(|s| format!("`{s}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
+    assert!(audited >= 8, "only {audited} catalogs audited — the path drifted");
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
 /// A module's cron files run UNATTENDED — the autotrade ones place real orders. Their steps are
 /// PipelineStep values, so the executor's own parser is the only honest validator: if serde
 /// cannot read a step here, the scheduler could not have run it there.

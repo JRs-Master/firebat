@@ -730,16 +730,20 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 /// network_request(HTTP). MCP 핸들러(ExecuteHandler/RunCronJobHandler/RequestSecretHandler/
 /// NetworkRequestHandler)와 같은 매니저 메서드 위임 = 동작 일치.
 fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
-    // execute — run a user-defined module in user/modules. System modules use their sysmod_* tools.
+    // execute — the path spelling of a user-module call. These strings used to send the model to
+    // `sysmod_<name>`, which stopped being published when every module moved behind one executor:
+    // the advice named a tool that is not in the list, on four surfaces at once. `execute` also
+    // routes a `user/modules/<name>` path through the same rung as the executor now, so "not
+    // reachable here" was only ever about which NAME to use.
     let module = h.module.clone();
     tools.register_tool(
         ToolDefinition {
             name: "execute".to_string(),
-            description: "Run a user-defined module under user/modules only. NOT for system modules — call the module's own sysmod_<name> tool for those (e.g. weather, stocks, search). Args: {path: 'user/modules/<name>', inputData: {…module input fields}}.".to_string(),
+            description: "Run a user-defined module under user/modules by path. Every module — user or system — can also be run by name with run_module_action({module, action}), which is the usual way; this exists for the path form. Args: {path: 'user/modules/<name>', inputData: {…module input fields}}.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "user/modules/<name> path of a user-defined module. System modules are NOT reachable here — use sysmod_<name>."},
+                    "path": {"type": "string", "description": "user/modules/<name> path of a user-defined module. A system module is run by name: run_module_action({module, action})."},
                     "inputData": {"type": "object", "description": "The module's input fields."}
                 },
                 "required": ["path"]
@@ -752,13 +756,13 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let path = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "execute: 'path' is required (user/modules/<name>). To call a system module (weather, stocks, search, …) use its sysmod_<name> tool instead of execute.".to_string())?
+                    .ok_or_else(|| "execute: 'path' is required (user/modules/<name>). To call a module by name — system or user — use run_module_action({module, action}); find the action with search_module_actions first.".to_string())?
                     .to_string();
                 // execute = user/modules only (system modules via sysmod_*). Confine like file tools.
                 let path = crate::utils::hub_context::confine_hub_path(&args, &path)?;
                 let input = args.get("inputData").cloned().unwrap_or(serde_json::json!({}));
                 if input.is_object() && input.as_object().map(|m| m.is_empty()).unwrap_or(false) {
-                    return Ok(serde_json::json!({"success": false, "error": "execute: 'inputData' must not be an empty object — fill the module's input fields. If this was meant to be a system module (weather, stocks, …), call its sysmod_<name> tool instead."}));
+                    return Ok(serde_json::json!({"success": false, "error": "execute: 'inputData' must not be an empty object — fill the module's input fields. get_action_schema(module, action) lists them."}));
                 }
                 // Same rung as `run_module_action` when the path names a user module — see
                 // `execute_module_path`. The two tools are two spellings of one call, not two

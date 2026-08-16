@@ -1210,7 +1210,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
             // 다음 단계 힌트 — 모델이 파이프라인 EXECUTE path 에 sysmod 도구 이름(sysmod_toss-invest
             // 등)을 넣는 실측 오용(2026-07-07). path = 모듈 디렉토리/entry 파일이지 도구 이름이 아님.
             let hint = if target_path.starts_with("sysmod_") {
-                " — EXECUTE path 는 모듈 경로입니다(예: system/modules/<name>/index.mjs). 채팅에서는 sysmod_* 도구를 직접 호출하세요; 파이프라인으로 감싸도 승인 게이트는 동일하게 적용됩니다."
+                " — EXECUTE path 는 모듈 경로입니다(예: system/modules/<name>/index.mjs). 이름으로 부르려면 run_module_action({module, action}) 을 쓰십시오; 파이프라인으로 감싸도 승인 게이트는 동일하게 적용됩니다."
             } else {
                 ""
             };

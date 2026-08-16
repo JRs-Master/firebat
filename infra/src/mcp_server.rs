@@ -1599,7 +1599,7 @@ impl McpToolHandler for ExecuteHandler {
             .cloned()
             .unwrap_or(Value::Object(Default::default()));
         if input.is_object() && input.as_object().map(|m| m.is_empty()).unwrap_or(false) {
-            return Ok(serde_json::json!({"success": false, "error": "inputData 빈 객체 금지. 모듈 입력 필드를 실제 값으로 채워라. 시스템 모듈이면 sysmod_* 사용."}));
+            return Ok(serde_json::json!({"success": false, "error": "inputData 빈 객체 금지 — 모듈 입력 필드를 채우십시오. get_action_schema(module, action) 가 목록을 줍니다."}));
         }
         // Mirrors the core handler: a `user/modules/<name>` path is the same call as
         // run_module_action on that name, so it takes the same rung (is_enabled, input
@@ -2436,7 +2436,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Module
     state.register(McpTool {
         name: "execute".into(),
-        description: core_desc("execute", "⚠️ 시스템 모듈은 sysmod_* 사용. user/modules 사용자 정의 모듈 실행 전용. inputSchema: {path, inputData}.").into(),
+        description: core_desc("execute", "user/modules 사용자 정의 모듈을 경로로 실행합니다. 이름으로 부르는 쪽이 보통이며 그건 run_module_action({module, action}) 입니다 — 사용자·시스템 모듈 모두. inputSchema: {path, inputData}.").into(),
         input_schema: core_schema("execute", schema_object(serde_json::json!({
             "path": {"type": "string"},
             "inputData": {"type": "object"}
