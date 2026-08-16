@@ -783,6 +783,7 @@
     "mcp_connect_failed_message": "Registration was cancelled because the connection failed.\n\n{{error}}",
     "system_service": "Services",
     "system_module": "Modules",
+    "user_module": "My modules",
     "system_no_items": "No system items",
     "capability_list": "Capabilities",
     "capability_list_hint": "Manages the execution priority of modules that provide the same capability.",

@@ -414,11 +414,20 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [sysModules, setSysModules] = useState<SystemModule[]>([]);
   const fetchSysModules = useCallback(async () => {
     try {
-      const data = await apiGet<{ success: boolean; modules?: SystemModule[] }>(
-        '/api/fs/system-modules',
-        { category: 'settings' },
-      );
-      if (data.success) setSysModules(sortByName(data.modules ?? [], m => m.name));
+      // Two scopes, two routes. `system/` is what the product ships and what a hub instance may
+      // be granted; `user/` is what the operator uploaded for themselves. They are drawn in one
+      // screen because both need switching off, and fetched apart because only one of them is a
+      // candidate for anything else.
+      const [sys, usr] = await Promise.all([
+        apiGet<{ success: boolean; modules?: SystemModule[] }>('/api/fs/system-modules', { category: 'settings' }),
+        apiGet<{ success: boolean; modules?: SystemModule[] }>('/api/fs/user-modules', { category: 'settings' }),
+      ]);
+      if (sys.success || usr.success) {
+        setSysModules([
+          ...sortByName(sys.modules ?? [], m => m.name),
+          ...sortByName(usr.modules ?? [], m => m.name).map(m => ({ ...m, scope: 'user' })),
+        ]);
+      }
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
   // 모듈별 패키지 상태 — 리스트에 뱃지 표시용(업그레이드 가용 + **미설치**). sysModules 로드 후 병렬 fetch.
@@ -2374,11 +2383,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               )}
 
               {/* 모듈 */}
-              {sysModules.filter(m => (m.entryType ?? m.type) !== 'service').length > 0 && (
-                <div>
-                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Blocks size={11} /> {t('settings_modal.system_module')}</p>
+              {([
+                { key: 'system', label: t('settings_modal.system_module'), rows: sysModules.filter(m => (m.entryType ?? m.type) !== 'service' && m.scope !== 'user') },
+                { key: 'user',   label: t('settings_modal.user_module'),   rows: sysModules.filter(m => (m.entryType ?? m.type) !== 'service' && m.scope === 'user') },
+              ] as const).map(group => group.rows.length > 0 && (
+                <div key={group.key}>
+                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Blocks size={11} /> {group.label}</p>
                   <div className="space-y-1">
-                    {sysModules.filter(m => (m.entryType ?? m.type) !== 'service').map(m => (
+                    {group.rows.map(m => (
                       <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
                         <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                           <Blocks size={16} className="text-indigo-500 shrink-0" />
@@ -2415,7 +2427,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     ))}
                   </div>
                 </div>
-              )}
+              ))}
 
               {sysModules.length === 0 && (
                 <p className="text-[13px] text-slate-400 italic text-center py-8">{t('settings_modal.system_no_items')}</p>
