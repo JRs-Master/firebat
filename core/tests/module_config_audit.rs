@@ -820,17 +820,6 @@ fn mentions_word(src: &str, word: &str) -> bool {
 /// A module's cron files run UNATTENDED — the autotrade ones place real orders. Their steps are
 /// PipelineStep values, so the executor's own parser is the only honest validator: if serde
 /// cannot read a step here, the scheduler could not have run it there.
-/// Cron declarations that exist, are tested, and deliberately do NOT register yet. Stock trading
-/// is not switched on — only the crypto loop runs live (CLAUDE.md tracker), so these four market
-/// loops and two discovery jobs sit ready instead of firing at an account nobody armed.
-const DORMANT_CRONS: &[&str] = &[
-    "autotrade/cron-kiwoom-kr.json",
-    "autotrade/cron-kiwoom-us.json",
-    "autotrade/cron-kis-kr.json",
-    "autotrade/cron-kis-us.json",
-    "autotrade/cron-kiwoom-universe.json",
-    "autotrade/cron-kiwoom-screen.json",
-];
 
 /// A module that hands its endpoints over hands over ALL of them.
 ///
@@ -919,15 +908,42 @@ fn every_declared_cron_job_parses_as_the_pipeline_the_scheduler_runs() {
             .filter(|n| n.starts_with("cron-") && n.ends_with(".json"))
             .collect();
         present.sort();
-        for f in &present {
-            // A cron file the module does not list in `schedules` never registers. That can be
-            // deliberate (a market not switched on yet) — but it must be SAID, or a job everyone
-            // believes is running is a file nobody reads.
-            if !registered.contains(f) && !DORMANT_CRONS.contains(&format!("{name}/{f}").as_str()) {
+        // Which files can actually be reached: the static list, plus whatever the rows a module
+        // derives from name. The old check ran the other way — every present file had to be
+        // registered or excused in a hand-kept list — and that premise dissolved when schedules
+        // began following the trades. A file nobody points at no longer implies a job somebody
+        // believes in; it is a template waiting for a trade. What still bites is the reverse: a
+        // row naming a loop that is not there registers nothing, silently.
+        let mut reachable: BTreeSet<String> = registered.clone();
+        if let Some(spec) = config.get("schedulesFrom") {
+            let sget = |k: &str| spec.get(k).and_then(|v| v.as_str());
+            if let (Some(setting), Some(field)) = (sget("setting"), sget("field")) {
+                let rows = config
+                    .get("settings_fields")
+                    .and_then(|v| v.as_array())
+                    .and_then(|fs| fs.iter().find(|f| f.get("key").and_then(|k| k.as_str()) == Some(setting)))
+                    .and_then(|f| f.get("defaultValue"))
+                    .and_then(|v| match v {
+                        Value::Array(a) => Some(a.clone()),
+                        Value::String(t) => serde_json::from_str::<Value>(t).ok().and_then(|p| p.as_array().cloned()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                for row in rows {
+                    if let Some(f) = row.get(field).and_then(|v| v.as_str()) {
+                        reachable.insert(f.to_string());
+                    }
+                }
+            }
+        }
+        for f in &reachable {
+            if !present.contains(f) {
                 problems.push(format!(
-                    "{name}/{f}: present but not in `schedules` — it never registers. Add it, or                      list it in DORMANT_CRONS with the reason it is waiting"
+                    "{name}: a schedule names `{f}`, which is not in the module directory — it                      registers nothing and says nothing"
                 ));
             }
+        }
+        for f in &present {
             let Ok(jraw) = fs::read_to_string(dir.join(f)) else { continue };
             let job: Value = match serde_json::from_str(&jraw) {
                 Ok(v) => v,
