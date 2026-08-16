@@ -7,7 +7,6 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { API_TABLE } from './korea-invest-apis.generated.mjs';
 import { roundToKrxTick } from './krx-tick.mjs';
 import { usOrderPrice } from './us-tick.mjs';
 import { acquireSlot as acquireShared } from './rate-window.mjs';
@@ -31,8 +30,22 @@ let _rateLimit = RATE_LIMIT_REAL;
 // written here first and Kiwoom never got it, which is how that one ended up with no limiter.
 const acquireSlot = (isMock) => acquireShared(`kis-${isMock ? 'mock' : 'real'}`, _rateLimit, WINDOW_MS);
 
-async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 3, trIdOverride = '') {
-  const meta = API_TABLE[action];
+/**
+ * The row for one action, out of what dispatch injected.
+ *
+ * `_call` is the declaration for the action that was CALLED. A neutral name resolves to one of
+ * several vendor endpoints depending on market and side, so its declaration carries them keyed by
+ * whatever the branch is called and the row is picked by id — the branch stays here, where the
+ * market and the side are, and the endpoints stay in the declaration, where the vendor's facts are.
+ */
+function metaOf(call, apiId) {
+  if (!call || typeof call !== 'object') return null;
+  if (call.id === apiId) return call;
+  for (const v of Object.values(call)) if (v && typeof v === 'object' && v.id === apiId) return v;
+  return null;
+}
+
+async function callApi(base, token, appKey, appSecret, meta, action, query = {}, body = {}, isMock = false, retry = 3, trIdOverride = '') {
   if (!meta) throw new Error(`알 수 없는 API ID: ${action} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('korea-invest', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
   // Some sheet entries hold a sentence covering several ids (buy and sell on one line) rather
   // than a single id. Whoever knows which side this call is resolves it and passes it in.
@@ -417,7 +430,7 @@ async function fetchCandles(ctx, data) {
       '분봉은 이 브로커의 기간별시세 엔드포인트에 없습니다.');
   }
   const apiId = kr ? 'v1_국내주식-016' : 'v1_해외주식-010';
-  const meta = API_TABLE[apiId];
+  const meta = metaOf(ctx.call_, apiId);
   const trId = pickTrId(meta, ctx.isMock, '');
   const span = Math.ceil(CANDLE_PAGE * 1.7) * (PERIOD_DAYS[period] || 1);
   const byDate = new Map();
@@ -500,8 +513,9 @@ async function main(data) {
     if (NEUTRAL.has(action)) {
       const ctx = {
         isMock,
+        call_: data._call,
         call: (apiId, trId, q, b) =>
-          callApi(base, token, appKey, appSecret, apiId, q, b, isMock, 2, trId),
+          callApi(base, token, appKey, appSecret, metaOf(data._call, apiId), apiId, q, b, isMock, 2, trId),
       };
       if (action === 'get_candles') {
         const out = await fetchCandles(ctx, data);
@@ -509,7 +523,7 @@ async function main(data) {
         return;
       }
       const mapped = standardCall(action, data);
-      const meta = API_TABLE[mapped.apiId];
+      const meta = metaOf(data._call, mapped.apiId);
       const trId = pickTrId(meta, isMock, mapped.hint);
       const result = await ctx.call(mapped.apiId, trId, mapped.query || {}, mapped.body || {});
       const ok = result?.rt_cd === undefined || result.rt_cd === null || result.rt_cd === '0';
@@ -551,7 +565,7 @@ async function main(data) {
     // Korean byte (measured 2026-08-06: four sell cards in a row, "ByteString … 47588" — that
     // code point is 매). Resolve it the same way here, or say in words what is missing.
     let rawTrId = '';
-    const metaRaw = API_TABLE[action];
+    const metaRaw = metaOf(data._call, action);
     if (metaRaw) {
       const candidate = isMock && metaRaw.trIdMock ? metaRaw.trIdMock : metaRaw.trIdReal;
       if (/[^ -~]/.test(String(candidate ?? ''))) {
@@ -566,9 +580,9 @@ async function main(data) {
         rawTrId = pickTrId(metaRaw, isMock, hint);
       }
     }
-    const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock, 3, rawTrId);
+    const meta = metaOf(data._call, action);
+    const result = await callApi(base, token, appKey, appSecret, meta, action, query, body, isMock, 3, rawTrId);
     normalizeCandles(result);
-    const meta = API_TABLE[action];
     // KIS rt_cd: "0" = ok, anything else = error. It rides an HTTP 200, so the envelope used
     // to mask it as success:true → only "0" is success now (same intent as kiwoom's
     // return_code — stops the AI fabricating over a failure it never saw).

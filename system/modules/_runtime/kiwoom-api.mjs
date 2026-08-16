@@ -6,7 +6,6 @@
  * config.json, so the module scan skips it.
  */
 
-import { URL_CATEGORY, API_NAMES } from './kiwoom-apis.generated.mjs';
 import { roundToKrxTick } from './krx-tick.mjs';
 import { usOrderPrice } from './us-tick.mjs';
 import { acquireSlot } from './rate-window.mjs';
@@ -32,10 +31,23 @@ const RATE_LIMIT_MOCK = 2;
 // headers are kept here rather than discarded, and `fetchCandles` below is the only reader.
 let LAST_CONT = { contYn: 'N', nextKey: '' };
 
-async function callApi(base, token, apiId, params = {}, retry = 2, cont = null) {
-  const category = URL_CATEGORY[apiId];
-  if (!category) throw new Error(`알 수 없는 API ID: ${apiId} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('kiwoom', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
-  const url = `${base}/api/${category}`;
+/**
+ * The row for one action, out of what dispatch injected. A neutral name resolves to one of
+ * several vendor endpoints by market, side or interval, so its declaration carries them all and
+ * the row is picked by id — the branch stays in the dialect, the endpoints stay in the
+ * declaration.
+ */
+function metaOf(call, apiId) {
+  if (!call || typeof call !== 'object') return null;
+  if (call.id === apiId) return call;
+  for (const v of Object.values(call)) if (v && typeof v === 'object' && v.id === apiId) return v;
+  return null;
+}
+
+async function callApi(base, token, meta, apiId, params = {}, retry = 2, cont = null) {
+  const path = meta?.path || '';
+  if (!path) throw new Error(`알 수 없는 API ID: ${apiId} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('kiwoom', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
+  const url = `${base}${path}`;
   const isMock = base.includes('mock');
   await acquireSlot(`kiwoom-${isMock ? 'mock' : 'real'}`,
                     isMock ? RATE_LIMIT_MOCK : RATE_LIMIT_REAL);
@@ -53,7 +65,7 @@ async function callApi(base, token, apiId, params = {}, retry = 2, cont = null) 
   });
   if (resp.status === 429 && retry > 0) {
     await new Promise(r => setTimeout(r, 1100));
-    return callApi(base, token, apiId, params, retry - 1, cont);
+    return callApi(base, token, meta, apiId, params, retry - 1, cont);
   }
   LAST_CONT = {
     contYn: resp.headers.get('cont-yn') || 'N',
@@ -399,8 +411,8 @@ function pickRows(payload) {
 const MAX_CANDLE_PAGES = 20;
 
 /** One call, or as many as it takes to reach `want` bars. Returns the venue's own envelope. */
-async function fetchCandles(base, token, apiId, params, want) {
-  const first = await callApi(base, token, apiId, params);
+async function fetchCandles(base, token, meta, apiId, params, want) {
+  const first = await callApi(base, token, meta, apiId, params);
   const target = Math.floor(Number(want) || 0);
   const picked = pickRows(first);
   if (target <= 0 || !picked?.field) return first;
@@ -412,7 +424,7 @@ async function fetchCandles(base, token, apiId, params, want) {
   // Kiwoom answers newest-first, so a later page is older bars: append, and the analyser sorts.
   while (rows.length < target && cont.contYn === 'Y' && cont.nextKey && pages < MAX_CANDLE_PAGES) {
     pages += 1;
-    const next = await callApi(base, token, apiId, params, 2, cont);
+    const next = await callApi(base, token, meta, apiId, params, 2, cont);
     cont = LAST_CONT;
     const more = pickRows(next);
     if (!more?.field || !more.rows.length) break;
@@ -501,7 +513,7 @@ async function main(data) {
       apiId = mapped.apiId;
       params = mapped.params;
     }
-    if (URL_CATEGORY[apiId] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
+    if (String(meta?.path || '').includes('/chart') && !params.base_dt) params.base_dt = kstToday();
     // The practice host routes to KRX and nothing else. The neutral order path has forced this
     // since 2026-08-04, but a raw call carries its own params and sailed past that guard with
     // dmst_stex_tp: "SOR" — refused as RC9000 (measured 2026-08-06, the liquidation pass). The
@@ -510,15 +522,16 @@ async function main(data) {
         && params.dmst_stex_tp.toUpperCase() !== 'KRX') {
       params = { ...params, dmst_stex_tp: 'KRX' };
     }
+    const meta = metaOf(data._call, apiId);
     const result = action === 'get_candles'
-      ? await fetchCandles(base, token, apiId, params, data.bars)
-      : await callApi(base, token, apiId, params);
+      ? await fetchCandles(base, token, meta, apiId, params, data.bars)
+      : await callApi(base, token, meta, apiId, params);
     normalizeCandleRows(result);
     // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
     // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
     const rc = result?.return_code;
     const ok = rc === undefined || rc === null || rc === 0;
-    const output = { success: ok, data: { apiId, name: API_NAMES[apiId], ...result } };
+    const output = { success: ok, data: { apiId, name: meta?.name, ...result } };
     // Echo the caller's id and the request that went out — the ledger matches on the first and
     // the response schema is read off the second later, since it is not documented anywhere.
     if (action === 'place_order' || action === 'cancel_order') {
