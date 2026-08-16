@@ -40,7 +40,8 @@
       {
         "id": "selftest",
         "name": "셀프테스트",
-        "description": "Offline checks against synthetic DART-shaped rows with known answers."
+        "description": "Offline checks against synthetic DART-shaped rows with known answers.",
+        "params": []
       }
     ]
   },

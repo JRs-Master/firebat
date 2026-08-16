@@ -70,7 +70,8 @@
       {
         "id": "selftest",
         "name": "셀프테스트",
-        "description": "Offline round-trip checks: make each format, read it back, compare. No key, no network."
+        "description": "Offline round-trip checks: make each format, read it back, compare. No key, no network.",
+        "params": []
       }
     ]
   },

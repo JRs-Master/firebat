@@ -675,6 +675,19 @@ fn fill_param_docs_from_input(
     // schema does not know keep an empty entry rather than vanishing — a catalog naming a param
     // the module dropped should be visible, not silently pruned.
     if let Some(list) = extra.get("params").and_then(|p| p.as_array()).cloned() {
+        // `params: []` is a statement, not a blank: this action takes nothing. Deriving instead
+        // would hand it the module's whole set, because the tag filter falls back to everything
+        // when it would otherwise leave nothing — a guard from when tagging was partial, and
+        // wrong now that "no param is tagged for me" is the true answer. Measured 2026-08-16:
+        // `fa/selftest` offered all eleven of `ratios`'s params, `binance/server_time` nine.
+        if list.is_empty() {
+            extra["params"] = serde_json::json!({});
+            extra["paramsNote"] = serde_json::Value::String(
+                "This action takes no parameters — call it with module + action only."
+                    .to_string(),
+            );
+            return;
+        }
         let mut m = serde_json::Map::new();
         for name in list.iter().filter_map(|v| v.as_str()) {
             let doc = derived_map
@@ -1565,7 +1578,9 @@ impl ModuleActionCatalog {
             .get("params")
             .map(|p| p.as_object().map(|o| o.is_empty()).unwrap_or(true))
             .unwrap_or(true);
-        if params_empty {
+        // Unless the entry already said WHY it is empty — "takes none" and "undocumented" are
+        // opposite facts, and the second one sends a model looking for what is not there.
+        if params_empty && out.get("paramsNote").is_none() {
             out["paramsNote"] = serde_json::Value::String(
                 "Parameter docs are NOT available for this action — searching again will not \
                  reveal them. Build on `call` (+ method/path/trId) and the module input \
@@ -2023,6 +2038,23 @@ mod display_vs_document_tests {
         assert!(sort.contains("(enum: accuracy, recency, latest)"), "got: {sort}");
         assert!(!sort.contains("newest-first"), "the drifted copy must be gone: {sort}");
         assert!(!p.contains_key("target"), "the action's selection is not widened: {p:?}");
+    }
+
+    /// An empty list says the action takes nothing. Deriving would hand it the module's whole set,
+    /// because the tag filter returns everything rather than nothing — measured on `fa/selftest`,
+    /// which offered all eleven of `ratios`'s params.
+    #[test]
+    fn an_empty_param_list_means_none_not_all() {
+        let cfg = serde_json::json!({"input": {"properties": {
+            "action": {"type": "string", "enum": ["ratios", "selftest"]},
+            "statements": {"type": "array", "description": "[ratios] DART rows"},
+            "shares": {"type": "number", "description": "[ratios] Listed shares"}
+        }}});
+        let mut extra = serde_json::json!({"params": []});
+        fill_param_docs_from_input(&mut extra, &cfg, "selftest");
+        assert_eq!(extra["params"], serde_json::json!({}), "got: {}", extra["params"]);
+        let note = extra["paramsNote"].as_str().unwrap_or_default();
+        assert!(note.contains("takes no parameters"), "and it says why: {note}");
     }
 
     /// The list form declares the selection and nothing else, so there is no second place for a

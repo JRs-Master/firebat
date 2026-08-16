@@ -44,7 +44,8 @@
       {
         "id": "selftest",
         "name": "셀프테스트",
-        "description": "Offline checks with synthetic news and bars with known answers."
+        "description": "Offline checks with synthetic news and bars with known answers.",
+        "params": []
       }
     ]
   },

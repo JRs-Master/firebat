@@ -98,7 +98,8 @@
         "id": "server_time",
         "name": "Exchange clock",
         "description": "바이낸스 binance 거래소 서버 시각. The venue's current time, for when a timestamp disagreement is suspected.",
-        "domain": "시세"
+        "domain": "시세",
+        "params": []
       }
     ]
   },
