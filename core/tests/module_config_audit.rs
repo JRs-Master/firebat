@@ -836,12 +836,12 @@ const DORMANT_CRONS: &[&str] = &[
 ///
 /// Dispatch injects `_call` — the row for the action in flight — so a module never has to carry a
 /// table of everyone else's endpoints. That only holds if the declaration is complete. Declare
-/// `call` on some actions and not others and the dialect has to keep both paths alive: the
+/// `_call` on some actions and not others and the dialect has to keep both paths alive: the
 /// injected row for the ones that have it, its own lookup for the rest. Which is worse than
 /// either, because the half without a row fails only for the actions nobody exercised — silence
 /// again, and this time shaped like a migration that finished.
 ///
-/// Modules whose endpoints are a rule rather than a table declare no `call` at all and are not
+/// Modules whose endpoints are a rule rather than a table declare no `_call` at all and are not
 /// asked to invent one; dart resolves `/api/<name>.json` from the action name itself.
 #[test]
 fn a_module_that_declares_a_call_declares_it_for_every_runnable_action() {
@@ -877,7 +877,7 @@ fn a_module_that_declares_a_call_declares_it_for_every_runnable_action() {
         let total = missing.len();
         missing.truncate(5);
         problems.push(format!(
-            "{name}: declares `call` for {} of {} runnable actions — {} without one ({}{})",
+            "{name}: declares `_call` for {} of {} runnable actions — {} without one ({}{})",
             calls.len(),
             runnable.len(),
             total,
@@ -890,7 +890,7 @@ fn a_module_that_declares_a_call_declares_it_for_every_runnable_action() {
     assert!(examined >= 20, "only {examined} module configs examined — the path drifted");
     assert!(
         problems.is_empty(),
-        "{} problem(s) across {with_calls} module(s) declaring `call`:\n  {}",
+        "{} problem(s) across {with_calls} module(s) declaring `_call`:\n  {}",
         problems.len(),
         problems.join("\n  ")
     );

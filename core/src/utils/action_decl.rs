@@ -42,19 +42,23 @@ pub fn inline_catalog_rows(config: &serde_json::Value) -> Option<Vec<serde_json:
     catalog_rows(decl)
 }
 
-/// `action id → call` out of catalog rows.
+/// `action id → _call` out of catalog rows.
 ///
-/// `call` is whatever that action needs to be issued — a method and a path for one vendor, a
+/// `_call` is whatever that action needs to be issued — a method and a path for one vendor, a
 /// frame name for another. **Nothing here reads inside it.** The framework's job is that the row
 /// travels with the call; interpreting it is the module's, and the moment core starts knowing
 /// what a `trId` is, every new venue becomes a core deploy.
 ///
-/// Rows without a `call` contribute nothing, which is most of them — a module whose endpoints are
-/// a rule rather than a table has nothing to hand over and should not be made to invent one.
+/// The leading underscore is the boundary, not decoration: it is the same mark the injected keys
+/// carry (`_recall`, `_cacheKey`), and the catalog loader skips every underscored field when it
+/// builds what the model reads. A declaration has two audiences; this one is not the model's.
+///
+/// Rows without a `_call` contribute nothing, which is most of them — a module whose endpoints
+/// are a rule rather than a table has nothing to hand over and should not be made to invent one.
 pub fn action_calls(rows: &[serde_json::Value]) -> HashMap<String, serde_json::Value> {
     let mut out = HashMap::new();
     for row in rows {
-        let (Some(id), Some(call)) = (row.get("id").and_then(|v| v.as_str()), row.get("call"))
+        let (Some(id), Some(call)) = (row.get("id").and_then(|v| v.as_str()), row.get("_call"))
         else {
             continue;
         };
@@ -95,10 +99,12 @@ mod tests {
     #[test]
     fn only_rows_that_declare_a_call_hand_one_over() {
         let rows = vec![
-            json!({ "id": "with", "call": { "method": "GET", "path": "/x" } }),
+            json!({ "id": "with", "_call": { "method": "GET", "path": "/x" } }),
             json!({ "id": "without" }),
-            json!({ "id": "null", "call": null }),
-            json!({ "call": { "method": "GET" } }),
+            json!({ "id": "null", "_call": null }),
+            json!({ "_call": { "method": "GET" } }),
+            // Without the underscore it is a field the model reads, not the framework's channel.
+            json!({ "id": "unmarked", "call": { "method": "GET", "path": "/y" } }),
         ];
         let calls = action_calls(&rows);
         assert_eq!(calls.len(), 1);

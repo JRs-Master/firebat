@@ -51,6 +51,22 @@ const REBUILD_TTL: Duration = Duration::from_secs(300);
 /// reaching into this file for a pure helper would have been the fourth place to keep in step.
 pub use crate::utils::action_decl::catalog_rows;
 
+/// Whether a field a catalog row declares is one the model should be handed.
+///
+/// `id`, `name` and `description` are placed by the loader itself. Everything else rides along
+/// verbatim into `get_action_schema`, which is what makes a richer actions.json richer detail
+/// with no loader change — and is also why the exception has to be a rule and not a list.
+///
+/// A declaration has two audiences. `_call` is the endpoint row dispatch hands the module; the
+/// model will never type a path or a `trId` and only pays for reading them. The leading
+/// underscore is the mark the injected keys already carry (`_recall`, `_cacheKey`,
+/// `_mediaImport`) and the one the config audit already skips at top level, so the boundary is
+/// the convention rather than a roster of field names that goes stale the first time a
+/// declaration grows one — silently, into the surface whose size is measured every turn.
+fn rides_along(key: &str) -> bool {
+    !matches!(key, "id" | "name" | "description") && !key.starts_with('_')
+}
+
 fn module_identity(name: &str, config: &serde_json::Value) -> Vec<String> {
     let mut out = vec![name.to_string()];
     if let Some(list) = config.get("aliases").and_then(|v| v.as_array()) {
@@ -278,11 +294,16 @@ impl ModuleActionSource {
                 // Ride every declared field along (params/example/method/path/trId/domain …) —
                 // get_action_schema returns them verbatim, so richer actions.json = richer detail
                 // with zero loader changes.
+                //
+                // Except the framework's own channel. A declaration has two audiences and only
+                // one of them is the model: `_call` is the row dispatch hands the module, and the
+                // model has no use for a path or a `trId` it will never type. Marked by the
+                // leading underscore the injected keys already use (`_recall`, `_cacheKey`,
+                // `_mediaImport`) rather than by naming the fields — a list of what to hide is a
+                // list that goes stale the first time a declaration grows a field, and it goes
+                // stale silently, into the one surface whose size is measured every turn.
                 if let Some(obj) = a.as_object() {
-                    for (k, v) in obj {
-                        if matches!(k.as_str(), "id" | "name" | "description") {
-                            continue;
-                        }
+                    for (k, v) in obj.iter().filter(|(k, _)| rides_along(k)) {
                         extra[k] = v.clone();
                     }
                 }
@@ -1945,6 +1966,25 @@ mod action_fragment_tests {
         assert!(vals.contains(&"news".to_string()), "{vals:?}");
         assert!(vals.contains(&"shop".to_string()));
         assert_eq!(param_enum_values(&serde_json::json!({})), Vec::<String>::new());
+    }
+
+    /// The declaration has two audiences and the underscore is where they part.
+    ///
+    /// Pinned as a rule rather than by asserting `_call` specifically: the next framework-facing
+    /// field must not need this test edited to stay out of the model's schema response, because a
+    /// field that leaks there leaks silently and the surface it grows is the one under budget.
+    #[test]
+    fn the_frameworks_own_channel_does_not_ride_along_to_the_model() {
+        assert!(!rides_along("_call"), "the endpoint row is not the model's to read");
+        assert!(!rides_along("_whatever_comes_next"));
+        // The loader places these itself; a row restating them would overwrite its own header.
+        for placed in ["id", "name", "description"] {
+            assert!(!rides_along(placed));
+        }
+        // Everything a module writes for the model still arrives verbatim.
+        for declared in ["params", "required", "example", "method", "path", "trId", "domain"] {
+            assert!(rides_along(declared), "{declared} must reach get_action_schema");
+        }
     }
 
     #[test]

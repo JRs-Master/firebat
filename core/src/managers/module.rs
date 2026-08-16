@@ -88,12 +88,12 @@ pub struct ModuleManager {
     action_calls: Mutex<HashMap<String, CachedCalls>>,
 }
 
-/// One module's `call` rows and the directory state they were read from.
+/// One module's `_call` rows and the directory state they were read from.
 struct CachedCalls {
     /// `name:size:mtime` over the module directory — the same signal the action catalog uses,
     /// scoped to one module. An edit to `actions.json` changes it; five quiet minutes do not.
     fingerprint: String,
-    /// Empty when the module declares no `call` anywhere, which is most of them. Cached all the
+    /// Empty when the module declares no `_call` anywhere, which is most of them. Cached all the
     /// same: "this module has nothing to inject" is an answer worth not re-deriving per call.
     calls: Arc<HashMap<String, serde_json::Value>>,
 }
@@ -1280,7 +1280,7 @@ impl ModuleManager {
     /// step with the declaration it was already a projection of. The declaration is here; the
     /// module is one process away; the row can simply travel.
     ///
-    /// `None` when the module declares no `call` for this action, which leaves the input exactly
+    /// `None` when the module declares no `_call` for this action, which leaves the input exactly
     /// as it was — every module that resolves its own endpoints keeps doing so.
     async fn inject_action_call(
         &self,
