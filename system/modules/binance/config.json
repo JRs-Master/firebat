@@ -35,109 +35,66 @@
         "id": "get_candles",
         "name": "Candles (OHLCV)",
         "description": "바이낸스 binance 캔들 OHLCV 봉 차트 데이터",
-        "params": [
-          "symbol",
-          "interval",
-          "limit",
-          "start",
-          "end"
-        ],
         "domain": "시세"
       },
       {
         "id": "ticker",
         "name": "Last price",
         "description": "바이낸스 binance 현재가 가격 시세 조회 — 마지막 체결가 한 줄. Latest traded price for one pair, the cheapest way to answer what a coin is worth right now.",
-        "params": [
-          "symbol"
-        ],
         "domain": "시세"
       },
       {
         "id": "ticker_24h",
         "name": "24h statistics",
         "description": "바이낸스 binance 24시간 통계 등락률 고가 저가 거래량 거래대금",
-        "params": [
-          "symbol"
-        ],
         "domain": "시세"
       },
       {
         "id": "book_ticker",
         "name": "Best bid and ask",
         "description": "바이낸스 binance 최우선 호가 매수호가 매도호가 스프레드",
-        "params": [
-          "symbol"
-        ],
         "domain": "호가"
       },
       {
         "id": "avg_price",
         "name": "Recent average price",
         "description": "바이낸스 binance 평균가 5분 평균 가격. The venue's own 5-minute average price, steadier than the last trade when the book is thin.",
-        "params": [
-          "symbol"
-        ],
         "domain": "시세"
       },
       {
         "id": "orderbook",
         "name": "Order book depth",
         "description": "바이낸스 binance 호가창 심도 매수잔량 매도잔량 오더북. Bid and ask levels with quantities; deeper requests cost more of the rate allowance.",
-        "params": [
-          "symbol",
-          "limit"
-        ],
         "domain": "호가"
       },
       {
         "id": "trades",
         "name": "Recent trades",
         "description": "바이낸스 binance 체결 내역 최근 거래 체결가 체결량 매수매도",
-        "params": [
-          "symbol",
-          "limit"
-        ],
         "domain": "체결"
       },
       {
         "id": "agg_trades",
         "name": "Aggregated trades",
         "description": "바이낸스 binance 집계 체결 내역 기간 지정",
-        "params": [
-          "symbol",
-          "limit",
-          "start",
-          "end"
-        ],
         "domain": "체결"
       },
       {
         "id": "screen",
         "name": "Turnover ranking",
         "description": "바이낸스 binance 거래대금 순위 급등 코인 종목 화면 스크리닝 랭킹",
-        "params": [
-          "quote",
-          "top",
-          "minTurnover",
-          "includeStable"
-        ],
         "domain": "종목발굴"
       },
       {
         "id": "symbols",
         "name": "Tradable pairs",
         "description": "바이낸스 binance 상장 종목 목록 페어 마켓 조회",
-        "params": [
-          "quote"
-        ],
         "domain": "시세"
       },
       {
         "id": "server_time",
         "name": "Exchange clock",
         "description": "바이낸스 binance 거래소 서버 시각. The venue's current time, for when a timestamp disagreement is suspected.",
-        "params": [],
         "domain": "시세"
       }
     ]
@@ -168,39 +125,39 @@
       },
       "symbol": {
         "type": "string",
-        "description": "Pair or base asset. BTCUSDT, BTC, btc/usdt and BTC-USDT all resolve to BTCUSDT; a bare base asset takes the quote parameter (USDT by default)."
+        "description": "[agg_trades/avg_price/book_ticker/get_candles/orderbook/ticker/ticker_24h/trades] Pair or base asset. BTCUSDT, BTC, btc/usdt and BTC-USDT all resolve to BTCUSDT; a bare base asset takes the quote parameter (USDT by default)."
       },
       "quote": {
         "type": "string",
-        "description": "Quote asset — completes a bare base asset, and selects which pairs screen and symbols return. Default USDT. Binance has no KRW pairs."
+        "description": "[screen/symbols] Quote asset — completes a bare base asset, and selects which pairs screen and symbols return. Default USDT. Binance has no KRW pairs."
       },
       "interval": {
         "type": "string",
-        "description": "Candle interval, CASE SENSITIVE: 1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M. '1m' is one minute and '1M' is one month. Default 1d."
+        "description": "[get_candles] Candle interval, CASE SENSITIVE: 1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M. '1m' is one minute and '1M' is one month. Default 1d."
       },
       "limit": {
         "type": "integer",
-        "description": "How many rows. Candles page past the venue's 1000 cap up to 20000; order book allows 5000; trades allow 1000."
+        "description": "[agg_trades/get_candles/orderbook/trades] How many rows. Candles page past the venue's 1000 cap up to 20000; order book allows 5000; trades allow 1000."
       },
       "start": {
         "type": "string",
-        "description": "Range start — YYYY-MM-DD or epoch milliseconds. Interpreted as UTC."
+        "description": "[agg_trades/get_candles] Range start — YYYY-MM-DD or epoch milliseconds. Interpreted as UTC."
       },
       "end": {
         "type": "string",
-        "description": "Range end — YYYY-MM-DD or epoch milliseconds. Interpreted as UTC."
+        "description": "[agg_trades/get_candles] Range end — YYYY-MM-DD or epoch milliseconds. Interpreted as UTC."
       },
       "top": {
         "type": "integer",
-        "description": "screen: how many ranked rows to return (1-200, default 30)."
+        "description": "[screen] screen: how many ranked rows to return (1-200, default 30)."
       },
       "minTurnover": {
         "type": "number",
-        "description": "screen: drop pairs whose 24h turnover in the quote asset is below this."
+        "description": "[screen] screen: drop pairs whose 24h turnover in the quote asset is below this."
       },
       "includeStable": {
         "type": "boolean",
-        "description": "screen: keep stablecoin-against-stablecoin pairs (USDC/USDT and the like). They top every turnover ranking without moving, so they are excluded by default."
+        "description": "[screen] screen: keep stablecoin-against-stablecoin pairs (USDC/USDT and the like). They top every turnover ranking without moving, so they are excluded by default."
       }
     },
     "additionalProperties": false

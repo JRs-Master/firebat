@@ -40,68 +40,37 @@
       {
         "id": "read",
         "name": "문서 읽기 (pptx·xlsx·docx·hwp·hwpx·pdf)",
-        "description": "Extract text and tables from an uploaded document",
-        "params": [
-          "path",
-          "maxChars"
-        ]
+        "description": "Extract text and tables from an uploaded document"
       },
       {
         "id": "make_pptx",
         "name": "PPTX 만들기 (렌더 블록 → 슬라이드)",
-        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables, chart blocks become native editable charts, callouts become tinted statement bands, and timeline/compare/key_value/progress blocks each trigger their own slide archetype",
-        "params": [
-          "blocks",
-          "title",
-          "masterMediaPath",
-          "transition",
-          "theme"
-        ]
+        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables, chart blocks become native editable charts, callouts become tinted statement bands, and timeline/compare/key_value/progress blocks each trigger their own slide archetype"
       },
       {
         "id": "make_xlsx",
         "name": "XLSX 만들기 (표 → 시트 · 대시보드)",
-        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns)",
-        "params": [
-          "sheets",
-          "blocks",
-          "kpis",
-          "charts",
-          "title"
-        ]
+        "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns)"
       },
       {
         "id": "make_docx",
         "name": "DOCX 만들기 (렌더 블록 → 보고서)",
-        "description": "Build a .docx REPORT from render blocks",
-        "params": [
-          "blocks",
-          "title"
-        ]
+        "description": "Build a .docx REPORT from render blocks"
       },
       {
         "id": "make_hwpx",
         "name": "HWPX 만들기 (렌더 블록 → 한글 문서)",
-        "description": "Build a .hwpx (Hancom) from render blocks via the rhwp engine, seeded from a real Hancom blank so fonts and styles are valid",
-        "params": [
-          "blocks",
-          "title"
-        ]
+        "description": "Build a .hwpx (Hancom) from render blocks via the rhwp engine, seeded from a real Hancom blank so fonts and styles are valid"
       },
       {
         "id": "make_pdf",
         "name": "PDF 만들기 (렌더 블록 → 보고서)",
-        "description": "Build a .pdf REPORT from render blocks",
-        "params": [
-          "blocks",
-          "title"
-        ]
+        "description": "Build a .pdf REPORT from render blocks"
       },
       {
         "id": "selftest",
         "name": "셀프테스트",
-        "description": "Offline round-trip checks: make each format, read it back, compare. No key, no network.",
-        "params": []
+        "description": "Offline round-trip checks: make each format, read it back, compare. No key, no network."
       }
     ]
   },
@@ -129,14 +98,14 @@
           "string",
           "null"
         ],
-        "description": "For read: the document — a media URL (/user/media/<slug>.<ext>) or workspace-relative path. Extension decides the parser (pptx/xlsx/docx/hwp/hwpx/pdf)."
+        "description": "[read] For read: the document — a media URL (/user/media/<slug>.<ext>) or workspace-relative path. Extension decides the parser (pptx/xlsx/docx/hwp/hwpx/pdf)."
       },
       "title": {
         "type": [
           "string",
           "null"
         ],
-        "description": "For make_*: title of the deck/document — first slide/heading and the stored filename."
+        "description": "[make_*] For make_*: title of the deck/document — first slide/heading and the stored filename."
       },
       "blocks": {
         "type": [
@@ -146,7 +115,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / callout{title,message} / key_value{items} / progress{label,value,max} / timeline{items} / compare{left,right} / chart{chartType,labels,data|series,title} / stock_chart{data:[{date,open,high,low,close,volume}]} / image{src} / divider. CONTAINERS are flattened into their children, so nothing authored inside one is lost: grid/card/carousel/slideshow splice their children in order, tabs/accordion emit each section's title as a level-3 header before its blocks, and a page `module` block splices its rendered output (props._baked). Table rows may be lists OR records ([{column: value}]) — a record is ordered by the table's headers, and with no headers the first record's keys become the header row. header.level accepts 1, \"1\" or \"h2\". Render-fence dialect ({name:'Header',type:'component'}) is absorbed, and alert is an alias of callout. Interactive-only blocks (button/form/slider/countdown/html/lottie/plan_card/ad_slot/result_display) have no document form and are dropped — each dropped TYPE is named once in data.notes. A live_* block degrades to its static sibling labelled \"(스냅샷)\" when it carries inline seed rows, otherwise it is dropped with a note. In make_pptx, header level 1 or divider starts a new slide. In make_xlsx, table blocks become data sheets while metric blocks become KPI cards and chart/stock_chart blocks become native charts on a Dashboard sheet."
+        "description": "[make_*] For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / callout{title,message} / key_value{items} / progress{label,value,max} / timeline{items} / compare{left,right} / chart{chartType,labels,data|series,title} / stock_chart{data:[{date,open,high,low,close,volume}]} / image{src} / divider. CONTAINERS are flattened into their children, so nothing authored inside one is lost: grid/card/carousel/slideshow splice their children in order, tabs/accordion emit each section's title as a level-3 header before its blocks, and a page `module` block splices its rendered output (props._baked). Table rows may be lists OR records ([{column: value}]) — a record is ordered by the table's headers, and with no headers the first record's keys become the header row. header.level accepts 1, \"1\" or \"h2\". Render-fence dialect ({name:'Header',type:'component'}) is absorbed, and alert is an alias of callout. Interactive-only blocks (button/form/slider/countdown/html/lottie/plan_card/ad_slot/result_display) have no document form and are dropped — each dropped TYPE is named once in data.notes. A live_* block degrades to its static sibling labelled \"(스냅샷)\" when it carries inline seed rows, otherwise it is dropped with a note. In make_pptx, header level 1 or divider starts a new slide. In make_xlsx, table blocks become data sheets while metric blocks become KPI cards and chart/stock_chart blocks become native charts on a Dashboard sheet."
       },
       "blocksCacheKey": {
         "type": [
@@ -157,7 +126,7 @@
         "items": {
           "type": "string"
         },
-        "description": "Cache key holding the blocks array (from a previous tool result) instead of inlining it."
+        "description": "[make_*] Cache key holding the blocks array (from a previous tool result) instead of inlining it."
       },
       "sheets": {
         "type": [
@@ -215,7 +184,7 @@
             }
           }
         },
-        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula. NEVER retype a long row set: a tool result you saw only as a truncated preview carries a `_cacheKey`, so send that sheet as {name, headers, rowsCacheKey: \"<that _cacheKey>\"} and the server expands the cached rows into it — a 120-day candle sheet then holds 120 real rows instead of the 5 preview rows. Only part of the table? Keep the key and add rowsLimit:N (the most-recent N rows) or rowsRange:{from,to} (a date window) beside it — retyping rows to trim them is what breaks the call, not what fixes it. Inline rows win if both are given. Add style:\"ledger\" (+ docTitle, period, subtotalBy) to render that sheet as a 총계정원장-style document instead: gridlines off, centered docTitle over a centered period line, every cell thin-ruled, gray bold header, numbers right-aligned — and subtotalBy (a date column's header name or 0-based index) groups consecutive rows by YYYY-MM and inserts a live [월 계] band (=SUM over that month) plus a [누 계] band (=SUM from the first data row) after each month. A ledger sheet gets no data bars or color scales — it is a document, not a heatmap."
+        "description": "[make_xlsx] For make_xlsx: explicit [{name, headers?, rows}] — wins over the table blocks. Every sheet gets the bold frozen header, fitted widths, number formats and automatic conditional formatting. A cell string starting with \"=\" stays a live formula. NEVER retype a long row set: a tool result you saw only as a truncated preview carries a `_cacheKey`, so send that sheet as {name, headers, rowsCacheKey: \"<that _cacheKey>\"} and the server expands the cached rows into it — a 120-day candle sheet then holds 120 real rows instead of the 5 preview rows. Only part of the table? Keep the key and add rowsLimit:N (the most-recent N rows) or rowsRange:{from,to} (a date window) beside it — retyping rows to trim them is what breaks the call, not what fixes it. Inline rows win if both are given. Add style:\"ledger\" (+ docTitle, period, subtotalBy) to render that sheet as a 총계정원장-style document instead: gridlines off, centered docTitle over a centered period line, every cell thin-ruled, gray bold header, numbers right-aligned — and subtotalBy (a date column's header name or 0-based index) groups consecutive rows by YYYY-MM and inserts a live [월 계] band (=SUM over that month) plus a [누 계] band (=SUM from the first data row) after each month. A ledger sheet gets no data bars or color scales — it is a document, not a heatmap."
       },
       "kpis": {
         "type": [
@@ -225,7 +194,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_xlsx: KPI cards on the Dashboard sheet — [{label, value, delta?, unit?, icon?, style?, max?}]. value may be a number or a live formula string (\"=SUM(Data!B2:B100)\"); delta colors itself (positive = red ▲, negative = blue ▼, zero = gray); each card takes a thick underline cycling blue/red/amber/green. BIG amounts: pass a HUMAN unit (value 333.6 + unit \"조원\", or value \"333.6조원\") — a raw 15-digit won amount only shrinks to stay visible, it does not become readable. Label each KPI with the fiscal year the data actually belongs to (fa ratios returns `periods` for exactly this). icon = one emoji shown before the value (\"💰\" → \"💰 334조원\") — it makes that cell text, so skip it when the number must stay SUM-able, and it is ignored on a \"=FORMULA\" value. style:\"bar\" renders the kpi instead as a progress-bar row under the cards: the big colored number, the label, and a live data bar scaled to max (default 100) — the \"34% 검색유입 매출 비율\" / \"4.11 고객 만족도\" shape. Wins over metric blocks."
+        "description": "[make_xlsx] For make_xlsx: KPI cards on the Dashboard sheet — [{label, value, delta?, unit?, icon?, style?, max?}]. value may be a number or a live formula string (\"=SUM(Data!B2:B100)\"); delta colors itself (positive = red ▲, negative = blue ▼, zero = gray); each card takes a thick underline cycling blue/red/amber/green. BIG amounts: pass a HUMAN unit (value 333.6 + unit \"조원\", or value \"333.6조원\") — a raw 15-digit won amount only shrinks to stay visible, it does not become readable. Label each KPI with the fiscal year the data actually belongs to (fa ratios returns `periods` for exactly this). icon = one emoji shown before the value (\"💰\" → \"💰 334조원\") — it makes that cell text, so skip it when the number must stay SUM-able, and it is ignored on a \"=FORMULA\" value. style:\"bar\" renders the kpi instead as a progress-bar row under the cards: the big colored number, the label, and a live data bar scaled to max (default 100) — the \"34% 검색유입 매출 비율\" / \"4.11 고객 만족도\" shape. Wins over metric blocks."
       },
       "charts": {
         "type": [
@@ -235,35 +204,35 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_xlsx: native Excel charts on the Dashboard sheet — [{type: line|bar|pie|doughnut|combo, title, sheet, labelCol, valueCols[], unit?, centerLabel?, centerValue?}]. sheet = the data sheet name; labelCol/valueCols = header names or 0-based indices in that sheet. Data is read from cells, so the chart stays editable. type \"combo\" = valueCols[0] as muted bars + valueCols[1] as an accent line on a SECONDARY axis (two quantities, two units, one time axis — e.g. 수량 bars with 매출 line); it needs two value columns or it falls back to bars with a note; its bars carry value labels, its line does not. type \"doughnut\" = a ring; Excel cannot paint text in the hole, so centerLabel (small gray) over centerValue (large navy, e.g. \"83.1%\") is written into merged cells directly UNDER the ring, inside the same card. Layout is automatic: every chart becomes a white card on the slate canvas, a wide chart and a ring share one band (~2/3 + ~1/3) and a lone chart spans the full width, legends always sit under the plot, and every cartesian axis shows its tick numbers (#,##0, the combo's secondary axis included). A pie/doughnut title is NOT drawn inside the chart — Excel would center it over the ring — it becomes a bold navy header cell on that card's top row. Optional unit (e.g. \"단위: 백만원\") renders as a small amber badge at that card's top-right. Unresolvable charts are skipped and listed in data.notes. Wins over chart blocks."
+        "description": "[make_xlsx] For make_xlsx: native Excel charts on the Dashboard sheet — [{type: line|bar|pie|doughnut|combo, title, sheet, labelCol, valueCols[], unit?, centerLabel?, centerValue?}]. sheet = the data sheet name; labelCol/valueCols = header names or 0-based indices in that sheet. Data is read from cells, so the chart stays editable. type \"combo\" = valueCols[0] as muted bars + valueCols[1] as an accent line on a SECONDARY axis (two quantities, two units, one time axis — e.g. 수량 bars with 매출 line); it needs two value columns or it falls back to bars with a note; its bars carry value labels, its line does not. type \"doughnut\" = a ring; Excel cannot paint text in the hole, so centerLabel (small gray) over centerValue (large navy, e.g. \"83.1%\") is written into merged cells directly UNDER the ring, inside the same card. Layout is automatic: every chart becomes a white card on the slate canvas, a wide chart and a ring share one band (~2/3 + ~1/3) and a lone chart spans the full width, legends always sit under the plot, and every cartesian axis shows its tick numbers (#,##0, the combo's secondary axis included). A pie/doughnut title is NOT drawn inside the chart — Excel would center it over the ring — it becomes a bold navy header cell on that card's top row. Optional unit (e.g. \"단위: 백만원\") renders as a small amber badge at that card's top-right. Unresolvable charts are skipped and listed in data.notes. Wins over chart blocks."
       },
       "masterMediaPath": {
         "type": [
           "string",
           "null"
         ],
-        "description": "For make_pptx: media URL of a master/template .pptx whose theme and layouts the new deck inherits. Omitted = the module's uploaded master setting, else a plain default deck."
+        "description": "[make_pptx] For make_pptx: media URL of a master/template .pptx whose theme and layouts the new deck inherits. Omitted = the module's uploaded master setting, else a plain default deck."
       },
       "maxChars": {
         "type": [
           "number",
           "null"
         ],
-        "description": "For read: cap on returned text length (default unlimited — large text is auto-cached)."
+        "description": "[read] For read: cap on returned text length (default unlimited — large text is auto-cached)."
       },
       "transition": {
         "type": [
           "string",
           "null"
         ],
-        "description": "make_pptx slide transition: fade (default) | wipe | push | none."
+        "description": "[make_pptx] make_pptx slide transition: fade (default) | wipe | push | none."
       },
       "theme": {
         "type": [
           "object",
           "null"
         ],
-        "description": "make_pptx design tokens when no master is given — {accent, heading, body, band} as hex colors. Use the palette you designed the page with; blocks carry meaning, these carry the look. A master .pptx always wins over this."
+        "description": "[make_pptx] make_pptx design tokens when no master is given — {accent, heading, body, band} as hex colors. Use the palette you designed the page with; blocks carry meaning, these carry the look. A master .pptx always wins over this."
       }
     }
   },

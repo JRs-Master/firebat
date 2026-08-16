@@ -39,139 +39,52 @@
       {
         "id": "search",
         "name": "네이버 검색 (뉴스·블로그·카페·웹문서·지식iN·백과·이미지·지역)",
-        "description": "One search endpoint per `type`. Returns title / link / description plus per-type extras",
-        "params": [
-          "query",
-          "type",
-          "display",
-          "start",
-          "sort",
-          "filter"
-        ]
+        "description": "One search endpoint per `type`. Returns title / link / description plus per-type extras"
       },
       {
         "id": "search-trend",
         "name": "검색어 트렌드 (주제어별 통합검색 추이)",
-        "description": "Relative search interest over time for up to 5 keyword groups, each bundling up to 20 terms that are summed",
-        "params": [
-          "keywordGroups",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "device",
-          "gender",
-          "ages"
-        ]
+        "description": "Relative search interest over time for up to 5 keyword groups, each bundling up to 20 terms that are summed"
       },
       {
         "id": "shopping-categories",
         "name": "쇼핑 분야별 클릭 추이",
-        "description": "Relative shopping click trend for up to 3 category codes compared against each other",
-        "params": [
-          "category",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "device",
-          "gender",
-          "ages"
-        ]
+        "description": "Relative shopping click trend for up to 3 category codes compared against each other"
       },
       {
         "id": "shopping-category-by-device",
         "name": "쇼핑 분야 클릭 추이 — 기기별 분해",
-        "description": "One category's click trend split into PC and mobile series",
-        "params": [
-          "categoryCode",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "gender",
-          "ages"
-        ]
+        "description": "One category's click trend split into PC and mobile series"
       },
       {
         "id": "shopping-category-by-gender",
         "name": "쇼핑 분야 클릭 추이 — 성별 분해",
-        "description": "One category's click trend split into male and female series. Each data row carries `group` (m|f).",
-        "params": [
-          "categoryCode",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "device",
-          "ages"
-        ]
+        "description": "One category's click trend split into male and female series. Each data row carries `group` (m|f)."
       },
       {
         "id": "shopping-category-by-age",
         "name": "쇼핑 분야 클릭 추이 — 연령별 분해",
-        "description": "One category's click trend split by age decade. Each data row carries `group` (10|20|...|60).",
-        "params": [
-          "categoryCode",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "device",
-          "gender"
-        ]
+        "description": "One category's click trend split by age decade. Each data row carries `group` (10|20|...|60)."
       },
       {
         "id": "shopping-keywords",
         "name": "쇼핑 분야 안 키워드별 클릭 추이",
-        "description": "Click trend for up to 5 search terms inside one shopping category, compared against each other",
-        "params": [
-          "categoryCode",
-          "keyword",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "device",
-          "gender",
-          "ages"
-        ]
+        "description": "Click trend for up to 5 search terms inside one shopping category, compared against each other"
       },
       {
         "id": "shopping-by-device",
         "name": "쇼핑 키워드 클릭 추이 — 기기별 분해",
-        "description": "One keyword inside one category, split into PC and mobile series",
-        "params": [
-          "categoryCode",
-          "keywordText",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "gender",
-          "ages"
-        ]
+        "description": "One keyword inside one category, split into PC and mobile series"
       },
       {
         "id": "shopping-by-gender",
         "name": "쇼핑 키워드 클릭 추이 — 성별 분해",
-        "description": "One keyword inside one category, split into male and female series.",
-        "params": [
-          "categoryCode",
-          "keywordText",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "device",
-          "ages"
-        ]
+        "description": "One keyword inside one category, split into male and female series."
       },
       {
         "id": "shopping-by-age",
         "name": "쇼핑 키워드 클릭 추이 — 연령별 분해",
-        "description": "One keyword inside one category, split by age decade.",
-        "params": [
-          "categoryCode",
-          "keywordText",
-          "startDate",
-          "endDate",
-          "timeUnit",
-          "device",
-          "gender"
-        ]
+        "description": "One keyword inside one category, split by age decade."
       }
     ]
   },
@@ -253,11 +166,11 @@
       },
       "startDate": {
         "type": "string",
-        "description": "[DataLab] Start date yyyy-mm-dd. Search trend goes back to 2016-01-01, shopping insight to 2017-08-01. Defaults to 90 days ago"
+        "description": "[search-trend/shopping-by-age/shopping-by-device/shopping-by-gender/shopping-categories/shopping-category-by-age/shopping-category-by-device/shopping-category-by-gender/shopping-keywords] [DataLab] Start date yyyy-mm-dd. Search trend goes back to 2016-01-01, shopping insight to 2017-08-01. Defaults to 90 days ago"
       },
       "endDate": {
         "type": "string",
-        "description": "[DataLab] End date yyyy-mm-dd. Defaults to today"
+        "description": "[search-trend/shopping-by-age/shopping-by-device/shopping-by-gender/shopping-categories/shopping-category-by-age/shopping-category-by-device/shopping-category-by-gender/shopping-keywords] [DataLab] End date yyyy-mm-dd. Defaults to today"
       },
       "timeUnit": {
         "type": "string",
@@ -267,7 +180,7 @@
           "month"
         ],
         "default": "week",
-        "description": "[DataLab] Bucket size. date=daily (up to 1 year), week=weekly (up to 2 years), month=monthly (up to 5 years)"
+        "description": "[search-trend/shopping-by-age/shopping-by-device/shopping-by-gender/shopping-categories/shopping-category-by-age/shopping-category-by-device/shopping-category-by-gender/shopping-keywords] [DataLab] Bucket size. date=daily (up to 1 year), week=weekly (up to 2 years), month=monthly (up to 5 years)"
       },
       "keywordGroups": {
         "type": "array",
@@ -361,7 +274,7 @@
           "pc",
           "mo"
         ],
-        "description": "[DataLab] Device filter. Omit for all devices. On shopping-*-by-device this would collapse the split, so it is ignored there"
+        "description": "[search-trend/shopping-by-age/shopping-by-gender/shopping-categories/shopping-category-by-age/shopping-category-by-gender/shopping-keywords] [DataLab] Device filter. Omit for all devices. On shopping-*-by-device this would collapse the split, so it is ignored there"
       },
       "gender": {
         "type": "string",
@@ -369,7 +282,7 @@
           "m",
           "f"
         ],
-        "description": "[DataLab] Gender filter. Omit for all. On shopping-*-by-gender this would collapse the split, so it is ignored there"
+        "description": "[search-trend/shopping-by-age/shopping-by-device/shopping-categories/shopping-category-by-age/shopping-category-by-device/shopping-keywords] [DataLab] Gender filter. Omit for all. On shopping-*-by-gender this would collapse the split, so it is ignored there"
       },
       "ages": {
         "type": "array",
@@ -394,7 +307,7 @@
             "60"
           ]
         },
-        "description": "[DataLab] Age filter — TWO DIFFERENT VOCABULARIES share this field name. search-trend uses bands 1-11 (1=0-12, 2=13-18, 3=19-24, 4=25-29, 5=30-34, 6=35-39, 7=40-44, 8=45-49, 9=50-54, 10=55-59, 11=60+). Every shopping-* action uses decades 10/20/30/40/50/60 (10=10-19 ... 60=60+). \"10\" is valid in both and means 55-59 in one and 10-19 in the other, so a value carried across gives a plausible wrong answer; values that do not belong to the action are dropped and reported"
+        "description": "[search-trend/shopping-by-device/shopping-by-gender/shopping-categories/shopping-category-by-device/shopping-category-by-gender/shopping-keywords] [DataLab] Age filter — TWO DIFFERENT VOCABULARIES share this field name. search-trend uses bands 1-11 (1=0-12, 2=13-18, 3=19-24, 4=25-29, 5=30-34, 6=35-39, 7=40-44, 8=45-49, 9=50-54, 10=55-59, 11=60+). Every shopping-* action uses decades 10/20/30/40/50/60 (10=10-19 ... 60=60+). \"10\" is valid in both and means 55-59 in one and 10-19 in the other, so a value carried across gives a plausible wrong answer; values that do not belong to the action are dropped and reported"
       }
     },
     "additionalProperties": false

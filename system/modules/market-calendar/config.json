@@ -22,22 +22,13 @@
         "id": "is_trading_day",
         "name": "휴장일 · 영업일 판정",
         "domain": "시장정보",
-        "description": "휴장일 영업일 개장 여부 판정 — 그 시장이 그날 여는지, 정규장이 몇 시부터 몇 시까지인지, 닫혔다면 주말인지 공휴일인지, 그리고 직전·다음 영업일",
-        "params": [
-          "market",
-          "date"
-        ]
+        "description": "휴장일 영업일 개장 여부 판정 — 그 시장이 그날 여는지, 정규장이 몇 시부터 몇 시까지인지, 닫혔다면 주말인지 공휴일인지, 그리고 직전·다음 영업일"
       },
       {
         "id": "sessions",
         "name": "기간 캘린더 조회",
         "domain": "시장정보",
-        "description": "기간 캘린더 조회 — 시작일부터 종료일까지 하루씩, 개장 여부와 정규장 시각",
-        "params": [
-          "market",
-          "start",
-          "end"
-        ]
+        "description": "기간 캘린더 조회 — 시작일부터 종료일까지 하루씩, 개장 여부와 정규장 시각"
       }
     ]
   },
@@ -62,15 +53,15 @@
       },
       "date": {
         "type": "string",
-        "description": "YYYY-MM-DD. Defaults to today in the server's timezone."
+        "description": "[is_trading_day] YYYY-MM-DD. Defaults to today in the server's timezone."
       },
       "start": {
         "type": "string",
-        "description": "sessions: range start, YYYY-MM-DD."
+        "description": "[sessions] sessions: range start, YYYY-MM-DD."
       },
       "end": {
         "type": "string",
-        "description": "sessions: range end, YYYY-MM-DD (defaults to start + 30 days, capped at 400 rows)."
+        "description": "[sessions] sessions: range end, YYYY-MM-DD (defaults to start + 30 days, capped at 400 rows)."
       }
     },
     "additionalProperties": false

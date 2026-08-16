@@ -35,19 +35,12 @@
       {
         "id": "ratios",
         "name": "재무비율 계산 (수익성·안정성·성장성·밸류에이션)",
-        "description": "DART statement rows in -> profitability (margins, ROE, ROA), stability (debt ratio, current ratio, equity ratio), growth (YoY revenue/profit/assets), and with marketCap also PER/PBR/PSR (+EPS/BPS with shares)",
-        "params": [
-          "statements",
-          "marketCap",
-          "shares",
-          "estimates"
-        ]
+        "description": "DART statement rows in -> profitability (margins, ROE, ROA), stability (debt ratio, current ratio, equity ratio), growth (YoY revenue/profit/assets), and with marketCap also PER/PBR/PSR (+EPS/BPS with shares)"
       },
       {
         "id": "selftest",
         "name": "셀프테스트",
-        "description": "Offline checks against synthetic DART-shaped rows with known answers.",
-        "params": []
+        "description": "Offline checks against synthetic DART-shaped rows with known answers."
       }
     ]
   },
@@ -73,7 +66,7 @@
         "items": {
           "type": "object"
         },
-        "description": "Rows exactly as the dart module returns them (financial / financialAll): account_nm + thstrm_amount / frmtrm_amount / bfefrmtrm_amount, optional fs_div. CFS (연결) is preferred when both appear."
+        "description": "[ratios] Rows exactly as the dart module returns them (financial / financialAll): account_nm + thstrm_amount / frmtrm_amount / bfefrmtrm_amount, optional fs_div. CFS (연결) is preferred when both appear."
       },
       "statementsCacheKey": {
         "type": [
@@ -84,28 +77,28 @@
         "items": {
           "type": "string"
         },
-        "description": "The `_cacheKey` from the dart financial call — a top-level parameter of its own, never a value inside `statements`. Hands the rows over without re-inlining them. One of statements / statementsCacheKey is required. Several calls (one per year) may be listed — [\"key2023\",\"key2024\",\"key2025\"] — and their rows are concatenated in the order given."
+        "description": "[ratios] The `_cacheKey` from the dart financial call — a top-level parameter of its own, never a value inside `statements`. Hands the rows over without re-inlining them. One of statements / statementsCacheKey is required. Several calls (one per year) may be listed — [\"key2023\",\"key2024\",\"key2025\"] — and their rows are concatenated in the order given."
       },
       "marketCap": {
         "type": [
           "number",
           "null"
         ],
-        "description": "Market capitalization in KRW (current price x listed shares). Enables PER/PBR/PSR. Get the price from a broker/quote tool — this module does not fetch."
+        "description": "[ratios] Market capitalization in KRW (current price x listed shares). Enables PER/PBR/PSR. Get the price from a broker/quote tool — this module does not fetch."
       },
       "shares": {
         "type": [
           "number",
           "null"
         ],
-        "description": "Listed share count — enables EPS/BPS/SPS per-share figures."
+        "description": "[ratios] Listed share count — enables EPS/BPS/SPS per-share figures."
       },
       "estimates": {
         "type": [
           "object",
           "null"
         ],
-        "description": "KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4 — OR pass estimatesCacheKey with the _cacheKey from that call (preferred: no retyping). The output2/output3 rows are UNLABELED — never try to decode row meanings yourself (the labels here are live-measured), and never rebuild rows by hand; a hand-made array is refused, not normalized. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed."
+        "description": "[ratios] KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4 — OR pass estimatesCacheKey with the _cacheKey from that call (preferred: no retyping). The output2/output3 rows are UNLABELED — never try to decode row meanings yourself (the labels here are live-measured), and never rebuild rows by hand; a hand-made array is refused, not normalized. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed."
       }
     }
   },
