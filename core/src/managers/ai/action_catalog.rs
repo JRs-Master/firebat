@@ -1004,6 +1004,46 @@ pub(crate) fn sysmod_tool_name(_module: &str) -> String {
     crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL.to_string()
 }
 
+/// `{"query.FID_INPUT_ISCD": desc}` → `{"query": {"FID_INPUT_ISCD": desc}}` — the shape the
+/// executor validates. Dotted keys are how the source API docs name a nested field; leaving them
+/// dotted made the schema rung describe a call the dispatch rung refuses. Keys without a dot are
+/// untouched, and depth is whatever the key declares.
+fn nest_dotted_keys(params: &serde_json::Value) -> serde_json::Value {
+    let Some(obj) = params.as_object() else {
+        return params.clone();
+    };
+    let mut out = serde_json::Map::new();
+    for (path, v) in obj {
+        insert_at_path(&mut out, path, v);
+    }
+    serde_json::Value::Object(out)
+}
+
+fn insert_at_path(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    path: &str,
+    value: &serde_json::Value,
+) {
+    match path.split_once('.') {
+        Some((head, rest)) if !head.is_empty() && !rest.is_empty() => {
+            let slot = map
+                .entry(head.to_string())
+                .or_insert_with(|| serde_json::json!({}));
+            match slot.as_object_mut() {
+                Some(inner) => insert_at_path(inner, rest, value),
+                // A leaf already claimed this name (a module declaring both `query` and
+                // `query.x`). Keep both rather than silently dropping either.
+                None => {
+                    map.insert(path.to_string(), value.clone());
+                }
+            }
+        }
+        _ => {
+            map.insert(path.to_string(), value.clone());
+        }
+    }
+}
+
 /// The one answer both discovery tools give for a module the owner switched off. Neither "no such
 /// module" nor silence would be true: the capability exists and the index knows it, so a model told
 /// either of those re-words the query or reaches for the module tool directly. Say which of the two
@@ -1436,6 +1476,17 @@ impl ModuleActionCatalog {
                 }
                 None => out["params"] = serde_json::json!({ "account": doc }),
             }
+        }
+
+        // Params arrive keyed by their PATH in the call — `query.FID_INPUT_ISCD` — because that is
+        // how the broker's own docs name them. Handed over flat, a path reads as a parameter name:
+        // the model copied it verbatim, exactly as this rung tells it to, and the executor refused
+        // the call because what it validates is a `query` OBJECT (2026-08-16 실측, 국내주식-164 —
+        // "Additional properties are not allowed ('query.FID_INPUT_ISCD' …) — did you mean
+        // \"query\"?"). Discovery must not teach a shape dispatch rejects, so the same declaration
+        // is rendered in the shape that is accepted. Nothing is invented — the dots become nesting.
+        if let Some(params) = out.get("params").cloned() {
+            out["params"] = nest_dotted_keys(&params);
         }
 
         // The last step, assembled as far as this end can assemble it.

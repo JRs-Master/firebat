@@ -116,22 +116,51 @@ fn decode_unicode_escapes(s: &str) -> String {
 }
 
 fn strip_html_tags(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
     let mut out = String::with_capacity(s.len());
-    let mut depth = 0_i32;
-    for c in s.chars() {
-        if c == '<' {
-            depth += 1;
-            continue;
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '<' {
+            if let Some(end) = html_tag_end(&chars, i) {
+                i = end + 1;
+                continue;
+            }
         }
-        if c == '>' && depth > 0 {
-            depth -= 1;
-            continue;
-        }
-        if depth == 0 {
-            out.push(c);
-        }
+        out.push(chars[i]);
+        i += 1;
     }
     out
+}
+
+/// Index of the `>` that closes a real tag opening at `open` — `None` when this `<` is not a tag.
+///
+/// The old version counted every `<` as an opener and every `>` as a closer, so an answer that
+/// compares numbers lost everything after the first one: `종가 9,690원 < 5일선 < 20일선 < 60일선`
+/// raised the depth to three, no `>` ever brought it back, and the remaining 358 characters —
+/// including the entire conclusion — never reached the `content` column (measured 2026-08-16).
+/// That channel is the one the recent-context prepend reads, so the model came back to its own
+/// analysis with the verdict missing.
+///
+/// A tag is a shape, not a character: `<` then an optional `/` then an ASCII letter, closed by `>`
+/// before the next `<` or the end of the line. `< 5일선` and `<3` fail every part of that and stay.
+fn html_tag_end(chars: &[char], open: usize) -> Option<usize> {
+    let mut j = open + 1;
+    if chars.get(j) == Some(&'/') {
+        j += 1;
+    }
+    if !chars.get(j)?.is_ascii_alphabetic() {
+        return None;
+    }
+    while j < chars.len() {
+        match chars[j] {
+            '>' => return Some(j),
+            // A second opener, or a line end, means the first one never closed — dropping to
+            // there is exactly the swallow this function exists to stop.
+            '<' | '\n' => return None,
+            _ => j += 1,
+        }
+    }
+    None
 }
 
 /// `**굵게**` / `*기울임*` / `` `코드` `` 마커 제거. 마크다운 텍스트 → 평문.
@@ -440,6 +469,31 @@ mod tests {
     fn clean_text_strips_html() {
         assert_eq!(clean_text("<b>굵게</b>"), "굵게");
         assert_eq!(clean_text("plain"), "plain");
+        assert_eq!(clean_text("<img src=\"x\">뒤"), "뒤");
+    }
+
+    /// The measured 2026-08-16 answer. Three `<` used as comparisons, no `>` anywhere — the depth
+    /// counter climbed and ate the rest of the reply, conclusion included.
+    #[test]
+    fn clean_text_keeps_everything_after_a_less_than_sign() {
+        let reply = "- 종가 9,690원 < 5일선 9,830원 < 20일선 9,965.5원 < 60일선 10,405원\n\
+                     \n제 판단은 하락 추세 속 과매도권 접근입니다.";
+        let cleaned = clean_text(reply);
+        assert!(cleaned.contains("60일선 10,405원"), "got: {cleaned}");
+        assert!(cleaned.contains("과매도권 접근"), "the conclusion must survive: {cleaned}");
+        assert_eq!(cleaned.matches('<').count(), 3, "and the operators stay: {cleaned}");
+    }
+
+    /// A tag is still a tag when a comparison sits in the same line.
+    #[test]
+    fn clean_text_strips_a_tag_that_shares_a_line_with_a_comparison() {
+        assert_eq!(clean_text("a < b <b>굵게</b> c < d"), "a < b 굵게 c < d");
+    }
+
+    /// An unterminated opener used to swallow the remainder; it is left alone instead.
+    #[test]
+    fn clean_text_leaves_an_unclosed_opener_alone() {
+        assert_eq!(clean_text("앞 <div 뒤"), "앞 <div 뒤");
     }
 
     #[test]

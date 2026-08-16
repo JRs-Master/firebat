@@ -3620,6 +3620,29 @@ impl AiManager {
                 for tool_name in &response.internally_used_tools {
                     executed_actions.push(serde_json::Value::String(tool_name.clone()));
                 }
+                // A CLI turn runs its tool loop inside the child process, so this manager sees one
+                // call and the trace stayed empty: the archive recorded round_count 0 · tool_count 0
+                // for a turn that made twelve calls, and the only evidence was the `[도구 호출: x]`
+                // markers sitting inside the reasoning TEXT (2026-08-16 — the readback that was
+                // asked for could not be done per round). The names are already structured by the
+                // adapter; record the loop as the round it was, in the same shape the FC path uses.
+                reasoning_trace.push(serde_json::json!({
+                    "round": reasoning_trace.len() + 1,
+                    "model": response.model_id.clone(),
+                    // The FC path's rounds are this manager's; this one is not, and a reader
+                    // comparing turns has to be able to tell which loop it is looking at.
+                    "source": "cli",
+                    "reasoning": response
+                        .thinking_text
+                        .as_deref()
+                        .unwrap_or_default()
+                        .chars()
+                        .take(4000)
+                        .collect::<String>(),
+                    "text": "",
+                    "tools": response.internally_used_tools.clone(),
+                    "failed": response.tool_results.iter().any(|r| !r.success),
+                }));
             }
             // 도구 결과 요약 (성공/실패 모두) — Frontend 에러 뱃지 UI 채널.
             if !response.tool_results.is_empty() {
