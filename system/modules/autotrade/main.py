@@ -3088,7 +3088,11 @@ def action_selftest():
     # bare Windows box has only the default one — a test that passes or fails on tzdata being
     # installed measures the host, not the rule.
     _hours = {"kr": {"zone": "Asia/Seoul", "open": "09:00", "close": "15:30"}}
-    _now = store.now_ms()
+    # A fixed midday in Seoul, not the wall clock. The rule compares calendar dates in the venue's
+    # zone, so "sent a minute ago" is only still-today for 1439 of the day's 1440 minutes — run the
+    # suite inside the first minute after KST midnight and a correct rule reports a failure. Both
+    # instants are given here so the check measures the rule and not the hour CI happened to start.
+    _now = 1786935600000  # 2026-08-17 12:00 KST
     checks.append({"name": "an order from an earlier session has already ended", "want": True,
                    "got": eng.day_order_expired("kr", _hours, _now - 2 * _day, _now),
                    "ok": eng.day_order_expired("kr", _hours, _now - 2 * _day, _now) is True})
