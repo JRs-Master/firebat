@@ -513,7 +513,15 @@ async function main(data) {
       apiId = mapped.apiId;
       params = mapped.params;
     }
-    if (String(meta?.path || '').includes('/chart') && !params.base_dt) params.base_dt = kstToday();
+    // Resolve the row as soon as `apiId` is settled — a neutral name has just picked its branch,
+    // and everything below (the chart default, the request, the reply's name) reads it.
+    const meta = metaOf(data._call, apiId);
+    if (!meta?.path) {
+      console.log(JSON.stringify({ success: false, error:
+        `${apiId} 의 엔드포인트 선언(_call)이 오지 않았습니다 — actions.json 의 그 액션에 _call 이 있는지 확인하세요.` }));
+      return;
+    }
+    if (meta.path.includes('/chart') && !params.base_dt) params.base_dt = kstToday();
     // The practice host routes to KRX and nothing else. The neutral order path has forced this
     // since 2026-08-04, but a raw call carries its own params and sailed past that guard with
     // dmst_stex_tp: "SOR" — refused as RC9000 (measured 2026-08-06, the liquidation pass). The
@@ -522,7 +530,6 @@ async function main(data) {
         && params.dmst_stex_tp.toUpperCase() !== 'KRX') {
       params = { ...params, dmst_stex_tp: 'KRX' };
     }
-    const meta = metaOf(data._call, apiId);
     const result = action === 'get_candles'
       ? await fetchCandles(base, token, meta, apiId, params, data.bars)
       : await callApi(base, token, meta, apiId, params);
