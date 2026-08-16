@@ -304,6 +304,20 @@ impl ModuleActionSource {
                 // reasoned, verbatim, "the schema I got only shows 4 params" — then spent seven
                 // rounds inventing shapes (2026-08-13, turn 49). Derived from the declaration, so
                 // it cannot drift from what the expander accepts.
+                // A catalog's `params` carries two different things, and only one of them is its
+                // own. WHICH params an action takes is real information — `input.properties` is
+                // the union over every action, so it can never say that. WHAT each param means is
+                // already written next to the schema, and restating it is a copy that drifts:
+                // daum-search's `sort` read "accuracy (default) or newest-first …" while the
+                // schema beside it declared `["accuracy","recency","latest"]`, so the model sent
+                // the concept name and dispatch refused (2026-08-16). A scan the same day found
+                // every inline catalog in the tree — 8 modules, ~60 entries — restating params
+                // whose names all exist in the schema.
+                //
+                // So the selection stays with the catalog and the wording comes from the
+                // declaration. An entry that names no params at all takes the whole schema, which
+                // is what lets a single-action module carry no copy in the first place.
+                fill_param_docs_from_input(&mut extra, config);
                 add_cache_key_params(&mut extra, config);
                 // Attach resolve guidance for grounded params this action actually takes —
                 // the model reads it exactly where it reads the params (get_action_schema),
@@ -573,6 +587,78 @@ fn add_cache_key_params(extra: &mut serde_json::Value, config: &serde_json::Valu
     }
 }
 
+/// `{param: description}` straight off the module's input schema, `action` excluded and the
+/// declared `enum` spelled out.
+///
+/// This is the ONLY place params are worded, and both catalog shapes reach it: a derived entry has
+/// nothing else, and an explicit `actionCatalog` entry that declares no `params` falls back here
+/// rather than going out blank. A hand-written catalog is necessary when one module carries many
+/// actions — `input.properties` is their union, so it cannot say which action takes what — and
+/// pure duplication when the module has one action. daum-search restated all six params in prose
+/// and the restatement drifted: `sort` read "accuracy (default) or newest-first …" while the
+/// schema beside it declared `["accuracy","recency","latest"]`. `newest-first` is the CONCEPT
+/// there, spelled like a value, so the model sent it and dispatch refused (2026-08-16). With this
+/// fallback the copy can simply be deleted, which is the fix — not a better sentence in it.
+fn params_from_input(config: &serde_json::Value) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    let Some(props) = config
+        .get("input")
+        .and_then(|i| i.get("properties"))
+        .and_then(|p| p.as_object())
+    else {
+        return serde_json::Value::Object(m);
+    };
+    for (k, v) in props {
+        if k == "action" {
+            continue;
+        }
+        let desc = v.get("description").and_then(|d| d.as_str()).unwrap_or("");
+        let enum_hint = v
+            .get("enum")
+            .and_then(|e| e.as_array())
+            .map(|a| {
+                let vals: Vec<String> =
+                    a.iter().filter_map(|x| x.as_str().map(String::from)).collect();
+                if vals.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (enum: {})", vals.join(", "))
+                }
+            })
+            .unwrap_or_default();
+        m.insert(
+            k.clone(),
+            serde_json::Value::String(format!("{}{}", desc, enum_hint).trim().to_string()),
+        );
+    }
+    serde_json::Value::Object(m)
+}
+
+/// Replaces each catalog param's wording with the schema's own, keeping the catalog's selection.
+///
+/// A name the schema does not know keeps whatever the catalog says — that is the generated
+/// broker catalogs, whose params are call paths (`query.FID_INPUT_ISCD`) rather than schema
+/// properties. An entry that lists no params takes the schema whole.
+fn fill_param_docs_from_input(extra: &mut serde_json::Value, config: &serde_json::Value) {
+    let derived = params_from_input(config);
+    let Some(derived) = derived.as_object() else { return };
+    if derived.is_empty() {
+        return;
+    }
+    match extra.get_mut("params").and_then(|p| p.as_object_mut()) {
+        Some(params) if !params.is_empty() => {
+            for (name, desc) in params.iter_mut() {
+                if let Some(from_schema) = derived.get(name) {
+                    if from_schema.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
+                        *desc = from_schema.clone();
+                    }
+                }
+            }
+        }
+        _ => extra["params"] = serde_json::Value::Object(derived.clone()),
+    }
+}
+
 /// `ultra-*` matches `ultra-short`; otherwise an exact action-id match.
 fn token_matches(tok: &str, action: &str) -> bool {
     match tok.strip_suffix('*') {
@@ -638,36 +724,7 @@ fn derive_entries_from_input(
         .get("input")
         .and_then(|i| i.get("properties"))
         .and_then(|p| p.as_object());
-    // get_action_schema params = {param: description(+enum hint)}, excluding the `action` selector.
-    let params: serde_json::Value = {
-        let mut m = serde_json::Map::new();
-        if let Some(props) = props {
-            for (k, v) in props {
-                if k == "action" {
-                    continue;
-                }
-                let desc = v.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                let enum_hint = v
-                    .get("enum")
-                    .and_then(|e| e.as_array())
-                    .map(|a| {
-                        let vals: Vec<String> =
-                            a.iter().filter_map(|x| x.as_str().map(String::from)).collect();
-                        if vals.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" (enum: {})", vals.join(", "))
-                        }
-                    })
-                    .unwrap_or_default();
-                m.insert(
-                    k.clone(),
-                    serde_json::Value::String(format!("{}{}", desc, enum_hint).trim().to_string()),
-                );
-            }
-        }
-        serde_json::Value::Object(m)
-    };
+    let params = params_from_input(config);
     // Short module blurb — first sentence / 120 chars, for the single-purpose fallback and as
     // semantic filler when an action has no per-action description fragment.
     let module_blurb: String = config
@@ -1888,6 +1945,78 @@ mod display_vs_document_tests {
         for noise in ["GET", "POST", "DELETE", "cancel_maker"] {
             assert!(!display.contains(noise), "display leaked {noise}: {display}");
         }
+    }
+
+    /// The 2026-08-16 daum-search shape: an inline catalog restating a param the schema already
+    /// declares, and the restatement having lost the allowed values. The catalog picked the
+    /// params; the schema says what they are.
+    #[test]
+    fn a_catalog_keeps_its_selection_and_takes_the_schema_wording() {
+        let cfg = serde_json::json!({
+            "input": {"properties": {
+                "action": {"type": "string", "enum": ["search"]},
+                "query": {"type": "string", "description": "Search term"},
+                "sort":  {"type": "string", "enum": ["accuracy", "recency", "latest"],
+                          "description": "result ordering"},
+                "target": {"type": "string", "description": "book only"}
+            }}
+        });
+        let mut extra = serde_json::json!({"params": {
+            "query": "Search term",
+            "sort": "accuracy (default) or newest-first — recency except book, which calls it latest"
+        }});
+        fill_param_docs_from_input(&mut extra, &cfg);
+        let p = extra["params"].as_object().expect("params");
+
+        let sort = p["sort"].as_str().unwrap();
+        assert!(sort.contains("(enum: accuracy, recency, latest)"), "got: {sort}");
+        assert!(!sort.contains("newest-first"), "the drifted copy must be gone: {sort}");
+        assert!(!p.contains_key("target"), "the action's selection is not widened: {p:?}");
+    }
+
+    /// A generated broker catalog names call PATHS, which are not schema properties — those keep
+    /// their own wording instead of being blanked.
+    #[test]
+    fn a_param_the_schema_does_not_know_keeps_its_own_wording() {
+        let cfg = serde_json::json!({"input": {"properties": {
+            "action": {"type": "string"},
+            "query": {"type": "object", "description": "query string params"}
+        }}});
+        let mut extra = serde_json::json!({"params": {
+            "query.FID_INPUT_ISCD": "종목코드 (필수)"
+        }});
+        fill_param_docs_from_input(&mut extra, &cfg);
+        assert_eq!(extra["params"]["query.FID_INPUT_ISCD"], "종목코드 (필수)");
+    }
+
+    /// No selection declared = the action takes the schema whole, so a single-action module never
+    /// has to carry a copy.
+    #[test]
+    fn a_catalog_without_params_takes_the_whole_schema() {
+        let cfg = serde_json::json!({"input": {"properties": {
+            "action": {"type": "string"},
+            "query": {"type": "string", "description": "Search term"}
+        }}});
+        let mut extra = serde_json::json!({"name": "다음 검색"});
+        fill_param_docs_from_input(&mut extra, &cfg);
+        assert_eq!(extra["params"]["query"], "Search term");
+        assert!(extra["params"].get("action").is_none(), "the selector is not a param");
+    }
+
+    /// The executor validates a `query` OBJECT; the docs name the leaf by its path. The schema
+    /// response has to show the shape the call is made in.
+    #[test]
+    fn dotted_param_paths_are_rendered_as_the_nesting_they_are() {
+        let flat = serde_json::json!({
+            "query.FID_COND_MRKT_DIV_CODE": "시장구분코드",
+            "query.FID_INPUT_ISCD": "종목코드",
+            "account": "계좌 별칭"
+        });
+        let nested = nest_dotted_keys(&flat);
+        assert_eq!(nested["query"]["FID_INPUT_ISCD"], "종목코드");
+        assert_eq!(nested["query"]["FID_COND_MRKT_DIV_CODE"], "시장구분코드");
+        assert_eq!(nested["account"], "계좌 별칭", "an undotted name is untouched");
+        assert!(nested.get("query.FID_INPUT_ISCD").is_none(), "the flat key must not survive");
     }
 
     #[test]
