@@ -1,6 +1,6 @@
 # FIREBAT MODULE BIBLE — 불가지론적 모듈 작성 수칙
 
-> 최종 개정: 2026-08-10 (`aliases` 선언 · `actionCatalog` 두 형태와 0-산출 폴백 · `tags` = 게이트 어휘 · `negateWhen.equals` 는 스칼라 아무 타입)
+> 최종 개정: 2026-08-16 (`params` = 이름 목록 · `required`/액션 `aliases` · `[액션]` 태그가 선택을 말한다 · 세 방향 감사 · 사용자 모듈도 같은 계단)
 
 ## 전문(前文)
 
@@ -264,11 +264,31 @@ node scripts/gen.mjs             # _apis.json → config + index
        건너뛰어 **모듈이 발견에서 통째로 사라졌다** — 실행·설정은 멀쩡해서 아무도 안 찾아볼 0.)
   2. 없으면 **`input` 스키마에서 자동 파생** — `input.properties.action.enum` 의 값마다 엔트리(설명 = `action.description` blob 조각, params = 나머지 input properties). **작은 모듈·usermod 는 별도 authoring 0** — 이미 있는 input 스키마가 곧 카탈로그.
   3. action enum 도 없으면(단일 목적 모듈) → 모듈 1엔트리(`get_action_schema` = input 스키마 통째).
-- `actions.json` 엔트리 = `{ id, name, description, domain?, tags?: [...], params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
+- `actions.json` 엔트리 = `{ id, name, description, domain?, tags?: [...], aliases?: [...], params?: [이름], required?: [이름], example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
+  - ⚠️ **`params` 는 이름 **목록**이지 설명 맵이 아니다** (2026-08-16). 맵이던 시절 선택을 적으려면 스키마에 이미 있는 문장을 또 써야 했고 — **형식이 사본을 강제했다** — 그 사본이 어긋나 daum-search `sort` 가 실제 enum `["accuracy","recency","latest"]` 옆에서 "newest-first" 를 광고했다. 게다가 한 줄 더 쓰기 싫으니 **선택이 짧아졌다**(naver-ads 46개 중 33개만). 지금은 목록이라 설명을 넣을 자리가 없고, 문구는 항상 `input.properties.<param>.description` 에서 온다.
+  - **인자를 안 받는 액션은 `"params": []`** — 생략과 다르다. 생략 = "스키마에서 파생", 빈 목록 = "없음". 빈 목록이 없으면 태그 필터가 *전부* 를 돌려주는 폴백에 걸려 `fa/selftest` 가 `ratios` 의 11개를 광고했다(2026-08-16).
+  - **`required`** = 그 액션이 없으면 거부되는 인자. `get_action_schema` 의 `fill` 이 여기서 나온다. 벤더 시트의 `required:true` 를 생성기가 **한국어 `(필수)` 문구로만** 적던 시절엔 `fill` 이 늘 비어 있었다 — 구조는 구조로 남긴다.
+  - **`aliases`** = 실행기는 받지만 발행하지 않을 다른 이름(binance `klines` = `get_candles`). 로더가 검색어로도 쓰고, **감사가 "enum 에 있는데 카탈로그에 없는 액션"을 빌드 실패로 잡을 때 의도적 생략을 구분하는 근거**가 된다.
   - ⚠️ **`envelope` 은 폐기** (2026-08-15). 호출 봉투를 산문으로 적던 자리인데, `get_action_schema` 가 **조립된 `call`**(도구명 + `action` 채움 + `fill` = 없으면 거부되는 값 이름)을 내주므로 문장에서 모양을 유추할 이유가 없어졌다.
 
 - **⭐ 액션이 여럿이면 카탈로그를 쓴다 (신규 모듈 필수)**. 파생 폴백은 authoring 0 이 목적이지 품질 목표가 아니다 — 파생은 액션별 설명이 없어서 **`action.description` 덩어리에서 조각을 긁고**, 못 찾으면 모듈 설명을 쓰고, 거기에 파라미터 enum 값을 덧붙인다. 액션이 많을수록 문서가 서로 닮아 **검색이 못 가른다**(2026-08-06 upbit: 캔들 일/주/월 세 액션이 같은 문서가 됐다). 2026-08-15 실측 = 35모듈 중 **18개가 카탈로그 없음**, 그중 dart 82액션·upbit-trade 33·kma-weather 28.
   - 이미 `action.description` 에 `이름=설명 / 이름=설명` 형식으로 적어 뒀다면 그걸 **쪼개서** `actions.json` 으로 옮기면 된다(dart 는 82개 전부가 그 형식이라 커버리지 100%).
+
+- **어떤 인자가 어느 액션 것인지는 `input` 이 말한다** (2026-08-16) — 파라미터 설명 앞의 `[액션]` 태그:
+  `"[stats] Split by pcMblTp=PC/mobile"` · `"[list-*] Results per page"` · `"[make_*] render-block IR"`.
+  로더가 `tag_tokens`/`param_applies` 로 읽어 액션별로 좁힌다. 토큰 구분자는 영숫자·`-`·`_`·`*` 가 아닌
+  **모든 문자**라 `[estimate:performance]`·`[keyword-tool withBid]` 도 그 액션으로 잡힌다. 와일드카드는
+  접두사 매칭(`list-*`). **태그가 없으면 모듈 전체 인자**로 취급된다.
+  ⚠️ 이게 있어서 카탈로그가 `params` 목록을 안 적어도 된다. 안 적으면 태그가 정한다.
+
+- **세 방향 감사가 CI 에서 돈다** (`core/tests/module_config_audit.rs`, 2026-08-16). 선언은 **오류가 아니라
+  침묵**으로 틀리기 때문에:
+  ① **선언 → 존재**: `requiresApproval`·`grounding`·`pageBinding`·카탈로그가 가리키는 액션·파일이 있나
+  ② **존재 → 발견**: `input.properties.action.enum` 의 액션이 카탈로그 id 나 `aliases` 에 있나
+     (없으면 그 액션은 실행되는데 검색으로는 못 찾는다)
+  ③ **선언 → 구현**: 스키마가 선언한 인자를 **모듈 소스가 이름으로라도 쓰나**. 전수 783개 중 10개가
+     허구였다 — browser-scrape 가 스크린샷·뷰포트·헤더·JS 토글을 광고했는데 114줄 구현이 하나도 안 읽었다.
+     `<param>CacheKey/Limit/Range` 는 core 가 검증 전에 펼쳐 넣으므로 면제(`cacheInputs` 에서 파생).
 
 - **`tags` 는 두 층이고 뜻이 다르다** (둘 다 **string 배열**, 둘 다 임베딩에 들어간다 — 2026-08-15)
   - **모듈 `tags` = 뭐라고 불리는가** — `한투`·`한국투자`·`한국투자증권`·`kis`. 그 모듈의 모든 액션이 공유하므로 **모듈을 통째로** 질의 쪽으로 끌어당기고, 모듈 안에서는 아무것도 가르지 않는다.
@@ -510,6 +530,22 @@ sysmod 가 stdout 에 다음 envelope 를 출력하면 sandbox 가 자동으로 
 | 시스템 어댑터 | `system/modules/` | 엔지니어 | 불가 (읽기 전용) | `adapter` |
 | 시스템 유틸리티 | `system/modules/` | 엔지니어 | 불가 (호출만 가능) | `utility` |
 | 사용자 모듈 | `user/modules/` | AI 에이전트 | 가능 | `utility` |
+
+**차이는 누가 쓰느냐뿐이다 — 실행 계단은 하나다** (2026-08-16). `ModuleManager.run` 은 원래부터
+`user/modules` 를 먼저 찾으므로 `run_module_action({module, action})` 이 사용자 모듈에도 맞고,
+`execute({path:"user/modules/<name>"})` 는 **같은 이름으로 resolve 되어 같은 계단**을 탄다.
+
+⚠️ 전에는 `execute` 가 sandbox 직행이라 사용자 모듈만 **`is_enabled`·입력 검증·auto-cache·`timeoutMs`·
+timeseries 를 전부 건너뛰었다** — config 에 선언해도 읽는 데가 없었고, MCP 는 그 호출의 모듈을 몰라
+(`target_module` = `None`) **선언을 로드조차 안 해 grounding 이 "선언 없음"으로 결론**냈다. 하필 AI 가
+직접 쓰는 표면에서 부재가 동의가 된 자리다. 지금은 모듈 디렉터리를 가리키는 경로만 이름으로 풀리고,
+**더 깊은 경로(모듈 안 스크립트)는 모듈 호출이 아니라 raw 실행** 그대로다.
+
+> **원칙 — 모듈이 안 돌면 모듈에서 고칠 수 있어야 한다.** 못 고치면 그건 모듈 버그가 아니라 **선언
+> 표면의 결손**이다. "모듈 dumb, 인프라가 config 처리" 의 대가로 실패 표면이 프레임워크로 옮겨가기
+> 때문에, 증상을 안쪽에서 고치기 전에 **"이건 모듈에서 고칠 수 있나"** 를 먼저 묻는다. 사용자 모듈에선
+> 특히 — 코어 fix 는 GHA + FTP + restart 를 기다려야 하고, 그러면 "AI 가 배포 없이 능력을 만든다"는
+> 존재 이유가 뒤집힌다.
 
 ---
 
