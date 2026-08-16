@@ -1,28 +1,139 @@
 ---
 name: module-authoring
 kind: procedure
-description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, secrets, entry, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·격리 규칙 위반 = 실행 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(schedule_task 의 pipeline 파라미터 설명), 스킬 작성(skill-authoring).
+description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, 액션 선언, secrets, entry, _call 엔드포인트, 승인 게이트, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·선언 표면 위반 = 조용한 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(schedule_task 의 pipeline 파라미터 설명), 스킬 작성(skill-authoring).
 ---
 
-# Module authoring — user module contract
+# Module authoring — a module declares, Firebat reads and runs
 
-- I/O: stdin JSON → last line of stdout {"success":true,"data":{...}}. No sys.argv.
-- Python uses True / False / None (not JSON true / false / null).
-- config.json is required: name, type, scope, runtime, packages, input, output.
-- API keys: register in config.json's secrets array → environment variables auto-injected. No hardcoding. If not registered, call request_secret first.
-- **Entry filename standard** (per runtime):
-  - `runtime: "node"` → `index.mjs`
-  - `runtime: "python"` → `main.py`
-  - `runtime: "php"` → `index.php`
-  - `runtime: "bash"` → `index.sh`
-  Override via the `entry` field in config.json. If unspecified, use the standard above.
+A module is `config.json` + code. Nothing stands between them and the framework: no build, no
+registration call, no generated file. Write the two, and the module is discovered, validated,
+gated and runnable. **If it does not work, it has to be fixable in the module** — when it is not,
+the declaration surface is missing something and that is a Firebat bug, not yours.
 
-## Reusable 5 rules (user/modules/* — protect the Firebat reuse motto)
-Scope: default for new AI-autonomous authoring. Not applied when reviewing / modifying user-authored modules (respect user intent).
+## The contract
 
-User modules carry only domain judgment; external API / UI / secrets are delegated to Firebat infra:
-1. **External API calls = sysmod_* only** — user/modules' fetch / axios calls to external domains are forbidden by default. Use existing sysmods (refer to module descriptions in system status) first.
-2. **No direct use of secrets** — reading process.env.<external service key> is forbidden by default (sysmods auto-inject via Vault through their own config.json secrets).
-3. **UI rendering = render_* tool only** — user modules do not generate HTML directly. Use the SAVE_PAGE step's PageSpec body or render_* components.
-4. **Conditional branching = inside module code OR pipeline CONDITION step**.
-5. **No direct calls between modules (protect isolation)** — no require / import. Use other modules only via **pipeline EXECUTE step chains** (TaskManager is the orchestrator).
+- **I/O** — stdin JSON in, the **last line of stdout** is `{"success":true,"data":{…}}`. No argv.
+  Python writes `True/False/None`, not `true/false/null`.
+- **Entry** — `node`→`index.mjs`, `python`→`main.py`, `php`→`index.php`, `bash`→`index.sh`.
+  Override with `entry`.
+- **config.json** — only `name`, `runtime` and `input` are needed. `description`, `tags`,
+  `packages`, `output`, `secrets` and everything below are optional and add capability.
+- **Packages install on the module's first run**, so the first call is slow. That is normal.
+
+## Declaring actions — the ladder is free
+
+A caller reaches an action through `search_module_actions` → `get_action_schema` →
+`run_module_action`. You get all three by declaring the enum:
+
+```jsonc
+"input": {
+  "type": "object", "required": ["action"], "additionalProperties": false,
+  "properties": {
+    "action": { "type": "string", "enum": ["echo", "quote"],
+                "description": "echo = … / quote = …" },
+    "text":   { "type": "string", "description": "[echo] 돌려받을 문장" },
+    "symbol": { "type": "string", "description": "[quote] 심볼" }
+  }
+}
+```
+
+- **`input` is where an argument's truth lives** — its type, its enum, whether it is required.
+- **`[action]` tags say which action takes which param.** No tag = the whole module. The loader
+  splits on any character that is not alphanumeric/`-`/`_`/`*`, so `[list-*]` and
+  `[keyword-tool withBid]` both resolve.
+- With no `actionCatalog`, the catalog is **derived from `input`** — every action is searchable
+  with zero extra authoring. Declare one only when a row needs its own name, description, tags
+  or aliases.
+
+## actionCatalog — the discovery original
+
+```jsonc
+"actionCatalog": [
+  { "id": "quote", "name": "…", "description": "무엇을 하는가. 한 줄",
+    "params": ["symbol"], "required": ["symbol"], "tags": ["시세"], "aliases": ["ticker"] }
+]
+```
+
+- **`params` is a list of names, never a name→prose map.** The wording comes from `input` —
+  restating it there is how the two drift apart. `params: []` states the action takes none,
+  which is different from saying nothing.
+- **`required`** feeds `get_action_schema`'s `fill` — what the call is refused without. Say it
+  here and the caller fills it first; leave it out and they learn from a rejection.
+- **`aliases`** are searched but not published as separate rows — the place to say "this name is
+  accepted on purpose", so an audit can tell it from an omission.
+- Descriptions say **what a thing is, never what to do about it.** Instructions belong in the
+  response at the moment they apply.
+
+## What the framework hands you (do not fetch it yourself)
+
+| arrives as | what it is |
+|---|---|
+| `_call` | the endpoint row for the action being run — see below |
+| `account` | the resolved account alias, when the module declares `accounts` |
+| `_cacheKey` / `_cacheMeta` | auto-cache of the main array/string in your reply |
+| `_recall` | facts and lessons, when the module declares `recall` |
+| `FIREBAT_TZ` env | the operator's timezone |
+| `FIREBAT_UNATTENDED=1` env | nobody is waiting — a scheduled run, not a chat |
+
+**`_call` — declare an endpoint once, receive one row per call.** Only for modules whose
+endpoints are a table rather than a rule; a module whose path follows from the action name just
+builds it.
+
+```jsonc
+{ "id": "quote", "_call": { "id": "quote", "method": "GET",
+                            "base": "https://api.example.com", "path": "/v3/price" } }
+```
+
+Dispatch puts that row on the input as `_call`; the module reads it and never carries a table of
+everyone else's endpoints. **Nothing in Firebat reads inside it** — the shape is whatever your
+module needs, and core learning what a field means would make every new venue a core release.
+**The leading underscore is the boundary**: the catalog loader keeps underscored fields out of
+what the model reads, and a path is something it would read and never type. If one action covers
+several endpoints, name the axis and let the module pick:
+
+```jsonc
+"_call": { "by": "side", "buy": { …ID_A… }, "sell": { …ID_B… } }
+```
+
+Declare the axis in `input` and in `required`, or the caller cannot know it exists. **Declare
+`_call` for every runnable action or none** — a half migration fails only for the actions nobody
+exercised.
+
+## Gates — one line each
+
+- **`"requiresApproval": ["place_order"]`** — those actions produce a user approval card and do
+  not run until it is confirmed. Cards for module actions expire in **5 minutes**.
+- **`"grounding": { "stock_code": { "resolveHint": "…", "pattern": "^[0-9]{6}$",
+  "exemptActions": ["lookup"] } }`** — an opaque identifier must have been resolved in this
+  conversation, never recalled from memory. `resolveHint` is the sentence the caller is handed
+  when it has not been; the action that does the resolving is exempt.
+- **`"uiOnly": [...]`** — refused from chat; only a screen action may run it.
+- Switching the module off removes it from search, schema and dispatch — a disabled module
+  answers "this is a setting", not "no such thing".
+
+## When it runs
+
+`"schedules": ["cron-x.json"]` registers a job while the module is enabled. If which loops run
+depends on what the operator has configured, do not keep a second list — let the rows point:
+
+```jsonc
+"schedulesFrom": { "setting": "trades", "field": "loop",
+                   "skipWhen": { "field": "state", "equals": "off" } }
+```
+
+## Reusable 5 rules (user/modules/*)
+
+Default for new AI-authored modules. Not applied when modifying a module the user wrote.
+A user module carries **domain judgment only**; external API, UI and secrets are the infra's.
+
+1. **External calls go through sysmods** — a user module does not fetch third-party domains
+   directly. Look for an existing module first (`search_module_actions`).
+2. **No direct secrets** — declare them in `secrets` and they arrive as environment variables.
+   Never read a third-party key out of `process.env` by hand; if none is registered, call
+   `request_secret`.
+3. **UI is rendered by the render tools**, not by HTML a module writes.
+4. **Branching lives in module code or a pipeline `CONDITION` step.**
+5. **No module imports another.** Reach one through `run_module_action` — the same rung
+   everything else uses, which applies the gates, the validation and the injection above.
+   (`execute` by path was the old way round and skipped all three.)
