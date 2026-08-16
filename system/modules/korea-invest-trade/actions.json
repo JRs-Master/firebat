@@ -97,12 +97,23 @@
   "description": "주식예약주문정정취소",
   "domain": "[국내주식] 주문/계좌",
   "_call": {
-   "id": "v1_국내주식-018,019",
-   "method": "POST",
-   "path": "/uapi/domestic-stock/v1/trading/order-resv-rvsecncl",
-   "trIdReal": "(예약취소) CTSC0009U (예약정정) CTSC0013U",
-   "trIdMock": "",
-   "name": "주식예약주문정정취소"
+   "by": "op",
+   "cancel": {
+    "id": "v1_국내주식-018,019",
+    "method": "POST",
+    "path": "/uapi/domestic-stock/v1/trading/order-resv-rvsecncl",
+    "trIdMock": "",
+    "name": "주식예약주문정정취소",
+    "trIdReal": "CTSC0009U"
+   },
+   "modify": {
+    "id": "v1_국내주식-018,019",
+    "method": "POST",
+    "path": "/uapi/domestic-stock/v1/trading/order-resv-rvsecncl",
+    "trIdMock": "",
+    "name": "주식예약주문정정취소",
+    "trIdReal": "CTSC0013U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — [정정/취소] 계좌번호 체계(8-2)의 앞 8자리",
@@ -121,6 +132,7 @@
    "body.RSVN_ORD_ORD_DT": "예약주문주문일자 — [정정/취소]"
   },
   "required": [
+   "op",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.PDNO",
@@ -200,12 +212,23 @@
   "description": "퇴직연금 미체결내역",
   "domain": "[국내주식] 주문/계좌",
   "_call": {
-   "id": "v1_국내주식-033",
-   "method": "GET",
-   "path": "/uapi/domestic-stock/v1/trading/pension/inquire-daily-ccld",
-   "trIdReal": "TTTC2201R(기존 KRX만 가능), TTTC2210R (KRX,NXT/SOR)",
-   "trIdMock": "",
-   "name": "퇴직연금 미체결내역"
+   "by": "board",
+   "krx": {
+    "id": "v1_국내주식-033",
+    "method": "GET",
+    "path": "/uapi/domestic-stock/v1/trading/pension/inquire-daily-ccld",
+    "trIdMock": "",
+    "name": "퇴직연금 미체결내역",
+    "trIdReal": "TTTC2201R"
+   },
+   "krx_nxt": {
+    "id": "v1_국내주식-033",
+    "method": "GET",
+    "path": "/uapi/domestic-stock/v1/trading/pension/inquire-daily-ccld",
+    "trIdMock": "",
+    "name": "퇴직연금 미체결내역",
+    "trIdReal": "TTTC2210R"
+   }
   },
   "params": {
    "query.CANO": "종합계좌번호 (필수)",
@@ -218,6 +241,7 @@
    "query.CTX_AREA_NK100": "연속조회키100 (필수)"
   },
   "required": [
+   "board",
    "query.CANO",
    "query.ACNT_PRDT_CD",
    "query.USER_DVSN_CD",
@@ -518,12 +542,23 @@
   "description": "주식주문(현금)",
   "domain": "[국내주식] 주문/계좌",
   "_call": {
-   "id": "v1_국내주식-001",
-   "method": "POST",
-   "path": "/uapi/domestic-stock/v1/trading/order-cash",
-   "trIdReal": "(매도) TTTC0011U (매수) TTTC0012U",
-   "trIdMock": "(매도) VTTC0011U (매수) VTTC0012U",
-   "name": "주식주문(현금)"
+   "by": "side",
+   "sell": {
+    "id": "v1_국내주식-001",
+    "method": "POST",
+    "path": "/uapi/domestic-stock/v1/trading/order-cash",
+    "trIdMock": "VTTC0011U",
+    "name": "주식주문(현금)",
+    "trIdReal": "TTTC0011U"
+   },
+   "buy": {
+    "id": "v1_국내주식-001",
+    "method": "POST",
+    "path": "/uapi/domestic-stock/v1/trading/order-cash",
+    "trIdMock": "VTTC0012U",
+    "name": "주식주문(현금)",
+    "trIdReal": "TTTC0012U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 종합계좌번호",
@@ -537,6 +572,7 @@
    "body.EXCG_ID_DVSN_CD": "거래소ID구분코드 — 한국거래소 : KRX 대체거래소 (넥스트레이드) : NXT SOR (Smart Order Routing) : SOR → 미입력시 KRX로 진행되…"
   },
   "required": [
+   "side",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.PDNO",
@@ -575,12 +611,23 @@
   "description": "주식일별주문체결조회",
   "domain": "[국내주식] 주문/계좌",
   "_call": {
-   "id": "v1_국내주식-005",
-   "method": "GET",
-   "path": "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
-   "trIdReal": "(3개월이내) TTTC0081R (3개월이전) CTSC9215R",
-   "trIdMock": "(3개월이내) VTTC0081R (3개월이전) VTSC9215R",
-   "name": "주식일별주문체결조회"
+   "by": "period",
+   "within3m": {
+    "id": "v1_국내주식-005",
+    "method": "GET",
+    "path": "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+    "trIdMock": "VTTC0081R",
+    "name": "주식일별주문체결조회",
+    "trIdReal": "TTTC0081R"
+   },
+   "before3m": {
+    "id": "v1_국내주식-005",
+    "method": "GET",
+    "path": "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+    "trIdMock": "VTSC9215R",
+    "name": "주식일별주문체결조회",
+    "trIdReal": "CTSC9215R"
+   }
   },
   "params": {
    "query.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -600,6 +647,7 @@
    "query.CTX_AREA_NK100": "연속조회키100 (필수) — '공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK100 값 : 다음페이지 조회시(2번째부터)'"
   },
   "required": [
+   "period",
    "query.CANO",
    "query.ACNT_PRDT_CD",
    "query.INQR_STRT_DT",
@@ -688,12 +736,23 @@
   "description": "주식주문(신용)",
   "domain": "[국내주식] 주문/계좌",
   "_call": {
-   "id": "v1_국내주식-002",
-   "method": "POST",
-   "path": "/uapi/domestic-stock/v1/trading/order-credit",
-   "trIdReal": "(매도) TTTC0051U (매수) TTTC0052U",
-   "trIdMock": "",
-   "name": "주식주문(신용)"
+   "by": "side",
+   "sell": {
+    "id": "v1_국내주식-002",
+    "method": "POST",
+    "path": "/uapi/domestic-stock/v1/trading/order-credit",
+    "trIdMock": "",
+    "name": "주식주문(신용)",
+    "trIdReal": "TTTC0051U"
+   },
+   "buy": {
+    "id": "v1_국내주식-002",
+    "method": "POST",
+    "path": "/uapi/domestic-stock/v1/trading/order-credit",
+    "trIdMock": "",
+    "name": "주식주문(신용)",
+    "trIdReal": "TTTC0052U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -722,6 +781,7 @@
    "body.CNDT_PRIC": "조건가격 — 스탑지정가호가에서 사용"
   },
   "required": [
+   "side",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.PDNO",
@@ -810,12 +870,23 @@
   "description": "(야간)선물옵션 증거금 상세",
   "domain": "[국내선물옵션] 주문/계좌",
   "_call": {
-   "id": "국내선물-024",
-   "method": "GET",
-   "path": "/uapi/domestic-futureoption/v1/trading/ngt-margin-detail",
-   "trIdReal": "(구) JTCE6003R (신) CTFN7107R",
-   "trIdMock": "",
-   "name": "(야간)선물옵션 증거금 상세"
+   "by": "spec",
+   "legacy": {
+    "id": "국내선물-024",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/ngt-margin-detail",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 증거금 상세",
+    "trIdReal": "JTCE6003R"
+   },
+   "current": {
+    "id": "국내선물-024",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/ngt-margin-detail",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 증거금 상세",
+    "trIdReal": "CTFN7107R"
+   }
   },
   "params": {
    "query.CANO": "종합계좌번호 (필수)",
@@ -823,6 +894,7 @@
    "query.MGNA_DVSN_CD": "증거금 구분코드 (필수) — 위탁(01), 유지(02)"
   },
   "required": [
+   "spec",
    "query.CANO",
    "query.ACNT_PRDT_CD",
    "query.MGNA_DVSN_CD"
@@ -886,12 +958,23 @@
   "description": "(야간)선물옵션 잔고현황",
   "domain": "[국내선물옵션] 주문/계좌",
   "_call": {
-   "id": "국내선물-010",
-   "method": "GET",
-   "path": "/uapi/domestic-futureoption/v1/trading/inquire-ngt-balance",
-   "trIdReal": "(구) JTCE6001R (신) CTFN6118R",
-   "trIdMock": "",
-   "name": "(야간)선물옵션 잔고현황"
+   "by": "spec",
+   "legacy": {
+    "id": "국내선물-010",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/inquire-ngt-balance",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 잔고현황",
+    "trIdReal": "JTCE6001R"
+   },
+   "current": {
+    "id": "국내선물-010",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/inquire-ngt-balance",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 잔고현황",
+    "trIdReal": "CTFN6118R"
+   }
   },
   "params": {
    "query.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -903,6 +986,7 @@
    "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
   },
   "required": [
+   "spec",
    "query.CANO",
    "query.ACNT_PRDT_CD",
    "query.ACNT_PWD",
@@ -948,12 +1032,31 @@
   "description": "선물옵션 주문",
   "domain": "[국내선물옵션] 주문/계좌",
   "_call": {
-   "id": "v1_국내선물-001",
-   "method": "POST",
-   "path": "/uapi/domestic-futureoption/v1/trading/order",
-   "trIdReal": "(주간 매수/매도) TTTO1101U (야간 매수/매도) (구) JTCE1001U (신) STTN1101U",
-   "trIdMock": "(주간 매수/매도) VTTO1101U (야간은 모의투자 미제공)",
-   "name": "선물옵션 주문"
+   "by": "session",
+   "day": {
+    "id": "v1_국내선물-001",
+    "method": "POST",
+    "path": "/uapi/domestic-futureoption/v1/trading/order",
+    "trIdMock": "VTTO1101U",
+    "name": "선물옵션 주문",
+    "trIdReal": "TTTO1101U"
+   },
+   "night_legacy": {
+    "id": "v1_국내선물-001",
+    "method": "POST",
+    "path": "/uapi/domestic-futureoption/v1/trading/order",
+    "trIdMock": "",
+    "name": "선물옵션 주문",
+    "trIdReal": "JTCE1001U"
+   },
+   "night_current": {
+    "id": "v1_국내선물-001",
+    "method": "POST",
+    "path": "/uapi/domestic-futureoption/v1/trading/order",
+    "trIdMock": "",
+    "name": "선물옵션 주문",
+    "trIdReal": "STTN1101U"
+   }
   },
   "params": {
    "body.ORD_PRCS_DVSN_CD": "주문처리구분코드 (필수) — 02 : 주문전송",
@@ -970,6 +1073,7 @@
    "body.ORD_DVSN_CD": "주문구분코드 (필수) — 01 : 지정가 02 : 시장가 03 : 조건부 04 : 최유리, 10 : 지정가(IOC) 11 : 지정가(FOK) 12 : 시장가(IOC) 1…"
   },
   "required": [
+   "session",
    "body.ORD_PRCS_DVSN_CD",
    "body.CANO",
    "body.ACNT_PRDT_CD",
@@ -1016,12 +1120,31 @@
   "description": "선물옵션 정정취소주문",
   "domain": "[국내선물옵션] 주문/계좌",
   "_call": {
-   "id": "v1_국내선물-002",
-   "method": "POST",
-   "path": "/uapi/domestic-futureoption/v1/trading/order-rvsecncl",
-   "trIdReal": "(주간 정정/취소) TTTO1103U (야간 정정/취소) (구) JTCE1002U (신) STTN1103U",
-   "trIdMock": "(주간 정정/취소) VTTO1103U (야간은 모의투자 미제공)",
-   "name": "선물옵션 정정취소주문"
+   "by": "session",
+   "day": {
+    "id": "v1_국내선물-002",
+    "method": "POST",
+    "path": "/uapi/domestic-futureoption/v1/trading/order-rvsecncl",
+    "trIdMock": "VTTO1103U",
+    "name": "선물옵션 정정취소주문",
+    "trIdReal": "TTTO1103U"
+   },
+   "night_legacy": {
+    "id": "v1_국내선물-002",
+    "method": "POST",
+    "path": "/uapi/domestic-futureoption/v1/trading/order-rvsecncl",
+    "trIdMock": "",
+    "name": "선물옵션 정정취소주문",
+    "trIdReal": "JTCE1002U"
+   },
+   "night_current": {
+    "id": "v1_국내선물-002",
+    "method": "POST",
+    "path": "/uapi/domestic-futureoption/v1/trading/order-rvsecncl",
+    "trIdMock": "",
+    "name": "선물옵션 정정취소주문",
+    "trIdReal": "STTN1103U"
+   }
   },
   "params": {
    "body.ORD_PRCS_DVSN_CD": "주문처리구분코드 (필수) — 02 : 주문전송",
@@ -1038,6 +1161,7 @@
    "body.ORD_DVSN_CD": "주문구분코드 (필수) — [정정] 01 : 지정가 02 : 시장가 03 : 조건부 04 : 최유리, 10 : 지정가(IOC) 11 : 지정가(FOK) 12 : 시장가(I…"
   },
   "required": [
+   "session",
    "body.ORD_PRCS_DVSN_CD",
    "body.CANO",
    "body.ACNT_PRDT_CD",
@@ -1099,12 +1223,23 @@
   "description": "(야간)선물옵션 주문체결 내역조회",
   "domain": "[국내선물옵션] 주문/계좌",
   "_call": {
-   "id": "국내선물-009",
-   "method": "GET",
-   "path": "/uapi/domestic-futureoption/v1/trading/inquire-ngt-ccnl",
-   "trIdReal": "(구) JTCE5005R (신) STTN5201R",
-   "trIdMock": "",
-   "name": "(야간)선물옵션 주문체결 내역조회"
+   "by": "spec",
+   "legacy": {
+    "id": "국내선물-009",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/inquire-ngt-ccnl",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 주문체결 내역조회",
+    "trIdReal": "JTCE5005R"
+   },
+   "current": {
+    "id": "국내선물-009",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/inquire-ngt-ccnl",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 주문체결 내역조회",
+    "trIdReal": "STTN5201R"
+   }
   },
   "params": {
    "query.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1123,6 +1258,7 @@
    "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
   },
   "required": [
+   "spec",
    "query.CANO",
    "query.ACNT_PRDT_CD",
    "query.STRT_ORD_DT",
@@ -1145,12 +1281,23 @@
   "description": "(야간)선물옵션 주문가능 조회",
   "domain": "[국내선물옵션] 주문/계좌",
   "_call": {
-   "id": "국내선물-011",
-   "method": "GET",
-   "path": "/uapi/domestic-futureoption/v1/trading/inquire-psbl-ngt-order",
-   "trIdReal": "(구) JTCE1004R (신) STTN5105R",
-   "trIdMock": "",
-   "name": "(야간)선물옵션 주문가능 조회"
+   "by": "spec",
+   "legacy": {
+    "id": "국내선물-011",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/inquire-psbl-ngt-order",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 주문가능 조회",
+    "trIdReal": "JTCE1004R"
+   },
+   "current": {
+    "id": "국내선물-011",
+    "method": "GET",
+    "path": "/uapi/domestic-futureoption/v1/trading/inquire-psbl-ngt-order",
+    "trIdMock": "",
+    "name": "(야간)선물옵션 주문가능 조회",
+    "trIdReal": "STTN5105R"
+   }
   },
   "params": {
    "query.CANO": "종합계좌번호 (필수)",
@@ -1162,6 +1309,7 @@
    "query.ORD_DVSN_CD": "주문구분코드 (필수) — '01 : 지정가 02 : 시장가 03 : 조건부 04 : 최유리, 10 : 지정가(IOC) 11 : 지정가(FOK) 12 : 시장가(IOC) …"
   },
   "required": [
+   "spec",
    "query.CANO",
    "query.ACNT_PRDT_CD",
    "query.PDNO",
@@ -1415,12 +1563,15 @@
   "description": "해외주식 정정취소주문",
   "domain": "[해외주식] 주문/계좌",
   "_call": {
-   "id": "v1_해외주식-003",
-   "method": "POST",
-   "path": "/uapi/overseas-stock/v1/trading/order-rvsecncl",
-   "trIdReal": "(미국 정정·취소) TTTT1004U (아시아 국가 하단 규격서 참고)",
-   "trIdMock": "(미국 정정·취소) VTTT1004U (아시아 국가 하단 규격서 참고)",
-   "name": "해외주식 정정취소주문"
+   "by": "region",
+   "us": {
+    "id": "v1_해외주식-003",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/order-rvsecncl",
+    "trIdMock": "VTTT1004U",
+    "name": "해외주식 정정취소주문",
+    "trIdReal": "TTTT1004U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1435,6 +1586,7 @@
    "body.ORD_SVR_DVSN_CD": "주문서버구분코드 — \"0\"(Default)"
   },
   "required": [
+   "region",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.OVRS_EXCG_CD",
@@ -1451,12 +1603,31 @@
   "description": "해외주식 예약주문접수",
   "domain": "[해외주식] 주문/계좌",
   "_call": {
-   "id": "v1_해외주식-002",
-   "method": "POST",
-   "path": "/uapi/overseas-stock/v1/trading/order-resv",
-   "trIdReal": "(미국예약매수) TTTT3014U  (미국예약매도) TTTT3016U   (중국/홍콩/일본/베트남 예약주문) TTTS3013U",
-   "trIdMock": "(미국예약매수) VTTT3014U  (미국예약매도) VTTT3016U   (중국/홍콩/일본/베트남 예약주문) VTTS3013U",
-   "name": "해외주식 예약주문접수"
+   "by": "variant",
+   "us_buy": {
+    "id": "v1_해외주식-002",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/order-resv",
+    "trIdMock": "VTTT3014U",
+    "name": "해외주식 예약주문접수",
+    "trIdReal": "TTTT3014U"
+   },
+   "us_sell": {
+    "id": "v1_해외주식-002",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/order-resv",
+    "trIdMock": "VTTT3016U",
+    "name": "해외주식 예약주문접수",
+    "trIdReal": "TTTT3016U"
+   },
+   "asia": {
+    "id": "v1_해외주식-002",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/order-resv",
+    "trIdMock": "VTTS3013U",
+    "name": "해외주식 예약주문접수",
+    "trIdReal": "TTTS3013U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1475,6 +1646,7 @@
    "body.ALGO_ORD_TMD_DVSN_CD": "알고리즘주문시간구분코드 — ※ TWAP, VWAP 주문에서만 사용. 예약주문은 시간입력 불가하여 02로 값 고정 ※ 정규장 종료 10분전까지 가능"
   },
   "required": [
+   "variant",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.RVSE_CNCL_DVSN_CD",
@@ -1673,12 +1845,23 @@
   "description": "해외주식 미국주간주문",
   "domain": "[해외주식] 주문/계좌",
   "_call": {
-   "id": "v1_해외주식-026",
-   "method": "POST",
-   "path": "/uapi/overseas-stock/v1/trading/daytime-order",
-   "trIdReal": "(주간매수) TTTS6036U (주간매도) TTTS6037U",
-   "trIdMock": "",
-   "name": "해외주식 미국주간주문"
+   "by": "side",
+   "buy": {
+    "id": "v1_해외주식-026",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/daytime-order",
+    "trIdMock": "",
+    "name": "해외주식 미국주간주문",
+    "trIdReal": "TTTS6036U"
+   },
+   "sell": {
+    "id": "v1_해외주식-026",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/daytime-order",
+    "trIdMock": "",
+    "name": "해외주식 미국주간주문",
+    "trIdReal": "TTTS6037U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1693,6 +1876,7 @@
    "body.ORD_DVSN": "주문구분 (필수) — [미국 매수/매도 주문] 00 : 지정가 * 주간거래는 지정가만 가능"
   },
   "required": [
+   "side",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.OVRS_EXCG_CD",
@@ -1709,12 +1893,23 @@
   "description": "해외주식 예약주문조회",
   "domain": "[해외주식] 주문/계좌",
   "_call": {
-   "id": "v1_해외주식-013",
-   "method": "GET",
-   "path": "/uapi/overseas-stock/v1/trading/order-resv-list",
-   "trIdReal": "(미국) TTTT3039R (일본/중국/홍콩/베트남) TTTS3014R",
-   "trIdMock": "",
-   "name": "해외주식 예약주문조회"
+   "by": "region",
+   "us": {
+    "id": "v1_해외주식-013",
+    "method": "GET",
+    "path": "/uapi/overseas-stock/v1/trading/order-resv-list",
+    "trIdMock": "",
+    "name": "해외주식 예약주문조회",
+    "trIdReal": "TTTT3039R"
+   },
+   "asia": {
+    "id": "v1_해외주식-013",
+    "method": "GET",
+    "path": "/uapi/overseas-stock/v1/trading/order-resv-list",
+    "trIdMock": "",
+    "name": "해외주식 예약주문조회",
+    "trIdReal": "TTTS3014R"
+   }
   },
   "params": {
    "query.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1728,6 +1923,7 @@
    "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
   },
   "required": [
+   "region",
    "query.CANO",
    "query.ACNT_PRDT_CD",
    "query.INQR_STRT_DT",
@@ -1745,12 +1941,23 @@
   "description": "해외주식 주문",
   "domain": "[해외주식] 주문/계좌",
   "_call": {
-   "id": "v1_해외주식-001",
-   "method": "POST",
-   "path": "/uapi/overseas-stock/v1/trading/order",
-   "trIdReal": "(미국매수) TTTT1002U  (미국매도) TTTT1006U (아시아 국가 하단 규격서 참고)",
-   "trIdMock": "(미국매수) VTTT1002U  (미국매도) VTTT1001U  (아시아 국가 하단 규격서 참고)",
-   "name": "해외주식 주문"
+   "by": "side",
+   "buy": {
+    "id": "v1_해외주식-001",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/order",
+    "trIdMock": "VTTT1002U",
+    "name": "해외주식 주문",
+    "trIdReal": "TTTT1002U"
+   },
+   "sell": {
+    "id": "v1_해외주식-001",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/order",
+    "trIdMock": "VTTT1001U",
+    "name": "해외주식 주문",
+    "trIdReal": "TTTT1006U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1769,6 +1976,7 @@
    "body.ALGO_ORD_TMD_DVSN_CD": "알고리즘주문시간구분코드 — 00 : 분할주문 시간 직접입력 , 02 : 정규장 종료시까지"
   },
   "required": [
+   "side",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.OVRS_EXCG_CD",
@@ -1785,12 +1993,15 @@
   "description": "해외주식 예약주문접수취소",
   "domain": "[해외주식] 주문/계좌",
   "_call": {
-   "id": "v1_해외주식-004",
-   "method": "POST",
-   "path": "/uapi/overseas-stock/v1/trading/order-resv-ccnl",
-   "trIdReal": "(미국 예약주문 취소접수) TTTT3017U (아시아국가 미제공)",
-   "trIdMock": "(미국 예약주문 취소접수) VTTT3017U (아시아국가 미제공)",
-   "name": "해외주식 예약주문접수취소"
+   "by": "region",
+   "us": {
+    "id": "v1_해외주식-004",
+    "method": "POST",
+    "path": "/uapi/overseas-stock/v1/trading/order-resv-ccnl",
+    "trIdMock": "VTTT3017U",
+    "name": "해외주식 예약주문접수취소",
+    "trIdReal": "TTTT3017U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1799,6 +2010,7 @@
    "body.OVRS_RSVN_ODNO": "해외예약주문번호 (필수) — 해외주식_예약주문접수 API Output ODNO(주문번호) 참고"
   },
   "required": [
+   "region",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.RSYN_ORD_RCIT_DT",
@@ -1905,12 +2117,23 @@
   "description": "해외선물옵션 정정취소주문",
   "domain": "[해외선물옵션] 주문/계좌",
   "_call": {
-   "id": "v1_해외선물-002, 003",
-   "method": "POST",
-   "path": "/uapi/overseas-futureoption/v1/trading/order-rvsecncl",
-   "trIdReal": "(정정) OTFM3002U (취소) OTFM3003U",
-   "trIdMock": "",
-   "name": "해외선물옵션 정정취소주문"
+   "by": "op",
+   "modify": {
+    "id": "v1_해외선물-002, 003",
+    "method": "POST",
+    "path": "/uapi/overseas-futureoption/v1/trading/order-rvsecncl",
+    "trIdMock": "",
+    "name": "해외선물옵션 정정취소주문",
+    "trIdReal": "OTFM3002U"
+   },
+   "cancel": {
+    "id": "v1_해외선물-002, 003",
+    "method": "POST",
+    "path": "/uapi/overseas-futureoption/v1/trading/order-rvsecncl",
+    "trIdMock": "",
+    "name": "해외선물옵션 정정취소주문",
+    "trIdReal": "OTFM3003U"
+   }
   },
   "params": {
    "body.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
@@ -1925,6 +2148,7 @@
    "body.FM_MKPR_CVSN_YN": "FM시장가전환여부 — OTFM3003U(해외선물옵션주문취소)만 사용 ※ FM_MKPR_CVSN_YN 항목에 'Y'로 설정하여 취소주문을 접수할 경우, 주문 취소확인이…"
   },
   "required": [
+   "op",
    "body.CANO",
    "body.ACNT_PRDT_CD",
    "body.ORGN_ORD_DT",

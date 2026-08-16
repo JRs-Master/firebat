@@ -3908,7 +3908,7 @@
    "method": "GET",
    "path": "/uapi/domestic-futureoption/v1/quotations/margin-rate",
    "trIdReal": "TTTO6032R",
-   "trIdMock": "미지원",
+   "trIdMock": "",
    "name": "선물옵션 증거금률"
   },
   "params": {
@@ -4260,7 +4260,7 @@
    "method": "GET",
    "path": "/uapi/overseas-price/v1/quotations/multprice",
    "trIdReal": "HHDFS76220000 ",
-   "trIdMock": "미지원 ",
+   "trIdMock": "",
    "name": "해외주식 복수종목 시세조회"
   },
   "params": {

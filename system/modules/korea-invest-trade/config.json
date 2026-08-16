@@ -604,7 +604,7 @@
           "buy",
           "sell"
         ],
-        "description": "[중립] 매수/매도."
+        "description": "[v1_국내주식-001] [v1_국내주식-002] [v1_해외주식-026] [v1_해외주식-001] 매수/매도 — 이 액션의 tr_id 가 갈린다"
       },
       "qty": {
         "type": "number",
@@ -674,6 +674,64 @@
       "to": {
         "type": "string",
         "description": "[중립] 체결·미체결 조회 종료일. 기본 오늘."
+      },
+      "op": {
+        "type": "string",
+        "enum": [
+          "cancel",
+          "modify"
+        ],
+        "description": "[v1_국내주식-018,019] [v1_해외선물-002, 003] 정정/취소 — 한 액션이 둘을 겸한다"
+      },
+      "board": {
+        "type": "string",
+        "enum": [
+          "krx",
+          "krx_nxt"
+        ],
+        "description": "[v1_국내주식-033] KRX 전용/KRX+NXT(SOR)"
+      },
+      "period": {
+        "type": "string",
+        "enum": [
+          "before3m",
+          "within3m"
+        ],
+        "description": "[v1_국내주식-005] 3개월 이내/이전 — 조회 구간이 tr_id 를 가른다"
+      },
+      "spec": {
+        "type": "string",
+        "enum": [
+          "current",
+          "legacy"
+        ],
+        "description": "[국내선물-024] [국내선물-010] [국내선물-009] [국내선물-011] 구 규격/신 규격"
+      },
+      "session": {
+        "type": "string",
+        "enum": [
+          "day",
+          "night_current",
+          "night_legacy"
+        ],
+        "description": "[v1_국내선물-001] [v1_국내선물-002] 주간/야간(구·신 규격)"
+      },
+      "region": {
+        "type": "string",
+        "enum": [
+          "asia",
+          "us"
+        ],
+        "description": "[v1_해외주식-003] [v1_해외주식-013] [v1_해외주식-004] 미국만 지원 — 아시아는 규격서 별도"
+      },
+      "variant": {
+        "type": "string",
+        "enum": [
+          "asia",
+          "us_buy",
+          "us_sell"
+        ],
+        "description": "[v1_해외주식-002] 미국 매수/매도, 또는 아시아(중국·홍콩·일본·베트남)"
       }
     },
     "additionalProperties": false

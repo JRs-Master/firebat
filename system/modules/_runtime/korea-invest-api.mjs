@@ -38,8 +38,17 @@ const acquireSlot = (isMock) => acquireShared(`kis-${isMock ? 'mock' : 'real'}`,
  * whatever the branch is called and the row is picked by id — the branch stays here, where the
  * market and the side are, and the endpoints stay in the declaration, where the vendor's facts are.
  */
-function metaOf(call, apiId) {
+function metaOf(call, apiId, data) {
   if (!call || typeof call !== 'object') return null;
+  // A vendor row that covers more than one API says which argument tells them apart. The sheet
+  // writes both on one line — `"(매도) TTTC0011U (매수) TTTC0012U"` — and that sentence used to go
+  // out as the `tr_id` header, where fetch dies on the first Korean byte. The declaration carries
+  // the branches now and the caller's own argument picks one.
+  if (typeof call.by === 'string') {
+    const key = String(data?.[call.by] ?? '').trim();
+    if (!key) return { missing: call.by, choices: Object.keys(call).filter((k) => k !== 'by') };
+    return call[key] || { missing: call.by, choices: Object.keys(call).filter((k) => k !== 'by'), got: key };
+  }
   if (call.id === apiId) return call;
   for (const v of Object.values(call)) if (v && typeof v === 'object' && v.id === apiId) return v;
   return null;
@@ -430,7 +439,7 @@ async function fetchCandles(ctx, data) {
       '분봉은 이 브로커의 기간별시세 엔드포인트에 없습니다.');
   }
   const apiId = kr ? 'v1_국내주식-016' : 'v1_해외주식-010';
-  const meta = metaOf(ctx.call_, apiId);
+  const meta = metaOf(ctx.call_, apiId, data);
   const trId = pickTrId(meta, ctx.isMock, '');
   const span = Math.ceil(CANDLE_PAGE * 1.7) * (PERIOD_DAYS[period] || 1);
   const byDate = new Map();
@@ -515,7 +524,7 @@ async function main(data) {
         isMock,
         call_: data._call,
         call: (apiId, trId, q, b) =>
-          callApi(base, token, appKey, appSecret, metaOf(data._call, apiId), apiId, q, b, isMock, 2, trId),
+          callApi(base, token, appKey, appSecret, metaOf(data._call, apiId, data), apiId, q, b, isMock, 2, trId),
       };
       if (action === 'get_candles') {
         const out = await fetchCandles(ctx, data);
@@ -523,7 +532,7 @@ async function main(data) {
         return;
       }
       const mapped = standardCall(action, data);
-      const meta = metaOf(data._call, mapped.apiId);
+      const meta = metaOf(data._call, mapped.apiId, data);
       const trId = pickTrId(meta, isMock, mapped.hint);
       const result = await ctx.call(mapped.apiId, trId, mapped.query || {}, mapped.body || {});
       const ok = result?.rt_cd === undefined || result.rt_cd === null || result.rt_cd === '0';
@@ -559,29 +568,20 @@ async function main(data) {
       }
     }
     applyLatestDefaults(action, query);
-    // The sheet's tr_id can be a SENTENCE covering both sides — "(매도) VTTC0011U (매수) …". The
-    // neutral path has resolved that with the side it knows since the first order ever refused;
-    // a raw call pushed the sentence straight into the HTTP header, where fetch dies on the first
-    // Korean byte (measured 2026-08-06: four sell cards in a row, "ByteString … 47588" — that
-    // code point is 매). Resolve it the same way here, or say in words what is missing.
-    let rawTrId = '';
-    const metaRaw = metaOf(data._call, action);
-    if (metaRaw) {
-      const candidate = isMock && metaRaw.trIdMock ? metaRaw.trIdMock : metaRaw.trIdReal;
-      if (/[^ -~]/.test(String(candidate ?? ''))) {
-        const side = String(data.side ?? '').toLowerCase();
-        const hint = data.hint || (side === 'buy' ? '매수' : side === 'sell' ? '매도' : '');
-        if (!hint) {
-          console.log(JSON.stringify({ success: false, error:
-            `${action} 의 tr_id 는 매수/매도로 갈립니다 — side: "buy" 또는 "sell" 을 함께 보내거나, `
-            + '중립 계약 place_order 를 사용하세요.' }));
-          return;
-        }
-        rawTrId = pickTrId(metaRaw, isMock, hint);
-      }
+    // The sheet writes two APIs on one line for 18 actions, so its tr_id can be a SENTENCE —
+    // "(매도) TTTC0011U (매수) TTTC0012U". That string used to reach the HTTP header, where fetch
+    // dies on the first Korean byte (2026-08-06: four sell cards in a row, "ByteString … 47588";
+    // that code point is 매). The declaration carries the branches now, so the sentence is gone
+    // and the only thing left to say is which branch, when the caller did not.
+    const meta = metaOf(data._call, action, data);
+    if (meta?.missing) {
+      console.log(JSON.stringify({ success: false, error:
+        `${action} 은 ${meta.missing} 에 따라 다른 tr_id 로 나갑니다 — ${meta.missing}: `
+        + `${meta.choices.join(' | ')} 중 하나를 함께 보내세요.`
+        + (meta.got ? ` (받은 값: ${meta.got})` : '') }));
+      return;
     }
-    const meta = metaOf(data._call, action);
-    const result = await callApi(base, token, appKey, appSecret, meta, action, query, body, isMock, 3, rawTrId);
+    const result = await callApi(base, token, appKey, appSecret, meta, action, query, body, isMock, 3, '');
     normalizeCandles(result);
     // KIS rt_cd: "0" = ok, anything else = error. It rides an HTTP 200, so the envelope used
     // to mask it as success:true → only "0" is success now (same intent as kiwoom's
