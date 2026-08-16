@@ -4532,7 +4532,7 @@
         },
         {
           "name": "PRCS_DVSN",
-          "ko": "PRCS_DVSN",
+          "ko": "처리구분",
           "type": "string",
           "required": true,
           "length": "2",
@@ -7799,7 +7799,7 @@
         },
         {
           "name": "FID_INPUT_ISCD",
-          "ko": "종콕코드",
+          "ko": "입력 종목코드",
           "type": "string",
           "required": true,
           "length": "12",
@@ -10524,7 +10524,7 @@
       "query": [
         {
           "name": "FID_COND_MRKT_DIV_CODE",
-          "ko": "사용자권한정보",
+          "ko": "조건시장분류코드",
           "type": "string",
           "required": true,
           "length": "2",
@@ -10532,7 +10532,7 @@
         },
         {
           "name": "FID_COND_SCR_DIV_CODE",
-          "ko": "거래소코드",
+          "ko": "조건화면분류코드",
           "type": "string",
           "required": true,
           "length": "5",
@@ -10540,7 +10540,7 @@
         },
         {
           "name": "FID_UNAS_INPUT_ISCD",
-          "ko": "상승율/하락율 구분",
+          "ko": "기초자산입력종목코드",
           "type": "string",
           "required": true,
           "length": "12",
@@ -10548,7 +10548,7 @@
         },
         {
           "name": "FID_INPUT_ISCD",
-          "ko": "N일자값",
+          "ko": "발행사",
           "type": "string",
           "required": true,
           "length": "12",
@@ -10556,7 +10556,7 @@
         },
         {
           "name": "FID_INPUT_RMNN_DYNU_1",
-          "ko": "거래량조건",
+          "ko": "잔존일수(이상)",
           "type": "string",
           "required": true,
           "length": "5",
@@ -10564,7 +10564,7 @@
         },
         {
           "name": "FID_DIV_CLS_CODE",
-          "ko": "NEXT KEY BUFF",
+          "ko": "콜풋구분코드",
           "type": "string",
           "required": true,
           "length": "2",
@@ -10572,7 +10572,7 @@
         },
         {
           "name": "FID_INPUT_PRICE_1",
-          "ko": "사용자권한정보",
+          "ko": "가격(이상)",
           "type": "string",
           "required": true,
           "length": "12",
@@ -10580,7 +10580,7 @@
         },
         {
           "name": "FID_INPUT_PRICE_2",
-          "ko": "거래소코드",
+          "ko": "가격(이하)",
           "type": "string",
           "required": true,
           "length": "12",
@@ -10588,7 +10588,7 @@
         },
         {
           "name": "FID_INPUT_VOL_1",
-          "ko": "상승율/하락율 구분",
+          "ko": "거래량(이상)",
           "type": "string",
           "required": true,
           "length": "18",
@@ -10596,7 +10596,7 @@
         },
         {
           "name": "FID_INPUT_VOL_2",
-          "ko": "N일자값",
+          "ko": "거래량(이하)",
           "type": "string",
           "required": true,
           "length": "18",
@@ -10604,7 +10604,7 @@
         },
         {
           "name": "FID_INPUT_DATE_1",
-          "ko": "거래량조건",
+          "ko": "조회기준일",
           "type": "string",
           "required": true,
           "length": "10",
@@ -10612,7 +10612,7 @@
         },
         {
           "name": "FID_RANK_SORT_CLS_CODE",
-          "ko": "NEXT KEY BUFF",
+          "ko": "순위정렬구분코드",
           "type": "string",
           "required": true,
           "length": "2",
@@ -10620,7 +10620,7 @@
         },
         {
           "name": "FID_BLNG_CLS_CODE",
-          "ko": "사용자권한정보",
+          "ko": "결재방법",
           "type": "string",
           "required": true,
           "length": "2",
@@ -10628,7 +10628,7 @@
         },
         {
           "name": "FID_INPUT_DATE_2",
-          "ko": "거래소코드",
+          "ko": "입력날짜2",
           "type": "string",
           "required": true,
           "length": "10",
@@ -11625,7 +11625,7 @@
       "query": [
         {
           "name": "FID_INPUT_HOUR_1",
-          "ko": "?입력 시간1",
+          "ko": "입력 시간1",
           "type": "string",
           "required": true,
           "length": "10",
@@ -21017,7 +21017,7 @@
       "query": [
         {
           "name": "FID_INPUT_ISCD",
-          "ko": "조건시장분류코드",
+          "ko": "입력 종목코드",
           "type": "string",
           "required": true,
           "length": "12",
@@ -21025,7 +21025,7 @@
         },
         {
           "name": "FID_INPUT_ISCD_2",
-          "ko": "조건화면분류코드",
+          "ko": "입력종목코드2",
           "type": "string",
           "required": true,
           "length": "8",
@@ -21033,7 +21033,7 @@
         },
         {
           "name": "FID_COND_MRKT_DIV_CODE",
-          "ko": "시장구분코드",
+          "ko": "조건 시장 분류 코드",
           "type": "string",
           "required": true,
           "length": "10",
@@ -22341,7 +22341,7 @@
         },
         {
           "name": "GB1",
-          "ko": "KOSPI",
+          "ko": "조회구분",
           "type": "string",
           "required": true,
           "length": "1",
@@ -33664,7 +33664,7 @@
         },
         {
           "name": "EXCD_01",
-          "ko": "거래소코드",
+          "ko": "거래소코드1",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33672,7 +33672,7 @@
         },
         {
           "name": "EXCD_02",
-          "ko": "거래소코드",
+          "ko": "거래소코드2",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33680,7 +33680,7 @@
         },
         {
           "name": "EXCD_03",
-          "ko": "거래소코드",
+          "ko": "거래소코드3",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33688,7 +33688,7 @@
         },
         {
           "name": "EXCD_04",
-          "ko": "거래소코드",
+          "ko": "거래소코드4",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33696,7 +33696,7 @@
         },
         {
           "name": "EXCD_05",
-          "ko": "거래소코드",
+          "ko": "거래소코드5",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33704,7 +33704,7 @@
         },
         {
           "name": "EXCD_06",
-          "ko": "거래소코드",
+          "ko": "거래소코드6",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33712,7 +33712,7 @@
         },
         {
           "name": "EXCD_07",
-          "ko": "거래소코드",
+          "ko": "거래소코드7",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33720,7 +33720,7 @@
         },
         {
           "name": "EXCD_08",
-          "ko": "거래소코드",
+          "ko": "거래소코드8",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33728,7 +33728,7 @@
         },
         {
           "name": "EXCD_09",
-          "ko": "거래소코드",
+          "ko": "거래소코드9",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33736,7 +33736,7 @@
         },
         {
           "name": "EXCD_10",
-          "ko": "거래소코드",
+          "ko": "거래소코드10",
           "type": "string",
           "required": true,
           "length": "4",
@@ -33744,7 +33744,7 @@
         },
         {
           "name": "SYMB_01",
-          "ko": "종목코드",
+          "ko": "종목코드1",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33752,7 +33752,7 @@
         },
         {
           "name": "SYMB_02",
-          "ko": "종목코드",
+          "ko": "종목코드2",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33760,7 +33760,7 @@
         },
         {
           "name": "SYMB_03",
-          "ko": "종목코드",
+          "ko": "종목코드3",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33768,7 +33768,7 @@
         },
         {
           "name": "SYMB_04",
-          "ko": "종목코드",
+          "ko": "종목코드4",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33776,7 +33776,7 @@
         },
         {
           "name": "SYMB_05",
-          "ko": "종목코드",
+          "ko": "종목코드5",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33784,7 +33784,7 @@
         },
         {
           "name": "SYMB_06",
-          "ko": "종목코드",
+          "ko": "종목코드6",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33792,7 +33792,7 @@
         },
         {
           "name": "SYMB_07",
-          "ko": "종목코드",
+          "ko": "종목코드7",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33800,7 +33800,7 @@
         },
         {
           "name": "SYMB_08",
-          "ko": "종목코드",
+          "ko": "종목코드8",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33808,7 +33808,7 @@
         },
         {
           "name": "SYMB_09",
-          "ko": "종목코드",
+          "ko": "종목코드9",
           "type": "string",
           "required": true,
           "length": "16",
@@ -33816,7 +33816,7 @@
         },
         {
           "name": "SYMB_10",
-          "ko": "종목코드",
+          "ko": "종목코드10",
           "type": "string",
           "required": true,
           "length": "16",
@@ -39968,7 +39968,7 @@
       "query": [
         {
           "name": "SRS_CD",
-          "ko": "종목명",
+          "ko": "종목코드",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41030,7 +41030,7 @@
         },
         {
           "name": "SRS_CD_01",
-          "ko": "품목종류",
+          "ko": "품목종류1",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41038,7 +41038,7 @@
         },
         {
           "name": "SRS_CD_02",
-          "ko": "품목종류…",
+          "ko": "품목종류2",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41046,7 +41046,7 @@
         },
         {
           "name": "SRS_CD_03",
-          "ko": "품목종류…",
+          "ko": "품목종류3",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41054,7 +41054,7 @@
         },
         {
           "name": "SRS_CD_04",
-          "ko": "품목종류…",
+          "ko": "품목종류4",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41062,7 +41062,7 @@
         },
         {
           "name": "SRS_CD_05",
-          "ko": "품목종류…",
+          "ko": "품목종류5",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41070,7 +41070,7 @@
         },
         {
           "name": "SRS_CD_06",
-          "ko": "품목종류…",
+          "ko": "품목종류6",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41078,7 +41078,7 @@
         },
         {
           "name": "SRS_CD_07",
-          "ko": "품목종류…",
+          "ko": "품목종류7",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41086,7 +41086,7 @@
         },
         {
           "name": "SRS_CD_08",
-          "ko": "품목종류…",
+          "ko": "품목종류8",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41094,7 +41094,7 @@
         },
         {
           "name": "SRS_CD_09",
-          "ko": "품목종류…",
+          "ko": "품목종류9",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41102,7 +41102,7 @@
         },
         {
           "name": "SRS_CD_10",
-          "ko": "품목종류…",
+          "ko": "품목종류10",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41110,7 +41110,7 @@
         },
         {
           "name": "SRS_CD_11",
-          "ko": "품목종류…",
+          "ko": "품목종류11",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41118,7 +41118,7 @@
         },
         {
           "name": "SRS_CD_12",
-          "ko": "품목종류…",
+          "ko": "품목종류12",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41126,7 +41126,7 @@
         },
         {
           "name": "SRS_CD_13",
-          "ko": "품목종류…",
+          "ko": "품목종류13",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41134,7 +41134,7 @@
         },
         {
           "name": "SRS_CD_14",
-          "ko": "품목종류…",
+          "ko": "품목종류14",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41142,7 +41142,7 @@
         },
         {
           "name": "SRS_CD_15",
-          "ko": "품목종류…",
+          "ko": "품목종류15",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41150,7 +41150,7 @@
         },
         {
           "name": "SRS_CD_16",
-          "ko": "품목종류…",
+          "ko": "품목종류16",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41158,7 +41158,7 @@
         },
         {
           "name": "SRS_CD_17",
-          "ko": "품목종류…",
+          "ko": "품목종류17",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41166,7 +41166,7 @@
         },
         {
           "name": "SRS_CD_18",
-          "ko": "품목종류…",
+          "ko": "품목종류18",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41174,7 +41174,7 @@
         },
         {
           "name": "SRS_CD_19",
-          "ko": "품목종류…",
+          "ko": "품목종류19",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41182,7 +41182,7 @@
         },
         {
           "name": "SRS_CD_20",
-          "ko": "품목종류…",
+          "ko": "품목종류20",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41190,7 +41190,7 @@
         },
         {
           "name": "SRS_CD_21",
-          "ko": "품목종류…",
+          "ko": "품목종류21",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41198,7 +41198,7 @@
         },
         {
           "name": "SRS_CD_22",
-          "ko": "품목종류…",
+          "ko": "품목종류22",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41206,7 +41206,7 @@
         },
         {
           "name": "SRS_CD_23",
-          "ko": "품목종류…",
+          "ko": "품목종류23",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41214,7 +41214,7 @@
         },
         {
           "name": "SRS_CD_24",
-          "ko": "품목종류…",
+          "ko": "품목종류24",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41222,7 +41222,7 @@
         },
         {
           "name": "SRS_CD_25",
-          "ko": "품목종류…",
+          "ko": "품목종류25",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41230,7 +41230,7 @@
         },
         {
           "name": "SRS_CD_26",
-          "ko": "품목종류…",
+          "ko": "품목종류26",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41238,7 +41238,7 @@
         },
         {
           "name": "SRS_CD_27",
-          "ko": "품목종류…",
+          "ko": "품목종류27",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41246,7 +41246,7 @@
         },
         {
           "name": "SRS_CD_28",
-          "ko": "품목종류…",
+          "ko": "품목종류28",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41254,7 +41254,7 @@
         },
         {
           "name": "SRS_CD_29",
-          "ko": "품목종류…",
+          "ko": "품목종류29",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41262,7 +41262,7 @@
         },
         {
           "name": "SRS_CD_30",
-          "ko": "품목종류…",
+          "ko": "품목종류30",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41270,7 +41270,7 @@
         },
         {
           "name": "SRS_CD_31",
-          "ko": "품목종류…",
+          "ko": "품목종류31",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41278,7 +41278,7 @@
         },
         {
           "name": "SRS_CD_32",
-          "ko": "품목종류…",
+          "ko": "품목종류32",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41560,7 +41560,7 @@
       "query": [
         {
           "name": "SRS_CD",
-          "ko": "종목명",
+          "ko": "종목코드",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41689,7 +41689,7 @@
       "query": [
         {
           "name": "SRS_CD",
-          "ko": "종목명",
+          "ko": "종목코드",
           "type": "string",
           "required": true,
           "length": "32",
@@ -41818,7 +41818,7 @@
       "query": [
         {
           "name": "SRS_CD",
-          "ko": "종목명",
+          "ko": "종목코드",
           "type": "string",
           "required": true,
           "length": "8",
@@ -42896,7 +42896,7 @@
         },
         {
           "name": "SRS_CD_03",
-          "ko": "종목코드2",
+          "ko": "종목코드3",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42904,7 +42904,7 @@
         },
         {
           "name": "SRS_CD_04",
-          "ko": "종목코드2",
+          "ko": "종목코드4",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42912,7 +42912,7 @@
         },
         {
           "name": "SRS_CD_05",
-          "ko": "종목코드2",
+          "ko": "종목코드5",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42920,7 +42920,7 @@
         },
         {
           "name": "SRS_CD_06",
-          "ko": "종목코드2",
+          "ko": "종목코드6",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42928,7 +42928,7 @@
         },
         {
           "name": "SRS_CD_07",
-          "ko": "종목코드2",
+          "ko": "종목코드7",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42936,7 +42936,7 @@
         },
         {
           "name": "SRS_CD_08",
-          "ko": "종목코드2",
+          "ko": "종목코드8",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42944,7 +42944,7 @@
         },
         {
           "name": "SRS_CD_09",
-          "ko": "종목코드2",
+          "ko": "종목코드9",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42952,7 +42952,7 @@
         },
         {
           "name": "SRS_CD_10",
-          "ko": "종목코드2",
+          "ko": "종목코드10",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42960,7 +42960,7 @@
         },
         {
           "name": "SRS_CD_11",
-          "ko": "종목코드2",
+          "ko": "종목코드11",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42968,7 +42968,7 @@
         },
         {
           "name": "SRS_CD_12",
-          "ko": "종목코드2",
+          "ko": "종목코드12",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42976,7 +42976,7 @@
         },
         {
           "name": "SRS_CD_13",
-          "ko": "종목코드2",
+          "ko": "종목코드13",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42984,7 +42984,7 @@
         },
         {
           "name": "SRS_CD_14",
-          "ko": "종목코드2",
+          "ko": "종목코드14",
           "type": "string",
           "required": true,
           "length": "32",
@@ -42992,7 +42992,7 @@
         },
         {
           "name": "SRS_CD_15",
-          "ko": "종목코드2",
+          "ko": "종목코드15",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43000,7 +43000,7 @@
         },
         {
           "name": "SRS_CD_16",
-          "ko": "종목코드2",
+          "ko": "종목코드16",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43008,7 +43008,7 @@
         },
         {
           "name": "SRS_CD_17",
-          "ko": "종목코드2",
+          "ko": "종목코드17",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43016,7 +43016,7 @@
         },
         {
           "name": "SRS_CD_18",
-          "ko": "종목코드2",
+          "ko": "종목코드18",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43024,7 +43024,7 @@
         },
         {
           "name": "SRS_CD_19",
-          "ko": "종목코드2",
+          "ko": "종목코드19",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43032,7 +43032,7 @@
         },
         {
           "name": "SRS_CD_20",
-          "ko": "종목코드2",
+          "ko": "종목코드20",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43040,7 +43040,7 @@
         },
         {
           "name": "SRS_CD_21",
-          "ko": "종목코드2",
+          "ko": "종목코드21",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43048,7 +43048,7 @@
         },
         {
           "name": "SRS_CD_22",
-          "ko": "종목코드2",
+          "ko": "종목코드22",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43056,7 +43056,7 @@
         },
         {
           "name": "SRS_CD_23",
-          "ko": "종목코드2",
+          "ko": "종목코드23",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43064,7 +43064,7 @@
         },
         {
           "name": "SRS_CD_24",
-          "ko": "종목코드2",
+          "ko": "종목코드24",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43072,7 +43072,7 @@
         },
         {
           "name": "SRS_CD_25",
-          "ko": "종목코드2",
+          "ko": "종목코드25",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43080,7 +43080,7 @@
         },
         {
           "name": "SRS_CD_26",
-          "ko": "종목코드2",
+          "ko": "종목코드26",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43088,7 +43088,7 @@
         },
         {
           "name": "SRS_CD_27",
-          "ko": "종목코드2",
+          "ko": "종목코드27",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43096,7 +43096,7 @@
         },
         {
           "name": "SRS_CD_28",
-          "ko": "종목코드2",
+          "ko": "종목코드28",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43104,7 +43104,7 @@
         },
         {
           "name": "SRS_CD_29",
-          "ko": "종목코드2",
+          "ko": "종목코드29",
           "type": "string",
           "required": true,
           "length": "32",
@@ -43112,7 +43112,7 @@
         },
         {
           "name": "SRS_CD_30",
-          "ko": "종목코드2",
+          "ko": "종목코드30",
           "type": "string",
           "required": true,
           "length": "32",
@@ -45639,7 +45639,7 @@
       "query": [
         {
           "name": "PDNO",
-          "ko": "사용자권한정보",
+          "ko": "상품번호",
           "type": "string",
           "required": true,
           "length": "12",
@@ -45647,7 +45647,7 @@
         },
         {
           "name": "PRDT_TYPE_CD",
-          "ko": "거래소코드",
+          "ko": "상품유형코드",
           "type": "string",
           "required": true,
           "length": "3",

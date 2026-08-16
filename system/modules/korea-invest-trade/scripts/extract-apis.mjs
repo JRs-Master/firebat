@@ -113,7 +113,31 @@ function expandRangeFields(fields) {
   }
   // 앞서 개별로 나온 이름(SRS_CD_01)과 전개분이 겹칠 수 있다.
   const seen = new Set();
-  return out.filter((f) => (seen.has(f.name) ? false : seen.add(f.name)));
+  return numberSharedLabels(out.filter((f) => (seen.has(f.name) ? false : seen.add(f.name))));
+}
+
+/**
+ * A range row carries one label for every field it expands into, so `{...f}` handed thirty
+ * parameters the second one's name — `get_action_schema` answered SRS_CD_17 with "종목코드2".
+ * The field is numbered; number the label the same way. Only when every member of a
+ * BASE_<n> group says the same thing once its trailing number is stripped — where the sheet
+ * distinguishes them (가격(이상) vs 가격(이하)), it is saying something the number cannot.
+ */
+function numberSharedLabels(fields) {
+  const groups = new Map();
+  for (const f of fields) {
+    const m = /^(.*)_(\d+)$/.exec(String(f.name).trim());
+    if (!m) continue;
+    if (!groups.has(m[1])) groups.set(m[1], []);
+    groups.get(m[1]).push([f, +m[2]]);
+  }
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const stems = members.map(([f]) => String(f.ko ?? '').trim().replace(/[0-9…]+$/, ''));
+    if (!stems[0] || stems.some((s) => s !== stems[0])) continue;
+    for (const [i, [f, n]] of members.entries()) f.ko = `${stems[i]}${n}`;
+  }
+  return fields;
 }
 
 function extractKisDetail(ws) {
