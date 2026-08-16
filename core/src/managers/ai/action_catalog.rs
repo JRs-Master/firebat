@@ -317,7 +317,7 @@ impl ModuleActionSource {
                 // So the selection stays with the catalog and the wording comes from the
                 // declaration. An entry that names no params at all takes the whole schema, which
                 // is what lets a single-action module carry no copy in the first place.
-                fill_param_docs_from_input(&mut extra, config);
+                fill_param_docs_from_input(&mut extra, config, &id);
                 add_cache_key_params(&mut extra, config);
                 // Attach resolve guidance for grounded params this action actually takes —
                 // the model reads it exactly where it reads the params (get_action_schema),
@@ -638,24 +638,44 @@ fn params_from_input(config: &serde_json::Value) -> serde_json::Value {
 ///
 /// A name the schema does not know keeps whatever the catalog says — that is the generated
 /// broker catalogs, whose params are call paths (`query.FID_INPUT_ISCD`) rather than schema
-/// properties. An entry that lists no params takes the schema whole.
-fn fill_param_docs_from_input(extra: &mut serde_json::Value, config: &serde_json::Value) {
+/// properties.
+///
+/// An entry that lists no params takes the schema — through the SAME action-tag filter the
+/// derived path uses. Handing over the module-wide union instead is a measured failure, not a
+/// theoretical one: it once listed fifteen params for `kma-weather/short` with nothing marking
+/// the two it actually needs, and the 22:00 cron died on `coords_required` (2026-07-09). The
+/// filter is what makes deleting a catalog's `params` block safe.
+fn fill_param_docs_from_input(
+    extra: &mut serde_json::Value,
+    config: &serde_json::Value,
+    action_id: &str,
+) {
     let derived = params_from_input(config);
-    let Some(derived) = derived.as_object() else { return };
-    if derived.is_empty() {
+    let Some(derived_map) = derived.as_object() else { return };
+    if derived_map.is_empty() {
         return;
     }
     match extra.get_mut("params").and_then(|p| p.as_object_mut()) {
         Some(params) if !params.is_empty() => {
             for (name, desc) in params.iter_mut() {
-                if let Some(from_schema) = derived.get(name) {
+                if let Some(from_schema) = derived_map.get(name) {
                     if from_schema.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
                         *desc = from_schema.clone();
                     }
                 }
             }
         }
-        _ => extra["params"] = serde_json::Value::Object(derived.clone()),
+        _ => {
+            let all_actions: Vec<&str> = config
+                .get("input")
+                .and_then(|i| i.get("properties"))
+                .and_then(|p| p.get("action"))
+                .and_then(|a| a.get("enum"))
+                .and_then(|e| e.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+                .unwrap_or_default();
+            extra["params"] = filter_params_for_action(&derived, action_id, &all_actions);
+        }
     }
 }
 
@@ -1965,7 +1985,7 @@ mod display_vs_document_tests {
             "query": "Search term",
             "sort": "accuracy (default) or newest-first — recency except book, which calls it latest"
         }});
-        fill_param_docs_from_input(&mut extra, &cfg);
+        fill_param_docs_from_input(&mut extra, &cfg, "search");
         let p = extra["params"].as_object().expect("params");
 
         let sort = p["sort"].as_str().unwrap();
@@ -1985,8 +2005,28 @@ mod display_vs_document_tests {
         let mut extra = serde_json::json!({"params": {
             "query.FID_INPUT_ISCD": "종목코드 (필수)"
         }});
-        fill_param_docs_from_input(&mut extra, &cfg);
+        fill_param_docs_from_input(&mut extra, &cfg, "국내주식-164");
         assert_eq!(extra["params"]["query.FID_INPUT_ISCD"], "종목코드 (필수)");
+    }
+
+    /// Deleting a catalog's `params` block must not widen the action: the schema's action tags
+    /// scope it, exactly as they do on the derived path. Without this the union came back — the
+    /// kma-weather `coords_required` shape.
+    #[test]
+    fn a_catalog_without_params_still_scopes_them_to_the_action() {
+        let cfg = serde_json::json!({"input": {"properties": {
+            "action": {"type": "string", "enum": ["short", "medium"]},
+            "lat":   {"type": "number", "description": "[short] Latitude"},
+            "lon":   {"type": "number", "description": "[short] Longitude"},
+            "region":{"type": "string", "description": "[medium] Region code"},
+            "units": {"type": "string", "description": "Units — every action"}
+        }}});
+        let mut extra = serde_json::json!({"name": "단기예보"});
+        fill_param_docs_from_input(&mut extra, &cfg, "short");
+        let p = extra["params"].as_object().expect("params");
+        assert!(p.contains_key("lat") && p.contains_key("lon"), "got: {p:?}");
+        assert!(p.contains_key("units"), "an untagged param is module-wide: {p:?}");
+        assert!(!p.contains_key("region"), "another action's param must not appear: {p:?}");
     }
 
     /// No selection declared = the action takes the schema whole, so a single-action module never
@@ -1998,7 +2038,7 @@ mod display_vs_document_tests {
             "query": {"type": "string", "description": "Search term"}
         }}});
         let mut extra = serde_json::json!({"name": "다음 검색"});
-        fill_param_docs_from_input(&mut extra, &cfg);
+        fill_param_docs_from_input(&mut extra, &cfg, "search");
         assert_eq!(extra["params"]["query"], "Search term");
         assert!(extra["params"].get("action").is_none(), "the selector is not a param");
     }

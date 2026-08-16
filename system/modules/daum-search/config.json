@@ -39,15 +39,7 @@
       {
         "id": "search",
         "name": "다음 검색 (웹문서·동영상·이미지·블로그·책·카페)",
-        "description": "One endpoint per `type`, returning title / link / description / datetime plus per-type extras",
-        "params": {
-          "query": "Search term, required. For blog, 'blogUrl term' (space separated) searches inside one blog",
-          "type": "web | vclip (video) | image | blog | book | cafe",
-          "sort": "accuracy (default) or newest-first — recency for every type except book, which calls it latest",
-          "page": "Page number. 1-50, except video which stops at 15",
-          "size": "Results per page. web/blog/cafe/book 1-50 (default 10), video 1-30 (default 15), image 1-80 (default 80)",
-          "target": "book only: narrow to title | isbn | publisher | person"
-        }
+        "description": "One endpoint per `type`, returning title / link / description / datetime plus per-type extras"
       }
     ]
   },
