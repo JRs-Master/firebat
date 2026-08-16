@@ -1819,18 +1819,7 @@ impl ModuleManager {
             Some(tpl) => Some(substitute_ws_frame(tpl, &args_view)?),
             None => None,
         };
-        // A positional frame is values without names, so the stream says what its slots are
-        // called — beside the subscribe frame it belongs to, rather than in a separate vendor
-        // export the framework had to go and read. JSON streams name nothing and need nothing.
         let frame_format = ws_frame_format(decl, ws);
-        let field_order = if matches!(frame_format, WsFrameFormat::Delimited(_)) {
-            decl.get("fields")
-                .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
         // Which account this socket authenticates as. Resolved at launch rather than at
         // registration, so a watch registered before any account existed — or before the primary
         // changed — picks up the right credentials the next time it connects instead of hunting
@@ -1908,7 +1897,6 @@ impl ModuleManager {
                 })?
                 .to_string(),
             frame_format,
-            field_order,
             decrypt: parse_ws_decrypt(decl),
             // Spec-level token secret — 한투 approval_key rides in the subscribe frame (no LOGIN).
             token_secret: ws

@@ -817,9 +817,6 @@ pub struct WsStreamSpec {
     pub realtime_match: String,
     /// Wire format (default Json = kiwoom). KisPipe = 한투 positional realtime frames.
     pub frame_format: WsFrameFormat,
-    /// Positional field names for a delimited frame, in wire order — declared by the stream as
-    /// `fields`, beside the subscribe frame they name. Empty for JSON streams.
-    pub field_order: Vec<String>,
     /// AES256 spec for KIS 체결통보 (flag 1) — None for plaintext 시세 streams.
     pub decrypt: Option<WsDecryptSpec>,
     /// Token secret for providers whose auth token goes in the subscribe frame itself, not a

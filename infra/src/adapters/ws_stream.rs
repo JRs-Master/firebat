@@ -984,7 +984,7 @@ async fn run_session(
                     _ => None,
                 };
                 if let Some(fspec) = delimited {
-                    match decode_positional(&text, &fspec, spec, &decrypt_keys) {
+                    match decode_positional(&text, &fspec, &decrypt_keys) {
                         Some((tr_id, value)) => {
                             // One watch subscribes one TR — guard against a stray other-TR frame.
                             if !spec.realtime_match.is_empty() && tr_id != spec.realtime_match {
@@ -1367,7 +1367,6 @@ fn aes256_cbc_decrypt(b64: &str, iv: &str, key: &str) -> Option<String> {
 fn decode_positional(
     text: &str,
     f: &WsDelimitedFrame,
-    spec: &WsStreamSpec,
     keys: &Option<(String, String)>,
 ) -> Option<(String, serde_json::Value)> {
     // The header slots are named by the declaration, so the venue's order is the venue's to
@@ -1412,27 +1411,17 @@ fn decode_positional(
     } else {
         values.len() // 건수 가 프레임과 안 맞으면 통째로 한 레코드 (경계 날조 금지)
     };
-    let names = &spec.field_order;
-    if !names.is_empty() && per != names.len() {
-        tracing::warn!(
-            target: "ws_stream",
-            watch_id = %spec.watch_id,
-            tr_id = %tr_id,
-            frame_width = per,
-            doc_fields = names.len(),
-            "positional field-count drift — mapping by frame width (the stream's declared `fields` is stale)"
-        );
-    }
     let recs: Vec<serde_json::Value> = values
         .chunks(per)
         .map(|chunk| {
+            // Positional values keep their position. Core used to name them from a table the
+            // module declared, which made core the place a venue's field list had to be correct
+            // — for a name it then handed straight to a consumer that maps it again anyway
+            // (`tick1s.map` already reads kiwoom's frames by key). One naming layer, at the end,
+            // owned by whoever is reading.
             let mut obj = serde_json::Map::new();
             for (i, v) in chunk.iter().enumerate() {
-                let key = match names.get(i) {
-                    Some(n) => n.clone(),
-                    None => format!("field_{i}"),
-                };
-                obj.insert(key, serde_json::Value::String((*v).to_string()));
+                obj.insert(format!("field_{i}"), serde_json::Value::String((*v).to_string()));
             }
             serde_json::Value::Object(obj)
         })
