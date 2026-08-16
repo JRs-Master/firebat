@@ -832,6 +832,70 @@ const DORMANT_CRONS: &[&str] = &[
     "autotrade/cron-kiwoom-screen.json",
 ];
 
+/// A module that hands its endpoints over hands over ALL of them.
+///
+/// Dispatch injects `_call` — the row for the action in flight — so a module never has to carry a
+/// table of everyone else's endpoints. That only holds if the declaration is complete. Declare
+/// `call` on some actions and not others and the dialect has to keep both paths alive: the
+/// injected row for the ones that have it, its own lookup for the rest. Which is worse than
+/// either, because the half without a row fails only for the actions nobody exercised — silence
+/// again, and this time shaped like a migration that finished.
+///
+/// Modules whose endpoints are a rule rather than a table declare no `call` at all and are not
+/// asked to invent one; dart resolves `/api/<name>.json` from the action name itself.
+#[test]
+fn a_module_that_declares_a_call_declares_it_for_every_runnable_action() {
+    let mut problems = Vec::new();
+    let (mut examined, mut with_calls) = (0usize, 0usize);
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        examined += 1;
+        // Read the rows the way the loader and dispatch do, not with a third copy of the logic.
+        let rows = match config.pointer("/actionCatalog/file").and_then(|v| v.as_str()) {
+            Some(file) => fs::read_to_string(dir.join(file))
+                .ok()
+                .and_then(|c| serde_json::from_str::<Value>(&c).ok())
+                .and_then(|v| firebat_core::utils::action_decl::catalog_rows(&v)),
+            None => config
+                .get("actionCatalog")
+                .and_then(firebat_core::utils::action_decl::catalog_rows),
+        };
+        let Some(rows) = rows else { continue };
+        let calls = firebat_core::utils::action_decl::action_calls(&rows);
+        if calls.is_empty() {
+            continue;
+        }
+        with_calls += 1;
+        let Some(runnable) = declared_actions(&config) else { continue };
+        let mut missing: Vec<&String> = runnable.iter().filter(|a| !calls.contains_key(*a)).collect();
+        if missing.is_empty() {
+            continue;
+        }
+        let total = missing.len();
+        missing.truncate(5);
+        problems.push(format!(
+            "{name}: declares `call` for {} of {} runnable actions — {} without one ({}{})",
+            calls.len(),
+            runnable.len(),
+            total,
+            missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
+            if total > 5 { ", …" } else { "" }
+        ));
+    }
+    // A sweep that examined nothing reports the same "no problems" as one that examined
+    // everything, so say which happened.
+    assert!(examined >= 20, "only {examined} module configs examined — the path drifted");
+    assert!(
+        problems.is_empty(),
+        "{} problem(s) across {with_calls} module(s) declaring `call`:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
 #[test]
 fn every_declared_cron_job_parses_as_the_pipeline_the_scheduler_runs() {
     use firebat_core::managers::task::PipelineStep;

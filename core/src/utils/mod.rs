@@ -50,3 +50,4 @@ pub(crate) fn shared_test_lock() -> std::sync::MutexGuard<'static, ()> {
 pub mod module_tags;
 pub mod cache_inputs;
 pub mod account_secrets;
+pub mod action_decl;

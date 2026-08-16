@@ -42,29 +42,14 @@ const REBUILD_TTL: Duration = Duration::from_secs(300);
 /// text because naming the venue IS the routing signal, and it is safe there because it is short
 /// and identical across that module's rows: it moves them together against OTHER modules without
 /// separating them from each other.
-/// The action rows out of an `actionCatalog` value, in either shape it is written in.
+/// The action rows out of an `actionCatalog` value — re-exported so the loader, the config audit
+/// and dispatch all read a module's declarations through one function.
 ///
-/// `{"actions": [...]}` is the documented shape and a bare `[...]` says the same thing, so both
-/// are read — and they are read HERE, once, because the two used to be handled in different places
-/// and drifted: the inline branch took both while the file branch parsed a bare list only. tago
-/// wrote the documented shape into its file and lost all 39 actions to a `unwrap_or_default()`
-/// (measured live 2026-08-14 — the module fell back to enum-derived entries, so every
-/// `get_action_schema` answered `derived: true` with the module blurb where the action's own
-/// description belonged). Every other module happened to write the bare list, which is why one
-/// module was broken and the shape looked fine.
-///
-/// `None` means the value is neither shape — a different failure from an empty list, and the
-/// callers say so differently.
-///
-/// Public so the config audit reads catalogs through the same function the loader does. The audit
-/// had its own copy of this logic, more permissive than the loader's, which is why CI stayed green
-/// for a module that had silently lost every action.
-pub fn catalog_rows(v: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
-    if let Some(arr) = v.as_array() {
-        return Some(arr.clone());
-    }
-    v.get("actions").and_then(|a| a.as_array()).cloned()
-}
+/// It moved to `utils::action_decl` when dispatch became the third reader: the two that were here
+/// already had drifted once (the inline branch took both documented shapes while the file branch
+/// parsed a bare list only, and tago silently lost all 39 actions to it), and a leaf manager
+/// reaching into this file for a pure helper would have been the fourth place to keep in step.
+pub use crate::utils::action_decl::catalog_rows;
 
 fn module_identity(name: &str, config: &serde_json::Value) -> Vec<String> {
     let mut out = vec![name.to_string()];

@@ -76,6 +76,26 @@ pub struct ModuleManager {
     /// (set_media_intake, not a builder). None = not wired (tests); the declaration then reports
     /// it went nowhere.
     media_intake: Mutex<Option<Arc<dyn crate::managers::media::IMediaIntakePort>>>,
+    /// Per-module `action id → call` rows, keyed `scope:name` and validated against the module
+    /// directory's own fingerprint.
+    ///
+    /// A call is for one action, so a module should be handed one action's row — not a table of
+    /// everyone else's. korea-invest shipped a generated 62KB table its dialect parsed on every
+    /// spawn (a module runs as a fresh process per step) to read five fields off a single entry.
+    /// Reading the declaration here instead would move that parse onto the dispatch path, hence
+    /// the cache; the fingerprint comes from the `list_dir` dispatch already performs, so keeping
+    /// it honest costs no extra I/O.
+    action_calls: Mutex<HashMap<String, CachedCalls>>,
+}
+
+/// One module's `call` rows and the directory state they were read from.
+struct CachedCalls {
+    /// `name:size:mtime` over the module directory — the same signal the action catalog uses,
+    /// scoped to one module. An edit to `actions.json` changes it; five quiet minutes do not.
+    fingerprint: String,
+    /// Empty when the module declares no `call` anywhere, which is most of them. Cached all the
+    /// same: "this module has nothing to inject" is an answer worth not re-deriving per call.
+    calls: Arc<HashMap<String, serde_json::Value>>,
 }
 
 /// Alias length cap. The alias is the account's name everywhere it appears — settings rows,
@@ -156,6 +176,7 @@ impl ModuleManager {
             sysmod_cache: None,
             recall: None,
             media_intake: Mutex::new(None),
+            action_calls: Mutex::new(HashMap::new()),
         }
     }
 
@@ -313,22 +334,36 @@ impl ModuleManager {
             ));
         }
         // user / system 모두 검색 — sysmod 도구는 system/modules/ 에 있음.
-        let (scope, dir_path, files) = {
+        let (scope, dir_path, files, dir_fp) = {
             let user_dir = format!("user/modules/{}", module_name);
             let system_dir = format!("system/modules/{}", module_name);
             let user_entries = self.storage.list_dir(&user_dir).await.ok();
             let system_entries = self.storage.list_dir(&system_dir).await.ok();
-            let pick = |entries: Vec<crate::ports::DirEntry>| -> Vec<String> {
-                entries
-                    .iter()
-                    .filter(|e| !e.is_directory)
-                    .map(|e| e.name.clone())
-                    .collect()
+            // Names for the entry-point search, and a fingerprint of the same listing so the
+            // declaration cache can tell an edited directory from an untouched one. Both out of
+            // one `list_dir` — the walk is already happening, and asking the filesystem twice for
+            // what it just said is how a hot path grows a second cost nobody notices.
+            let pick = |entries: Vec<crate::ports::DirEntry>| -> (Vec<String>, String) {
+                let mut names = Vec::new();
+                let mut parts = Vec::new();
+                for e in entries.iter().filter(|e| !e.is_directory) {
+                    names.push(e.name.clone());
+                    parts.push(format!(
+                        "{}:{}:{}",
+                        e.name,
+                        e.size.unwrap_or(0),
+                        e.modified_ms.unwrap_or(0)
+                    ));
+                }
+                parts.sort();
+                (names, parts.join("\n"))
             };
             if let Some(e) = user_entries {
-                ("user", user_dir, pick(e))
+                let (names, fp) = pick(e);
+                ("user", user_dir, names, fp)
             } else if let Some(e) = system_entries {
-                ("system", system_dir, pick(e))
+                let (names, fp) = pick(e);
+                ("system", system_dir, names, fp)
             } else {
                 return Err(crate::i18n::t(
                     "core.error.module.not_found",
@@ -849,6 +884,14 @@ impl ModuleManager {
         let with_recall = self.inject_recall(module_name, config.as_ref(), input_data).await;
         let input_data: &serde_json::Value = with_recall.as_ref().unwrap_or(input_data);
 
+        // The action's own declaration, handed over so the module does not carry everyone else's.
+        // Before the WS route as well as the sandbox: both are ways of issuing the same declared
+        // action, and a transport that had to be told separately is a transport that gets missed.
+        let with_call = self
+            .inject_action_call(scope, module_name, &dir_fp, config.as_ref(), input_data)
+            .await;
+        let input_data: &serde_json::Value = with_call.as_ref().unwrap_or(input_data);
+
         // WS-only actions (config.json `ws` declarative) — route to the WS transport instead of
         // the sandbox. Common infra + per-module config data = no per-provider WS code in modules
         // (TokenProvider pattern). Undeclared actions fall through to the sandbox as before.
@@ -1188,6 +1231,75 @@ impl ModuleManager {
     /// Returns None when nothing is declared, nothing is stored, or the store is not wired — in
     /// each case the module runs exactly as it did before, which is what makes this safe to add
     /// to a module that has never heard of it.
+    /// This module's `action id → call` rows, re-read only when its directory changed.
+    ///
+    /// The fingerprint is the listing dispatch already performed, so an unchanged module costs a
+    /// map lookup and a changed one costs the read it would have cost anyway. Whole-tree
+    /// fingerprinting — what the action catalog uses — would be wrong here: it walks forty
+    /// directories to answer a question about one, on a path that runs per call.
+    async fn action_calls_for(
+        &self,
+        scope: &str,
+        module_name: &str,
+        dir_fp: &str,
+        config: &serde_json::Value,
+    ) -> Arc<HashMap<String, serde_json::Value>> {
+        let key = format!("{}:{}", scope, module_name);
+        if let Ok(cache) = self.action_calls.lock() {
+            if let Some(hit) = cache.get(&key).filter(|c| c.fingerprint == dir_fp) {
+                return hit.calls.clone();
+            }
+        }
+        let rows = match crate::utils::action_decl::catalog_file(config) {
+            Some(file) => self
+                .read_module_file(scope, module_name, file)
+                .await
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                .and_then(|v| crate::utils::action_decl::catalog_rows(&v))
+                .unwrap_or_default(),
+            None => crate::utils::action_decl::inline_catalog_rows(config).unwrap_or_default(),
+        };
+        let calls = Arc::new(crate::utils::action_decl::action_calls(&rows));
+        if let Ok(mut cache) = self.action_calls.lock() {
+            cache.insert(
+                key,
+                CachedCalls {
+                    fingerprint: dir_fp.to_string(),
+                    calls: calls.clone(),
+                },
+            );
+        }
+        calls
+    }
+
+    /// Hand the module the row for the action it was asked to run, as `_call`.
+    ///
+    /// A call is for one action. Before this, a module that needed its endpoint carried every
+    /// action's — korea-invest shipped a generated 62KB table and parsed it on every spawn to
+    /// read five fields off one entry, and the table had to be regenerated, deployed and kept in
+    /// step with the declaration it was already a projection of. The declaration is here; the
+    /// module is one process away; the row can simply travel.
+    ///
+    /// `None` when the module declares no `call` for this action, which leaves the input exactly
+    /// as it was — every module that resolves its own endpoints keeps doing so.
+    async fn inject_action_call(
+        &self,
+        scope: &str,
+        module_name: &str,
+        dir_fp: &str,
+        config: Option<&serde_json::Value>,
+        input_data: &serde_json::Value,
+    ) -> Option<serde_json::Value> {
+        let action = input_data.get("action").and_then(|v| v.as_str())?;
+        let calls = self
+            .action_calls_for(scope, module_name, dir_fp, config?)
+            .await;
+        let call = calls.get(action)?;
+        let mut obj = input_data.as_object()?.clone();
+        obj.insert("_call".to_string(), call.clone());
+        Some(serde_json::Value::Object(obj))
+    }
+
     async fn inject_recall(
         &self,
         module_name: &str,
