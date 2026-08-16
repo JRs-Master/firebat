@@ -471,6 +471,9 @@
         },
         "realtimeMatch": "myAsset"
       }
+    },
+    "frame": {
+      "kind": "json"
     }
   },
   "hubSafe": false,

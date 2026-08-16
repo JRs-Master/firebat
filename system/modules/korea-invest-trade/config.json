@@ -122,14 +122,13 @@
   "ws": {
     "endpoint": "ws://ops.koreainvestment.com:21000",
     "endpointMock": "ws://ops.koreainvestment.com:31000",
-    "frameFormat": "kis-pipe",
     "matchField": "header.tr_id",
     "echoValues": [
       "PINGPONG"
     ],
     "tokenSecret": "KIS_WS_APPROVAL_KEY",
     "errorMsgField": "body.msg1",
-    "_note": "한투 실시간 — approval_key(구독 헤더) + positional(^) 프레임. 시세=평문(flag0)/체결통보=AES256(flag1, 구독 응답 iv·key). field 순서는 _ws_apis.json responseBody(trId 매칭).",
+    "_note": "한투 실시간 — approval_key(구독 헤더) + 구분자 프레임(ws.frame). 시세=평문(flag0)/체결통보=AES256(flag1, 구독 응답 iv·key). 필드 순서는 각 스트림의 fields.",
     "streams": {
       "exec-notify": {
         "trId": "H0STCNI0",
@@ -177,7 +176,35 @@
         "decrypt": {
           "ivField": "body.output.iv",
           "keyField": "body.output.key"
-        }
+        },
+        "fields": [
+          "CUST_ID",
+          "ACNT_NO",
+          "ODER_NO",
+          "OODER_NO",
+          "SELN_BYOV_CLS",
+          "RCTF_CLS",
+          "ODER_KIND",
+          "ODER_COND",
+          "STCK_SHRN_ISCD",
+          "CNTG_QTY",
+          "CNTG_UNPR",
+          "STCK_CNTG_HOUR",
+          "RFUS_YN",
+          "CNTG_YN",
+          "ACPT_YN",
+          "BRNC_NO",
+          "ODER_QTY",
+          "ACNT_NAME",
+          "ORD_COND_PRC",
+          "ORD_EXG_GB",
+          "POPUP_YN",
+          "FILLER",
+          "CRDT_CLS",
+          "CRDT_LOAN_DATE",
+          "CNTG_ISNM40",
+          "ODER_PRC"
+        ]
       },
       "futures-options-exec-notify": {
         "trId": "H0IFCNI0",
@@ -225,7 +252,31 @@
         "decrypt": {
           "ivField": "body.output.iv",
           "keyField": "body.output.key"
-        }
+        },
+        "fields": [
+          "CUST_ID",
+          "ACNT_NO",
+          "ODER_NO",
+          "OODER_NO",
+          "SELN_BYOV_CLS",
+          "RCTF_CLS",
+          "ODER_KIND2",
+          "STCK_SHRN_ISCD",
+          "CNTG_QTY",
+          "CNTG_UNPR",
+          "STCK_CNTG_HOUR",
+          "RFUS_YN",
+          "CNTG_YN",
+          "ACPT_YN",
+          "BRNC_NO",
+          "ODER_QTY",
+          "ACNT_NAME",
+          "CNTG_ISNM",
+          "ODER_COND",
+          "ORD_GRP",
+          "ORD_GRPSEQ",
+          "ORDER_PRC"
+        ]
       },
       "night-options-exec-notify": {
         "trId": "H0EUCNI0",
@@ -272,7 +323,28 @@
         "decrypt": {
           "ivField": "body.output.iv",
           "keyField": "body.output.key"
-        }
+        },
+        "fields": [
+          "CUST_ID",
+          "ACNT_NO",
+          "ODER_NO",
+          "OODER_NO",
+          "SELN_BYOV_CLS",
+          "RCTF_CLS",
+          "ODER_KIND2",
+          "STCK_SHRN_ISCD",
+          "CNTG_QTY",
+          "CNTG_UNPR",
+          "STCK_CNTG_HOUR",
+          "RFUS_YN",
+          "CNTG_YN",
+          "ACPT_YN",
+          "BRNC_NO",
+          "ODER_QTY",
+          "ACNT_NAME",
+          "CNTG_ISNM",
+          "ODER_COND"
+        ]
       },
       "night-futures-exec-notify": {
         "trId": "H0MFCNI0",
@@ -319,7 +391,28 @@
         "decrypt": {
           "ivField": "body.output.iv",
           "keyField": "body.output.key"
-        }
+        },
+        "fields": [
+          "CUST_ID",
+          "ACNT_NO",
+          "ODER_NO",
+          "OODER_NO",
+          "SELN_BYOV_CLS",
+          "RCTF_CLS",
+          "ODER_KIND2",
+          "STCK_SHRN_ISCD",
+          "CNTG_QTY",
+          "CNTG_UNPR",
+          "STCK_CNTG_HOUR",
+          "RFUS_YN",
+          "CNTG_YN",
+          "ACPT_YN",
+          "BRNC_NO",
+          "ODER_QTY",
+          "ACNT_NAME",
+          "CNTG_ISNM",
+          "ODER_COND"
+        ]
       },
       "overseas-exec-notify": {
         "trId": "H0GSCNI0",
@@ -367,7 +460,34 @@
         "decrypt": {
           "ivField": "body.output.iv",
           "keyField": "body.output.key"
-        }
+        },
+        "fields": [
+          "CUST_ID",
+          "ACNT_NO",
+          "ODER_NO",
+          "OODER_NO",
+          "SELN_BYOV_CLS",
+          "RCTF_CLS",
+          "ODER_KIND2",
+          "STCK_SHRN_ISCD",
+          "CNTG_QTY",
+          "CNTG_UNPR",
+          "STCK_CNTG_HOUR",
+          "RFUS_YN",
+          "CNTG_YN",
+          "ACPT_YN",
+          "BRNC_NO",
+          "ODER_QTY",
+          "ACNT_NAME",
+          "CNTG_ISNM",
+          "ODER_COND",
+          "DEBT_GB",
+          "DEBT_DATE",
+          "START_TM",
+          "END_TM",
+          "TM_DIV_TP",
+          "CNTG_UNPR12"
+        ]
       },
       "overseas-fo-order-notify": {
         "trId": "HDFFF1C0",
@@ -414,7 +534,42 @@
         "decrypt": {
           "ivField": "body.output.iv",
           "keyField": "body.output.key"
-        }
+        },
+        "fields": [
+          "USER_ID",
+          "ACCT_NO",
+          "ORD_DT",
+          "ODNO",
+          "ORGN_ORD_DT",
+          "ORGN_ODNO",
+          "SERIES",
+          "RVSE_CNCL_DVSN_CD",
+          "SLL_BUY_DVSN_CD",
+          "CPLX_ORD_DVSN_CD",
+          "PRCE_TP",
+          "FM_EXCG_RCIT_DVSN_CD",
+          "ORD_QTY",
+          "FM_LMT_PRIC",
+          "FM_STOP_ORD_PRIC",
+          "TOT_CCLD_QTY",
+          "TOT_CCLD_UV",
+          "ORD_REMQ",
+          "FM_ORD_GRP_DT",
+          "ORD_GRP_STNO",
+          "ORD_DTL_DTIME",
+          "OPRT_DTL_DTIME",
+          "WORK_EMPL",
+          "CRCY_CD",
+          "LQD_YN",
+          "LQD_LMT_PRIC",
+          "LQD_STOP_PRIC",
+          "TRD_COND",
+          "TERM_ORD_VALD_DTIME",
+          "SPEC_TP",
+          "ECIS_RSVN_ORD_YN",
+          "FUOP_ITEM_DVSN_CD",
+          "AUTO_ORD_DVSN_CD"
+        ]
       },
       "overseas-fo-exec-notify": {
         "trId": "HDFFF2C0",
@@ -461,8 +616,55 @@
         "decrypt": {
           "ivField": "body.output.iv",
           "keyField": "body.output.key"
-        }
+        },
+        "fields": [
+          "USER_ID",
+          "ACCT_NO",
+          "ORD_DT",
+          "ODNO",
+          "ORGN_ORD_DT",
+          "ORGN_ODNO",
+          "SERIES",
+          "RVSE_CNCL_DVSN_CD",
+          "SLL_BUY_DVSN_CD",
+          "CPLX_ORD_DVSN_CD",
+          "PRCE_TP",
+          "FM_EXCG_RCIT_DVSN_CD",
+          "ORD_QTY",
+          "FM_LMT_PRIC",
+          "FM_STOP_ORD_PRIC",
+          "TOT_CCLD_QTY",
+          "TOT_CCLD_UV",
+          "ORD_REMQ",
+          "FM_ORD_GRP_DT",
+          "ORD_GRP_STNO",
+          "ORD_DTL_DTIME",
+          "OPRT_DTL_DTIME",
+          "WORK_EMPL",
+          "CCLD_DT",
+          "CCNO",
+          "API_CCNO",
+          "CCLD_QTY",
+          "FM_CCLD_PRIC",
+          "CRCY_CD",
+          "TRST_FEE",
+          "ORD_MDIA_ONLINE_YN",
+          "FM_CCLD_AMT",
+          "FUOP_ITEM_DVSN_CD"
+        ]
       }
+    },
+    "frame": {
+      "kind": "delimited",
+      "recordSep": "|",
+      "fieldSep": "^",
+      "layout": [
+        "flag",
+        "trId",
+        "count",
+        "body"
+      ],
+      "encryptedWhen": "1"
     }
   },
   "input": {

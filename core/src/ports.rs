@@ -739,14 +739,37 @@ pub trait IWsApiPort: Send + Sync {
     async fn call(&self, call: &WsApiCall) -> InfraResult<ModuleOutput>;
 }
 
-/// Realtime frame wire format. `Json` (kiwoom) = every frame is JSON, matched on `match_field`.
-/// `KisPipe` (한투) = control frames are JSON (`header.tr_id`) but realtime data is a positional
-/// `flag|TR_ID|count|f1^f2^…` string decoded via `field_order` (flag 1 = AES256, see `decrypt`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Realtime frame wire format, as the module declares it.
+///
+/// This used to be `{ Json, KisPipe }` — a vendor's name in a core type, with its parsing rule
+/// (`flag|TR_ID|건수|f1^f2^…`) hardcoded behind it. A module did not describe its wire; it picked
+/// from a menu core carried, so a venue with a different positional layout meant a core release.
+/// Now the module says how its frames are cut and core cuts them.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum WsFrameFormat {
+    /// Every frame is JSON, matched on `match_field`.
     #[default]
     Json,
-    KisPipe,
+    /// Control frames are still JSON; realtime data is a delimited positional string.
+    Delimited(WsDelimitedFrame),
+}
+
+/// How a delimited realtime frame is cut, and which of its slots mean what.
+///
+/// The slots are NAMED rather than fixed by position so core never assumes a venue's order.
+/// `layout` lists the record's leading slots in wire order; the one called `body` holds the
+/// values, and everything before it is the header. A slot core does not recognise is simply
+/// carried — it costs nothing and it is not core's business.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WsDelimitedFrame {
+    /// Separates the header slots and the body (한투: `|`).
+    pub record_sep: String,
+    /// Separates the values inside the body (한투: `^`).
+    pub field_sep: String,
+    /// The leading slots, in wire order. Recognised names: `flag`, `trId`, `count`, `body`.
+    pub layout: Vec<String>,
+    /// The `flag` value that means the body is encrypted (한투 체결통보: `"1"`). `None` = never.
+    pub encrypted_when: Option<String>,
 }
 
 /// AES256-CBC decrypt spec for KIS 체결통보(flag 1) — the subscribe ack carries the iv/key in
@@ -794,8 +817,8 @@ pub struct WsStreamSpec {
     pub realtime_match: String,
     /// Wire format (default Json = kiwoom). KisPipe = 한투 positional realtime frames.
     pub frame_format: WsFrameFormat,
-    /// Positional field names for `KisPipe` realtime decode (from `_ws_apis.json` responseBody
-    /// order). Empty for Json format.
+    /// Positional field names for a delimited frame, in wire order — declared by the stream as
+    /// `fields`, beside the subscribe frame they name. Empty for JSON streams.
     pub field_order: Vec<String>,
     /// AES256 spec for KIS 체결통보 (flag 1) — None for plaintext 시세 streams.
     pub decrypt: Option<WsDecryptSpec>,

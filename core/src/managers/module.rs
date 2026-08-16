@@ -1819,24 +1819,15 @@ impl ModuleManager {
             Some(tpl) => Some(substitute_ws_frame(tpl, &args_view)?),
             None => None,
         };
-        // 한투 positional realtime (KisPipe): field order from the module's `_ws_apis.json`
-        // responseBody, keyed by the stream's trId. kiwoom (Json) leaves field_order empty.
+        // A positional frame is values without names, so the stream says what its slots are
+        // called — beside the subscribe frame it belongs to, rather than in a separate vendor
+        // export the framework had to go and read. JSON streams name nothing and need nothing.
         let frame_format = ws_frame_format(decl, ws);
-        let field_order = if frame_format == WsFrameFormat::KisPipe {
-            let tr_id = decl.get("trId").and_then(|v| v.as_str()).unwrap_or_default();
-            let spec_file = decl
-                .get("fieldsFrom")
-                .and_then(|v| v.as_str())
-                .unwrap_or("_ws_apis.json");
-            let scope = if module_dir.starts_with("user/") {
-                "user"
-            } else {
-                "system"
-            };
-            match self.read_module_file(scope, &meta.module, spec_file).await {
-                Some(raw) => extract_field_order(&raw, tr_id),
-                None => Vec::new(),
-            }
+        let field_order = if matches!(frame_format, WsFrameFormat::Delimited(_)) {
+            decl.get("fields")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -2950,18 +2941,46 @@ fn parse_ws_field_eq(v: Option<&serde_json::Value>) -> Option<WsFieldEq> {
     })
 }
 
-/// Realtime wire format — `"kis-pipe"` (한투 positional) vs default Json (kiwoom). Stream-level
-/// override falls back to the module-level `ws.frameFormat`.
+/// Realtime wire format, as the module declares it. Stream-level `frame` falls back to the
+/// module-level `ws.frame`.
+///
+/// ```jsonc
+/// "frame": { "kind": "json" }
+/// "frame": { "kind": "delimited", "recordSep": "|", "fieldSep": "^",
+///            "layout": ["flag", "trId", "count", "body"], "encryptedWhen": "1" }
+/// ```
+///
+/// An undeclared or unreadable `frame` is JSON, which is what a WebSocket carries unless someone
+/// says otherwise — the default is a fact about the protocol, not a name for whatever the
+/// incumbent module happened to do. `delimited` without a `body` slot is refused the same way:
+/// half a description would decode into silently wrong records.
 fn ws_frame_format(decl: &serde_json::Value, ws: &serde_json::Value) -> WsFrameFormat {
-    let s = decl
-        .get("frameFormat")
-        .or_else(|| ws.get("frameFormat"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    match s {
-        "kis-pipe" => WsFrameFormat::KisPipe,
-        _ => WsFrameFormat::Json,
+    let Some(f) = decl.get("frame").or_else(|| ws.get("frame")) else {
+        return WsFrameFormat::Json;
+    };
+    if f.get("kind").and_then(|v| v.as_str()) != Some("delimited") {
+        return WsFrameFormat::Json;
     }
+    let text = |k: &str| f.get(k).and_then(|v| v.as_str()).map(String::from);
+    let layout: Vec<String> = f
+        .get("layout")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let (Some(record_sep), Some(field_sep)) = (text("recordSep"), text("fieldSep")) else {
+        tracing::warn!(target: "ws_stream", "frame kind=delimited without recordSep/fieldSep — reading frames as JSON");
+        return WsFrameFormat::Json;
+    };
+    if record_sep.is_empty() || field_sep.is_empty() || !layout.iter().any(|s| s == "body") {
+        tracing::warn!(target: "ws_stream", "frame kind=delimited names no `body` slot — reading frames as JSON");
+        return WsFrameFormat::Json;
+    }
+    WsFrameFormat::Delimited(crate::ports::WsDelimitedFrame {
+        record_sep,
+        field_sep,
+        layout,
+        encrypted_when: text("encryptedWhen"),
+    })
 }
 
 /// `decrypt: {ivField, keyField}` on a stream decl → WsDecryptSpec (KIS 체결통보 AES256).
@@ -2973,51 +2992,6 @@ fn parse_ws_decrypt(decl: &serde_json::Value) -> Option<WsDecryptSpec> {
     })
 }
 
-/// Positional field order for a 한투 realtime TR — the responseBody name list from the module's
-/// `_ws_apis.json`. Empty when the file/entry is missing.
-///
-/// `trIdReal` is matched first and must be unique; a mock id is only consulted when no real id
-/// matches (a mock id can collide with another API's real id). Two entries sharing a real trId
-/// means the spec file is corrupt — an earlier extractor trusted the vendor's list sheet, whose
-/// TR_ID column has typos, and silently gave two different APIs the same id. Warn loudly rather
-/// than pick one at random: the wrong field order corrupts every frame of that stream.
-fn extract_field_order(raw: &str, tr_id: &str) -> Vec<String> {
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) else {
-        return Vec::new();
-    };
-    let Some(apis) = json.get("apis").and_then(|v| v.as_array()) else {
-        return Vec::new();
-    };
-    let names = |api: &serde_json::Value| -> Vec<String> {
-        api.get("responseBody")
-            .and_then(|v| v.as_array())
-            .map(|rb| {
-                rb.iter()
-                    .filter_map(|f| f.get("name").and_then(|v| v.as_str()).map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let real: Vec<&serde_json::Value> = apis
-        .iter()
-        .filter(|a| a.get("trIdReal").and_then(|v| v.as_str()) == Some(tr_id))
-        .collect();
-    if real.len() > 1 {
-        tracing::warn!(
-            target: "ws_stream",
-            tr_id = tr_id,
-            entries = real.len(),
-            "duplicate trIdReal in _ws_apis.json — field order is ambiguous, re-run scripts/extract-ws-apis.mjs"
-        );
-    }
-    if let Some(api) = real.first() {
-        return names(api);
-    }
-    apis.iter()
-        .find(|a| a.get("trIdMock").and_then(|v| v.as_str()) == Some(tr_id))
-        .map(names)
-        .unwrap_or_default()
-}
 
 /// WS frame template substitution — generic, zero provider knowledge.
 /// String values of the exact form `"{param}"` / `"{param:default}"` are replaced with the

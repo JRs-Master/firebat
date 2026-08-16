@@ -19,6 +19,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
 use firebat_core::ports::{
+    WsDelimitedFrame,
     IWsStreamPort, InfraResult, WsDecryptSpec, WsFrameFormat, WsStreamSink, WsStreamSpec,
     WsStreamStatus,
 };
@@ -976,9 +977,14 @@ async fn run_session(
                     }
                 };
 
-                // 한투 positional realtime frame: `flag|TR_ID|count|f1^f2^…` (flag 1 = AES256).
-                if spec.frame_format == WsFrameFormat::KisPipe && is_positional(&text) {
-                    match decode_positional(&text, spec, &decrypt_keys) {
+                // A delimited realtime frame, cut the way the module said it is cut. Control
+                // frames on the same socket are still JSON, so the shape decides per frame.
+                let delimited = match &spec.frame_format {
+                    WsFrameFormat::Delimited(f) if is_positional(&text, f) => Some(f.clone()),
+                    _ => None,
+                };
+                if let Some(fspec) = delimited {
+                    match decode_positional(&text, &fspec, spec, &decrypt_keys) {
                         Some((tr_id, value)) => {
                             // One watch subscribes one TR — guard against a stray other-TR frame.
                             if !spec.realtime_match.is_empty() && tr_id != spec.realtime_match {
@@ -1323,8 +1329,15 @@ fn decorate_realtime_frame(
     frame
 }
 
-fn is_positional(text: &str) -> bool {
-    text.starts_with("0|") || text.starts_with("1|")
+/// A frame is the delimited kind when its first slot is not JSON and the separator is there.
+///
+/// The old test was `starts_with("0|") || starts_with("1|")` — the two flag values one venue
+/// happens to use, in core's source, for a wire only the module knows. Ask the shape instead:
+/// JSON control frames on the same socket open with `{`, so anything else carrying the declared
+/// separator is a data frame.
+fn is_positional(text: &str, f: &WsDelimitedFrame) -> bool {
+    let t = text.trim_start();
+    !t.starts_with('{') && !t.starts_with('[') && t.contains(&f.record_sep)
 }
 
 /// Capture the AES iv/key from the subscribe ack (dot-paths). None when absent.
@@ -1349,27 +1362,42 @@ fn aes256_cbc_decrypt(b64: &str, iv: &str, key: &str) -> Option<String> {
 }
 
 /// Decode `flag|TR_ID|count|f1^f2^…` → `(tr_id, {trId, count, records})`. `records` maps the
-/// caret-delimited values onto `field_order` (from `_ws_apis.json` responseBody), chunked by
+/// the body's values onto `field_order` (declared by the stream), chunked by
 /// `count`. Flag 1 = decrypt the body first. Returns None on malformed/undecryptable frames.
 fn decode_positional(
     text: &str,
+    f: &WsDelimitedFrame,
     spec: &WsStreamSpec,
     keys: &Option<(String, String)>,
 ) -> Option<(String, serde_json::Value)> {
-    let mut parts = text.splitn(4, '|');
-    let flag = parts.next()?;
-    let tr_id = parts.next()?.to_string();
-    let count: usize = parts.next()?.trim().parse().unwrap_or(1);
+    // The header slots are named by the declaration, so the venue's order is the venue's to
+    // state. `body` is the last one core needs; whatever sits before it is split off by name and
+    // whatever it does not recognise is simply skipped.
+    let body_at = f.layout.iter().position(|s| s == "body")?;
+    let mut parts = text.splitn(body_at + 1, f.record_sep.as_str());
+    let mut flag = "";
+    let mut tr_id = String::new();
+    let mut count: usize = 1;
+    for slot in f.layout.iter().take(body_at) {
+        let v = parts.next()?;
+        match slot.as_str() {
+            "flag" => flag = v,
+            "trId" => tr_id = v.to_string(),
+            "count" => count = v.trim().parse().unwrap_or(1),
+            _ => {}
+        }
+    }
     let body = parts.next().unwrap_or("");
 
-    let plain = if flag == "1" {
-        let (iv, key) = keys.as_ref()?; // encrypted but no key captured → skip
-        aes256_cbc_decrypt(body, iv, key)?
-    } else {
-        body.to_string()
+    let plain = match f.encrypted_when.as_deref() {
+        Some(marker) if marker == flag => {
+            let (iv, key) = keys.as_ref()?; // encrypted but no key captured → skip
+            aes256_cbc_decrypt(body, iv, key)?
+        }
+        _ => body.to_string(),
     };
 
-    let values: Vec<&str> = plain.split('^').collect();
+    let values: Vec<&str> = plain.split(f.field_sep.as_str()).collect();
     if values.is_empty() {
         return None;
     }
@@ -1392,7 +1420,7 @@ fn decode_positional(
             tr_id = %tr_id,
             frame_width = per,
             doc_fields = names.len(),
-            "positional field-count drift — mapping by frame width (doc `_ws_apis.json` responseBody is stale)"
+            "positional field-count drift — mapping by frame width (the stream's declared `fields` is stale)"
         );
     }
     let recs: Vec<serde_json::Value> = values
