@@ -67,7 +67,6 @@
     "cycle calls a single broker's tools. Removing a name here retires that schedule."
   ],
   "schedules": [
-    "cron-upbit.json",
     "cron-upbit-context.json",
     "cron-revise.json"
   ],
@@ -608,7 +607,7 @@
       "key": "trades",
       "type": "structured-list",
       "editor": "trades",
-      "defaultValue": "[{\"id\": \"btc-trend\", \"strategy\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"live\", \"stopLossPct\": 12.0, \"money\": {\"perOrderKrw\": 10000, \"lotSize\": 1e-08}, \"limits\": {\"maxPositionKrw\": 10000}}]",
+      "defaultValue": "[{\"id\": \"btc-trend\", \"strategy\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"live\", \"stopLossPct\": 12.0, \"money\": {\"perOrderKrw\": 10000, \"lotSize\": 1e-08}, \"limits\": {\"maxPositionKrw\": 10000}, \"loop\": \"cron-upbit.json\"}]",
       "tab": "매매",
       "group": "매매",
       "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom-trade\",\"account\":\"모의국내\",\"market\":\"kr\",\"interval\":\"1d\"}]",
@@ -620,14 +619,16 @@
           "interval",
           "mode",
           "state",
-          "strategy"
+          "strategy",
+          "loop"
         ],
         "newItem": {
           "id": "",
           "strategy": "",
           "broker": "",
           "account": "",
-          "mode": "ledger"
+          "mode": "ledger",
+          "loop": ""
         },
         "fields": [
           {
@@ -688,6 +689,12 @@
             "key": "account",
             "label": "계좌 별칭",
             "type": "text"
+          },
+          {
+            "key": "loop",
+            "label": "실행 루프 (크론 파일)",
+            "type": "text",
+            "placeholder": "cron-upbit.json / cron-kiwoom-kr.json"
           },
           {
             "key": "market",
@@ -983,5 +990,13 @@
       "next_revision"
     ],
     "limit": 40
+  },
+  "schedulesFrom": {
+    "setting": "trades",
+    "field": "loop",
+    "skipWhen": {
+      "field": "state",
+      "equals": "off"
+    }
   }
 }

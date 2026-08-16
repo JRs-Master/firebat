@@ -735,6 +735,13 @@ def declared_trades(settings):
                     # The execution knobs the v2 recut put on the row: budget, per-row stop and
                     # daily limit, active window. Carried through normalisation explicitly —
                     # this fixed key list is exactly the door mode and state once went missing at.
+                    # Which loop puts this trade on the clock. The framework registers a
+                    # module's schedules from `config.schedules` plus whatever the rows name here
+                    # (`schedulesFrom`), so switching a trade on registers its loop and switching
+                    # it off withdraws it. Before this the two lists were kept in step by hand and
+                    # were not: six loop files sat in the folder unregistered, so turning on a
+                    # stock strategy ran nothing and said nothing.
+                    "loop": str(t.get("loop") or "").strip() or None,
                     "money": t.get("money") if isinstance(t.get("money"), dict) else None,
                     "limits": t.get("limits") if isinstance(t.get("limits"), dict) else None,
                     "stopLossPct": t.get("stopLossPct"),

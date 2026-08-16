@@ -2109,15 +2109,89 @@ impl ModuleManager {
     /// and the only route to a running schedule was for a person to retype the pipeline into the
     /// scheduler by hand.
     pub async fn declared_schedules(&self, name: &str) -> Vec<String> {
-        self.module_config(name)
-            .await
-            .and_then(|c| c.get("schedules").cloned())
-            .and_then(|v| v.as_array().cloned())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(String::from))
-                    .filter(|f| f.ends_with(".json") && !f.contains("..") && !f.contains('/'))
-                    .collect()
+        let Some(cfg) = self.module_config(name).await else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = Vec::new();
+        let mut push = |f: &str, out: &mut Vec<String>| {
+            if f.ends_with(".json") && !f.contains("..") && !f.contains('/') && !out.iter().any(|x| x == f) {
+                out.push(f.to_string());
+            }
+        };
+        for f in cfg.get("schedules").and_then(|v| v.as_array()).into_iter().flatten() {
+            if let Some(s) = f.as_str() {
+                push(s, &mut out);
+            }
+        }
+        // Loops that follow what the module is set to do, rather than a second list somebody has
+        // to keep in step with the first. autotrade declares one trade per running strategy and
+        // a loop per (broker, market); the two were separate hand-written lists, so switching a
+        // stock strategy on registered nothing — no error, no log, and the loop that would have
+        // executed it simply was not on the clock.
+        //
+        // The row names its file. Deriving the NAME instead (`cron-{broker}-{market}.json`) would
+        // need a table saying upbit-trade is "upbit" and korea-invest-trade is "kis", which is the
+        // same hidden copy one level down.
+        if let Some(spec) = cfg.get("schedulesFrom") {
+            let sfield = |k: &str| spec.get(k).and_then(|v| v.as_str());
+            if let (Some(setting), Some(field)) = (sfield("setting"), sfield("field")) {
+                // The off switch is the row's own word, and it is not always a boolean —
+                // autotrade's is `state: "off"` beside `"pauseEntries"`. So the declaration says
+                // which field and which value mean off, rather than the framework assuming a
+                // shape and quietly registering a loop for a trade somebody switched off.
+                let skip = spec.get("skipWhen");
+                let skip_field = skip.and_then(|w| w.get("field")).and_then(|v| v.as_str());
+                let skip_value = skip.and_then(|w| w.get("equals"));
+                for row in self.list_setting(name, &cfg, setting).await {
+                    // Absent means on: a row that never had the field is a row the operator wrote
+                    // before it existed, and reading that as "off" would silently stop a strategy.
+                    if let (Some(k), Some(want)) = (skip_field, skip_value) {
+                        if row.get(k) == Some(want) {
+                            continue;
+                        }
+                    }
+                    if let Some(f) = row.get(field).and_then(|v| v.as_str()) {
+                        push(f, &mut out);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// A list-shaped module setting, from wherever it is currently true.
+    ///
+    /// The vault holds it once the operator has pressed save; until then the config's
+    /// `settings_fields[].defaultValue` is what runs, and for autotrade's strategies that is the
+    /// normal state — they ship in the repo and reach the server by `git pull`. Reading only the
+    /// vault would see nothing at all on a machine where nobody has opened the settings screen.
+    async fn list_setting(
+        &self,
+        name: &str,
+        cfg: &serde_json::Value,
+        key: &str,
+    ) -> Vec<serde_json::Value> {
+        let as_rows = |v: &serde_json::Value| -> Option<Vec<serde_json::Value>> {
+            match v {
+                serde_json::Value::Array(a) => Some(a.clone()),
+                // The editor stores a list field as a JSON string.
+                serde_json::Value::String(s) => serde_json::from_str::<serde_json::Value>(s)
+                    .ok()
+                    .and_then(|p| p.as_array().cloned()),
+                _ => None,
+            }
+        };
+        if let Some(rows) = self.get_settings(name).get(key).and_then(as_rows) {
+            return rows;
+        }
+        cfg.get("settings_fields")
+            .and_then(|v| v.as_array())
+            .and_then(|fields| {
+                fields
+                    .iter()
+                    .find(|f| f.get("key").and_then(|k| k.as_str()) == Some(key))
+                    .and_then(|f| f.get("defaultValue"))
+                    .and_then(as_rows)
             })
             .unwrap_or_default()
     }
