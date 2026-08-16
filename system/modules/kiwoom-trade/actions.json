@@ -4,8 +4,12 @@
   "name": "계좌번호조회",
   "description": "계좌번호조회",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka00001",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌번호조회"
+  },
   "params": {}
  },
  {
@@ -13,8 +17,12 @@
   "name": "일별잔고수익률",
   "description": "일별잔고수익률",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka01690",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "일별잔고수익률"
+  },
   "params": {
    "qry_dt": "조회일자 (필수) — YYYYMMDD"
   },
@@ -27,8 +35,12 @@
   "name": "일자별종목별실현손익요청_일자",
   "description": "일자별종목별실현손익요청_일자",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10072",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "일자별종목별실현손익요청_일자"
+  },
   "params": {
    "stk_cd": "종목코드 — 종목코드 6자리",
    "strt_dt": "시작일자 (필수) — YYYYMMDD"
@@ -42,8 +54,12 @@
   "name": "일자별종목별실현손익요청_기간",
   "description": "일자별종목별실현손익요청_기간",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10073",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "일자별종목별실현손익요청_기간"
+  },
   "params": {
    "stk_cd": "종목코드 — 종목코드 6자리",
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
@@ -59,8 +75,12 @@
   "name": "일자별실현손익요청",
   "description": "일자별실현손익요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10074",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "일자별실현손익요청"
+  },
   "params": {
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
    "end_dt": "종료일자 (필수) — YYYYMMDD"
@@ -75,8 +95,12 @@
   "name": "미체결요청",
   "description": "미체결요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10075",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "미체결요청"
+  },
   "params": {
    "all_stk_tp": "전체종목구분 (필수) — 0:전체, 1:종목",
    "trde_tp": "매매구분 (필수) — 0:전체, 1:매도, 2:매수",
@@ -94,8 +118,12 @@
   "name": "체결요청",
   "description": "체결요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10076",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "체결요청"
+  },
   "params": {
    "stk_cd": "종목코드 — 종목코드 6자리",
    "qry_tp": "조회구분 (필수) — 0:전체, 1:종목",
@@ -114,8 +142,12 @@
   "name": "당일실현손익상세요청",
   "description": "당일실현손익상세요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10077",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "당일실현손익상세요청"
+  },
   "params": {
    "stk_cd": "종목코드 (필수) — 종목코드 6자리"
   },
@@ -128,8 +160,12 @@
   "name": "계좌수익률요청",
   "description": "계좌수익률요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10085",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌수익률요청"
+  },
   "params": {
    "stex_tp": "거래소구분 (필수) — 0 : 통합, 1 : KRX, 2 : NXT"
   },
@@ -142,8 +178,12 @@
   "name": "미체결 분할주문 상세",
   "description": "미체결 분할주문 상세",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10088",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "미체결 분할주문 상세"
+  },
   "params": {
    "ord_no": "주문번호 (필수) — 주문번호 7자리"
   },
@@ -156,8 +196,12 @@
   "name": "당일매매일지요청",
   "description": "당일매매일지요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "ka10170",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "당일매매일지요청"
+  },
   "params": {
    "base_dt": "기준일자 — YYYYMMDD(공백입력시 금일데이터,최근 2개월까지 제공)",
    "ottks_tp": "단주구분 (필수) — 1:당일매수에 대한 당일매도,2:당일매도 전체",
@@ -173,8 +217,12 @@
   "name": "예수금상세현황요청",
   "description": "예수금상세현황요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00001",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "예수금상세현황요청"
+  },
   "params": {
    "qry_tp": "조회구분 (필수) — 3:추정조회, 2:일반조회"
   },
@@ -187,8 +235,12 @@
   "name": "일별추정예탁자산현황요청",
   "description": "일별추정예탁자산현황요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00002",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "일별추정예탁자산현황요청"
+  },
   "params": {
    "start_dt": "시작조회기간 (필수) — YYYYMMDD",
    "end_dt": "종료조회기간 (필수) — YYYYMMDD"
@@ -203,8 +255,12 @@
   "name": "추정자산조회요청",
   "description": "추정자산조회요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00003",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "추정자산조회요청"
+  },
   "params": {
    "qry_tp": "상장폐지조회구분 (필수) — 0:전체, 1:상장폐지종목제외"
   },
@@ -217,8 +273,12 @@
   "name": "계좌평가현황요청",
   "description": "계좌평가현황요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00004",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌평가현황요청"
+  },
   "params": {
    "qry_tp": "상장폐지조회구분 (필수) — 0:전체, 1:상장폐지종목제외",
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
@@ -233,8 +293,12 @@
   "name": "체결잔고요청",
   "description": "체결잔고요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00005",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "체결잔고요청"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
   },
@@ -247,8 +311,12 @@
   "name": "계좌별주문체결내역상세요청",
   "description": "계좌별주문체결내역상세요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00007",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌별주문체결내역상세요청"
+  },
   "params": {
    "ord_dt": "주문일자 — YYYYMMDD",
    "qry_tp": "조회구분 (필수) — 1:주문순, 2:역순, 3:미체결, 4:체결내역만",
@@ -270,8 +338,12 @@
   "name": "계좌별익일결제예정내역요청",
   "description": "계좌별익일결제예정내역요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00008",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌별익일결제예정내역요청"
+  },
   "params": {
    "strt_dcd_seq": "시작결제번호"
   }
@@ -281,8 +353,12 @@
   "name": "계좌별주문체결현황요청",
   "description": "계좌별주문체결현황요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00009",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌별주문체결현황요청"
+  },
   "params": {
    "ord_dt": "주문일자 — YYYYMMDD",
    "stk_bond_tp": "주식채권구분 (필수) — 0:전체, 1:주식, 2:채권",
@@ -306,8 +382,12 @@
   "name": "주문인출가능금액요청",
   "description": "주문인출가능금액요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00010",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "주문인출가능금액요청"
+  },
   "params": {
    "io_amt": "입출금액 — 단위: 원",
    "stk_cd": "종목번호 (필수) — 종목 코드 입력",
@@ -327,8 +407,12 @@
   "name": "증거금율별주문가능수량조회요청",
   "description": "증거금율별주문가능수량조회요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00011",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "증거금율별주문가능수량조회요청"
+  },
   "params": {
    "stk_cd": "종목번호 (필수) — 종목 코드 입력",
    "uv": "매수가격 — 단위: 원"
@@ -342,8 +426,12 @@
   "name": "신용보증금율별주문가능수량조회요청",
   "description": "신용보증금율별주문가능수량조회요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00012",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "신용보증금율별주문가능수량조회요청"
+  },
   "params": {
    "stk_cd": "종목번호 (필수) — 종목 코드 입력",
    "uv": "매수가격 — 단위: 원"
@@ -357,8 +445,12 @@
   "name": "증거금세부내역조회요청",
   "description": "증거금세부내역조회요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00013",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "증거금세부내역조회요청"
+  },
   "params": {}
  },
  {
@@ -366,8 +458,12 @@
   "name": "위탁종합거래내역요청",
   "description": "위탁종합거래내역요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00015",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "위탁종합거래내역요청"
+  },
   "params": {
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
    "end_dt": "종료일자 (필수) — YYYYMMDD",
@@ -392,8 +488,12 @@
   "name": "일별계좌수익률상세현황요청",
   "description": "일별계좌수익률상세현황요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00016",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "일별계좌수익률상세현황요청"
+  },
   "params": {
    "fr_dt": "평가시작일 (필수) — YYYYMMDD",
    "to_dt": "평가종료일 (필수) — YYYYMMDD"
@@ -408,8 +508,12 @@
   "name": "계좌별당일현황요청",
   "description": "계좌별당일현황요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00017",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌별당일현황요청"
+  },
   "params": {}
  },
  {
@@ -417,8 +521,12 @@
   "name": "계좌평가잔고내역요청",
   "description": "계좌평가잔고내역요청",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt00018",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "계좌평가잔고내역요청"
+  },
   "params": {
    "qry_tp": "조회구분 (필수) — 1:합산, 2:개별",
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
@@ -433,8 +541,12 @@
   "name": "주식 매수주문",
   "description": "주식 매수주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt10000",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "주식 매수주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -455,8 +567,12 @@
   "name": "주식 매도주문",
   "description": "주식 매도주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt10001",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "주식 매도주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -477,8 +593,12 @@
   "name": "주식 정정주문",
   "description": "주식 정정주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt10002",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "주식 정정주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
@@ -500,8 +620,12 @@
   "name": "주식 취소주문",
   "description": "주식 취소주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt10003",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "주식 취소주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
@@ -520,8 +644,12 @@
   "name": "신용 매수주문",
   "description": "신용 매수주문",
   "domain": "국내주식/신용주문",
-  "method": "POST",
-  "path": "/api/dostk/crdordr",
+  "_call": {
+   "id": "kt10006",
+   "method": "POST",
+   "path": "/api/dostk/crdordr",
+   "name": "신용 매수주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -542,8 +670,12 @@
   "name": "신용 매도주문",
   "description": "신용 매도주문",
   "domain": "국내주식/신용주문",
-  "method": "POST",
-  "path": "/api/dostk/crdordr",
+  "_call": {
+   "id": "kt10007",
+   "method": "POST",
+   "path": "/api/dostk/crdordr",
+   "name": "신용 매도주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -567,8 +699,12 @@
   "name": "신용 정정주문",
   "description": "신용 정정주문",
   "domain": "국내주식/신용주문",
-  "method": "POST",
-  "path": "/api/dostk/crdordr",
+  "_call": {
+   "id": "kt10008",
+   "method": "POST",
+   "path": "/api/dostk/crdordr",
+   "name": "신용 정정주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
@@ -590,8 +726,12 @@
   "name": "신용 취소주문",
   "description": "신용 취소주문",
   "domain": "국내주식/신용주문",
-  "method": "POST",
-  "path": "/api/dostk/crdordr",
+  "_call": {
+   "id": "kt10009",
+   "method": "POST",
+   "path": "/api/dostk/crdordr",
+   "name": "신용 취소주문"
+  },
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
@@ -610,8 +750,12 @@
   "name": "금현물 매수주문",
   "description": "금현물 매수주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt50000",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "금현물 매수주문"
+  },
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "ord_qty": "주문수량 (필수) — 단위: 1주",
@@ -629,8 +773,12 @@
   "name": "금현물 매도주문",
   "description": "금현물 매도주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt50001",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "금현물 매도주문"
+  },
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "ord_qty": "주문수량 (필수) — 단위: 1주",
@@ -648,8 +796,12 @@
   "name": "금현물 정정주문",
   "description": "금현물 정정주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt50002",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "금현물 정정주문"
+  },
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "orig_ord_no": "원주문번호 (필수)",
@@ -668,8 +820,12 @@
   "name": "금현물 취소주문",
   "description": "금현물 취소주문",
   "domain": "국내주식/주문",
-  "method": "POST",
-  "path": "/api/dostk/ordr",
+  "_call": {
+   "id": "kt50003",
+   "method": "POST",
+   "path": "/api/dostk/ordr",
+   "name": "금현물 취소주문"
+  },
   "params": {
    "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
@@ -686,8 +842,12 @@
   "name": "금현물 잔고확인",
   "description": "금현물 잔고확인",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt50020",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "금현물 잔고확인"
+  },
   "params": {}
  },
  {
@@ -695,8 +855,12 @@
   "name": "금현물 예수금",
   "description": "금현물 예수금",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt50021",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "금현물 예수금"
+  },
   "params": {}
  },
  {
@@ -704,8 +868,12 @@
   "name": "금현물 주문체결전체조회",
   "description": "금현물 주문체결전체조회",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt50030",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "금현물 주문체결전체조회"
+  },
   "params": {
    "ord_dt": "주문일자 (필수) — YYYYMMDD",
    "qry_tp": "조회구분 — 1: 주문순, 2: 역순",
@@ -728,8 +896,12 @@
   "name": "금현물 주문체결조회",
   "description": "금현물 주문체결조회",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt50031",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "금현물 주문체결조회"
+  },
   "params": {
    "ord_dt": "주문일자 — YYYYMMDD",
    "qry_tp": "조회구분 (필수) — 1:주문순, 2:역순, 3:미체결, 4:체결내역만",
@@ -751,8 +923,12 @@
   "name": "금현물 거래내역조회",
   "description": "금현물 거래내역조회",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt50032",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "금현물 거래내역조회"
+  },
   "params": {
    "strt_dt": "시작일자 — YYYYMMDD",
    "end_dt": "종료일자 — YYYYMMDD",
@@ -765,8 +941,12 @@
   "name": "금현물 미체결조회",
   "description": "금현물 미체결조회",
   "domain": "국내주식/계좌",
-  "method": "POST",
-  "path": "/api/dostk/acnt",
+  "_call": {
+   "id": "kt50075",
+   "method": "POST",
+   "path": "/api/dostk/acnt",
+   "name": "금현물 미체결조회"
+  },
   "params": {
    "ord_dt": "주문일자 (필수) — YYYYMMDD",
    "qry_tp": "조회구분 — 1: 주문순, 2: 역순",
@@ -789,8 +969,12 @@
   "name": "미국주식 일별계좌수익률현황",
   "description": "미국주식 일별계좌수익률현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "usa21670",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 일별계좌수익률현황"
+  },
   "params": {
    "from": "from 일자 (필수) — YYYYMMDD",
    "to": "to 일자 (필수) — YYYYMMDD"
@@ -805,8 +989,12 @@
   "name": "미국주식 월별계좌수익률현황",
   "description": "미국주식 월별계좌수익률현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "usa21680",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 월별계좌수익률현황"
+  },
   "params": {
    "from": "from 년월 (필수) — YYYYMM",
    "to": "to 년월 (필수) — YYYYMM"
@@ -821,8 +1009,12 @@
   "name": "미국주식 연도별계좌수익률현황",
   "description": "미국주식 연도별계좌수익률현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "usa21690",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 연도별계좌수익률현황"
+  },
   "params": {
    "from": "from 년도 (필수) — YYYY",
    "to": "to 년도 (필수) — YYYY"
@@ -837,8 +1029,12 @@
   "name": "미국주식 일별종목수익률현황",
   "description": "미국주식 일별종목수익률현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "usa21730",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 일별종목수익률현황"
+  },
   "params": {
    "from": "from 일자 (필수) — YYYYMMDD",
    "to": "to 일자 (필수) — YYYYMMDD",
@@ -856,8 +1052,12 @@
   "name": "미국주식 월별종목수익률현황",
   "description": "미국주식 월별종목수익률현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "usa21731",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 월별종목수익률현황"
+  },
   "params": {
    "from": "from 년월 (필수) — YYYYMM",
    "to": "to 년월 (필수) — YYYYMM",
@@ -875,8 +1075,12 @@
   "name": "미국주식 연도별종목수익률현황",
   "description": "미국주식 연도별종목수익률현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "usa21732",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 연도별종목수익률현황"
+  },
   "params": {
    "from": "from 년도 (필수) — YYYY",
    "to": "to 년도 (필수) — YYYY",
@@ -894,8 +1098,12 @@
   "name": "미국주식 매수 주문",
   "description": "미국주식 매수 주문",
   "domain": "미국주식/주문",
-  "method": "POST",
-  "path": "/api/us/ordr",
+  "_call": {
+   "id": "ust20000",
+   "method": "POST",
+   "path": "/api/us/ordr",
+   "name": "미국주식 매수 주문"
+  },
   "params": {
    "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
    "stk_cd": "종목코드 (필수)",
@@ -915,8 +1123,12 @@
   "name": "미국주식 매도 주문",
   "description": "미국주식 매도 주문",
   "domain": "미국주식/주문",
-  "method": "POST",
-  "path": "/api/us/ordr",
+  "_call": {
+   "id": "ust20001",
+   "method": "POST",
+   "path": "/api/us/ordr",
+   "name": "미국주식 매도 주문"
+  },
   "params": {
    "stk_cd": "종목코드 (필수)",
    "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
@@ -937,8 +1149,12 @@
   "name": "미국주식 정정 주문",
   "description": "미국주식 정정 주문",
   "domain": "미국주식/주문",
-  "method": "POST",
-  "path": "/api/us/ordr",
+  "_call": {
+   "id": "ust20002",
+   "method": "POST",
+   "path": "/api/us/ordr",
+   "name": "미국주식 정정 주문"
+  },
   "params": {
    "orig_ord_no": "원주문번호 (필수) — 주문 요청 응답 결과로 받은 ord_no를 설정",
    "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
@@ -957,8 +1173,12 @@
   "name": "미국주식 취소 주문",
   "description": "미국주식 취소 주문",
   "domain": "미국주식/주문",
-  "method": "POST",
-  "path": "/api/us/ordr",
+  "_call": {
+   "id": "ust20003",
+   "method": "POST",
+   "path": "/api/us/ordr",
+   "name": "미국주식 취소 주문"
+  },
   "params": {
    "orig_ord_no": "원주문번호 (필수) — 주문 요청 응답 결과로 받은 ord_no를 설정",
    "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
@@ -975,8 +1195,12 @@
   "name": "미국주식 원장 미체결",
   "description": "미국주식 원장 미체결",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21050",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 원장 미체결"
+  },
   "params": {
    "ord_dt": "주문일자 — 미입력시 오늘 날짜로 조회",
    "slby_tp": "매도매수구분 — 0:전체(기본값),1:매도,2:매수",
@@ -989,8 +1213,12 @@
   "name": "미국주식 원장잔고확인",
   "description": "미국주식 원장잔고확인",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21070",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 원장잔고확인"
+  },
   "params": {
    "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
    "stk_cd": "종목코드 — 미입력시 전체"
@@ -1001,8 +1229,12 @@
   "name": "미국주식 거래내역",
   "description": "미국주식 거래내역",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21100",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 거래내역"
+  },
   "params": {
    "strt_dt": "시작일자 — YYYYMMDD",
    "end_dt": "종료일자 — YYYYMMDD",
@@ -1017,8 +1249,12 @@
   "name": "해외주식 예수금",
   "description": "해외주식 예수금",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21110",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "해외주식 예수금"
+  },
   "params": {}
  },
  {
@@ -1026,8 +1262,12 @@
   "name": "원화출금가능 금액 조회(원화대용 포함)",
   "description": "원화출금가능 금액 조회(원화대용 포함)",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21111",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "원화출금가능 금액 조회(원화대용 포함)"
+  },
   "params": {}
  },
  {
@@ -1035,8 +1275,12 @@
   "name": "통화별 예수금 및 증권 평가금현황",
   "description": "통화별 예수금 및 증권 평가금현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21120",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "통화별 예수금 및 증권 평가금현황"
+  },
   "params": {
    "cmsn_incl_tp": "수수료포함구분 — 0:미포함,1:포함",
    "exrt_tp": "환율구분 — 0:기준환율,1:계좌적용환율,2:전일최종환율"
@@ -1047,8 +1291,12 @@
   "name": "해외증권 원장 평가금액현황",
   "description": "해외증권 원장 평가금액현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21121",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "해외증권 원장 평가금액현황"
+  },
   "params": {
    "cmsn_incl_tp": "수수료포함구분 — 0:미포함,1:포함",
    "exrt_tp": "환율구분 — 0:기준환율,1:계좌적용환율,2:전일최종환율"
@@ -1059,8 +1307,12 @@
   "name": "해외증권 특정일 평가금액",
   "description": "해외증권 특정일 평가금액",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21131",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "해외증권 특정일 평가금액"
+  },
   "params": {
    "base_dt": "기준일자 (필수) — YYYYMMDD"
   },
@@ -1073,8 +1325,12 @@
   "name": "특정일 통화별 예수금 및 증권 평가금",
   "description": "특정일 통화별 예수금 및 증권 평가금",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21132",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "특정일 통화별 예수금 및 증권 평가금"
+  },
   "params": {
    "base_dt": "기준일자 (필수) — YYYYMMDD"
   },
@@ -1087,8 +1343,12 @@
   "name": "미국주식 일별 주문체결내역",
   "description": "미국주식 일별 주문체결내역",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21150",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 일별 주문체결내역"
+  },
   "params": {
    "ord_dt": "주문일자 — 미입력시 오늘 날짜로 조회",
    "query_tp": "조회구분 (필수) — 1:주문순,2:주문역순,3:미체결주문순,4:미체결역순,5:체결주문순,6:체결역순",
@@ -1108,8 +1368,12 @@
   "name": "미국주식 예수금 상세",
   "description": "미국주식 예수금 상세",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21160",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 예수금 상세"
+  },
   "params": {}
  },
  {
@@ -1117,8 +1381,12 @@
   "name": "미국주식 당일 종목별 실현손익",
   "description": "미국주식 당일 종목별 실현손익",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21170",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 당일 종목별 실현손익"
+  },
   "params": {
    "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
   },
@@ -1131,8 +1399,12 @@
   "name": "미국주식 기간별 주문내역",
   "description": "미국주식 기간별 주문내역",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21180",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 기간별 주문내역"
+  },
   "params": {
    "strt_dt": "시작주문일자 (필수) — YYYYMMDD",
    "end_dt": "종료주문일자 (필수) — YYYYMMDD",
@@ -1151,8 +1423,12 @@
   "name": "미국주식 당일 주문체결 확인",
   "description": "미국주식 당일 주문체결 확인",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21510",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 당일 주문체결 확인"
+  },
   "params": {
    "slby_tp": "매도매수구분 — 0:전체,1:매도,2:매수",
    "stex_tp": "거래소구분 — 종목코드 입력시",
@@ -1164,8 +1440,12 @@
   "name": "미국주식 실현손익",
   "description": "미국주식 실현손익",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21530",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 실현손익"
+  },
   "params": {
    "strt_dt": "시작일자 — YYYYMMDD",
    "end_dt": "종료일자 — YYYYMMDD",
@@ -1177,8 +1457,12 @@
   "name": "미국주식 당일매매",
   "description": "미국주식 당일매매",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21610",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 당일매매"
+  },
   "params": {
    "base_dt": "기준일자 — YYYYMMDD",
    "qry_tp": "조회구분 (필수) — 0:당일매수에대한당일매도,1:당일매도전체",
@@ -1194,8 +1478,12 @@
   "name": "미국주식 당일매매정리",
   "description": "미국주식 당일매매정리",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21620",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 당일매매정리"
+  },
   "params": {
    "stex_tp": "거래소구분 — NA :AMEX, ND :NASDAQ, NY:NYSE",
    "stk_cd": "종목코드 — 기본값 전체",
@@ -1210,8 +1498,12 @@
   "name": "미국주식 당일 실현손익",
   "description": "미국주식 당일 실현손익",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21630",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 당일 실현손익"
+  },
   "params": {
    "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
    "stk_cd": "종목코드",
@@ -1226,8 +1518,12 @@
   "name": "미국주식 일별 종목별 실현손익",
   "description": "미국주식 일별 종목별 실현손익",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21640",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 일별 종목별 실현손익"
+  },
   "params": {
    "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
    "stk_cd": "종목코드",
@@ -1244,8 +1540,12 @@
   "name": "미국주식 기간별 수익률 현황",
   "description": "미국주식 기간별 수익률 현황",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21650",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 기간별 수익률 현황"
+  },
   "params": {
    "fr_dt": "조회시작일자 — YYYYMMDD",
    "to_dt": "조회종료일자 — YYYYMMDD"
@@ -1256,8 +1556,12 @@
   "name": "미국주식 일별 실현손익",
   "description": "미국주식 일별 실현손익",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21660",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 일별 실현손익"
+  },
   "params": {
    "strt_dt": "시작일자 — YYYYMMDD",
    "end_dt": "종료일자 — YYYYMMDD"
@@ -1268,8 +1572,12 @@
   "name": "미국주식 월별 실현손익",
   "description": "미국주식 월별 실현손익",
   "domain": "미국주식/계좌",
-  "method": "POST",
-  "path": "/api/us/acnt",
+  "_call": {
+   "id": "ust21661",
+   "method": "POST",
+   "path": "/api/us/acnt",
+   "name": "미국주식 월별 실현손익"
+  },
   "params": {
    "strt_dt": "시작일자 — YYYYMM",
    "end_dt": "종료일자 — YYYYMM"
@@ -1280,8 +1588,12 @@
   "name": "환전 예상 금액 조회",
   "description": "환전 예상 금액 조회",
   "domain": "미국주식/환전",
-  "method": "POST",
-  "path": "/api/us/exchange",
+  "_call": {
+   "id": "ust31300",
+   "method": "POST",
+   "path": "/api/us/exchange",
+   "name": "환전 예상 금액 조회"
+  },
   "params": {
    "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)",
    "fc_exmn_amt": "매도통화기준 환전금액 — (EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다) (EXCH_TP = 2 인 경우, 매도통화:…"
@@ -1295,8 +1607,12 @@
   "name": "환율 조회",
   "description": "환율 조회",
   "domain": "미국주식/환전",
-  "method": "POST",
-  "path": "/api/us/exchange",
+  "_call": {
+   "id": "ust31301",
+   "method": "POST",
+   "path": "/api/us/exchange",
+   "name": "환율 조회"
+  },
   "params": {
    "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)"
   },
@@ -1309,8 +1625,12 @@
   "name": "환전 신청",
   "description": "환전 신청",
   "domain": "미국주식/환전",
-  "method": "POST",
-  "path": "/api/us/exchange",
+  "_call": {
+   "id": "ust31302",
+   "method": "POST",
+   "path": "/api/us/exchange",
+   "name": "환전 신청"
+  },
   "params": {
    "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)",
    "fc_exmn_amt": "매도통화기준 환전금액 (필수) — 매도통화기준 환전금액 (EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다) (EXCH_TP = 2…"
@@ -1325,8 +1645,12 @@
   "name": "미국주식 주문가능수량(종목/증거금률별)",
   "description": "미국주식 주문가능수량(종목/증거금률별)",
   "domain": "미국주식/주문",
-  "method": "POST",
-  "path": "/api/us/ordr",
+  "_call": {
+   "id": "ust31490",
+   "method": "POST",
+   "path": "/api/us/ordr",
+   "name": "미국주식 주문가능수량(종목/증거금률별)"
+  },
   "params": {
    "stex_tp": "거래소구분 — NA :AMEX, ND :NASDAQ, NY:NYSE",
    "stk_cd": "종목코드 (필수)",
@@ -1352,6 +1676,32 @@
    "account": "등록 계좌 별칭 (모의국내/모의해외/실전)",
    "exchange": "us 거래소 ND(기본)/NY/NA",
    "clientOrderId": "호출자 멱등 id"
+  },
+  "_call": {
+   "kr_buy": {
+    "id": "kt10000",
+    "method": "POST",
+    "path": "/api/dostk/ordr",
+    "name": "주식 매수주문"
+   },
+   "kr_sell": {
+    "id": "kt10001",
+    "method": "POST",
+    "path": "/api/dostk/ordr",
+    "name": "주식 매도주문"
+   },
+   "us_buy": {
+    "id": "ust20000",
+    "method": "POST",
+    "path": "/api/us/ordr",
+    "name": "미국주식 매수 주문"
+   },
+   "us_sell": {
+    "id": "ust20001",
+    "method": "POST",
+    "path": "/api/us/ordr",
+    "name": "미국주식 매도 주문"
+   }
   }
  },
  {
@@ -1365,6 +1715,20 @@
    "qty": "남은 수량",
    "market": "kr | us",
    "account": "등록 계좌 별칭"
+  },
+  "_call": {
+   "kr": {
+    "id": "kt10003",
+    "method": "POST",
+    "path": "/api/dostk/ordr",
+    "name": "주식 취소주문"
+   },
+   "us": {
+    "id": "ust20003",
+    "method": "POST",
+    "path": "/api/us/ordr",
+    "name": "미국주식 취소 주문"
+   }
   }
  },
  {
@@ -1375,6 +1739,20 @@
   "params": {
    "market": "kr | us",
    "account": "등록 계좌 별칭"
+  },
+  "_call": {
+   "kr": {
+    "id": "ka10075",
+    "method": "POST",
+    "path": "/api/dostk/acnt",
+    "name": "미체결요청"
+   },
+   "us": {
+    "id": "ust21050",
+    "method": "POST",
+    "path": "/api/us/acnt",
+    "name": "미국주식 원장 미체결"
+   }
   }
  },
  {
@@ -1385,6 +1763,20 @@
   "params": {
    "market": "kr | us",
    "account": "등록 계좌 별칭"
+  },
+  "_call": {
+   "kr": {
+    "id": "ka10076",
+    "method": "POST",
+    "path": "/api/dostk/acnt",
+    "name": "체결요청"
+   },
+   "us": {
+    "id": "ust21510",
+    "method": "POST",
+    "path": "/api/us/acnt",
+    "name": "미국주식 당일 주문체결 확인"
+   }
   }
  },
  {
@@ -1395,6 +1787,20 @@
   "params": {
    "market": "kr | us",
    "account": "등록 계좌 별칭"
+  },
+  "_call": {
+   "kr": {
+    "id": "kt00018",
+    "method": "POST",
+    "path": "/api/dostk/acnt",
+    "name": "계좌평가잔고내역요청"
+   },
+   "us": {
+    "id": "ust21070",
+    "method": "POST",
+    "path": "/api/us/acnt",
+    "name": "미국주식 원장잔고확인"
+   }
   }
  }
 ]

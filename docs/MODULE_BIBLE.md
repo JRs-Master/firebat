@@ -61,34 +61,61 @@ system/modules/<name>/
 Python: `sys.path[0]` = entry 의 디렉토리 (자동) — 절대/상대 import 모두 OK.
 Node ESM: `./` 또는 `../` 명시 상대 경로 사용 (예: `./helpers.mjs`).
 
-### 모듈 자체 codegen (선택)
+### 선언이 원본이다 — 상주하는 생성 단계는 없다 (2026-08-16 사용자 확정)
 
-외부 API 명세 (예: 한투 / 키움 OPEN API 안 100+ REST 엔드포인트) 가 거대하거나 자주
-변경되는 경우 = 모듈 자체 안 `scripts/` 디렉토리에서 codegen 사용. Firebat 영역
-안에 sysmod-specific 코드를 두지 마라 — 단일 책임 위반.
+모듈은 **`config.json` + `actions.json` + 코드**다. 프레임워크는 그 둘을 읽고 실행한다.
+그 사이에 서 있는 중간물도, 그걸 굴리는 절차도 두지 않는다.
 
 ```
 system/modules/<name>/
-├── config.json            # codegen 결과 (또는 수동 작성)
-├── index.mjs              # codegen 결과 (또는 수동 작성)
-├── _apis.json             # codegen input — 명세 메타데이터 (선택)
-└── scripts/
-    ├── extract-apis.mjs   # 외부 명세 파일 (xlsx / OpenAPI / 등) → _apis.json
-    └── gen.mjs            # _apis.json → config.json + index.mjs
+├── config.json            # 액션 enum · 입력 스키마 · 선언 블록
+├── actions.json           # 액션마다 name·description·params·required·_call   (많을 때)
+└── index.mjs              # 코드
 ```
 
-사용:
-```sh
-cd system/modules/<name>
-node scripts/extract-apis.mjs    # 명세 → _apis.json
-node scripts/gen.mjs             # _apis.json → config + index
-```
+한투·키움은 벤더가 수백 엔드포인트를 문서로 발행하는 유일한 경우라 **한때 `_apis.json` +
+생성기 셋**을 들고 있었다. 그 구조가 만든 대가:
+
+- **정정이 살 집이 없었다.** 벤더 시트 오타를 고칠 자리가 없어 `_apis.json` 을 고쳤고, 그건 다음
+  수입이 덮는다. 그래서 "재생성을 견디는 자리"로 `actions-overrides.json` 이 생겼고, 무엇을 어디에
+  적을지를 매번 판단해야 했다.
+- **장착 방식이 모듈마다 달랐다.** `dart`(82액션)는 선언 하나로 붙는데 `korea-invest`(283)는
+  중간물 1.45MB + 생성기 3 + 런타임 표 62KB 를 거쳤다.
+
+지금은 **마지막으로 한 번 생성한 결과가 원본**이고, 벤더가 새 릴리스를 내면 저자가 **그때** 도구를
+돌려 선언 파일에 직접 쓴다(중간물 없음). 상시 존재하는 절차 = 0.
 
 운영 룰:
-- **Firebat 영역 안에 sysmod-specific 코드를 두지 마라** — `scripts/`, `infra/data/<sysmod>-*.json`, `core/src/<sysmod>` 등 모두 모듈 자체 안으로
-- 외부 명세 파일 (xlsx / etc) = `.gitignore` 처리된 영역 — 사용자 본인 로컬 reference
-- 단순 모듈 (수동 작성 가능한 경우) 의 `scripts/` 디렉토리 = 0 (옵션)
-- 예시 — `system/modules/kiwoom/scripts/`, `system/modules/korea-invest/scripts/`
+- **Firebat 영역 안에 sysmod-specific 코드를 두지 마라** — `infra/data/<sysmod>-*.json`,
+  `core/src/<sysmod>` 등 전부 모듈 안으로.
+- 벤더 명세 원문(xlsx 등) = gitignore. **원본이 아니라 수입 경로다** — 그걸 원본이라 부르는 순간
+  "저장소에 없으니 고칠 수 없다"가 결론으로 나온다.
+- 액션이 몇 개뿐이면 `actions.json` 도 필요 없다 — 선언이 없으면 프레임워크가 `input` 스키마에서
+  카탈로그를 **파생**한다(`derive_entries_from_input`).
+
+### `_call` — 액션의 엔드포인트는 선언에, 표는 어디에도 없다
+
+`actions.json` 엔트리의 **`_call`** 은 그 액션 하나를 발행하는 데 필요한 것이다. 디스패치가
+호출 중인 액션의 행만 모듈 입력에 `_call` 로 실어 준다.
+
+```jsonc
+{ "id": "국내주식-164", "name": "…", "params": { … },
+  "_call": { "id": "국내주식-164", "method": "GET", "path": "/uapi/…", "trIdReal": "…", "trIdMock": "…" } }
+```
+
+- **밑줄이 경계다.** 카탈로그 로더는 밑줄 필드를 `get_action_schema` 에 싣지 않는다 — `path` 나
+  `trId` 는 모델이 읽고 결코 타이핑하지 않을 것들이고, 그 표면은 턴마다 크기를 잰다.
+- **프레임워크는 안을 읽지 않는다.** `trId` 가 뭔지 core 가 아는 순간 새 venue 마다 core 배포가 된다.
+- **한 행이 여러 API 면 갈래로 선언한다** — 벤더 시트가 매수·매도를 한 줄에 적었거나(`"(매도) …
+  (매수) …"`), 중립 이름 하나가 시장·간격에 따라 갈릴 때. 어느 갈래인지는 **방언이 정하고**,
+  갈래의 내용은 선언이 든다.
+  ```jsonc
+  "_call": { "kr_buy": {…}, "kr_sell": {…}, "us_buy": {…}, "us_sell": {…} }
+  ```
+  갈래를 고르는 인자는 `params`·`required` 에도 선언한다 — 그래야 `fill` 이 **미리** 말한다.
+- **선언하면 전부 선언한다.** 일부만 선언하면 방언이 두 경로를 다 살려야 하고, 행이 없는 쪽은
+  아무도 안 써 본 액션에서만 터진다. `core/tests/module_config_audit.rs` 가 막는다.
+- 엔드포인트가 **규칙**인 모듈은 선언하지 않는다 — `dart` 는 액션 이름이 곧 `/api/<name>.json` 이다.
 
 ---
 
