@@ -1577,6 +1577,15 @@ pub struct ExecuteHandler {
 }
 #[async_trait::async_trait]
 impl McpToolHandler for ExecuteHandler {
+    /// The module this call targets, so the shared gates read the same declarations they read for
+    /// `run_module_action`. Returning None here meant a user module's `grounding` was never
+    /// checked and its declarations were never even loaded — the gate defaulted to "declared
+    /// nothing" for a module nobody had asked about.
+    fn target_module(&self, args: &Value) -> Option<String> {
+        let path = obj_str(args, "path")?;
+        ModuleManager::module_name_of_user_path(&path).map(String::from)
+    }
+
     async fn call(&self, args: Value) -> Result<Value, String> {
         let path = obj_str(&args, "path").ok_or_else(|| "path 필수".to_string())?;
         // execute = user/modules only (system modules via sysmod_*). Same confine as file tools —
@@ -1592,9 +1601,12 @@ impl McpToolHandler for ExecuteHandler {
         if input.is_object() && input.as_object().map(|m| m.is_empty()).unwrap_or(false) {
             return Ok(serde_json::json!({"success": false, "error": "inputData 빈 객체 금지. 모듈 입력 필드를 실제 값으로 채워라. 시스템 모듈이면 sysmod_* 사용."}));
         }
+        // Mirrors the core handler: a `user/modules/<name>` path is the same call as
+        // run_module_action on that name, so it takes the same rung (is_enabled, input
+        // validation, auto-cache, declared timeout) instead of going straight to the sandbox.
         match self
             .module
-            .execute(
+            .execute_module_path(
                 &path,
                 &input,
                 &firebat_core::ports::SandboxExecuteOpts::default(),

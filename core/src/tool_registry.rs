@@ -760,7 +760,14 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 if input.is_object() && input.as_object().map(|m| m.is_empty()).unwrap_or(false) {
                     return Ok(serde_json::json!({"success": false, "error": "execute: 'inputData' must not be an empty object — fill the module's input fields. If this was meant to be a system module (weather, stocks, …), call its sysmod_<name> tool instead."}));
                 }
-                match module.execute(&path, &input, &SandboxExecuteOpts::default()).await {
+                // Same rung as `run_module_action` when the path names a user module — see
+                // `execute_module_path`. The two tools are two spellings of one call, not two
+                // ways in, so a user module gets is_enabled, input validation, auto-cache and
+                // its declared timeout exactly like a system one.
+                match module
+                    .execute_module_path(&path, &input, &SandboxExecuteOpts::default())
+                    .await
+                {
                     Ok(output) => Ok(if output.success {
                         serde_json::json!({"success": true, "data": output.data})
                     } else {

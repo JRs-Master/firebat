@@ -209,6 +209,39 @@ impl ModuleManager {
         self.sandbox.execute(target_path, input_data, opts).await
     }
 
+    /// The module a `user/modules/<name>` path addresses, when it addresses one.
+    ///
+    /// `execute` takes a path and `run` takes a name, and for a user module they mean the same
+    /// thing — which is why the path form must not be a second way in. A deeper path (a script
+    /// inside the module) is not a module call and stays on the raw path.
+    pub fn module_name_of_user_path(target_path: &str) -> Option<&str> {
+        let rest = target_path
+            .trim_end_matches('/')
+            .strip_prefix("user/modules/")?;
+        (!rest.is_empty() && !rest.contains('/') && is_safe_name(rest)).then_some(rest)
+    }
+
+    /// `execute(path)` for a user module — the same rung `run` uses.
+    ///
+    /// `execute` went straight to the sandbox, so a user module skipped every one of them:
+    /// `is_enabled` (a module the owner switched off still ran), the pre-spawn input validation
+    /// this file calls the defence against silent corruption, auto-cache (a large result landed
+    /// whole in the context instead of behind a key), the declared timeout, and the timeseries
+    /// store. Its declarations were read by nothing. A user module is a module — one rung, and the
+    /// path form resolves to it (2026-08-16: `모듈이 안 돌면 모듈에서 고칠 수 있어야 한다` —
+    /// a declaration that no path reads is a declaration the author cannot fix anything with).
+    pub async fn execute_module_path(
+        &self,
+        target_path: &str,
+        input_data: &serde_json::Value,
+        opts: &SandboxExecuteOpts,
+    ) -> InfraResult<ModuleOutput> {
+        match Self::module_name_of_user_path(target_path) {
+            Some(name) => self.run(name, input_data).await,
+            None => self.execute(target_path, input_data, opts).await,
+        }
+    }
+
     /// 모듈명으로 실행 — entry 자동 탐색.
     /// 옛 TS `run(name, input)` 1:1 — listDir 실패 시 한국어 에러 명시.
     ///
@@ -3806,6 +3839,40 @@ mod coercion_tests {
         assert_eq!(out["note"], serde_json::json!("그대로"));
         // 강제 후에는 스키마를 통과해야 한다(이게 목적).
         assert!(validate_value(&out, &schema()).is_ok());
+    }
+
+    /// `execute` and `run_module_action` are two spellings of one call for a user module, so the
+    /// path form has to resolve to a name — otherwise it is a second way in, and it was: no
+    /// is_enabled, no input validation, no auto-cache.
+    #[test]
+    fn a_user_module_path_resolves_to_its_module_name() {
+        assert_eq!(
+            ModuleManager::module_name_of_user_path("user/modules/my-tool"),
+            Some("my-tool")
+        );
+        assert_eq!(
+            ModuleManager::module_name_of_user_path("user/modules/my-tool/"),
+            Some("my-tool")
+        );
+    }
+
+    /// Anything that is not a module directory stays on the raw path — a script inside a module,
+    /// a system path, a traversal attempt.
+    #[test]
+    fn only_a_module_directory_resolves() {
+        for path in [
+            "user/modules/my-tool/main.py",
+            "user/scripts/thing.py",
+            "system/modules/yfinance",
+            "user/modules/",
+            "user/modules/../../etc",
+        ] {
+            assert_eq!(
+                ModuleManager::module_name_of_user_path(path),
+                None,
+                "must not resolve: {path}"
+            );
+        }
     }
 
     /// Flat params relocate into the single declared object container — and ONLY under
