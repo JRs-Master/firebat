@@ -47,185 +47,213 @@
         "id": "keyword-tool",
         "name": "키워드 분석 (검색량·클릭수·경쟁도·연관검색어 + CPC)",
         "description": "The keyword research entry point. Returns monthly search counts (PC and mobile), average click counts and CTR, competition index and average ad depth, plus related keywords",
-        "params": {
-          "keywords": "Hint keywords. Chunked in fives automatically; accepts rows from a previous result via keywordsCacheKey",
-          "biztpId": "Industry id from biz-categories — an entry point on its own, no keywords needed",
-          "event": "Seasonal theme id from seasonal-events — an entry point on its own",
-          "month": "Month 1-12, pairs with event",
-          "siteId": "Business channel id (SITE type)",
-          "limit": "How many related keywords to include (default 100, max 1000)",
-          "withBid": "Attach estimated minimum-exposure and median bids per keyword (CPC)",
-          "withFlags": "Attach isLowSearchVolume / isRestricted / isAdult / isSellProhibit / isSeason",
-          "showDetail": "Include the per-month search history"
-        }
+        "params": [
+          "keywords",
+          "biztpId",
+          "event",
+          "month",
+          "siteId",
+          "limit",
+          "withBid",
+          "withFlags",
+          "showDetail",
+          "bidDevice",
+          "bidPeriod"
+        ]
       },
       {
         "id": "estimate",
         "name": "입찰가·성과 추정 (CPC 계산)",
         "description": "Where CPC comes from",
-        "params": {
-          "estimateType": "exposure-minimum-bid | median-bid | average-position-bid | performance | performance-bulk",
-          "keywords": "Keywords to price, chunked in 200s; accepts rows via keywordsCacheKey",
-          "device": "PC or MOBILE (performance also takes BOTH)",
-          "period": "DAY (yesterday) or MONTH (last 28 days) — not a number of days",
-          "position": "Target rank for average-position-bid: 1-10 on PC, 1-5 on MOBILE",
-          "bids": "For performance: the bid amounts to simulate, up to 100"
-        }
+        "params": [
+          "estimateType",
+          "keywords",
+          "device",
+          "period",
+          "position",
+          "bids",
+          "key",
+          "keyType",
+          "bid",
+          "items"
+        ]
       },
       {
         "id": "managed-keywords",
         "name": "키워드 제한 상태 (저검색량·성인·노출제한·판매금지·시즌)",
         "description": "Why a keyword has no numbers",
-        "params": {
-          "keywords": "Keywords to check, chunked automatically"
-        }
+        "params": [
+          "keywords"
+        ]
       },
       {
         "id": "biz-categories",
         "name": "업종 코드 목록 (biztpId)",
         "description": "The industry tree behind keyword-tool's biztpId",
-        "params": {
-          "query": "Filter rows by industry name",
-          "refresh": "Rebuild from Naver instead of using the on-disk copy",
-          "jobId": "Resume polling a master report job returned by an earlier call"
-        }
+        "params": [
+          "query",
+          "refresh",
+          "jobId"
+        ]
       },
       {
         "id": "seasonal-events",
         "name": "시즌 이벤트 코드 목록 (event)",
         "description": "The seasonal theme codes behind keyword-tool's event parameter",
-        "params": {
-          "query": "Filter themes by Korean or English name"
-        }
+        "params": [
+          "query"
+        ]
       },
       {
         "id": "stats",
         "name": "내 광고 성과 통계",
         "description": "Performance of MY running ads by campaign / adgroup / keyword / ad id",
-        "params": {
-          "id": "Single entity id",
-          "ids": "Multiple entity ids",
-          "fields": "Metrics to fetch",
-          "datePreset": "Preset range instead of timeRange"
-        }
+        "params": [
+          "id",
+          "ids",
+          "fields",
+          "datePreset",
+          "breakdown",
+          "statType",
+          "timeIncrement",
+          "timeRange"
+        ]
       },
       {
         "id": "bizmoney",
         "name": "비즈머니 잔액·충전·소진 내역",
         "description": "Ad account balance and its charge / exhaust / daily histories.",
-        "params": {
-          "subAction": "balance | charge-history | exhaust-history | period-history",
-          "searchStartDt": "YYYYMMDD",
-          "searchEndDt": "YYYYMMDD"
-        }
+        "params": [
+          "subAction",
+          "searchStartDt",
+          "searchEndDt"
+        ]
       },
       {
         "id": "list-campaigns",
         "name": "캠페인 목록",
         "description": "Lists campaigns in the ad account.",
-        "params": {
-          "campaignType": "Filter by campaign type",
-          "ids": "Specific campaign ids"
-        }
+        "params": [
+          "campaignType",
+          "ids",
+          "nccLabelId",
+          "recordSize",
+          "selector"
+        ]
       },
       {
         "id": "get-campaign",
         "name": "캠페인 단건",
         "description": "One campaign by id.",
-        "params": {
-          "id": "Campaign id"
-        }
+        "params": [
+          "id"
+        ]
       },
       {
         "id": "list-adgroups",
         "name": "광고그룹 목록",
         "description": "Lists adgroups, optionally within one campaign.",
-        "params": {
-          "nccCampaignId": "Campaign filter",
-          "ids": "Specific adgroup ids"
-        }
+        "params": [
+          "nccCampaignId",
+          "ids",
+          "nccLabelId",
+          "recordSize",
+          "selector"
+        ]
       },
       {
         "id": "get-adgroup",
         "name": "광고그룹 단건",
         "description": "One adgroup by id.",
-        "params": {
-          "id": "Adgroup id"
-        }
+        "params": [
+          "id"
+        ]
       },
       {
         "id": "list-keywords",
         "name": "등록 키워드 목록",
         "description": "Keywords registered in MY account, with their bids and quality index. Not a research tool — use keyword-tool for that.",
-        "params": {
-          "nccAdgroupId": "Adgroup filter",
-          "ids": "Specific keyword ids"
-        }
+        "params": [
+          "nccAdgroupId",
+          "ids",
+          "nccLabelId",
+          "recordSize",
+          "selector"
+        ]
       },
       {
         "id": "get-keyword",
         "name": "등록 키워드 단건",
         "description": "One registered keyword by id.",
-        "params": {
-          "id": "Keyword id"
-        }
+        "params": [
+          "id"
+        ]
       },
       {
         "id": "list-ads",
         "name": "소재 목록",
         "description": "Ad creatives in an adgroup.",
-        "params": {
-          "nccAdgroupId": "Adgroup filter",
-          "ids": "Specific ad ids"
-        }
+        "params": [
+          "nccAdgroupId",
+          "ids",
+          "nccLabelId",
+          "recordSize",
+          "selector"
+        ]
       },
       {
         "id": "get-ad",
         "name": "소재 단건",
         "description": "One ad creative by id.",
-        "params": {
-          "id": "Ad id"
-        }
+        "params": [
+          "id"
+        ]
       },
       {
         "id": "list-channels",
         "name": "비즈채널 목록",
         "description": "Business channels. The SITE-type channel id is what keyword-tool's siteId takes.",
-        "params": {
-          "channelTp": "Filter by channel type",
-          "ids": "Specific channel ids"
-        }
+        "params": [
+          "channelTp",
+          "ids",
+          "nccLabelId",
+          "recordSize",
+          "selector"
+        ]
       },
       {
         "id": "list-extensions",
         "name": "확장소재 목록",
         "description": "Ad extensions belonging to a campaign or adgroup.",
-        "params": {
-          "ownerId": "Campaign or adgroup id"
-        }
+        "params": [
+          "ownerId",
+          "nccLabelId",
+          "recordSize",
+          "selector"
+        ]
       },
       {
         "id": "list-labels",
         "name": "즐겨찾기 목록",
         "description": "Labels registered in the account.",
-        "params": {}
+        "params": []
       },
       {
         "id": "list-shared-budgets",
         "name": "공유예산 목록",
         "description": "Shared budgets in the account.",
-        "params": {}
+        "params": []
       },
       {
         "id": "raw",
         "name": "API 직접 호출",
         "description": "Escape hatch for endpoints this module does not wrap. Signs and sends the request as given.",
-        "params": {
-          "method": "HTTP method",
-          "uri": "API path",
-          "params": "Query parameters",
-          "body": "Request body"
-        }
+        "params": [
+          "method",
+          "uri",
+          "params",
+          "body"
+        ]
       }
     ]
   },

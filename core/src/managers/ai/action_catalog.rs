@@ -217,11 +217,16 @@ impl ModuleActionSource {
                 let desc = a.get("description").and_then(|v| v.as_str()).unwrap_or("");
                 // Semantic text = domain + description + param labels — what a user query
                 // should land on ("투자자 매매동향", "일봉", "잔고" …).
-                let param_names: Vec<String> = a
-                    .get("params")
-                    .and_then(|v| v.as_object())
-                    .map(|o| o.keys().cloned().collect())
-                    .unwrap_or_default();
+                // Both declaration forms name the same thing: `{name: prose}` (the original) and
+                // `[name, …]` (selection only — see `fill_param_docs_from_input`). Everything
+                // downstream wants the names, so it reads them from either.
+                let param_names: Vec<String> = match a.get("params") {
+                    Some(serde_json::Value::Object(o)) => o.keys().cloned().collect(),
+                    Some(serde_json::Value::Array(v)) => {
+                        v.iter().filter_map(|x| x.as_str().map(String::from)).collect()
+                    }
+                    _ => Vec::new(),
+                };
                 // The embedded document is the action's own description and nothing appended.
                 //
                 // It used to be `ident + domain + description + every parameter blurb`, which put
@@ -653,6 +658,23 @@ fn fill_param_docs_from_input(
     let derived = params_from_input(config);
     let Some(derived_map) = derived.as_object() else { return };
     if derived_map.is_empty() {
+        return;
+    }
+    // `params: ["a", "b"]` — the selection with no wording attached, which is the form that cannot
+    // drift. A map has to hold a description beside every name, so adding one param means writing
+    // a second copy of a sentence the schema already has; a list has nowhere to put it. Names the
+    // schema does not know keep an empty entry rather than vanishing — a catalog naming a param
+    // the module dropped should be visible, not silently pruned.
+    if let Some(list) = extra.get("params").and_then(|p| p.as_array()).cloned() {
+        let mut m = serde_json::Map::new();
+        for name in list.iter().filter_map(|v| v.as_str()) {
+            let doc = derived_map
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| serde_json::Value::String(String::new()));
+            m.insert(name.to_string(), doc);
+        }
+        extra["params"] = serde_json::Value::Object(m);
         return;
     }
     match extra.get_mut("params").and_then(|p| p.as_object_mut()) {
@@ -1992,6 +2014,29 @@ mod display_vs_document_tests {
         assert!(sort.contains("(enum: accuracy, recency, latest)"), "got: {sort}");
         assert!(!sort.contains("newest-first"), "the drifted copy must be gone: {sort}");
         assert!(!p.contains_key("target"), "the action's selection is not widened: {p:?}");
+    }
+
+    /// The list form declares the selection and nothing else, so there is no second place for a
+    /// param's wording to live and drift.
+    #[test]
+    fn a_param_list_takes_every_word_from_the_schema() {
+        let cfg = serde_json::json!({"input": {"properties": {
+            "action": {"type": "string", "enum": ["stats"]},
+            "keywords": {"type": "string", "description": "Keywords"},
+            "breakdown": {"type": "string", "enum": ["pcMblTp", "dayw"],
+                          "description": "[stats] Split by device or day"},
+            "unused": {"type": "string", "description": "not selected"}
+        }}});
+        let mut extra = serde_json::json!({"params": ["keywords", "breakdown"]});
+        fill_param_docs_from_input(&mut extra, &cfg, "stats");
+        let p = extra["params"].as_object().expect("params");
+        assert_eq!(p["keywords"], "Keywords");
+        assert!(
+            p["breakdown"].as_str().unwrap().contains("(enum: pcMblTp, dayw)"),
+            "got: {:?}",
+            p["breakdown"]
+        );
+        assert!(!p.contains_key("unused"), "the list is the selection: {p:?}");
     }
 
     /// A generated broker catalog names call PATHS, which are not schema properties — those keep

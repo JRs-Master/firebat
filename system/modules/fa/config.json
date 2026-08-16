@@ -36,18 +36,18 @@
         "id": "ratios",
         "name": "재무비율 계산 (수익성·안정성·성장성·밸류에이션)",
         "description": "DART statement rows in -> profitability (margins, ROE, ROA), stability (debt ratio, current ratio, equity ratio), growth (YoY revenue/profit/assets), and with marketCap also PER/PBR/PSR (+EPS/BPS with shares)",
-        "params": {
-          "statements": "DART fnlttSinglAcnt/All rows (or statementsCacheKey from the dart call)",
-          "marketCap": "market capitalization in KRW for valuation ratios",
-          "shares": "listed share count for per-share figures",
-          "estimates": "KIS 국내주식-187 response as-is, or estimatesCacheKey from that call (optional) — adds broker estimates; never rebuild rows by hand"
-        }
+        "params": [
+          "statements",
+          "marketCap",
+          "shares",
+          "estimates"
+        ]
       },
       {
         "id": "selftest",
         "name": "셀프테스트",
         "description": "Offline checks against synthetic DART-shaped rows with known answers.",
-        "params": {}
+        "params": []
       }
     ]
   },

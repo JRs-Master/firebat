@@ -41,66 +41,67 @@
         "id": "read",
         "name": "문서 읽기 (pptx·xlsx·docx·hwp·hwpx·pdf)",
         "description": "Extract text and tables from an uploaded document",
-        "params": {
-          "path": "media URL (/user/media/<slug>.<ext>) or workspace-relative path"
-        }
+        "params": [
+          "path",
+          "maxChars"
+        ]
       },
       {
         "id": "make_pptx",
         "name": "PPTX 만들기 (렌더 블록 → 슬라이드)",
         "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables, chart blocks become native editable charts, callouts become tinted statement bands, and timeline/compare/key_value/progress blocks each trigger their own slide archetype",
-        "params": {
-          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/image/chart/stock_chart/callout/key_value/progress/timeline/compare, plus containers",
-          "title": "deck title (title slide + filename)",
-          "masterMediaPath": "media URL of a master .pptx to build on (falls back to the module's uploaded master setting)",
-          "transition": "fade (default) | wipe | push | none",
-          "theme": "{accent, heading, body, band} hex tokens — the page palette rides along (ignored when a master is given)"
-        }
+        "params": [
+          "blocks",
+          "title",
+          "masterMediaPath",
+          "transition",
+          "theme"
+        ]
       },
       {
         "id": "make_xlsx",
         "name": "XLSX 만들기 (표 → 시트 · 대시보드)",
         "description": "Build a .xlsx. Tables become styled data sheets: bold frozen header, fitted column widths, real number formats, and automatic conditional formatting (data bars on magnitude columns, a blue-white-red color scale on %/율/증감/change/delta/yoy columns)",
-        "params": {
-          "sheets": "[{name, headers?, rows, style?, docTitle?, period?, subtotalBy?}] — a long row set goes as {name, headers, rowsCacheKey: \"<the producing call's _cacheKey>\"} instead of rows, and the server expands the cached rows into it (a 120-day candle sheet carries 120 real rows, not the 5-row inline preview). Want a window rather than the whole table? Add rowsLimit:N for the most-recent N rows, or rowsRange:{from,to} for a date window — never retype rows to trim them. style:\"ledger\" = 총계정원장 document styling with live monthly subtotals",
-          "blocks": "render-block array (table → sheet, metric → KPI card, chart → native chart)",
-          "kpis": "[{label, value (number or \"=FORMULA\"), delta?, unit?, icon?, style?, max?}] — KPI cards on the Dashboard sheet; style:\"bar\" turns one into a progress-bar row",
-          "charts": "[{type: line|bar|pie|doughnut|combo, title, sheet, labelCol, valueCols[], unit?, centerLabel?, centerValue?}] — native charts pointing at a data sheet's columns (header name or 0-based index); combo = valueCols[0] bars + valueCols[1] line on a secondary axis; unit (e.g. \"단위: 백만원\") becomes a small badge on the chart's card; a pie/doughnut title is written as the card's header cell instead of inside the ring",
-          "title": "dashboard/file title (row 1 of the Dashboard sheet + filename)"
-        }
+        "params": [
+          "sheets",
+          "blocks",
+          "kpis",
+          "charts",
+          "title"
+        ]
       },
       {
         "id": "make_docx",
         "name": "DOCX 만들기 (렌더 블록 → 보고서)",
         "description": "Build a .docx REPORT from render blocks",
-        "params": {
-          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/key_value/callout/image/chart/stock_chart, plus containers",
-          "title": "document title (cover + filename) — a leading level-1 header block wins over it"
-        }
+        "params": [
+          "blocks",
+          "title"
+        ]
       },
       {
         "id": "make_hwpx",
         "name": "HWPX 만들기 (렌더 블록 → 한글 문서)",
         "description": "Build a .hwpx (Hancom) from render blocks via the rhwp engine, seeded from a real Hancom blank so fonts and styles are valid",
-        "params": {
-          "blocks": "render-block array [{type, props}] — header/text/list/table/metric",
-          "title": "document title (heading + filename)"
-        }
+        "params": [
+          "blocks",
+          "title"
+        ]
       },
       {
         "id": "make_pdf",
         "name": "PDF 만들기 (렌더 블록 → 보고서)",
         "description": "Build a .pdf REPORT from render blocks",
-        "params": {
-          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/key_value/callout/image/chart/stock_chart, plus containers",
-          "title": "document title (cover + filename) — a leading level-1 header block wins over it"
-        }
+        "params": [
+          "blocks",
+          "title"
+        ]
       },
       {
         "id": "selftest",
         "name": "셀프테스트",
         "description": "Offline round-trip checks: make each format, read it back, compare. No key, no network.",
-        "params": {}
+        "params": []
       }
     ]
   },

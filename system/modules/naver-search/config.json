@@ -40,138 +40,138 @@
         "id": "search",
         "name": "네이버 검색 (뉴스·블로그·카페·웹문서·지식iN·백과·이미지·지역)",
         "description": "One search endpoint per `type`. Returns title / link / description plus per-type extras",
-        "params": {
-          "query": "Search term, required",
-          "type": "webkr | news | blog | image | cafearticle | kin | encyc | local | adult | errata",
-          "display": "Results per page (1-100; local is 1-5 and defaults to 1)",
-          "start": "Paging offset (1-1000; local is fixed at 1)",
-          "sort": "news/blog/image/cafearticle: sim|date. kin: sim|date|point. local: random|comment",
-          "filter": "image only: all | large | medium | small"
-        }
+        "params": [
+          "query",
+          "type",
+          "display",
+          "start",
+          "sort",
+          "filter"
+        ]
       },
       {
         "id": "search-trend",
         "name": "검색어 트렌드 (주제어별 통합검색 추이)",
         "description": "Relative search interest over time for up to 5 keyword groups, each bundling up to 20 terms that are summed",
-        "params": {
-          "keywordGroups": "[{groupName, keywords[]}] — up to 5 groups, 20 terms each",
-          "startDate": "yyyy-mm-dd, 2016-01-01 or later",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "device": "pc | mo",
-          "gender": "m | f",
-          "ages": "1-11 band numbers (1=0-12, 2=13-18, 3=19-24 ... 11=60+)"
-        }
+        "params": [
+          "keywordGroups",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "device",
+          "gender",
+          "ages"
+        ]
       },
       {
         "id": "shopping-categories",
         "name": "쇼핑 분야별 클릭 추이",
         "description": "Relative shopping click trend for up to 3 category codes compared against each other",
-        "params": {
-          "category": "[{name, param[]}] — up to 3 pairs",
-          "startDate": "yyyy-mm-dd, 2017-08-01 or later",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "device": "pc | mo",
-          "gender": "m | f",
-          "ages": "10 | 20 | 30 | 40 | 50 | 60"
-        }
+        "params": [
+          "category",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "device",
+          "gender",
+          "ages"
+        ]
       },
       {
         "id": "shopping-category-by-device",
         "name": "쇼핑 분야 클릭 추이 — 기기별 분해",
         "description": "One category's click trend split into PC and mobile series",
-        "params": {
-          "categoryCode": "A single category code",
-          "startDate": "yyyy-mm-dd",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "gender": "m | f (a device filter would collapse the split)",
-          "ages": "10 | 20 | 30 | 40 | 50 | 60"
-        }
+        "params": [
+          "categoryCode",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "gender",
+          "ages"
+        ]
       },
       {
         "id": "shopping-category-by-gender",
         "name": "쇼핑 분야 클릭 추이 — 성별 분해",
         "description": "One category's click trend split into male and female series. Each data row carries `group` (m|f).",
-        "params": {
-          "categoryCode": "A single category code",
-          "startDate": "yyyy-mm-dd",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "device": "pc | mo",
-          "ages": "10 | 20 | 30 | 40 | 50 | 60"
-        }
+        "params": [
+          "categoryCode",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "device",
+          "ages"
+        ]
       },
       {
         "id": "shopping-category-by-age",
         "name": "쇼핑 분야 클릭 추이 — 연령별 분해",
         "description": "One category's click trend split by age decade. Each data row carries `group` (10|20|...|60).",
-        "params": {
-          "categoryCode": "A single category code",
-          "startDate": "yyyy-mm-dd",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "device": "pc | mo",
-          "gender": "m | f"
-        }
+        "params": [
+          "categoryCode",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "device",
+          "gender"
+        ]
       },
       {
         "id": "shopping-keywords",
         "name": "쇼핑 분야 안 키워드별 클릭 추이",
         "description": "Click trend for up to 5 search terms inside one shopping category, compared against each other",
-        "params": {
-          "categoryCode": "A single category code",
-          "keyword": "[{name, param:[oneTerm]}] — up to 5 groups, one term each",
-          "startDate": "yyyy-mm-dd",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "device": "pc | mo",
-          "gender": "m | f",
-          "ages": "10 | 20 | 30 | 40 | 50 | 60"
-        }
+        "params": [
+          "categoryCode",
+          "keyword",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "device",
+          "gender",
+          "ages"
+        ]
       },
       {
         "id": "shopping-by-device",
         "name": "쇼핑 키워드 클릭 추이 — 기기별 분해",
         "description": "One keyword inside one category, split into PC and mobile series",
-        "params": {
-          "categoryCode": "A single category code",
-          "keywordText": "The single keyword to analyze",
-          "startDate": "yyyy-mm-dd",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "gender": "m | f",
-          "ages": "10 | 20 | 30 | 40 | 50 | 60"
-        }
+        "params": [
+          "categoryCode",
+          "keywordText",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "gender",
+          "ages"
+        ]
       },
       {
         "id": "shopping-by-gender",
         "name": "쇼핑 키워드 클릭 추이 — 성별 분해",
         "description": "One keyword inside one category, split into male and female series.",
-        "params": {
-          "categoryCode": "A single category code",
-          "keywordText": "The single keyword to analyze",
-          "startDate": "yyyy-mm-dd",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "device": "pc | mo",
-          "ages": "10 | 20 | 30 | 40 | 50 | 60"
-        }
+        "params": [
+          "categoryCode",
+          "keywordText",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "device",
+          "ages"
+        ]
       },
       {
         "id": "shopping-by-age",
         "name": "쇼핑 키워드 클릭 추이 — 연령별 분해",
         "description": "One keyword inside one category, split by age decade.",
-        "params": {
-          "categoryCode": "A single category code",
-          "keywordText": "The single keyword to analyze",
-          "startDate": "yyyy-mm-dd",
-          "endDate": "yyyy-mm-dd",
-          "timeUnit": "date | week | month",
-          "device": "pc | mo",
-          "gender": "m | f"
-        }
+        "params": [
+          "categoryCode",
+          "keywordText",
+          "startDate",
+          "endDate",
+          "timeUnit",
+          "device",
+          "gender"
+        ]
       }
     ]
   },

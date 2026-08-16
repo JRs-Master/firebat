@@ -35,26 +35,26 @@
         "id": "impact",
         "name": "뉴스일 주가 반응 측정 (D+1·D+5, 대조군 동반)",
         "description": "News items (naver_search shape) + daily bars in -> per-news-day forward returns from the pre-news close, clustered by similar titles, with the all-days average as the control and optional benchmark-relative excess returns",
-        "params": {
-          "items": "naver_search news items (or itemsCacheKey)",
-          "bars": "daily OHLCV rows of the stock (or barsCacheKey)",
-          "benchmarkBars": "optional index bars for excess return (or benchmarkBarsCacheKey)",
-          "horizons": "trading-day horizons, default [1, 5]"
-        }
+        "params": [
+          "items",
+          "bars",
+          "benchmarkBars",
+          "horizons"
+        ]
       },
       {
         "id": "timeline",
         "name": "보도량 타임라인·유사기사 묶기 (봉 불필요)",
         "description": "News items in -> daily counts, clusters of near-duplicate titles, sources. No bars needed.",
-        "params": {
-          "items": "naver_search news items (or itemsCacheKey)"
-        }
+        "params": [
+          "items"
+        ]
       },
       {
         "id": "selftest",
         "name": "셀프테스트",
         "description": "Offline checks with synthetic news and bars with known answers.",
-        "params": {}
+        "params": []
       }
     ]
   },
