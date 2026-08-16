@@ -28,13 +28,18 @@ const cap = (s, n) => {
 const actions = apis
   .filter(a => a.id && a.name)
   .map(a => {
+    // Required-ness is a boolean on the sheet; writing it only into the prose `(필수)` threw the
+    // structure away, and `get_action_schema` builds `fill` — what the call is refused without —
+    // from a structured `required`. Keep both: the marker for a reader, the list for the rung.
     const params = {};
+    const required = [];
     for (const p of a.request?.body ?? []) {
       if (!p.name) continue;
       const label = p.ko || p.name;
       const req = p.required ? ' (필수)' : '';
       const desc = p.desc ? ' — ' + cap(p.desc, 80) : '';
       params[p.name] = `${label}${req}${desc}`;
+      if (p.required) required.push(p.name);
     }
     const domain = [a.category, a.subCategory].filter(Boolean).join('/');
     const entry = {
@@ -45,6 +50,7 @@ const actions = apis
       method: a.method || undefined,
       path: a.path || undefined,
       params,
+      required: required.length ? required : undefined,
     };
     const ov = overrides[a.id];
     if (ov) {

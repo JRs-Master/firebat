@@ -20,7 +20,21 @@
       "query.PRDT_TYPE_CD": "상품유형코드 (필수) — 공란",
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — 다음조회시 입력",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수) — 다음조회시 입력"
-    }
+    },
+    "required": [
+      "query.INQR_DVSN",
+      "query.CUST_RNCNO25",
+      "query.HMID",
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.RGHT_TYPE_CD",
+      "query.PDNO",
+      "query.PRDT_TYPE_CD",
+      "query.CTX_AREA_NK100",
+      "query.CTX_AREA_FK100"
+    ]
   },
   {
     "id": "v1_국내주식-048",
@@ -35,7 +49,13 @@
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수) — 계좌번호 체계(8-2)의 뒤 2자리",
       "query.INQR_DVSN_1": "조회구분1 (필수) — 공백입력",
       "query.BSPR_BF_DT_APLY_YN": "기준가이전일자적용여부 (필수) — 공백입력"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_DVSN_1",
+      "query.BSPR_BF_DT_APLY_YN"
+    ]
   },
   {
     "id": "v1_국내주식-035",
@@ -49,7 +69,12 @@
       "query.CANO": "종합계좌번호 (필수)",
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수) — 29",
       "query.ACCA_DVSN_CD": "적립금구분코드 (필수) — 00"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ACCA_DVSN_CD"
+    ]
   },
   {
     "id": "v1_국내주식-018,019",
@@ -74,7 +99,18 @@
       "body.RSVN_ORD_SEQ": "예약주문순번 (필수) — [정정/취소]",
       "body.RSVN_ORD_ORGNO": "예약주문조직번호 — [정정/취소]",
       "body.RSVN_ORD_ORD_DT": "예약주문주문일자 — [정정/취소]"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.PDNO",
+      "body.ORD_QTY",
+      "body.ORD_UNPR",
+      "body.SLL_BUY_DVSN_CD",
+      "body.ORD_DVSN_CD",
+      "body.ORD_OBJT_CBLC_DVSN_CD",
+      "body.RSVN_ORD_SEQ"
+    ]
   },
   {
     "id": "v1_국내주식-042",
@@ -93,7 +129,17 @@
       "query.CRDT_TYPE": "신용유형 (필수) — 21 : 자기융자신규 23 : 유통융자신규 26 : 유통대주상환 28 : 자기대주상환 25 : 자기융자상환 27 : 유통융자상환 22 : 유통대…",
       "query.CMA_EVLU_AMT_ICLD_YN": "CMA평가금액포함여부 (필수) — Y/N",
       "query.OVRS_ICLD_YN": "해외포함여부 (필수) — Y/N"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO",
+      "query.ORD_UNPR",
+      "query.ORD_DVSN",
+      "query.CRDT_TYPE",
+      "query.CMA_EVLU_AMT_ICLD_YN",
+      "query.OVRS_ICLD_YN"
+    ]
   },
   {
     "id": "국내주식-191",
@@ -109,7 +155,14 @@
       "query.CMA_EVLU_AMT_ICLD_YN": "CMA평가금액포함여부 (필수) — N 입력",
       "query.WCRC_FRCR_DVSN_CD": "원화외화구분코드 (필수) — 01(외화기준),02(원화기준)",
       "query.FWEX_CTRT_FRCR_DVSN_CD": "선도환계약외화구분코드 (필수) — 01(외화기준),02(원화기준)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.CMA_EVLU_AMT_ICLD_YN",
+      "query.WCRC_FRCR_DVSN_CD",
+      "query.FWEX_CTRT_FRCR_DVSN_CD"
+    ]
   },
   {
     "id": "v1_국내주식-033",
@@ -128,7 +181,17 @@
       "query.INQR_DVSN_3": "조회구분3 (필수) — 00 : 전체",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수)",
       "query.CTX_AREA_NK100": "연속조회키100 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.USER_DVSN_CD",
+      "query.SLL_BUY_DVSN_CD",
+      "query.CCLD_NCCS_DVSN",
+      "query.INQR_DVSN_3",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "v1_국내주식-060",
@@ -148,7 +211,18 @@
       "query.CTX_AREA_NK100": "연속조회키100 (필수)",
       "query.CBLC_DVSN": "잔고구분 (필수) — 00: 전체",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.SORT_DVSN",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.CTX_AREA_NK100",
+      "query.CBLC_DVSN",
+      "query.CTX_AREA_FK100"
+    ]
   },
   {
     "id": "v1_국내주식-003",
@@ -170,7 +244,18 @@
       "body.QTY_ALL_ORD_YN": "잔량전부주문여부 (필수) — 'Y@전량 N@일부'",
       "body.CNDT_PRIC": "조건가격 — 스탑지정가호가에서 사용",
       "body.EXCG_ID_DVSN_CD": "거래소ID구분코드 — 한국거래소 : KRX 대체거래소 (넥스트레이드) : NXT SOR (Smart Order Routing) : SOR → 미입력시 KRX로 진행되…"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.KRX_FWDG_ORD_ORGNO",
+      "body.ORGN_ODNO",
+      "body.ORD_DVSN",
+      "body.RVSE_CNCL_DVSN_CD",
+      "body.ORD_QTY",
+      "body.ORD_UNPR",
+      "body.QTY_ALL_ORD_YN"
+    ]
   },
   {
     "id": "v1_국내주식-020",
@@ -193,7 +278,21 @@
       "query.SLL_BUY_DVSN_CD": "매도매수구분코드 (필수)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 다음 페이지 조회시 사용",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 다음 페이지 조회시 사용"
-    }
+    },
+    "required": [
+      "query.RSVN_ORD_ORD_DT",
+      "query.RSVN_ORD_END_DT",
+      "query.RSVN_ORD_SEQ",
+      "query.TMNL_MDIA_KIND_CD",
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PRCS_DVSN_CD",
+      "query.CNCL_YN",
+      "query.PDNO",
+      "query.SLL_BUY_DVSN_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_국내주식-034",
@@ -211,7 +310,16 @@
       "query.CMA_EVLU_AMT_ICLD_YN": "CMA평가금액포함여부 (필수)",
       "query.ORD_DVSN": "주문구분 (필수) — 00 : 지정가 / 01 : 시장가",
       "query.ORD_UNPR": "주문단가 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO",
+      "query.ACCA_DVSN_CD",
+      "query.CMA_EVLU_AMT_ICLD_YN",
+      "query.ORD_DVSN",
+      "query.ORD_UNPR"
+    ]
   },
   {
     "id": "v1_국내주식-006",
@@ -233,7 +341,17 @@
       "query.PRCS_DVSN": "처리구분 (필수) — 00 : 전일매매포함 01 : 전일매매미포함",
       "query.CTX_AREA_FK100": "연속조회검색조건100 — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK100 값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK100": "연속조회키100 — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK100 값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.AFHR_FLPR_YN",
+      "query.INQR_DVSN",
+      "query.UNPR_DVSN",
+      "query.FUND_STTL_ICLD_YN",
+      "query.FNCG_AMT_AUTO_RDPT_YN",
+      "query.PRCS_DVSN"
+    ]
   },
   {
     "id": "v1_국내주식-032",
@@ -250,7 +368,14 @@
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수)",
       "query.CTX_AREA_NK100": "연속조회키100 (필수)",
       "query.PRCS_DVSN_CD": "처리구분코드 — 00 : 보유 주식 전체 조회 01 : 보유 주식 중 0주 주식 숨김"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.USER_DVSN_CD",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "v1_국내주식-007",
@@ -268,7 +393,16 @@
       "query.ORD_DVSN": "주문구분 (필수) — * 특정 종목 전량매수 시 가능수량을 확인할 경우 00:지정가는 증거금율이 반영되지 않으므로 증거금율이 반영되는 01: 시장가로 조회 * 다만,…",
       "query.CMA_EVLU_AMT_ICLD_YN": "CMA평가금액포함여부 (필수) — Y : 포함 N : 포함하지 않음",
       "query.OVRS_ICLD_YN": "해외포함여부 (필수) — Y : 포함 N : 포함하지 않음"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO",
+      "query.ORD_UNPR",
+      "query.ORD_DVSN",
+      "query.CMA_EVLU_AMT_ICLD_YN",
+      "query.OVRS_ICLD_YN"
+    ]
   },
   {
     "id": "v1_국내주식-052",
@@ -289,7 +423,19 @@
       "query.INQR_DVSN": "조회구분 (필수) — 00 입력",
       "query.CBLC_DVSN": "잔고구분 (필수) — 00: 전체",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수)"
-    }
+    },
+    "required": [
+      "query.ACNT_PRDT_CD",
+      "query.CANO",
+      "query.INQR_STRT_DT",
+      "query.PDNO",
+      "query.CTX_AREA_NK100",
+      "query.INQR_END_DT",
+      "query.SORT_DVSN",
+      "query.INQR_DVSN",
+      "query.CBLC_DVSN",
+      "query.CTX_AREA_FK100"
+    ]
   },
   {
     "id": "v1_국내주식-001",
@@ -309,7 +455,15 @@
       "body.ORD_UNPR": "주문단가 (필수) — 주문단가 시장가 등 주문시, \"0\"으로 입력",
       "body.CNDT_PRIC": "조건가격 — 스탑지정가호가 주문 (ORD_DVSN이 22) 사용 시에만 필수",
       "body.EXCG_ID_DVSN_CD": "거래소ID구분코드 — 한국거래소 : KRX 대체거래소 (넥스트레이드) : NXT SOR (Smart Order Routing) : SOR → 미입력시 KRX로 진행되…"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.PDNO",
+      "body.ORD_DVSN",
+      "body.ORD_QTY",
+      "body.ORD_UNPR"
+    ]
   },
   {
     "id": "국내주식-165",
@@ -323,7 +477,12 @@
       "query.CANO": "종합계좌번호 (필수) — 종합계좌번호",
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수) — 계좌상품코드",
       "query.PDNO": "종목번호 (필수) — 보유종목 코드 ex)000660"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO"
+    ]
   },
   {
     "id": "v1_국내주식-005",
@@ -349,7 +508,22 @@
       "query.EXCG_ID_DVSN_CD": "거래소ID구분코드 (필수) — 한국거래소 : KRX 대체거래소 (NXT) : NXT SOR (Smart Order Routing) : SOR ALL : 전체 ※ 모의투자는 K…",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수) — '공란 : 최초 조회시는 이전 조회 Output CTX_AREA_FK100 값 : 다음페이지 조회시(2번째부터)'",
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — '공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK100 값 : 다음페이지 조회시(2번째부터)'"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.SLL_BUY_DVSN_CD",
+      "query.ORD_GNO_BRNO",
+      "query.CCLD_DVSN",
+      "query.INQR_DVSN",
+      "query.INQR_DVSN_1",
+      "query.INQR_DVSN_3",
+      "query.EXCG_ID_DVSN_CD",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "v1_국내주식-004",
@@ -366,7 +540,15 @@
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — '공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK100 값 : 다음페이지 조회시(2번째부터)'",
       "query.INQR_DVSN_1": "조회구분1 (필수) — '0 주문 1 종목'",
       "query.INQR_DVSN_2": "조회구분2 (필수) — '0 전체 1 매도 2 매수'"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100",
+      "query.INQR_DVSN_1",
+      "query.INQR_DVSN_2"
+    ]
   },
   {
     "id": "v1_국내주식-017",
@@ -388,7 +570,17 @@
       "body.LOAN_DT": "대출일자",
       "body.RSVN_ORD_END_DT": "예약주문종료일자 — (YYYYMMDD) 현재 일자보다 이후로 설정해야 함 * RSVN_ORD_END_DT(예약주문종료일자)를 안 넣으면 다음날 주문처리되고 예약주문…",
       "body.LDNG_DT": "대여일자"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.PDNO",
+      "body.ORD_QTY",
+      "body.ORD_UNPR",
+      "body.SLL_BUY_DVSN_CD",
+      "body.ORD_DVSN_CD",
+      "body.ORD_OBJT_CBLC_DVSN_CD"
+    ]
   },
   {
     "id": "v1_국내주식-002",
@@ -423,7 +615,17 @@
       "body.CVRG_SEQ": "반대매매순번",
       "body.EXCG_ID_DVSN_CD": "거래소ID구분코드 — 한국거래소 : KRX 대체거래소 (넥스트레이드) : NXT SOR (Smart Order Routing) : SOR → 미입력시 KRX로 진행되…",
       "body.CNDT_PRIC": "조건가격 — 스탑지정가호가에서 사용"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.PDNO",
+      "body.CRDT_TYPE",
+      "body.LOAN_DT",
+      "body.ORD_DVSN",
+      "body.ORD_QTY",
+      "body.ORD_UNPR"
+    ]
   },
   {
     "id": "v1_국내주식-036",
@@ -440,7 +642,15 @@
       "query.INQR_DVSN": "조회구분 (필수) — 00 : 전체",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수)",
       "query.CTX_AREA_NK100": "연속조회키100 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ACCA_DVSN_CD",
+      "query.INQR_DVSN",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "v1_국내주식-041",
@@ -463,7 +673,21 @@
       "query.COST_ICLD_YN": "비용포함여부 (필수)",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK100 값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK100 값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.AFHR_FLPR_YN",
+      "query.OFL_YN",
+      "query.INQR_DVSN",
+      "query.UNPR_DVSN",
+      "query.FUND_STTL_ICLD_YN",
+      "query.FNCG_AMT_AUTO_RDPT_YN",
+      "query.PRCS_DVSN",
+      "query.COST_ICLD_YN",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "국내선물-024",
@@ -477,7 +701,12 @@
       "query.CANO": "종합계좌번호 (필수)",
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수)",
       "query.MGNA_DVSN_CD": "증거금 구분코드 (필수) — 위탁(01), 유지(02)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.MGNA_DVSN_CD"
+    ]
   },
   {
     "id": "v1_국내선물-014",
@@ -490,7 +719,11 @@
     "params": {
       "query.CANO": "종합계좌번호 (필수) — 계좌번호 체계(8-2)의 앞 8자리",
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수) — 계좌번호 체계(8-2)의 뒤 2자리"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD"
+    ]
   },
   {
     "id": "v1_국내선물-017",
@@ -507,7 +740,15 @@
       "query.INQR_END_DAY": "조회종료일 (필수) — 조회종료일(YYYYMMDD)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 연속조회검색조건200",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 연속조회키200"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_STRT_DAY",
+      "query.INQR_END_DAY",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "국내선물-010",
@@ -525,7 +766,16 @@
       "query.EXCC_STAT_CD": "정산상태코드 (필수) — 1 : 정산 (정산가격으로 잔고 조회) 2 : 본정산 (매입가격으로 잔고 조회)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ACNT_PWD",
+      "query.MGNA_DVSN",
+      "query.EXCC_STAT_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_국내선물-004",
@@ -542,7 +792,15 @@
       "query.EXCC_STAT_CD": "정산상태코드 (필수) — 1 : 정산 (정산가격으로 잔고 조회) 2 : 본정산 (매입가격으로 잔고 조회)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.MGNA_DVSN",
+      "query.EXCC_STAT_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_국내선물-001",
@@ -565,7 +823,17 @@
       "body.CTAC_TLNO": "연락전화번호 — 고객의 연락 가능한 전화번호",
       "body.FUOP_ITEM_DVSN_CD": "선물옵션종목구분코드 — 공란(Default)",
       "body.ORD_DVSN_CD": "주문구분코드 (필수) — 01 : 지정가 02 : 시장가 03 : 조건부 04 : 최유리, 10 : 지정가(IOC) 11 : 지정가(FOK) 12 : 시장가(IOC) 1…"
-    }
+    },
+    "required": [
+      "body.ORD_PRCS_DVSN_CD",
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.SLL_BUY_DVSN_CD",
+      "body.SHTN_PDNO",
+      "body.ORD_QTY",
+      "body.UNIT_PRICE",
+      "body.ORD_DVSN_CD"
+    ]
   },
   {
     "id": "v1_국내선물-015",
@@ -582,7 +850,15 @@
       "query.EXCC_STAT_CD": "정산상태코드 (필수) — 1 : 정산 (정산가격으로 잔고 조회) 2 : 본정산 (매입가격으로 잔고 조회)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 연속조회검색조건200",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 연속조회키200"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.MGNA_DVSN",
+      "query.EXCC_STAT_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_국내선물-002",
@@ -605,7 +881,20 @@
       "body.RMN_QTY_YN": "잔여수량여부 (필수) — Y : 전량 N : 일부",
       "body.FUOP_ITEM_DVSN_CD": "선물옵션종목구분코드 — [Header tr_id TTTO1103U(선물옵션 정정취소 주간)] 공란(Default) [Header tr_id JTCE1002U(선물옵션 …",
       "body.ORD_DVSN_CD": "주문구분코드 (필수) — [정정] 01 : 지정가 02 : 시장가 03 : 조건부 04 : 최유리, 10 : 지정가(IOC) 11 : 지정가(FOK) 12 : 시장가(I…"
-    }
+    },
+    "required": [
+      "body.ORD_PRCS_DVSN_CD",
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.RVSE_CNCL_DVSN_CD",
+      "body.ORGN_ODNO",
+      "body.ORD_QTY",
+      "body.UNIT_PRICE",
+      "body.NMPR_TYPE_CD",
+      "body.KRX_NMPR_CNDT_CD",
+      "body.RMN_QTY_YN",
+      "body.ORD_DVSN_CD"
+    ]
   },
   {
     "id": "v1_국내선물-003",
@@ -628,7 +917,21 @@
       "query.MKET_ID_CD": "시장ID코드 (필수) — 공란(Default)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.STRT_ORD_DT",
+      "query.END_ORD_DT",
+      "query.SLL_BUY_DVSN_CD",
+      "query.CCLD_NCCS_DVSN",
+      "query.SORT_SQN",
+      "query.STRT_ODNO",
+      "query.PDNO",
+      "query.MKET_ID_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "국내선물-009",
@@ -653,7 +956,23 @@
       "query.SCRN_DVSN": "화면구분 (필수) — 02(Default)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.STRT_ORD_DT",
+      "query.END_ORD_DT",
+      "query.SLL_BUY_DVSN_CD",
+      "query.CCLD_NCCS_DVSN",
+      "query.SORT_SQN",
+      "query.STRT_ODNO",
+      "query.PDNO",
+      "query.MKET_ID_CD",
+      "query.FUOP_DVSN_CD",
+      "query.SCRN_DVSN",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "국내선물-011",
@@ -671,7 +990,16 @@
       "query.SLL_BUY_DVSN_CD": "매도매수구분코드 (필수) — 01 : 매도 , 02 : 매수",
       "query.UNIT_PRICE": "주문가격1 (필수)",
       "query.ORD_DVSN_CD": "주문구분코드 (필수) — '01 : 지정가 02 : 시장가 03 : 조건부 04 : 최유리, 10 : 지정가(IOC) 11 : 지정가(FOK) 12 : 시장가(IOC) …"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO",
+      "query.PRDT_TYPE_CD",
+      "query.SLL_BUY_DVSN_CD",
+      "query.UNIT_PRICE",
+      "query.ORD_DVSN_CD"
+    ]
   },
   {
     "id": "v1_국내선물-013",
@@ -687,7 +1015,14 @@
       "query.INQR_DT": "조회일자 (필수) — 조회일자(YYYYMMDD)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 연속조회검색조건200",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 연속조회키200"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_DT",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_국내선물-005",
@@ -722,7 +1057,16 @@
       "query.FUOP_TR_END_TMD": "선물옵션거래종료시각 (필수) — 선물옵션거래종료시간(HHMMSS)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 연속조회검색조건200",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 연속조회키200"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ORD_DT",
+      "query.FUOP_TR_STRT_TMD",
+      "query.FUOP_TR_END_TMD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_해외주식-006",
@@ -739,7 +1083,13 @@
       "query.TR_CRCY_CD": "거래통화코드 (필수) — USD : 미국달러 HKD : 홍콩달러 CNY : 중국위안화 JPY : 일본엔화 VND : 베트남동",
       "query.CTX_AREA_FK200": "연속조회검색조건200 — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK200": "연속조회키200 — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.OVRS_EXCG_CD",
+      "query.TR_CRCY_CD"
+    ]
   },
   {
     "id": "v1_해외주식-008",
@@ -756,7 +1106,15 @@
       "query.NATN_CD": "국가코드 (필수) — 000 전체 840 미국 344 홍콩 156 중국 392 일본 704 베트남",
       "query.TR_MKET_CD": "거래시장코드 (필수) — [Request body NATN_CD 000 설정] 00 : 전체 [Request body NATN_CD 840 설정] 00 : 전체 01 :…",
       "query.INQR_DVSN_CD": "조회구분코드 (필수) — 00 : 전체 01 : 일반해외주식 02 : 미니스탁"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.WCRC_FRCR_DVSN_CD",
+      "query.NATN_CD",
+      "query.TR_MKET_CD",
+      "query.INQR_DVSN_CD"
+    ]
   },
   {
     "id": "해외주식-070",
@@ -775,7 +1133,13 @@
       "query.TTLZ_ICLD_YN": "집계포함여부",
       "query.CTX_AREA_NK200": "연속조회키200 — 연속조회 시 사용",
       "query.CTX_AREA_FK200": "연속조회조건200 — 연속조회 시 사용"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ORD_DT",
+      "query.ODNO"
+    ]
   },
   {
     "id": "v1_해외주식-032",
@@ -797,7 +1161,20 @@
       "query.WCRC_FRCR_DVSN_CD": "원화외화구분코드 (필수) — 01 : 외화, 02 : 원화",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.OVRS_EXCG_CD",
+      "query.NATN_CD",
+      "query.CRCY_CD",
+      "query.PDNO",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.WCRC_FRCR_DVSN_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_해외주식-014",
@@ -813,7 +1190,14 @@
       "query.OVRS_EXCG_CD": "해외거래소코드 (필수) — NASD : 나스닥 / NYSE : 뉴욕 / AMEX : 아멕스 SEHK : 홍콩 / SHAA : 중국상해 / SZAA : 중국심천 TKSE :…",
       "query.OVRS_ORD_UNPR": "해외주문단가 (필수) — 해외주문단가 (23.8) 정수부분 23자리, 소수부분 8자리",
       "query.ITEM_CD": "종목코드 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.OVRS_EXCG_CD",
+      "query.OVRS_ORD_UNPR",
+      "query.ITEM_CD"
+    ]
   },
   {
     "id": "v1_해외주식-003",
@@ -834,7 +1218,17 @@
       "body.OVRS_ORD_UNPR": "해외주문단가 (필수) — 취소주문 시, \"0\" 입력",
       "body.MGCO_APTM_ODNO": "운용사지정주문번호",
       "body.ORD_SVR_DVSN_CD": "주문서버구분코드 — \"0\"(Default)"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.OVRS_EXCG_CD",
+      "body.PDNO",
+      "body.ORGN_ODNO",
+      "body.RVSE_CNCL_DVSN_CD",
+      "body.ORD_QTY",
+      "body.OVRS_ORD_UNPR"
+    ]
   },
   {
     "id": "v1_해외주식-002",
@@ -859,7 +1253,17 @@
       "body.ORD_DVSN": "주문구분 — tr_id가 TTTT3014U(미국 예약 매수 주문)인 경우만 사용 00 : 지정가 35 : TWAP 36 : VWAP tr_id가 TTTT30…",
       "body.OVRS_RSVN_ODNO": "해외예약주문번호 — tr_id가 TTTS3013U(중국/홍콩/일본/베트남 예약 주문)인 경우만 사용",
       "body.ALGO_ORD_TMD_DVSN_CD": "알고리즘주문시간구분코드 — ※ TWAP, VWAP 주문에서만 사용. 예약주문은 시간입력 불가하여 02로 값 고정 ※ 정규장 종료 10분전까지 가능"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.RVSE_CNCL_DVSN_CD",
+      "body.PDNO",
+      "body.PRDT_TYPE_CD",
+      "body.OVRS_EXCG_CD",
+      "body.FT_ORD_QTY",
+      "body.FT_ORD_UNPR3"
+    ]
   },
   {
     "id": "v1_해외주식-005",
@@ -876,7 +1280,15 @@
       "query.SORT_SQN": "정렬순서 (필수) — DS : 정순 그외 : 역순 [header tr_id: TTTS3018R] \"\"(공란)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.OVRS_EXCG_CD",
+      "query.SORT_SQN",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_해외주식-027",
@@ -898,7 +1310,20 @@
       "body.CTAC_TLNO": "연락전화번호 (필수) — \" \"",
       "body.MGCO_APTM_ODNO": "운용사지정주문번호 (필수) — \" \"",
       "body.ORD_SVR_DVSN_CD": "주문서버구분코드 (필수) — \"0\""
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.OVRS_EXCG_CD",
+      "body.PDNO",
+      "body.ORGN_ODNO",
+      "body.RVSE_CNCL_DVSN_CD",
+      "body.ORD_QTY",
+      "body.OVRS_ORD_UNPR",
+      "body.CTAC_TLNO",
+      "body.MGCO_APTM_ODNO",
+      "body.ORD_SVR_DVSN_CD"
+    ]
   },
   {
     "id": "v1_해외주식-007",
@@ -923,7 +1348,23 @@
       "query.ODNO": "주문번호 (필수) — \"\" (Null 값 설정) ※ 주문번호로 검색 불가능합니다. 반드시 \"\"(Null 값 설정) 바랍니다.",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO",
+      "query.ORD_STRT_DT",
+      "query.ORD_END_DT",
+      "query.SLL_BUY_DVSN",
+      "query.CCLD_NCCS_DVSN",
+      "query.OVRS_EXCG_CD",
+      "query.SORT_SQN",
+      "query.ORD_DT",
+      "query.ORD_GNO_BRNO",
+      "query.ODNO",
+      "query.CTX_AREA_NK200",
+      "query.CTX_AREA_FK200"
+    ]
   },
   {
     "id": "해외주식-064",
@@ -939,7 +1380,14 @@
       "query.BASS_DT": "기준일자 (필수)",
       "query.WCRC_FRCR_DVSN_CD": "원화외화구분코드 (필수) — 01(원화기준),02(외화기준)",
       "query.INQR_DVSN_CD": "조회구분코드 (필수) — 00(전체), 01(일반), 02(미니스탁)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.BASS_DT",
+      "query.WCRC_FRCR_DVSN_CD",
+      "query.INQR_DVSN_CD"
+    ]
   },
   {
     "id": "해외주식-063",
@@ -960,7 +1408,19 @@
       "query.LOAN_DVSN_CD": "대출구분코드 (필수) — 공백",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수) — 공백",
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ERLM_STRT_DT",
+      "query.ERLM_END_DT",
+      "query.OVRS_EXCG_CD",
+      "query.PDNO",
+      "query.SLL_BUY_DVSN_CD",
+      "query.LOAN_DVSN_CD",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "v1_해외주식-026",
@@ -981,7 +1441,17 @@
       "body.MGCO_APTM_ODNO": "운용사지정주문번호 — \" \"",
       "body.ORD_SVR_DVSN_CD": "주문서버구분코드 (필수) — \"0\"",
       "body.ORD_DVSN": "주문구분 (필수) — [미국 매수/매도 주문] 00 : 지정가 * 주간거래는 지정가만 가능"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.OVRS_EXCG_CD",
+      "body.PDNO",
+      "body.ORD_QTY",
+      "body.OVRS_ORD_UNPR",
+      "body.ORD_SVR_DVSN_CD",
+      "body.ORD_DVSN"
+    ]
   },
   {
     "id": "v1_해외주식-013",
@@ -1001,7 +1471,18 @@
       "query.OVRS_EXCG_CD": "해외거래소코드 (필수) — [tr_id=TTTT3039R인 경우] 공백 입력 시 미국주식 전체조회 [tr_id=TTTS3014R인 경우] 공백 입력 시 아시아주식 전체조회…",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK200값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK200값 : 다음페이지 조회시(2번째부터)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.INQR_DVSN_CD",
+      "query.PRDT_TYPE_CD",
+      "query.OVRS_EXCG_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_해외주식-001",
@@ -1026,7 +1507,17 @@
       "body.START_TIME": "시작시간 — ※ TWAP, VWAP 주문유형이고 알고리즘주문시간구분코드가 00일때 사용 ※ YYMMDD 형태로 입력 ※ 시간 입력 시 정규장 종료 5분전까지…",
       "body.END_TIME": "종료시간 — ※ TWAP, VWAP 주문유형이고 알고리즘주문시간구분코드가 00일때 사용 ※ YYMMDD 형태로 입력 ※ 시간 입력 시 정규장 종료 5분전까지…",
       "body.ALGO_ORD_TMD_DVSN_CD": "알고리즘주문시간구분코드 — 00 : 분할주문 시간 직접입력 , 02 : 정규장 종료시까지"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.OVRS_EXCG_CD",
+      "body.PDNO",
+      "body.ORD_QTY",
+      "body.OVRS_ORD_UNPR",
+      "body.ORD_SVR_DVSN_CD",
+      "body.ORD_DVSN"
+    ]
   },
   {
     "id": "v1_해외주식-004",
@@ -1041,7 +1532,13 @@
       "body.ACNT_PRDT_CD": "계좌상품코드 (필수) — 계좌번호 체계(8-2)의 뒤 2자리",
       "body.RSYN_ORD_RCIT_DT": "해외주문접수일자 (필수)",
       "body.OVRS_RSVN_ODNO": "해외예약주문번호 (필수) — 해외주식_예약주문접수 API Output ODNO(주문번호) 참고"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.RSYN_ORD_RCIT_DT",
+      "body.OVRS_RSVN_ODNO"
+    ]
   },
   {
     "id": "해외주식-071",
@@ -1057,7 +1554,12 @@
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수) — 계좌상품코드 (2자리) : 주식계좌는 01",
       "query.CTX_AREA_NK200": "연속조회키200",
       "query.CTX_AREA_FK200": "연속조회조건200"
-    }
+    },
+    "required": [
+      "query.TRAD_DT",
+      "query.CANO",
+      "query.ACNT_PRDT_CD"
+    ]
   },
   {
     "id": "해외주식-035",
@@ -1070,7 +1572,11 @@
     "params": {
       "query.CANO": "종합계좌번호 (필수)",
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD"
+    ]
   },
   {
     "id": "v1_해외선물-001",
@@ -1097,7 +1603,21 @@
       "body.CPLX_ORD_DVSN_CD": "복합주문구분코드 (필수) — 0 (hedge청산만 이용)",
       "body.ECIS_RSVN_ORD_YN": "행사예약주문여부 (필수) — N",
       "body.FM_HDGE_ORD_SCRN_YN": "FM_HEDGE주문화면여부 (필수) — N"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.OVRS_FUTR_FX_PDNO",
+      "body.SLL_BUY_DVSN_CD",
+      "body.PRIC_DVSN_CD",
+      "body.FM_LIMIT_ORD_PRIC",
+      "body.FM_STOP_ORD_PRIC",
+      "body.FM_ORD_QTY",
+      "body.CCLD_CNDT_CD",
+      "body.CPLX_ORD_DVSN_CD",
+      "body.ECIS_RSVN_ORD_YN",
+      "body.FM_HDGE_ORD_SCRN_YN"
+    ]
   },
   {
     "id": "v1_해외선물-002, 003",
@@ -1118,7 +1638,14 @@
       "body.FM_LQD_STOP_ORD_PRIC": "FM청산STOP주문가격 — OTFM3002U(해외선물옵션주문정정)만 사용",
       "body.FM_HDGE_ORD_SCRN_YN": "FM_HEDGE주문화면여부 (필수) — N",
       "body.FM_MKPR_CVSN_YN": "FM시장가전환여부 — OTFM3003U(해외선물옵션주문취소)만 사용 ※ FM_MKPR_CVSN_YN 항목에 'Y'로 설정하여 취소주문을 접수할 경우, 주문 취소확인이…"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.ORGN_ORD_DT",
+      "body.ORGN_ODNO",
+      "body.FM_HDGE_ORD_SCRN_YN"
+    ]
   },
   {
     "id": "v1_해외선물-004",
@@ -1136,7 +1663,16 @@
       "query.FUOP_DVSN": "선물옵션구분 (필수) — 00:전체 / 01:선물 / 02:옵션",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.CCLD_NCCS_DVSN",
+      "query.SLL_BUY_DVSN_CD",
+      "query.FUOP_DVSN",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_해외선물-005",
@@ -1152,7 +1688,14 @@
       "query.FUOP_DVSN": "선물옵션구분 (필수) — 00: 전체 / 01:선물 / 02: 옵션",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수)",
       "query.CTX_AREA_NK100": "연속조회키100 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.FUOP_DVSN",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "v1_해외선물-006",
@@ -1169,7 +1712,15 @@
       "query.SLL_BUY_DVSN_CD": "매도매수구분코드 (필수) — 01 : 매도 / 02 : 매수",
       "query.FM_ORD_PRIC": "FM주문가격 (필수)",
       "query.ECIS_RSVN_ORD_YN": "행사예약주문여부 (필수) — N"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.OVRS_FUTR_FX_PDNO",
+      "query.SLL_BUY_DVSN_CD",
+      "query.FM_ORD_PRIC",
+      "query.ECIS_RSVN_ORD_YN"
+    ]
   },
   {
     "id": "해외선물-010",
@@ -1189,7 +1740,18 @@
       "query.FUOP_DVSN": "선물옵션구분 (필수) — 00:전체 / 01:선물 / 02:옵션",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)"
-    }
+    },
+    "required": [
+      "query.INQR_TERM_FROM_DT",
+      "query.INQR_TERM_TO_DT",
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.CRCY_CD",
+      "query.WHOL_TRSL_YN",
+      "query.FUOP_DVSN",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "해외선물-011",
@@ -1211,7 +1773,20 @@
       "query.SLL_BUY_DVSN_CD": "매도매수구분코드 (필수) — %%: 전체 / 01 : 매도 / 02 : 매수",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.STRT_DT",
+      "query.END_DT",
+      "query.FUOP_DVSN_CD",
+      "query.FM_PDGR_CD",
+      "query.CRCY_CD",
+      "query.FM_ITEM_FTNG_YN",
+      "query.SLL_BUY_DVSN_CD",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "해외선물-012",
@@ -1226,7 +1801,13 @@
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수) — 계좌번호 체계(8-2)의 뒤 2자리",
       "query.CRCY_CD": "통화코드 (필수) — TUS: TOT_USD / TKR: TOT_KRW KRW: 한국 / USD: 미국 EUR: EUR / HKD: 홍콩 CNY: 중국 / JPY: …",
       "query.INQR_DT": "조회일자 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.CRCY_CD",
+      "query.INQR_DT"
+    ]
   },
   {
     "id": "해외선물-013",
@@ -1247,7 +1828,19 @@
       "query.FUOP_DVSN": "선물옵션구분 (필수) — 00:전체 / 01:선물 / 02:옵션",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.STRT_DT",
+      "query.END_DT",
+      "query.FM_PDGR_CD",
+      "query.CCLD_NCCS_DVSN",
+      "query.SLL_BUY_DVSN_CD",
+      "query.FUOP_DVSN",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "해외선물-014",
@@ -1267,7 +1860,18 @@
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_FK100값 : 다음페이지 조회시(2번째부터)",
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — 공란 : 최초 조회시 이전 조회 Output CTX_AREA_NK100값 : 다음페이지 조회시(2번째부터)",
       "query.PWD_CHK_YN": "비밀번호체크여부 (필수) — 공란(Default)"
-    }
+    },
+    "required": [
+      "query.INQR_TERM_FROM_DT",
+      "query.INQR_TERM_TO_DT",
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ACNT_TR_TYPE_CD",
+      "query.CRCY_CD",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100",
+      "query.PWD_CHK_YN"
+    ]
   },
   {
     "id": "해외선물-032",
@@ -1282,7 +1886,13 @@
       "query.ACNT_PRDT_CD": "계좌상품코드 (필수)",
       "query.CRCY_CD": "통화코드 (필수) — 'TKR(TOT_KRW), TUS(TOT_USD), USD(미국달러), HKD(홍콩달러), CNY(중국위안화), JPY )일본엔화), VND(베…",
       "query.INQR_DT": "조회일자 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.CRCY_CD",
+      "query.INQR_DT"
+    ]
   },
   {
     "id": "국내주식-124",
@@ -1304,7 +1914,20 @@
       "body.MGCO_APTM_ODNO": "운용사지정주문번호 (필수) — 공백",
       "body.ORD_SVR_DVSN_CD": "주문서버구분코드 (필수) — Unique key(0)",
       "body.CTAC_TLNO": "연락전화번호 (필수)"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.PDNO",
+      "body.ORD_QTY2",
+      "body.BOND_ORD_UNPR",
+      "body.SAMT_MKET_PTCI_YN",
+      "body.BOND_RTL_MKET_YN",
+      "body.IDCR_STFNO",
+      "body.MGCO_APTM_ODNO",
+      "body.ORD_SVR_DVSN_CD",
+      "body.CTAC_TLNO"
+    ]
   },
   {
     "id": "국내주식-123",
@@ -1330,7 +1953,24 @@
       "body.MGCO_APTM_ODNO": "운용사지정주문번호 (필수) — 공백",
       "body.ORD_SVR_DVSN_CD": "주문서버구분코드 (필수) — Unique key(0)",
       "body.CTAC_TLNO": "연락전화번호 (필수)"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.ORD_DVSN",
+      "body.PDNO",
+      "body.ORD_QTY2",
+      "body.BOND_ORD_UNPR",
+      "body.SPRX_YN",
+      "body.BUY_DT",
+      "body.BUY_SEQ",
+      "body.SAMT_MKET_PTCI_YN",
+      "body.SLL_AGCO_OPPS_SLL_YN",
+      "body.BOND_RTL_MKET_YN",
+      "body.MGCO_APTM_ODNO",
+      "body.ORD_SVR_DVSN_CD",
+      "body.CTAC_TLNO"
+    ]
   },
   {
     "id": "국내주식-125",
@@ -1352,7 +1992,20 @@
       "body.MGCO_APTM_ODNO": "운용사지정주문번호 (필수) — 공백",
       "body.ORD_SVR_DVSN_CD": "주문서버구분코드 (필수) — Unique key(0)",
       "body.CTAC_TLNO": "연락전화번호 (필수) — -"
-    }
+    },
+    "required": [
+      "body.CANO",
+      "body.ACNT_PRDT_CD",
+      "body.PDNO",
+      "body.ORGN_ODNO",
+      "body.ORD_QTY2",
+      "body.BOND_ORD_UNPR",
+      "body.QTY_ALL_ORD_YN",
+      "body.RVSE_CNCL_DVSN_CD",
+      "body.MGCO_APTM_ODNO",
+      "body.ORD_SVR_DVSN_CD",
+      "body.CTAC_TLNO"
+    ]
   },
   {
     "id": "국내주식-126",
@@ -1369,7 +2022,15 @@
       "query.ODNO": "주문번호 (필수)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.ORD_DT",
+      "query.ODNO",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "국내주식-127",
@@ -1390,7 +2051,19 @@
       "query.NCCS_YN": "미체결여부 (필수) — N(전체), C(체결), Y(미체결)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.SLL_BUY_DVSN_CD",
+      "query.SORT_SQN_DVSN",
+      "query.PDNO",
+      "query.NCCS_YN",
+      "query.CTX_AREA_NK200",
+      "query.CTX_AREA_FK200"
+    ]
   },
   {
     "id": "국내주식-198",
@@ -1408,7 +2081,16 @@
       "query.BUY_DT": "매수일자 (필수) — 공백",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.INQR_CNDT",
+      "query.PDNO",
+      "query.BUY_DT",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "국내주식-199",
@@ -1424,7 +2106,14 @@
       "query.PDNO": "상품번호 (필수)",
       "query.BOND_ORD_UNPR": "채권주문단가 (필수)",
       "query.SAMT_MKET_PTCI_YN": "소액시장참여여부 (필수) — Y(소액시장) N (일반시장)"
-    }
+    },
+    "required": [
+      "query.CANO",
+      "query.ACNT_PRDT_CD",
+      "query.PDNO",
+      "query.BOND_ORD_UNPR",
+      "query.SAMT_MKET_PTCI_YN"
+    ]
   },
   {
     "id": "place_order",

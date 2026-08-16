@@ -12,7 +12,13 @@
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드 (ex 005930 삼성전자)",
       "query.FID_PERIOD_DIV_CODE": "기간 분류 코드 (필수) — 'D : (일)최근 30거래일 W : (주)최근 30주 M : (월)최근 30개월'",
       "query.FID_ORG_ADJ_PRC": "수정주가 원주가 가격 (필수) — '0 : 수정주가미반영 1 : 수정주가반영 * 수정주가는 액면분할/액면병합 등 권리 발생 시 과거 시세를 현재 주가에 맞게 보정한 가격'"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_PERIOD_DIV_CODE",
+      "query.FID_ORG_ADJ_PRC"
+    ]
   },
   {
     "id": "v1_국내주식-008",
@@ -25,7 +31,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J:KRX, NX:NXT, UN:통합",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드 (ex 005930 삼성전자) // ETN은 종목코드 6자리 앞에 Q 입력 필수"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-076",
@@ -38,7 +48,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-073",
@@ -52,7 +66,12 @@
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — 시장구분코드 (J)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 종목코드",
       "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — Unique key( 11216 )"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_SCR_DIV_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-025",
@@ -66,7 +85,12 @@
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J : 주식, ETF, ETN",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)",
       "query.FID_HOUR_CLS_CODE": "시간 구분 코드 (필수) — 1 : 시간외 (Default)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_HOUR_CLS_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-069",
@@ -79,7 +103,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "v1_국내주식-026",
@@ -92,7 +120,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — J : 주식, ETF, ETN",
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-077",
@@ -105,7 +137,11 @@
     "params": {
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드",
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)"
-    }
+    },
+    "required": [
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_MRKT_DIV_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-023",
@@ -119,7 +155,12 @@
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J:KRX, NX:NXT, UN:통합",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드 (ex 005930 삼성전자)",
       "query.FID_INPUT_HOUR_1": "입력 시간1 (필수) — 입력시간"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_HOUR_1"
+    ]
   },
   {
     "id": "v1_국내주식-054",
@@ -132,7 +173,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — J:KRX, NX:NXT, UN:통합",
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 000660"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "ETF 현재가 호가",
@@ -145,7 +190,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목번호 (6자리)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-213",
@@ -162,7 +211,14 @@
       "query.FID_INPUT_DATE_1": "입력 날짜1 (필수) — 입력 날짜(20241023)",
       "query.FID_PW_DATA_INCU_YN": "과거 데이터 포함 여부 (필수)",
       "query.FID_FAKE_TICK_INCU_YN": "허봉 포함 여부 — 공백 필수 입력"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_HOUR_1",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_PW_DATA_INCU_YN"
+    ]
   },
   {
     "id": "v1_국내주식-016",
@@ -187,7 +243,13 @@
       "query.fid_input_iscd": "FID 입력 종목코드 (필수) — 종목코드 (6자리)",
       "query.fid_input_date_1": "FID 입력 날짜1 (필수) — 조회 시작일자 (ex. 20240101)",
       "query.fid_input_date_2": "FID 입력 날짜2 (필수) — 조회 종료일자 (ex. 20240220)"
-    }
+    },
+    "required": [
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_input_iscd",
+      "query.fid_input_date_1",
+      "query.fid_input_date_2"
+    ]
   },
   {
     "id": "v1_국내주식-011",
@@ -210,7 +272,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J:KRX, NX:NXT, UN:통합",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드 (ex 005930 삼성전자)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "v1_국내주식-013",
@@ -223,7 +289,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — J:KRX, NX:NXT, UN:통합",
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "v1_국내주식-070",
@@ -237,7 +307,12 @@
       "query.fid_hour_cls_code": "FID 시간 구분 코드 (필수) — 1분 :60, 3분: 180 … 120분:7200",
       "query.fid_cond_mrkt_div_code": "FID 조건 시장 분류 코드 (필수) — E - 고정값",
       "query.fid_input_iscd": "FID 입력 종목코드 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.fid_hour_cls_code",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_input_iscd"
+    ]
   },
   {
     "id": "v1_국내주식-012",
@@ -250,7 +325,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J : KRX, NX : NXT, UN : 통합",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드 (ex 005930 삼성전자)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "v1_국내주식-068",
@@ -276,7 +355,14 @@
       "query.FID_COND_SCR_DIV_CODE": "조건 화면 분류 코드 (필수) — Unique key(11173)",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 0000:전체, 0001:거래소, 1001:코스닥, 2001:코스피200, 4001: KRX100",
       "query.FID_BLNG_CLS_CODE": "소속 구분 코드 (필수) — 0:전체, 1:종가범위연장"
-    }
+    },
+    "required": [
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_BLNG_CLS_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-022",
@@ -292,7 +378,14 @@
       "query.FID_INPUT_HOUR_1": "입력 시간1 (필수) — 입력시간",
       "query.FID_PW_DATA_INCU_YN": "과거 데이터 포함 여부 (필수)",
       "query.FID_ETC_CLS_CODE": "기타 구분 코드 (필수)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_HOUR_1",
+      "query.FID_PW_DATA_INCU_YN",
+      "query.FID_ETC_CLS_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-014",
@@ -305,7 +398,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — W",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목번호 (6자리)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-181",
@@ -323,7 +420,16 @@
       "query.FID_INPUT_ISCD_2": "입력종목코드2 (필수) — '00003(한국투자증권), 00017(KB증권), 00005(미래에셋증권)'",
       "query.FID_INPUT_DATE_1": "입력날짜1 (필수) — 날짜 (ex) 20240402)",
       "query.FID_BLNC_CLS_CODE": "결재방법 (필수) — 0(전체), 1(일반), 2(조기종료)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_INPUT_ISCD_2",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_BLNC_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-173",
@@ -336,7 +442,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "시장분류코드 (필수) — W",
       "query.FID_INPUT_ISCD": "종콕코드 (필수) — ex. 57K281"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-170",
@@ -360,7 +470,22 @@
       "query.FID_INPUT_RMNN_DYNU_1": "잔존일수(이상) (필수)",
       "query.FID_INPUT_DATE_1": "조회기준일 (필수)",
       "query.FID_BLNG_CLS_CODE": "결재방법 (필수) — 0(전체), 1(일반), 2(조기종료)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_INPUT_ISCD",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_INPUT_VOL_1",
+      "query.FID_INPUT_VOL_2",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_INPUT_RMNN_DYNU_1",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_BLNG_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-186",
@@ -387,7 +512,25 @@
       "query.FID_OPTION": "옵션 (필수) — 옵션상태(0:없음,1:ATM,2:ITM,3:OTM)",
       "query.FID_INPUT_OPTION_1": "입력옵션1 (필수)",
       "query.FID_INPUT_OPTION_2": "입력옵션2 (필수)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_VOL_CNT",
+      "query.FID_TRGT_EXLS_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_INPUT_VOL_1",
+      "query.FID_INPUT_VOL_2",
+      "query.FID_INPUT_RMNN_DYNU_1",
+      "query.FID_INPUT_RMNN_DYNU_2",
+      "query.FID_OPTION",
+      "query.FID_INPUT_OPTION_1",
+      "query.FID_INPUT_OPTION_2"
+    ]
   },
   {
     "id": "국내주식-166",
@@ -455,7 +598,66 @@
       "query.FID_INPUT_HIST_VLTL": "역사적변동성 (필수) — 손익분기점이하",
       "query.FID_THETA1": "세타1 (필수) — MONEYNESS이상",
       "query.FID_THETA2": "세타2 (필수) — MONEYNESS이하"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_INPUT_CNT_1",
+      "query.FID_RANK_SORT_CLS_CODE_2",
+      "query.FID_INPUT_CNT_2",
+      "query.FID_RANK_SORT_CLS_CODE_3",
+      "query.FID_INPUT_CNT_3",
+      "query.FID_TRGT_CLS_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_DATE_2",
+      "query.FID_INPUT_ISCD_2",
+      "query.FID_ETC_CLS_CODE",
+      "query.FID_INPUT_RMNN_DYNU_1",
+      "query.FID_INPUT_RMNN_DYNU_2",
+      "query.FID_PRPR_CNT1",
+      "query.FID_PRPR_CNT2",
+      "query.FID_RSFL_RATE1",
+      "query.FID_RSFL_RATE2",
+      "query.FID_VOL1",
+      "query.FID_VOL2",
+      "query.FID_APLY_RANG_PRC_1",
+      "query.FID_APLY_RANG_PRC_2",
+      "query.FID_LVRG_VAL1",
+      "query.FID_LVRG_VAL2",
+      "query.FID_VOL3",
+      "query.FID_VOL4",
+      "query.FID_INTS_VLTL1",
+      "query.FID_INTS_VLTL2",
+      "query.FID_PRMM_VAL1",
+      "query.FID_PRMM_VAL2",
+      "query.FID_GEAR1",
+      "query.FID_GEAR2",
+      "query.FID_PRLS_QRYR_RATE1",
+      "query.FID_PRLS_QRYR_RATE2",
+      "query.FID_DELTA1",
+      "query.FID_DELTA2",
+      "query.FID_ACPR1",
+      "query.FID_ACPR2",
+      "query.FID_STCK_CNVR_RATE1",
+      "query.FID_STCK_CNVR_RATE2",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_PRIT1",
+      "query.FID_PRIT2",
+      "query.FID_CFP1",
+      "query.FID_CFP2",
+      "query.FID_INPUT_NMIX_PRICE_1",
+      "query.FID_INPUT_NMIX_PRICE_2",
+      "query.FID_EGEA_VAL1",
+      "query.FID_EGEA_VAL2",
+      "query.FID_INPUT_DVDN_ERT",
+      "query.FID_INPUT_HIST_VLTL",
+      "query.FID_THETA1",
+      "query.FID_THETA2"
+    ]
   },
   {
     "id": "국내주식-179",
@@ -470,7 +672,13 @@
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex) 58J297(KBJ297삼성전자콜)",
       "query.FID_HOUR_CLS_CODE": "시간구분코드 (필수) — '60(1분), 180(3분), 300(5분), 600(10분), 1800(30분), 3600(60분) '",
       "query.FID_PW_DATA_INCU_YN": "과거데이터 포함 여부 (필수) — N(과거데이터포함X),Y(과거데이터포함O)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_HOUR_CLS_CODE",
+      "query.FID_PW_DATA_INCU_YN"
+    ]
   },
   {
     "id": "국내주식-177",
@@ -483,7 +691,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — W(Unique key)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex) 58J297(KBJ297삼성전자콜)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-171",
@@ -508,7 +720,23 @@
       "query.FID_INPUT_HOUR_2": "기준시간(분 선택 시) (필수)",
       "query.FID_RANK_SORT_CLS_CODE": "순위정렬구분코드 (필수) — '1(가격급등), 2(가격급락), 3(거래량급증) , 4(매수잔량급증), 5(매도잔량급증)'",
       "query.FID_BLNG_CLS_CODE": "결재방법 (필수) — 0(전체), 1(일반), 2(조기종료)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_INPUT_ISCD",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_INPUT_VOL_1",
+      "query.FID_INPUT_VOL_2",
+      "query.FID_HOUR_CLS_CODE",
+      "query.FID_INPUT_HOUR_1",
+      "query.FID_INPUT_HOUR_2",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_BLNG_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-174",
@@ -523,7 +751,13 @@
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex) 58J297(KBJ297삼성전자콜)",
       "query.FID_HOUR_CLS_CODE": "시간구분코드 (필수) — '60(1분), 180(3분), 300(5분), 600(10분), 1800(30분), 3600(60분), 7200(60분) '",
       "query.FID_PW_DATA_INCU_YN": "과거데이터 포함 여부 (필수) — N(과거데이터포함X),Y(과거데이터포함O)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_HOUR_CLS_CODE",
+      "query.FID_PW_DATA_INCU_YN"
+    ]
   },
   {
     "id": "국내주식-185",
@@ -537,7 +771,12 @@
       "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — 11541(Primary key)",
       "query.FID_RANK_SORT_CLS_CODE": "순위정렬구분코드 (필수) — 0(종목명순), 1(콜발행종목순), 2(풋발행종목순), 3(전일대비 상승율순), 4(전일대비 하락율순), 5(현재가 크기순), 6(종목코드순)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 00000(전체), 00003(한국투자증권), 00017(KB증권), 00005(미래에셋)"
-    }
+    },
+    "required": [
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-178",
@@ -550,7 +789,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — 시장구분코드 (W)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex) 58J297(KBJ297삼성전자콜)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-168",
@@ -576,7 +819,24 @@
       "query.FID_BLNG_CLS_CODE": "소속구분코드 (필수) — 0: 전체",
       "query.FID_INPUT_ISCD_2": "LP발행사 (필수) — 0000",
       "query.FID_INPUT_DATE_2": "만기일-최종거래일조회 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_RMNN_DYNU_1",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_INPUT_VOL_1",
+      "query.FID_INPUT_VOL_2",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_BLNG_CLS_CODE",
+      "query.FID_INPUT_ISCD_2",
+      "query.FID_INPUT_DATE_2"
+    ]
   },
   {
     "id": "국내주식-169",
@@ -598,7 +858,20 @@
       "query.FID_INPUT_VOL_2": "거래량(이하) (필수)",
       "query.FID_RANK_SORT_CLS_CODE": "순위정렬구분코드 (필수) — 0(전환비율), 1(레버리지), 2(행사가 ), 3(내재가치), 4(시간가치)",
       "query.FID_BLNG_CLS_CODE": "결재방법 (필수) — 0(전체), 1(일반), 2(조기종료)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_INPUT_ISCD",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_INPUT_VOL_1",
+      "query.FID_INPUT_VOL_2",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_BLNG_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-172",
@@ -611,7 +884,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — 시장구분코드 (W)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex) 58J297(KBJ297삼성전자콜)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-167",
@@ -636,7 +913,23 @@
       "query.FID_RANK_SORT_CLS_CODE": "NEXT KEY BUFF (필수) — '0(상승율), 1(하락율), 2(시가대비상승율) , 3(시가대비하락율), 4(변동율)'",
       "query.FID_BLNG_CLS_CODE": "사용자권한정보 (필수) — 0(전체)",
       "query.FID_INPUT_DATE_2": "거래소코드 (필수)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_UNAS_INPUT_ISCD",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_RMNN_DYNU_1",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_INPUT_VOL_1",
+      "query.FID_INPUT_VOL_2",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_BLNG_CLS_CODE",
+      "query.FID_INPUT_DATE_2"
+    ]
   },
   {
     "id": "국내주식-176",
@@ -649,7 +942,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — 시장구분코드 (W)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex)(58J438(KBJ438삼성전자풋)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-183",
@@ -662,7 +959,11 @@
     "params": {
       "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — 11517(Primary key)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 종목코드(ex)005930(삼성전자))"
-    }
+    },
+    "required": [
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-184",
@@ -685,7 +986,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — 시장구분(W)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 입력종목코드(ex 52K577(미래 K577KOSDAQ150콜)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-175",
@@ -698,7 +1003,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — 시장구분코드 (W)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex) 58J297(KBJ297삼성전자콜)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-180",
@@ -711,7 +1020,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — W(Unique key)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — ex) 58J297(KBJ297삼성전자콜)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-121",
@@ -726,7 +1039,13 @@
       "query.FID_INPUT_HOUR_1": "입력 시간1 (필수) — 10(10초), 30(30초), 60(1분), 600(10분)",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 0000:전체, 0001:코스피, 1001:코스닥, 2001:코스피200, 4001: KRX100",
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 U)"
-    }
+    },
+    "required": [
+      "query.FID_MKOP_CLS_CODE",
+      "query.FID_INPUT_HOUR_1",
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_MRKT_DIV_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-021",
@@ -750,7 +1069,12 @@
       "query.FID_INPUT_HOUR_1": "?입력 시간1 (필수) — 초단위, 60(1분), 300(5분), 600(10분)",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 0001:거래소, 1001:코스닥, 2001:코스피200, 3003:KSQ150",
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 시장구분코드 (업종 U)"
-    }
+    },
+    "required": [
+      "query.FID_INPUT_HOUR_1",
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_MRKT_DIV_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-066",
@@ -766,7 +1090,14 @@
       "query.FID_COND_SCR_DIV_CODE": "FID 조건 화면 분류 코드 (필수) — Unique key( 20214 )",
       "query.FID_MRKT_CLS_CODE": "FID 시장 구분 코드 (필수) — 시장구분코드(K:거래소, Q:코스닥, K2:코스피200)",
       "query.FID_BLNG_CLS_CODE": "FID 소속 구분 코드 (필수) — 시장구분코드에 따라 아래와 같이 입력 시장구분코드(K:거래소) 0:전업종, 1:기타구분, 2:자본금구분 3:상업별구분 시장구분코드(Q:코스닥) …"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_BLNG_CLS_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-045",
@@ -782,7 +1113,14 @@
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 0001 : 종합 0002 : 대형주 ... 포탈 (FAQ : 종목정보 다운로드(국내) - 업종코드 참조)",
       "query.FID_INPUT_HOUR_1": "FID 입력 시간1 (필수) — 30, 60 -> 1분, 600-> 10분, 3600 -> 1시간",
       "query.FID_PW_DATA_INCU_YN": "FID 과거 데이터 포함 여부 (필수) — Y (과거) / N (당일)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_ETC_CLS_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_HOUR_1",
+      "query.FID_PW_DATA_INCU_YN"
+    ]
   },
   {
     "id": "국내주식-040",
@@ -796,7 +1134,12 @@
       "query.BASS_DT": "기준일자 (필수) — 기준일자(YYYYMMDD)",
       "query.CTX_AREA_NK": "연속조회키 (필수) — 공백으로 입력",
       "query.CTX_AREA_FK": "연속조회검색조건 (필수) — 공백으로 입력"
-    }
+    },
+    "required": [
+      "query.BASS_DT",
+      "query.CTX_AREA_NK",
+      "query.CTX_AREA_FK"
+    ]
   },
   {
     "id": "국내주식-122",
@@ -812,7 +1155,14 @@
       "query.fid_cond_scr_div_code": "조건 화면 분류 코드 (필수) — Unique key(11175)",
       "query.fid_input_iscd": "입력 종목코드 (필수) — 0000:전체, 0001:거래소, 1001:코스닥, 2001:코스피200, 4001: KRX100",
       "query.fid_mkop_cls_code": "장운영 구분 코드 (필수) — 1:장시작전, 2:장마감"
-    }
+    },
+    "required": [
+      "query.fid_mrkt_cls_code",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_mkop_cls_code"
+    ]
   },
   {
     "id": "v1_국내주식-063",
@@ -825,7 +1175,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — 업종(U)",
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 코스피(0001), 코스닥(1001), 코스피200(2001) ... 포탈 (FAQ : 종목정보 다운로드(국내) - 업종코드 참조)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-160",
@@ -848,7 +1202,11 @@
     "params": {
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 0001:거래소, 1001:코스닥, 2001:코스피200, 3003:KSQ150",
       "query.FID_COND_MRKT_DIV_CODE": "시장 분류 코드 (필수) — 시장구분코드 (업종 U)"
-    }
+    },
+    "required": [
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_MRKT_DIV_CODE"
+    ]
   },
   {
     "id": "v1_국내주식-065",
@@ -863,7 +1221,13 @@
       "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — 시장구분코드 (업종 U)",
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 코스피(0001), 코스닥(1001), 코스피200(2001) ... 포탈 (FAQ : 종목정보 다운로드(국내) - 업종코드 참조)",
       "query.FID_INPUT_DATE_1": "FID 입력 날짜1 (필수) — 입력 날짜(ex. 20240223)"
-    }
+    },
+    "required": [
+      "query.FID_PERIOD_DIV_CODE",
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_DATE_1"
+    ]
   },
   {
     "id": "국내주식-155",
@@ -892,7 +1256,17 @@
       "query.FID_INPUT_DATE_1": "FID 입력 날짜1 (필수) — 영업일",
       "query.FID_TRGT_CLS_CODE": "FID 대상 구분 코드 (필수)",
       "query.FID_TRGT_EXLS_CLS_CODE": "FID 대상 제외 구분 코드 (필수)"
-    }
+    },
+    "required": [
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_TRGT_CLS_CODE",
+      "query.FID_TRGT_EXLS_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-141",
@@ -915,7 +1289,11 @@
     "params": {
       "query.PDNO": "상품번호 (필수) — '주식(하이닉스) : 000660 (코드 : 300) 선물(101S12) : KR4101SC0009 (코드 : 301) 미국(AAPL) : AA…",
       "query.PRDT_TYPE_CD": "상품유형코드 (필수) — '300 주식 301 선물옵션 302 채권 512 미국 나스닥 / 513 미국 뉴욕 / 529 미국 아멕스 515 일본 501 홍콩 / 543 …"
-    }
+    },
+    "required": [
+      "query.PDNO",
+      "query.PRDT_TYPE_CD"
+    ]
   },
   {
     "id": "국내주식-150",
@@ -930,7 +1308,13 @@
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.CTS": "CTS (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.SHT_CD",
+      "query.T_DT",
+      "query.F_DT",
+      "query.CTS"
+    ]
   },
   {
     "id": "국내주식-151",
@@ -945,7 +1329,13 @@
       "query.CTS": "CTS (필수) — 공백",
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.T_DT": "조회일자To (필수) — ~ 일자"
-    }
+    },
+    "required": [
+      "query.SHT_CD",
+      "query.CTS",
+      "query.F_DT",
+      "query.T_DT"
+    ]
   },
   {
     "id": "v1_국내주식-080",
@@ -959,7 +1349,12 @@
       "query.FID_DIV_CLS_CODE": "분류 구분 코드 (필수) — 0: 년, 1: 분기",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — J",
       "query.fid_input_iscd": "입력 종목코드 (필수) — 000660 : 종목코드"
-    }
+    },
+    "required": [
+      "query.FID_DIV_CLS_CODE",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_input_iscd"
+    ]
   },
   {
     "id": "국내주식-149",
@@ -974,7 +1369,13 @@
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.SHT_CD": "종목코드 (필수) — 공백: 전체, 특정종목 조회시 : 종목코드"
-    }
+    },
+    "required": [
+      "query.CTS",
+      "query.F_DT",
+      "query.T_DT",
+      "query.SHT_CD"
+    ]
   },
   {
     "id": "국내주식-144",
@@ -989,7 +1390,13 @@
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.SHT_CD": "종목코드 (필수) — 공백: 전체, 특정종목 조회시 : 종목코드"
-    }
+    },
+    "required": [
+      "query.CTS",
+      "query.F_DT",
+      "query.T_DT",
+      "query.SHT_CD"
+    ]
   },
   {
     "id": "국내주식-189",
@@ -1006,7 +1413,15 @@
       "query.FID_DIV_CLS_CODE": "분류구분코드 (필수) — 전체(0) 매수(1) 중립(2) 매도(3)",
       "query.FID_INPUT_DATE_1": "입력날짜1 (필수) — 이후 ~",
       "query.FID_INPUT_DATE_2": "입력날짜2 (필수) — ~ 이전"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_DATE_2"
+    ]
   },
   {
     "id": "국내주식-111",
@@ -1022,7 +1437,14 @@
       "query.fid_input_iscd": "입력 종목코드 (필수) — 0000:전체, 0001:거래소, 1001:코스닥, 2001:코스피200, 4001: KRX100",
       "query.fid_cond_scr_div_code": "조건 화면 분류 코드 (필수) — Unique key(20477)",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)"
-    }
+    },
+    "required": [
+      "query.fid_rank_sort_cls_code",
+      "query.fid_slct_yn",
+      "query.fid_input_iscd",
+      "query.fid_cond_scr_div_code",
+      "query.fid_cond_mrkt_div_code"
+    ]
   },
   {
     "id": "국내주식-146",
@@ -1037,7 +1459,13 @@
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.CTS": "CTS (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.SHT_CD",
+      "query.T_DT",
+      "query.F_DT",
+      "query.CTS"
+    ]
   },
   {
     "id": "국내주식-148",
@@ -1053,7 +1481,14 @@
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.MARKET_GB": "시장구분 (필수) — 0:전체, 1:코스피, 2:코스닥"
-    }
+    },
+    "required": [
+      "query.SHT_CD",
+      "query.CTS",
+      "query.F_DT",
+      "query.T_DT",
+      "query.MARKET_GB"
+    ]
   },
   {
     "id": "국내주식-145",
@@ -1070,7 +1505,15 @@
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.SHT_CD": "종목코드 (필수) — 공백: 전체, 특정종목 조회시 : 종목코드",
       "query.HIGH_GB": "고배당여부 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.CTS",
+      "query.GB1",
+      "query.F_DT",
+      "query.T_DT",
+      "query.SHT_CD",
+      "query.HIGH_GB"
+    ]
   },
   {
     "id": "국내주식-188",
@@ -1086,7 +1529,14 @@
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 종목코드(ex) 005930(삼성전자))",
       "query.FID_INPUT_DATE_1": "입력날짜1 (필수) — 이후 ~(ex) 0020231113)",
       "query.FID_INPUT_DATE_2": "입력날짜2 (필수) — ~ 이전(ex) 0020240513)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_DATE_2"
+    ]
   },
   {
     "id": "v1_국내주식-083",
@@ -1100,7 +1550,12 @@
       "query.fid_input_iscd": "입력 종목코드 (필수) — 000660 : 종목코드",
       "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0: 년, 1: 분기",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — J"
-    }
+    },
+    "required": [
+      "query.fid_input_iscd",
+      "query.fid_div_cls_code",
+      "query.fid_cond_mrkt_div_code"
+    ]
   },
   {
     "id": "v1_국내주식-081",
@@ -1114,7 +1569,12 @@
       "query.fid_input_iscd": "입력 종목코드 (필수) — 000660 : 종목코드",
       "query.FID_DIV_CLS_CODE": "분류 구분 코드 (필수) — 0: 년, 1: 분기",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — J"
-    }
+    },
+    "required": [
+      "query.fid_input_iscd",
+      "query.FID_DIV_CLS_CODE",
+      "query.fid_cond_mrkt_div_code"
+    ]
   },
   {
     "id": "국내주식-152",
@@ -1129,7 +1589,13 @@
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.CTS": "CTS (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.SHT_CD",
+      "query.T_DT",
+      "query.F_DT",
+      "query.CTS"
+    ]
   },
   {
     "id": "국내주식-153",
@@ -1144,7 +1610,13 @@
       "query.SHT_CD": "종목코드 (필수) — 공백: 전체, 특정종목 조회시 : 종목코드",
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.CTS": "CTS (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.T_DT",
+      "query.SHT_CD",
+      "query.F_DT",
+      "query.CTS"
+    ]
   },
   {
     "id": "v1_국내주식-079",
@@ -1158,7 +1630,12 @@
       "query.FID_DIV_CLS_CODE": "분류 구분 코드 (필수) — 0: 년, 1: 분기 ※ 분기데이터는 연단위 누적합산",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — J",
       "query.fid_input_iscd": "입력 종목코드 (필수) — 000660 : 종목코드"
-    }
+    },
+    "required": [
+      "query.FID_DIV_CLS_CODE",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_input_iscd"
+    ]
   },
   {
     "id": "국내주식-195",
@@ -1175,7 +1652,15 @@
       "query.INQR_DVSN_1": "조회구분1 (필수) — 0 : 전체조회, 1: 종목코드순 정렬",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수) — 미입력 (다음조회 불가)",
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — 미입력 (다음조회 불가)"
-    }
+    },
+    "required": [
+      "query.EXCG_DVSN_CD",
+      "query.PDNO",
+      "query.THCO_STLN_PSBL_YN",
+      "query.INQR_DVSN_1",
+      "query.CTX_AREA_FK200",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "v1_국내주식-067",
@@ -1188,7 +1673,11 @@
     "params": {
       "query.PRDT_TYPE_CD": "상품유형코드 (필수) — 300: 주식, ETF, ETN, ELW 301 : 선물옵션 302 : 채권 306 : ELS'",
       "query.PDNO": "상품번호 (필수) — 종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)"
-    }
+    },
+    "required": [
+      "query.PRDT_TYPE_CD",
+      "query.PDNO"
+    ]
   },
   {
     "id": "국내주식-143",
@@ -1204,7 +1693,14 @@
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.SHT_CD": "종목코드 (필수) — 공백(전체), 특정종목 조회시(종목코드)"
-    }
+    },
+    "required": [
+      "query.CTS",
+      "query.GB1",
+      "query.F_DT",
+      "query.T_DT",
+      "query.SHT_CD"
+    ]
   },
   {
     "id": "국내주식-154",
@@ -1219,7 +1715,13 @@
       "query.F_DT": "조회일자From (필수) — 일자 ~",
       "query.T_DT": "조회일자To (필수) — ~ 일자",
       "query.SHT_CD": "종목코드 (필수) — 공백: 전체, 특정종목 조회시 : 종목코드"
-    }
+    },
+    "required": [
+      "query.CTS",
+      "query.F_DT",
+      "query.T_DT",
+      "query.SHT_CD"
+    ]
   },
   {
     "id": "v1_국내주식-085",
@@ -1233,7 +1735,12 @@
       "query.fid_input_iscd": "입력 종목코드 (필수) — ex : 000660",
       "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0: 년, 1: 분기",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)"
-    }
+    },
+    "required": [
+      "query.fid_input_iscd",
+      "query.fid_div_cls_code",
+      "query.fid_cond_mrkt_div_code"
+    ]
   },
   {
     "id": "v1_국내주식-078",
@@ -1247,7 +1754,12 @@
       "query.FID_DIV_CLS_CODE": "분류 구분 코드 (필수) — 0: 년, 1: 분기",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — J",
       "query.fid_input_iscd": "입력 종목코드 (필수) — 000660 : 종목코드"
-    }
+    },
+    "required": [
+      "query.FID_DIV_CLS_CODE",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_input_iscd"
+    ]
   },
   {
     "id": "국내주식-147",
@@ -1269,7 +1781,10 @@
     "trId": "HHKST668300C0",
     "params": {
       "query.SHT_CD": "종목코드 (필수) — ex) 265520"
-    }
+    },
+    "required": [
+      "query.SHT_CD"
+    ]
   },
   {
     "id": "v1_국내주식-082",
@@ -1283,7 +1798,12 @@
       "query.fid_input_iscd": "입력 종목코드 (필수) — 000660 : 종목코드",
       "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0: 년, 1: 분기",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — J"
-    }
+    },
+    "required": [
+      "query.fid_input_iscd",
+      "query.fid_div_cls_code",
+      "query.fid_cond_mrkt_div_code"
+    ]
   },
   {
     "id": "국내주식-114",
@@ -1300,7 +1820,15 @@
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 공백 입력",
       "query.FID_COND_MRKT_DIV_CODE1": "시장 분류코드1 (필수) — 공백 입력",
       "query.FID_INPUT_HOUR_1": "입력 시간1 (필수) — 공백 입력"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_SCTN_CLS_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_MRKT_DIV_CODE1",
+      "query.FID_INPUT_HOUR_1"
+    ]
   },
   {
     "id": "국내주식-110",
@@ -1315,7 +1843,13 @@
       "query.fid_cond_scr_div_code": "화면 분류 코드 (필수) — Unique key(20476)",
       "query.fid_input_iscd": "종목코드 (필수) — 종목코드 (ex 005930)",
       "query.fid_input_date_1": "결제일자 (필수) — 결제일자 (ex 20240313)"
-    }
+    },
+    "required": [
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_input_date_1"
+    ]
   },
   {
     "id": "국내주식-075",
@@ -1332,7 +1866,15 @@
       "query.FID_INPUT_ISCD_1": "입력 종목코드 (필수) — 코스피(KSP), 코스닥(KSQ)",
       "query.FID_INPUT_DATE_2": "입력 날짜2 (필수) — 입력 날짜1과 동일날짜 입력",
       "query.FID_INPUT_ISCD_2": "하위 분류코드 (필수) — 코스피, 코스닥 : 업종분류코드 (종목정보파일 - 업종코드 참조)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_ISCD_1",
+      "query.FID_INPUT_DATE_2",
+      "query.FID_INPUT_ISCD_2"
+    ]
   },
   {
     "id": "국내주식-134",
@@ -1347,7 +1889,13 @@
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드",
       "query.FID_INPUT_DATE_1": "입력 날짜1 (필수) — 공백시 전체 (기간 ~)"
-    }
+    },
+    "required": [
+      "query.FID_INPUT_DATE_2",
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_DATE_1"
+    ]
   },
   {
     "id": "종목별 투자자매매동향(일별)",
@@ -1363,7 +1911,14 @@
       "query.FID_INPUT_DATE_1": "입력 날짜1 (필수) — 입력 날짜(20250812) (해당일 조회는 장 종료 후 정상 조회 가능)",
       "query.FID_ORG_ADJ_PRC": "수정주가 원주가 가격 (필수) — 공란 입력",
       "query.FID_ETC_CLS_CODE": "기타 구분 코드 (필수) — \"1\" 입력"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_ORG_ADJ_PRC",
+      "query.FID_ETC_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-038",
@@ -1375,7 +1930,10 @@
     "trId": "HHKST03900300",
     "params": {
       "query.user_id": "사용자 HTS ID (필수)"
-    }
+    },
+    "required": [
+      "query.user_id"
+    ]
   },
   {
     "id": "국내주식-190",
@@ -1396,7 +1954,19 @@
       "query.FID_INPUT_PRICE_1": "입력가격1 (필수) — 공백 입력",
       "query.FID_INPUT_PRICE_2": "입력가격2 (필수) — 공백 입력",
       "query.FID_VOL_CNT": "거래량수 (필수) — 공백 입력"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_PRC_CLS_CODE",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_TRGT_CLS_CODE",
+      "query.FID_TRGT_EXLS_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_VOL_CNT"
+    ]
   },
   {
     "id": "국내주식-115",
@@ -1411,7 +1981,13 @@
       "query.FID_MRKT_CLS_CODE": "시장 구분 코드 (필수) — K:코스피, Q:코스닥",
       "query.FID_INPUT_DATE_1": "검색시작일 (필수) — 공백 입력, 입력 시 ~ 입력일자까지 조회됨 * 8개월 이상 과거 조회 불가",
       "query.FID_INPUT_DATE_2": "검색종료일 (필수) — 공백 입력"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_DATE_2"
+    ]
   },
   {
     "id": "국내주식-135",
@@ -1427,7 +2003,14 @@
       "query.START_DATE": "조회시작일시 (필수) — 조회기간 ~",
       "query.END_DATE": "조회종료일시 (필수) — ~ 조회기간",
       "query.CTS": "이전조회KEY (필수)"
-    }
+    },
+    "required": [
+      "query.MRKT_DIV_CLS_CODE",
+      "query.MKSC_SHRN_ISCD",
+      "query.START_DATE",
+      "query.END_DATE",
+      "query.CTS"
+    ]
   },
   {
     "id": "국내주식-039",
@@ -1440,7 +2023,11 @@
     "params": {
       "query.user_id": "사용자 HTS ID (필수)",
       "query.seq": "사용자조건 키값 (필수) — 종목조건검색 목록조회 API의 output인 'seq'을 이용 (0 부터 시작)"
-    }
+    },
+    "required": [
+      "query.user_id",
+      "query.seq"
+    ]
   },
   {
     "id": "국내주식-196",
@@ -1467,7 +2054,15 @@
       "query.FID_DIV_CLS_CODE": "분류 구분 코드 (필수) — 0: 수량정열, 1: 금액정열",
       "query.FID_RANK_SORT_CLS_CODE": "순위 정렬 구분 코드 (필수) — 0: 순매수상위, 1: 순매도상위",
       "query.FID_ETC_CLS_CODE": "기타 구분  정렬 (필수) — 0:전체 1:외국인 2:기관계 3:기타"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_ETC_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-203",
@@ -1486,7 +2081,17 @@
       "query.HTS_KOR_ISNM": "HTS 한글 종목명 (필수) — 공백",
       "query.CNTG_CLS_CODE": "체결 구분 코드 (필수) — 공백",
       "query.FID_ETC_CLS_CODE": "기타 구분 코드 (필수) — Unique key(4)"
-    }
+    },
+    "required": [
+      "query.TYPE",
+      "query.USER_ID",
+      "query.DATA_RANK",
+      "query.INTER_GRP_CODE",
+      "query.INTER_GRP_NAME",
+      "query.HTS_KOR_ISNM",
+      "query.CNTG_CLS_CODE",
+      "query.FID_ETC_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-197",
@@ -1503,7 +2108,15 @@
       "query.FID_INPUT_DATE_1": "입력날짜1 (필수) — 날짜 ~",
       "query.FID_INPUT_DATE_2": "입력날짜2 (필수) — ~ 날짜",
       "query.FID_SCTN_CLS_CODE": "구간구분코드 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_ISCD_2",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_DATE_2",
+      "query.FID_SCTN_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-113",
@@ -1517,7 +2130,12 @@
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — KRX : J , NXT : NX, 통합 : UN",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드",
       "query.FID_INPUT_DATE_1": "입력 날짜1 (필수) — 기준일 (ex 0020240308), 미입력시 당일부터 조회"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_DATE_1"
+    ]
   },
   {
     "id": "국내주식-204",
@@ -1531,7 +2149,12 @@
       "query.TYPE": "관심종목구분코드 (필수) — Unique key(1)",
       "query.FID_ETC_CLS_CODE": "FID 기타 구분 코드 (필수) — Unique key(00)",
       "query.USER_ID": "사용자 ID (필수) — HTS_ID 입력"
-    }
+    },
+    "required": [
+      "query.TYPE",
+      "query.FID_ETC_CLS_CODE",
+      "query.USER_ID"
+    ]
   },
   {
     "id": "v1_국내주식-046",
@@ -1543,7 +2166,10 @@
     "trId": "HHPTJ04160200",
     "params": {
       "query.MKSC_SHRN_ISCD": "종목코드 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.MKSC_SHRN_ISCD"
+    ]
   },
   {
     "id": "v1_국내주식-056",
@@ -1559,7 +2185,14 @@
       "query.FID_INPUT_DATE_1": "FID 입력 날짜1 (필수) — from",
       "query.FID_INPUT_DATE_2": "FID 입력 날짜2 (필수) — to",
       "query.FID_PERIOD_DIV_CODE": "FID 기간 분류 코드 (필수) — D"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_DATE_2",
+      "query.FID_PERIOD_DIV_CODE"
+    ]
   },
   {
     "id": "국내주식-192",
@@ -1573,7 +2206,12 @@
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — J: KRX, NX: NXT, UN: 통합",
       "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — Uniquekey(11119)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 종목코드(ex)(005930 (삼성전자))"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-116",
@@ -1586,7 +2224,11 @@
     "params": {
       "query.EXCH_DIV_CLS_CODE": "거래소 구분 코드 (필수) — J : KRX, NX : NXT, UN : 통합",
       "query.MRKT_DIV_CLS_CODE": "시장 구분 코드 (필수) — 1:코스피, 4:코스닥"
-    }
+    },
+    "required": [
+      "query.EXCH_DIV_CLS_CODE",
+      "query.MRKT_DIV_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-193",
@@ -1598,7 +2240,10 @@
     "trId": "FHKST649100C0",
     "params": {
       "query.FID_INPUT_DATE_1": "입력날짜1 (필수)"
-    }
+    },
+    "required": [
+      "query.FID_INPUT_DATE_1"
+    ]
   },
   {
     "id": "국내주식-118",
@@ -1612,7 +2257,12 @@
       "query.fid_mkop_cls_code": "장운영 구분 코드 (필수) — 0:전체, 4:체결량 0 제외",
       "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)",
       "query.fid_input_iscd": "입력 종목코드 (필수) — 종목코드(ex. 005930)"
-    }
+    },
+    "required": [
+      "query.fid_mkop_cls_code",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_input_iscd"
+    ]
   },
   {
     "id": "국내주식-163",
@@ -1629,7 +2279,15 @@
       "query.FID_INPUT_ISCD_2": "회원사코드 (필수) — ex. 99999(전체) ※ 회원사코드 (kis developers 포탈 사이트 포럼-> FAQ -> 종목정보 다운로드(국내) 참조)",
       "query.FID_MRKT_CLS_CODE": "시장구분코드 (필수) — A(전체),K(코스피), Q(코스닥), K2(코스피200), W(ELW) ※ FID_INPUT_ISCD(종목코드) 혹은 FID_MRKT_CLS_…",
       "query.FID_VOL_CNT": "거래량 (필수) — 거래량 ~"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_ISCD_2",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_VOL_CNT"
+    ]
   },
   {
     "id": "v1_국내주식-074",
@@ -1642,7 +2300,11 @@
     "params": {
       "query.fid_input_iscd": "시장구분 (필수) — 코스피: KSP, 코스닥:KSQ, 선물,콜옵션,풋옵션 : K2I, 주식선물:999, ETF: ETF, ELW:ELW, ETN: ETN, 미니: …",
       "query.fid_input_iscd_2": "업종구분 (필수) — - fid_input_iscd: KSP(코스피) 혹은 KSQ(코스닥)인 경우 코스피(0001_종합, .…0027_제조업 ) 코스닥(1001_종합…"
-    }
+    },
+    "required": [
+      "query.fid_input_iscd",
+      "query.fid_input_iscd_2"
+    ]
   },
   {
     "id": "v1_국내주식-044",
@@ -1655,7 +2317,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — KRX : J , NXT : NX, 통합 : UN",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-161",
@@ -1671,7 +2337,14 @@
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 0000(전체), 1001(코스피), 2001(코스닥)",
       "query.FID_RANK_SORT_CLS_CODE": "순위정렬구분코드 (필수) — 0(금액순), 1(수량순)",
       "query.FID_RANK_SORT_CLS_CODE_2": "순위정렬구분코드2 (필수) — 0(매수순), 1(매도순)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_RANK_SORT_CLS_CODE_2"
+    ]
   },
   {
     "id": "국내주식-140",
@@ -1690,7 +2363,17 @@
       "query.FID_INPUT_PRICE_1": "입력 가격1 (필수) — 가격 ~",
       "query.FID_INPUT_PRICE_2": "입력 가격2 (필수) — 공백",
       "query.FID_INPUT_VOL_1": "입력 거래량 (필수) — 거래량 ~"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_INPUT_VOL_1"
+    ]
   },
   {
     "id": "국내주식-164",
@@ -1704,7 +2387,12 @@
       "query.FID_INPUT_ISCD": "조건시장분류코드 (필수) — 종목코드(ex) 005930(삼성전자))",
       "query.FID_INPUT_ISCD_2": "조건화면분류코드 (필수) — 외국계 전체(99999)",
       "query.FID_COND_MRKT_DIV_CODE": "시장구분코드 (필수) — J (KRX만 지원)"
-    }
+    },
+    "required": [
+      "query.FID_INPUT_ISCD",
+      "query.FID_INPUT_ISCD_2",
+      "query.FID_COND_MRKT_DIV_CODE"
+    ]
   },
   {
     "id": "국내주식-205",
@@ -1775,7 +2463,69 @@
       "query.FID_INPUT_ISCD_29": "입력 종목코드29 (필수)",
       "query.FID_COND_MRKT_DIV_CODE_30": "조건 시장 분류 코드30 (필수)",
       "query.FID_INPUT_ISCD_30": "입력 종목코드30 (필수)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE_1",
+      "query.FID_INPUT_ISCD_1",
+      "query.FID_COND_MRKT_DIV_CODE_2",
+      "query.FID_INPUT_ISCD_2",
+      "query.FID_COND_MRKT_DIV_CODE_3",
+      "query.FID_INPUT_ISCD_3",
+      "query.FID_COND_MRKT_DIV_CODE_4",
+      "query.FID_INPUT_ISCD_4",
+      "query.FID_COND_MRKT_DIV_CODE_5",
+      "query.FID_INPUT_ISCD_5",
+      "query.FID_COND_MRKT_DIV_CODE_6",
+      "query.FID_INPUT_ISCD_6",
+      "query.FID_COND_MRKT_DIV_CODE_7",
+      "query.FID_INPUT_ISCD_7",
+      "query.FID_COND_MRKT_DIV_CODE_8",
+      "query.FID_INPUT_ISCD_8",
+      "query.FID_COND_MRKT_DIV_CODE_9",
+      "query.FID_INPUT_ISCD_9",
+      "query.FID_COND_MRKT_DIV_CODE_10",
+      "query.FID_INPUT_ISCD_10",
+      "query.FID_COND_MRKT_DIV_CODE_11",
+      "query.FID_INPUT_ISCD_11",
+      "query.FID_COND_MRKT_DIV_CODE_12",
+      "query.FID_INPUT_ISCD_12",
+      "query.FID_COND_MRKT_DIV_CODE_13",
+      "query.FID_INPUT_ISCD_13",
+      "query.FID_COND_MRKT_DIV_CODE_14",
+      "query.FID_INPUT_ISCD_14",
+      "query.FID_COND_MRKT_DIV_CODE_15",
+      "query.FID_INPUT_ISCD_15",
+      "query.FID_COND_MRKT_DIV_CODE_16",
+      "query.FID_INPUT_ISCD_16",
+      "query.FID_COND_MRKT_DIV_CODE_17",
+      "query.FID_INPUT_ISCD_17",
+      "query.FID_COND_MRKT_DIV_CODE_18",
+      "query.FID_INPUT_ISCD_18",
+      "query.FID_COND_MRKT_DIV_CODE_19",
+      "query.FID_INPUT_ISCD_19",
+      "query.FID_COND_MRKT_DIV_CODE_20",
+      "query.FID_INPUT_ISCD_20",
+      "query.FID_COND_MRKT_DIV_CODE_21",
+      "query.FID_INPUT_ISCD_21",
+      "query.FID_COND_MRKT_DIV_CODE_22",
+      "query.FID_INPUT_ISCD_22",
+      "query.FID_COND_MRKT_DIV_CODE_23",
+      "query.FID_INPUT_ISCD_23",
+      "query.FID_COND_MRKT_DIV_CODE_24",
+      "query.FID_INPUT_ISCD_24",
+      "query.FID_COND_MRKT_DIV_CODE_25",
+      "query.FID_INPUT_ISCD_25",
+      "query.FID_COND_MRKT_DIV_CODE_26",
+      "query.FID_INPUT_ISCD_26",
+      "query.FID_COND_MRKT_DIV_CODE_27",
+      "query.FID_INPUT_ISCD_27",
+      "query.FID_COND_MRKT_DIV_CODE_28",
+      "query.FID_INPUT_ISCD_28",
+      "query.FID_COND_MRKT_DIV_CODE_29",
+      "query.FID_INPUT_ISCD_29",
+      "query.FID_COND_MRKT_DIV_CODE_30",
+      "query.FID_INPUT_ISCD_30"
+    ]
   },
   {
     "id": "v1_국내주식-103",
@@ -1806,7 +2556,19 @@
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0:전체",
       "query.fid_input_price_1": "입력 가격1 (필수) — 입력값 없을때 전체 (가격 ~)",
       "query.fid_input_price_2": "입력 가격2 (필수) — 입력값 없을때 전체 (~ 가격)"
-    }
+    },
+    "required": [
+      "query.fid_vol_cnt",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_div_cls_code",
+      "query.fid_trgt_cls_code",
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_input_price_2"
+    ]
   },
   {
     "id": "국내주식-109",
@@ -1822,7 +2584,14 @@
       "query.FID_OPTION": "증가율기간 (필수) — 2~999",
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)",
       "query.FID_RANK_SORT_CLS_CODE": "순위 정렬 구분 코드 (필수) — '(융자)0:잔고비율 상위, 1: 잔고수량 상위, 2: 잔고금액 상위, 3: 잔고비율 증가상위, 4: 잔고비율 감소상위 (대주)5:잔고비율 상위…"
-    }
+    },
+    "required": [
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_OPTION",
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_RANK_SORT_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-139",
@@ -1842,7 +2611,18 @@
       "query.FID_VOL_CNT": "거래량 수 (필수) — 거래량 ~",
       "query.FID_TRGT_CLS_CODE": "대상 구분 코드 (필수) — 공백",
       "query.FID_TRGT_EXLS_CLS_CODE": "대상 제외 구분 코드 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_VOL_CNT",
+      "query.FID_TRGT_CLS_CODE",
+      "query.FID_TRGT_EXLS_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식-106",
@@ -1861,7 +2641,17 @@
       "query.F_DT": "기준일From (필수)",
       "query.T_DT": "기준일To (필수)",
       "query.GB4": "결산/중간배당 (필수) — 0:전체, 1:결산배당, 2:중간배당"
-    }
+    },
+    "required": [
+      "query.CTS_AREA",
+      "query.GB1",
+      "query.UPJONG",
+      "query.GB2",
+      "query.GB3",
+      "query.F_DT",
+      "query.T_DT",
+      "query.GB4"
+    ]
   },
   {
     "id": "v1_국내주식-093",
@@ -1882,7 +2672,19 @@
       "query.fid_trgt_cls_code": "대상 구분 코드 (필수) — 0 : 전체",
       "query.fid_vol_cnt": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)",
       "query.fid_input_price_2": "입력 가격2 (필수) — 입력값 없을때 전체 (~ 가격)"
-    }
+    },
+    "required": [
+      "query.fid_input_price_1",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_div_cls_code",
+      "query.fid_input_iscd",
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_trgt_cls_code",
+      "query.fid_vol_cnt",
+      "query.fid_input_price_2"
+    ]
   },
   {
     "id": "국내주식-133",
@@ -1903,7 +2705,19 @@
       "query.FID_TRGT_CLS_CODE": "FID 대상 구분 코드 (필수) — 공백",
       "query.FID_APLY_RANG_PRC_1": "FID 적용 범위 가격1 (필수) — 가격 ~",
       "query.FID_APLY_RANG_PRC_2": "FID 적용 범위 가격2 (필수) — ~ 가격"
-    }
+    },
+    "required": [
+      "query.FID_APLY_RANG_VOL",
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_PERIOD_DIV_CODE",
+      "query.FID_INPUT_CNT_1",
+      "query.FID_TRGT_EXLS_CLS_CODE",
+      "query.FID_TRGT_CLS_CODE",
+      "query.FID_APLY_RANG_PRC_1",
+      "query.FID_APLY_RANG_PRC_2"
+    ]
   },
   {
     "id": "v1_국내주식-095",
@@ -1925,7 +2739,20 @@
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0 : 전체",
       "query.fid_input_price_1": "입력 가격1 (필수) — 입력값 없을때 전체 (가격 ~)",
       "query.fid_vol_cnt": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)"
-    }
+    },
+    "required": [
+      "query.fid_input_price_2",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_div_cls_code",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_hour_cls_code",
+      "query.fid_input_iscd",
+      "query.fid_trgt_cls_code",
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_vol_cnt"
+    ]
   },
   {
     "id": "국내주식-214",
@@ -1956,7 +2783,19 @@
       "query.FID_INPUT_PRICE_1": "입력 가격1 (필수) — 가격 ~ ex) \"0\" 전체 가격 대상 조회 시 FID_INPUT_PRICE_1, FID_INPUT_PRICE_2 모두 \"\"(공란) 입력",
       "query.FID_INPUT_PRICE_2": "입력 가격2 (필수) — ~ 가격 ex) \"1000000\" 전체 가격 대상 조회 시 FID_INPUT_PRICE_1, FID_INPUT_PRICE_2 모두 \"\"(공란) …",
       "query.FID_VOL_CNT": "거래량 수 (필수) — 거래량 ~ ex) \"100000\" 전체 거래량 대상 조회 시 FID_VOL_CNT \"\"(공란) 입력"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_BLNG_CLS_CODE",
+      "query.FID_TRGT_CLS_CODE",
+      "query.FID_TRGT_EXLS_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_VOL_CNT"
+    ]
   },
   {
     "id": "v1_국내주식-090",
@@ -1980,7 +2819,22 @@
       "query.fid_rank_sort_cls_code": "순위 정렬 구분 코드 (필수) — 0:매출이익 1:영업이익 2:경상이익 3:당기순이익 4:자산총계 5:부채총계 6:자본총계",
       "query.fid_blng_cls_code": "소속 구분 코드 (필수) — 0:전체",
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0:전체"
-    }
+    },
+    "required": [
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_trgt_cls_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_div_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_input_price_2",
+      "query.fid_vol_cnt",
+      "query.fid_input_option_1",
+      "query.fid_input_option_2",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_blng_cls_code",
+      "query.fid_trgt_exls_cls_code"
+    ]
   },
   {
     "id": "v1_국내주식-105",
@@ -2023,7 +2877,21 @@
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0:전체",
       "query.fid_trgt_cls_code": "대상 구분 코드 (필수) — 0:전체",
       "query.fid_vol_cnt": "거래량 수 (필수) — 거래량 ~"
-    }
+    },
+    "required": [
+      "query.fid_aply_rang_prc_2",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_div_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_aply_rang_prc_1",
+      "query.fid_input_iscd_2",
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_trgt_cls_code",
+      "query.fid_vol_cnt"
+    ]
   },
   {
     "id": "v1_국내주식-092",
@@ -2047,7 +2915,22 @@
       "query.fid_rank_sort_cls_code": "순위 정렬 구분 코드 (필수) — 7: 수익성 분석, 11 : 안정성 분석, 15: 성장성 분석, 20: 활동성 분석",
       "query.fid_blng_cls_code": "소속 구분 코드 (필수) — 0",
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0 : 전체"
-    }
+    },
+    "required": [
+      "query.fid_trgt_cls_code",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_div_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_input_price_2",
+      "query.fid_vol_cnt",
+      "query.fid_input_option_1",
+      "query.fid_input_option_2",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_blng_cls_code",
+      "query.fid_trgt_exls_cls_code"
+    ]
   },
   {
     "id": "v1_국내주식-091",
@@ -2067,7 +2950,18 @@
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0 : 전체",
       "query.fid_input_price_1": "입력 가격1 (필수) — 입력값 없을때 전체 (가격 ~)",
       "query.fid_vol_cnt": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)"
-    }
+    },
+    "required": [
+      "query.fid_input_price_2",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_div_cls_code",
+      "query.fid_input_iscd",
+      "query.fid_trgt_cls_code",
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_vol_cnt"
+    ]
   },
   {
     "id": "v1_국내주식-104",
@@ -2090,7 +2984,21 @@
       "query.fid_aply_rang_vol": "적용 범위 거래량 (필수) — 0: 전체, 100: 100주 이상",
       "query.fid_aply_rang_prc_2": "적용 범위 가격2 (필수) — ~ 가격",
       "query.fid_aply_rang_prc_1": "적용 범위 가격1 (필수) — 가격 ~"
-    }
+    },
+    "required": [
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_div_cls_code",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_input_date_1",
+      "query.fid_input_date_2",
+      "query.fid_input_iscd",
+      "query.fid_trgt_cls_code",
+      "query.fid_aply_rang_vol",
+      "query.fid_aply_rang_prc_2",
+      "query.fid_aply_rang_prc_1"
+    ]
   },
   {
     "id": "v1_국내주식-088",
@@ -2115,7 +3023,23 @@
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0:전체",
       "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0:전체",
       "query.fid_rsfl_rate1": "등락 비율1 (필수) — 공백 입력 시 전체 (비율 ~)"
-    }
+    },
+    "required": [
+      "query.fid_rsfl_rate2",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_input_cnt_1",
+      "query.fid_prc_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_input_price_2",
+      "query.fid_vol_cnt",
+      "query.fid_trgt_cls_code",
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_div_cls_code",
+      "query.fid_rsfl_rate1"
+    ]
   },
   {
     "id": "v1_국내주식-096",
@@ -2139,7 +3063,22 @@
       "query.fid_rank_sort_cls_code": "순위 정렬 구분 코드 (필수) — '가치분석(23:PER, 24:PBR, 25:PCR, 26:PSR, 27: EPS, 28:EVA, 29: EBITDA, 30: EV/EBITDA…",
       "query.fid_blng_cls_code": "소속 구분 코드 (필수) — 0 : 전체",
       "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0 : 전체"
-    }
+    },
+    "required": [
+      "query.fid_trgt_cls_code",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_div_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_input_price_2",
+      "query.fid_vol_cnt",
+      "query.fid_input_option_1",
+      "query.fid_input_option_2",
+      "query.fid_rank_sort_cls_code",
+      "query.fid_blng_cls_code",
+      "query.fid_trgt_exls_cls_code"
+    ]
   },
   {
     "id": "v1_국내주식-102",
@@ -2161,7 +3100,20 @@
       "query.fid_vol_cnt": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)",
       "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0: 전체 1: 관리종목 2: 투자주의 3: 투자경고 4: 투자위험예고 5: 투자위험 6: 보통주 7: 우선주",
       "query.fid_input_cnt_1": "순위 입력값 (필수) — 순위검색 입력값(1: 1위부터, 10:10위부터)"
-    }
+    },
+    "required": [
+      "query.fid_input_iscd_2",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_trgt_cls_code",
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_input_price_2",
+      "query.fid_vol_cnt",
+      "query.fid_div_cls_code",
+      "query.fid_input_cnt_1"
+    ]
   },
   {
     "id": "v1_국내주식-101",
@@ -2181,7 +3133,18 @@
       "query.fid_input_price_2": "입력 가격2 (필수) — 입력값 없을때 전체 (~ 가격)",
       "query.fid_vol_cnt": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)",
       "query.fid_trgt_cls_code": "대상 구분 코드 (필수) — 0 : 전체"
-    }
+    },
+    "required": [
+      "query.fid_trgt_exls_cls_code",
+      "query.fid_cond_mrkt_div_code",
+      "query.fid_cond_scr_div_code",
+      "query.fid_input_iscd",
+      "query.fid_div_cls_code",
+      "query.fid_input_price_1",
+      "query.fid_input_price_2",
+      "query.fid_vol_cnt",
+      "query.fid_trgt_cls_code"
+    ]
   },
   {
     "id": "국내주식-138",
@@ -2202,7 +3165,19 @@
       "query.FID_VOL_CNT": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)",
       "query.FID_TRGT_CLS_CODE": "대상 구분 코드 (필수) — 공백 입력",
       "query.FID_TRGT_EXLS_CLS_CODE": "대상 제외 구분 코드 (필수) — 공백 입력"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_DIV_CLS_CODE",
+      "query.FID_INPUT_PRICE_1",
+      "query.FID_INPUT_PRICE_2",
+      "query.FID_VOL_CNT",
+      "query.FID_TRGT_CLS_CODE",
+      "query.FID_TRGT_EXLS_CLS_CODE"
+    ]
   },
   {
     "id": "국내주식 장운영정보 (통합)",
@@ -2215,7 +3190,11 @@
     "params": {
       "body.tr_id": "거래ID (필수) — H0UNMKO0 : 국내주식 장운영정보 (통합)",
       "body.tr_key": "구분값 (필수) — 종목코드 (ex 005930 삼성전자)"
-    }
+    },
+    "required": [
+      "body.tr_id",
+      "body.tr_key"
+    ]
   },
   {
     "id": "국내주식 장운영정보 (NXT)",
@@ -2228,7 +3207,11 @@
     "params": {
       "body.tr_id": "거래ID (필수) — H0NXMKO0 : 국내주식 장운영정보 (NXT)",
       "body.tr_key": "구분값 (필수) — 종목코드 (ex 005930 삼성전자)"
-    }
+    },
+    "required": [
+      "body.tr_id",
+      "body.tr_key"
+    ]
   },
   {
     "id": "선물옵션 증거금률",
@@ -2242,7 +3225,12 @@
       "query.BASS_DT": "기준일자 (필수) — 날짜 입력) ex) 20260313",
       "query.BAST_ID": "기초자산ID (필수) — 공백 입력",
       "query.CTX_AREA_NK200": "연속조회키200 (필수) — 다음 조회 시 필요, 입력 후 header tr_cont : N 설정 필수"
-    }
+    },
+    "required": [
+      "query.BASS_DT",
+      "query.BAST_ID",
+      "query.CTX_AREA_NK200"
+    ]
   },
   {
     "id": "v1_국내선물-006",
@@ -2255,7 +3243,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — F: 지수선물, O:지수옵션 JF: 주식선물, JO:주식옵션 CF: 상품선물(금), 금리선물(국채), 통화선물(달러) CM: 야간선물, EU: …",
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 종목코드 (예: 101S03)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내선물-021",
@@ -2272,7 +3264,15 @@
       "query.FID_COND_SCR_DIV_CODE": "조건 화면 분류 코드 (필수) — 공백",
       "query.FID_MTRT_CNT": "만기 수 (필수) — 공백",
       "query.FID_COND_MRKT_CLS_CODE": "조건 시장 구분 코드 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_MRKT_DIV_CODE1",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_MTRT_CNT",
+      "query.FID_COND_MRKT_CLS_CODE"
+    ]
   },
   {
     "id": "국내선물-018",
@@ -2285,7 +3285,11 @@
     "params": {
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목번호 (지수선물:6자리, 지수옵션 9자리)",
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — F : 지수선물, O : 지수옵션"
-    }
+    },
+    "required": [
+      "query.FID_INPUT_ISCD",
+      "query.FID_COND_MRKT_DIV_CODE"
+    ]
   },
   {
     "id": "v1_국내선물-008",
@@ -2309,7 +3313,12 @@
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 시장구분코드 (F: 선물)",
       "query.FID_COND_SCR_DIV_CODE": "조건 화면 분류 코드 (필수) — Unique key(20503)",
       "query.FID_COND_MRKT_CLS_CODE": "조건 시장 구분 코드 (필수) — 공백: KOSPI200 MKI: 미니KOSPI200 WKM: KOSPI200위클리(월) WKI: KOSPI200위클리(목) KQI: KOSDAQ…"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_COND_MRKT_CLS_CODE"
+    ]
   },
   {
     "id": "v1_국내선물-012",
@@ -2327,7 +3336,16 @@
       "query.FID_FAKE_TICK_INCU_YN": "FID 허봉 포함 여부 (필수) — N으로 입력",
       "query.FID_INPUT_DATE_1": "FID 입력 날짜1 (필수) — 입력 날짜 기준으로 이전 기간 조회(YYYYMMDD) ex) 20230908 입력 시, 2023년 9월 8일부터 일자 역순으로 조회",
       "query.FID_INPUT_HOUR_1": "FID 입력 시간1 (필수) — 입력 시간 기준으로 이전 시간 조회(HHMMSS) ex) 093000 입력 시, 오전 9시 30분부터 역순으로 분봉 조회 * CM(야간선물), …"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_HOUR_CLS_CODE",
+      "query.FID_PW_DATA_INCU_YN",
+      "query.FID_FAKE_TICK_INCU_YN",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_HOUR_1"
+    ]
   },
   {
     "id": "국내선물-020",
@@ -2341,7 +3359,12 @@
       "query.FID_COND_SCR_DIV_CODE": "조건 화면 분류 코드 (필수) — Unique key(509)",
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 공백",
       "query.FID_COND_MRKT_CLS_CODE": "조건 시장 구분 코드 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_MRKT_CLS_CODE"
+    ]
   },
   {
     "id": "v1_국내선물-007",
@@ -2354,7 +3377,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — F: 지수선물, O:지수옵션 JF: 주식선물, JO:주식옵션 CF: 상품선물(금), 금리선물(국채), 통화선물(달러) CM: 야간선물, EU: …",
       "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 종목코드 (예: 101S03)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내선물-022",
@@ -2371,7 +3398,15 @@
       "query.FID_MTRT_CNT": "만기 수 (필수) — - FID_COND_MRKT_CLS_CODE : 공백(KOSPI200), MKI(미니KOSPI200), KQI(KOSDAQ150) 인 경우 : …",
       "query.FID_COND_MRKT_CLS_CODE": "조건 시장 구분 코드 (필수) — 공백: KOSPI200 MKI: 미니KOSPI200 WKM: KOSPI200위클리(월) WKI: KOSPI200위클리(목) KQI: KOSDAQ…",
       "query.FID_MRKT_CLS_CODE1": "시장 구분 코드 (필수) — 시장구분코드 (PO: 풋옵션)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_COND_SCR_DIV_CODE",
+      "query.FID_MRKT_CLS_CODE",
+      "query.FID_MTRT_CNT",
+      "query.FID_COND_MRKT_CLS_CODE",
+      "query.FID_MRKT_CLS_CODE1"
+    ]
   },
   {
     "id": "해외주식-037",
@@ -2387,7 +3422,14 @@
       "query.KEYB": "NEXT KEY BUFF (필수) — 공백",
       "query.TDAY": "당일전일구분 (필수) — 0:전일, 1:당일",
       "query.SYMB": "종목코드 (필수) — 해외종목코드"
-    }
+    },
+    "required": [
+      "query.EXCD",
+      "query.AUTH",
+      "query.KEYB",
+      "query.TDAY",
+      "query.SYMB"
+    ]
   },
   {
     "id": "v1_해외주식-010",
@@ -2405,7 +3447,15 @@
       "query.BYMD": "조회기준일자 (필수) — 조회기준일자(YYYYMMDD) ※ 공란 설정 시, 기준일 오늘 날짜로 설정",
       "query.MODP": "수정주가반영여부 (필수) — 0 : 미반영 1 : 반영",
       "query.KEYB": "NEXT KEY BUFF — 응답시 다음값이 있으면 값이 셋팅되어 있으므로 다음 조회시 응답값 그대로 셋팅"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.EXCD",
+      "query.SYMB",
+      "query.GUBN",
+      "query.BYMD",
+      "query.MODP"
+    ]
   },
   {
     "id": "해외주식-017",
@@ -2419,7 +3469,12 @@
       "query.TRAD_DT": "기준일자 (필수) — 기준일자(YYYYMMDD)",
       "query.CTX_AREA_NK": "연속조회키 (필수) — 공백으로 입력",
       "query.CTX_AREA_FK": "연속조회검색조건 (필수) — 공백으로 입력"
-    }
+    },
+    "required": [
+      "query.TRAD_DT",
+      "query.CTX_AREA_NK",
+      "query.CTX_AREA_FK"
+    ]
   },
   {
     "id": "v1_해외주식-009",
@@ -2433,7 +3488,12 @@
       "query.AUTH": "사용자권한정보 (필수) — \"\" (Null 값 설정)",
       "query.EXCD": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
       "query.SYMB": "종목코드 (필수)"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.EXCD",
+      "query.SYMB"
+    ]
   },
   {
     "id": "해외주식 복수종목 시세조회",
@@ -2466,7 +3526,31 @@
       "query.SYMB_08": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
       "query.SYMB_09": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
       "query.SYMB_10": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.NREC",
+      "query.EXCD_01",
+      "query.EXCD_02",
+      "query.EXCD_03",
+      "query.EXCD_04",
+      "query.EXCD_05",
+      "query.EXCD_06",
+      "query.EXCD_07",
+      "query.EXCD_08",
+      "query.EXCD_09",
+      "query.EXCD_10",
+      "query.SYMB_01",
+      "query.SYMB_02",
+      "query.SYMB_03",
+      "query.SYMB_04",
+      "query.SYMB_05",
+      "query.SYMB_06",
+      "query.SYMB_07",
+      "query.SYMB_08",
+      "query.SYMB_09",
+      "query.SYMB_10"
+    ]
   },
   {
     "id": "v1_해외주식-015",
@@ -2504,7 +3588,11 @@
       "query.CO_ST_PER": "PER시작",
       "query.CO_EN_PER": "PER끝",
       "query.KEYB": "NEXT KEY BUFF — \"\" 공백 입력"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.EXCD"
+    ]
   },
   {
     "id": "v1_해외주식-034",
@@ -2517,7 +3605,11 @@
     "params": {
       "query.PRDT_TYPE_CD": "상품유형코드 (필수) — 512 미국 나스닥 / 513 미국 뉴욕 / 529 미국 아멕스 515 일본 501 홍콩 / 543 홍콩CNY / 558 홍콩USD 507 베트…",
       "query.PDNO": "상품번호 (필수) — 예) AAPL (애플)"
-    }
+    },
+    "required": [
+      "query.PRDT_TYPE_CD",
+      "query.PDNO"
+    ]
   },
   {
     "id": "v1_해외주식-031",
@@ -2532,7 +3624,13 @@
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목번호(ex. TSLA)",
       "query.FID_HOUR_CLS_CODE": "시간 구분 코드 (필수) — 0: 정규장, 1: 시간외",
       "query.FID_PW_DATA_INCU_YN": "과거 데이터 포함 여부 (필수) — Y/N"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_HOUR_CLS_CODE",
+      "query.FID_PW_DATA_INCU_YN"
+    ]
   },
   {
     "id": "v1_해외주식-030",
@@ -2552,7 +3650,18 @@
       "query.NREC": "요청갯수 (필수) — 레코드요청갯수 (최대 120)",
       "query.FILL": "미체결채움구분 (필수) — \"\" 공백으로 입력",
       "query.KEYB": "NEXT KEY BUFF (필수) — 처음 조회 시, \"\" 공백 입력 다음 조회 시, 이전 조회 결과의 마지막 분봉 데이터를 이용하여, 1분 전 혹은 n분 전의 시간을 입력 (형식:…"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.EXCD",
+      "query.SYMB",
+      "query.NMIN",
+      "query.PINC",
+      "query.NEXT",
+      "query.NREC",
+      "query.FILL",
+      "query.KEYB"
+    ]
   },
   {
     "id": "v1_해외주식-029",
@@ -2566,7 +3675,12 @@
       "query.AUTH": "사용자권한정보 (필수)",
       "query.EXCD": "거래소명 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
       "query.SYMB": "종목코드 (필수)"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.EXCD",
+      "query.SYMB"
+    ]
   },
   {
     "id": "해외주식-049",
@@ -2579,7 +3693,11 @@
     "params": {
       "query.AUTH": "사용자권한정보 (필수) — 공백",
       "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.EXCD"
+    ]
   },
   {
     "id": "v1_해외주식-012",
@@ -2605,7 +3723,14 @@
       "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
       "query.ICOD": "업종코드 (필수) — 업종코드별조회(HHDFS76370100) 를 통해 확인",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.ICOD",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "해외주식-033",
@@ -2619,7 +3744,12 @@
       "query.AUTH": "사용자권한정보 (필수) — 공백",
       "query.EXCD": "거래소코드 (필수) — NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 HKS : 홍콩 SHS : 상해 SZS : 심천 HSX : 호치민 HNX : 하노이 TSE …",
       "query.SYMB": "종목코드 (필수) — 종목코드 예)TSLA"
-    }
+    },
+    "required": [
+      "query.AUTH",
+      "query.EXCD",
+      "query.SYMB"
+    ]
   },
   {
     "id": "해외주식-045",
@@ -2635,7 +3765,14 @@
       "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
       "query.NDAY": "N일자값 (필수) — N일전 : 0(당일), 1(2일), 2(3일), 3(5일), 4(10일), 5(20일전), 6(30일), 7(60일), 8(120일), 9(1년…",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.NDAY",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "해외주식-052",
@@ -2654,7 +3791,17 @@
       "query.PRDT_TYPE_CD": "상품유형코드 (필수) — 공백",
       "query.CTX_AREA_NK50": "연속조회키50 (필수) — 공백",
       "query.CTX_AREA_FK50": "연속조회검색조건50 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.RGHT_TYPE_CD",
+      "query.INQR_DVSN_CD",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.PDNO",
+      "query.PRDT_TYPE_CD",
+      "query.CTX_AREA_NK50",
+      "query.CTX_AREA_FK50"
+    ]
   },
   {
     "id": "해외주식-038",
@@ -2671,7 +3818,15 @@
       "query.GUBN": "급등/급락구분 (필수) — 0(급락), 1(급등)",
       "query.MINX": "N분전콤보값 (필수) — N분전 : 0(1분전), 1(2분전), 2(3분전), 3(5분전), 4(10분전), 5(15분전), 6(20분전), 7(30분전), 8(60분전…",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.GUBN",
+      "query.MINX",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "해외주식-044",
@@ -2689,7 +3844,16 @@
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)",
       "query.PRC1": "현재가 필터범위 1 (필수) — 가격 ~",
       "query.PRC2": "현재가 필터범위 2 (필수) — ~ 가격"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.NDAY",
+      "query.VOL_RANG",
+      "query.PRC1",
+      "query.PRC2"
+    ]
   },
   {
     "id": "해외주식-039",
@@ -2705,7 +3869,14 @@
       "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
       "query.MINX": "N분전콤보값 (필수) — N분전 : 0(1분전), 1(2분전), 2(3분전), 3(5분전), 4(10분전), 5(15분전), 6(20분전), 7(30분전), 8(60분전…",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.MINX",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "해외주식-042",
@@ -2731,7 +3902,14 @@
       "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
       "query.NDAY": "N일자값 (필수) — N분전 : 0(1분전), 1(2분전), 2(3분전), 3(5분전), 4(10분전), 5(15분전), 6(20분전), 7(30분전), 8(60분전…",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.NDAY",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "해외주식-046",
@@ -2747,7 +3925,14 @@
       "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
       "query.NDAY": "N일자값 (필수) — N일전 : 0(당일), 1(2일), 2(3일), 3(5일), 4(10일), 5(20일전), 6(30일), 7(60일), 8(120일), 9(1년…",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.NDAY",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "해외주식-053",
@@ -2766,7 +3951,17 @@
       "query.DATA_DT": "조회일자 (필수) — 전체: 공백 특정일자(YYYYMMDD) ex. 20240502",
       "query.DATA_TM": "조회시간 (필수) — 전체: 공백 전체: 공백 특정시간(HHMMSS) ex. 093500",
       "query.CTS": "다음키 (필수) — 공백 입력"
-    }
+    },
+    "required": [
+      "query.INFO_GB",
+      "query.CLASS_CD",
+      "query.NATION_CD",
+      "query.EXCHANGE_CD",
+      "query.SYMB",
+      "query.DATA_DT",
+      "query.DATA_TM",
+      "query.CTS"
+    ]
   },
   {
     "id": "해외주식-051",
@@ -2789,7 +3984,21 @@
       "query.LOAN_PSBL_YN": "대출가능여부 (필수) — 공백",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수) — 공백",
       "query.CTX_AREA_NK100": "연속조회키100 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.PDNO",
+      "query.PRDT_TYPE_CD",
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.INQR_DVSN",
+      "query.NATN_CD",
+      "query.INQR_SQN_DVSN",
+      "query.RT_DVSN_CD",
+      "query.RT",
+      "query.LOAN_PSBL_YN",
+      "query.CTX_AREA_FK100",
+      "query.CTX_AREA_NK100"
+    ]
   },
   {
     "id": "해외주식-047",
@@ -2804,7 +4013,13 @@
       "query.AUTH": "사용자권한정보 (필수) — 공백",
       "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "해외주식-055",
@@ -2824,7 +4039,18 @@
       "query.FID_RANK_SORT_CLS_CODE": "순위정렬구분코드 (필수) — 공백",
       "query.FID_INPUT_SRNO": "입력일련번호 (필수) — 공백",
       "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — 화면번호:11801"
-    }
+    },
+    "required": [
+      "query.FID_NEWS_OFER_ENTP_CODE",
+      "query.FID_COND_MRKT_CLS_CODE",
+      "query.FID_INPUT_ISCD",
+      "query.FID_TITL_CNTT",
+      "query.FID_INPUT_DATE_1",
+      "query.FID_INPUT_HOUR_1",
+      "query.FID_RANK_SORT_CLS_CODE",
+      "query.FID_INPUT_SRNO",
+      "query.FID_COND_SCR_DIV_CODE"
+    ]
   },
   {
     "id": "해외주식-041",
@@ -2849,7 +4075,13 @@
       "query.SYMB": "심볼 (필수) — 종목코드",
       "query.ST_YMD": "일자 시작일 (필수) — 미입력 시, 오늘-3개월 기간지정 시, 종료일 입력(ex. 20240514) ※ 조회기간 기준일 입력시 참고 - 상환: 상환일자, 조기상환: 조…",
       "query.ED_YMD": "일자 종료일 (필수) — 미입력 시, 오늘+3개월 기간지정 시, 종료일 입력(ex. 20240514) ※ 조회기간 기준일 입력시 참고 - 상환: 상환일자, 조기상환: 조…"
-    }
+    },
+    "required": [
+      "query.NCOD",
+      "query.SYMB",
+      "query.ST_YMD",
+      "query.ED_YMD"
+    ]
   },
   {
     "id": "해외주식-043",
@@ -2867,7 +4099,16 @@
       "query.PRC1": "현재가 필터범위 1 (필수) — 가격 ~",
       "query.PRC2": "현재가 필터범위 2 (필수) — ~ 가격",
       "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-    }
+    },
+    "required": [
+      "query.KEYB",
+      "query.AUTH",
+      "query.EXCD",
+      "query.NDAY",
+      "query.PRC1",
+      "query.PRC2",
+      "query.VOL_RANG"
+    ]
   },
   {
     "id": "v1_해외선물-009",
@@ -2879,7 +4120,10 @@
     "trId": "HHDFC55010000",
     "params": {
       "query.SRS_CD": "종목코드 (필수) — ex) CNHU24 ※ 종목코드 \"포럼 > FAQ > 종목정보 다운로드(해외) - 해외지수선물\" 참고"
-    }
+    },
+    "required": [
+      "query.SRS_CD"
+    ]
   },
   {
     "id": "v1_해외선물-008",
@@ -2891,7 +4135,10 @@
     "trId": "HHDFC55010100",
     "params": {
       "query.SRS_CD": "종목코드 (필수) — ex) CNHU24 ※ 종목코드 \"포럼 > FAQ > 종목정보 다운로드(해외) - 해외지수선물\" 참고"
-    }
+    },
+    "required": [
+      "query.SRS_CD"
+    ]
   },
   {
     "id": "해외선물-031",
@@ -2903,7 +4150,10 @@
     "trId": "HHDFC86000000",
     "params": {
       "query.SRS_CD": "종목명 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.SRS_CD"
+    ]
   },
   {
     "id": "해외선물-016",
@@ -2922,7 +4172,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 120 (조회갯수)",
       "query.QRY_GAP": "묶음개수 (필수) — 5 (분간격)",
       "query.INDEX_KEY": "이전조회KEY (필수) — 다음조회(QRY_TP를 P로 입력) 시, 이전 호출의 \"output1 > index_key\" 기입하여 조회"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-019",
@@ -2941,7 +4201,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 30 (최대 40)",
       "query.QRY_GAP": "묶음개수 (필수) — 공백 (분만 사용)",
       "query.INDEX_KEY": "이전조회KEY (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-017",
@@ -2960,7 +4230,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 30 (최대 40)",
       "query.QRY_GAP": "묶음개수 (필수) — 공백 (분만 사용)",
       "query.INDEX_KEY": "이전조회KEY (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-018",
@@ -2979,7 +4259,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 30 (최대 40)",
       "query.QRY_GAP": "묶음개수 (필수) — 공백 (분만 사용)",
       "query.INDEX_KEY": "이전조회KEY (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-020",
@@ -2998,7 +4288,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 30 (최대 40)",
       "query.QRY_GAP": "묶음개수 (필수) — 공백 (분만 사용)",
       "query.INDEX_KEY": "이전조회KEY (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-023",
@@ -3042,7 +4342,42 @@
       "query.SRS_CD_30": "품목종류… (필수)",
       "query.SRS_CD_31": "품목종류… (필수)",
       "query.SRS_CD_32": "품목종류… (필수)"
-    }
+    },
+    "required": [
+      "query.QRY_CNT",
+      "query.SRS_CD_01",
+      "query.SRS_CD_02",
+      "query.SRS_CD_03",
+      "query.SRS_CD_04",
+      "query.SRS_CD_05",
+      "query.SRS_CD_06",
+      "query.SRS_CD_07",
+      "query.SRS_CD_08",
+      "query.SRS_CD_09",
+      "query.SRS_CD_10",
+      "query.SRS_CD_11",
+      "query.SRS_CD_12",
+      "query.SRS_CD_13",
+      "query.SRS_CD_14",
+      "query.SRS_CD_15",
+      "query.SRS_CD_16",
+      "query.SRS_CD_17",
+      "query.SRS_CD_18",
+      "query.SRS_CD_19",
+      "query.SRS_CD_20",
+      "query.SRS_CD_21",
+      "query.SRS_CD_22",
+      "query.SRS_CD_23",
+      "query.SRS_CD_24",
+      "query.SRS_CD_25",
+      "query.SRS_CD_26",
+      "query.SRS_CD_27",
+      "query.SRS_CD_28",
+      "query.SRS_CD_29",
+      "query.SRS_CD_30",
+      "query.SRS_CD_31",
+      "query.SRS_CD_32"
+    ]
   },
   {
     "id": "해외선물-029",
@@ -3057,7 +4392,13 @@
       "query.BSOP_DATE": "일자 (필수) — 기준일(ex)20240513)",
       "query.UPMU_GUBUN": "구분 (필수) — 0(수량), 1(증감)",
       "query.CTS_KEY": "CTS_KEY (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.PROD_ISCD",
+      "query.BSOP_DATE",
+      "query.UPMU_GUBUN",
+      "query.CTS_KEY"
+    ]
   },
   {
     "id": "해외선물-035",
@@ -3069,7 +4410,10 @@
     "trId": "HHDFO55010000",
     "params": {
       "query.SRS_CD": "종목명 (필수) — ex) OESU24 C5500 ※ 종목코드 \"포럼 > FAQ > 종목정보 다운로드(해외) - 해외지수옵션/해외주식옵션\" 참고"
-    }
+    },
+    "required": [
+      "query.SRS_CD"
+    ]
   },
   {
     "id": "해외선물-034",
@@ -3081,7 +4425,10 @@
     "trId": "HHDFO55010100",
     "params": {
       "query.SRS_CD": "종목명 (필수) — ex) OESU24 C5500 ※ 종목코드 \"포럼 > FAQ > 종목정보 다운로드(해외) - 해외지수옵션/해외주식옵션\" 참고"
-    }
+    },
+    "required": [
+      "query.SRS_CD"
+    ]
   },
   {
     "id": "해외선물-033",
@@ -3093,7 +4440,10 @@
     "trId": "HHDFO86000000",
     "params": {
       "query.SRS_CD": "종목명 (필수) — 예)OESM24 C5340"
-    }
+    },
+    "required": [
+      "query.SRS_CD"
+    ]
   },
   {
     "id": "해외선물-040",
@@ -3112,7 +4462,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 120 (최대 120)",
       "query.QRY_GAP": "묶음개수 (필수) — 1: 1분봉, 5: 5분봉 ...",
       "query.INDEX_KEY": "이전조회KEY (필수) — 다음조회(QRY_TP를 P로 입력) 시, 이전 호출의 \"output1 > index_key\" 기입하여 조회"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-038",
@@ -3131,7 +4491,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 30 (최대 40)",
       "query.QRY_GAP": "묶음개수 (필수) — 공백",
       "query.INDEX_KEY": "이전조회KEY (필수) — 다음조회(QRY_TP를 P로 입력) 시, 이전 호출의 \"output1 > index_key\" 기입하여 조회"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-037",
@@ -3150,7 +4520,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 100 (최대 119) ※ QRY_CNT 입력값의 +1 개 데이터가 조회됩니다.",
       "query.QRY_GAP": "묶음개수 (필수) — \"\" 공란 입력",
       "query.INDEX_KEY": "이전조회KEY (필수) — \"\" 공란 입력 ※ 다음조회 불가"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-036",
@@ -3169,7 +4549,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 20 (최대 120)",
       "query.QRY_GAP": "묶음개수 (필수) — \"\" 공란 입력",
       "query.INDEX_KEY": "이전조회KEY (필수) — \"\" 공란 입력"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-039",
@@ -3188,7 +4578,17 @@
       "query.QRY_CNT": "요청개수 (필수) — 예) 20 (최대 120)",
       "query.QRY_GAP": "묶음개수 (필수) — \"\" 공란 입력",
       "query.INDEX_KEY": "이전조회KEY (필수) — \"\" 공란 입력"
-    }
+    },
+    "required": [
+      "query.SRS_CD",
+      "query.EXCH_CD",
+      "query.START_DATE_TIME",
+      "query.CLOSE_DATE_TIME",
+      "query.QRY_TP",
+      "query.QRY_CNT",
+      "query.QRY_GAP",
+      "query.INDEX_KEY"
+    ]
   },
   {
     "id": "해외선물-041",
@@ -3230,7 +4630,40 @@
       "query.SRS_CD_28": "종목코드2 (필수)",
       "query.SRS_CD_29": "종목코드2 (필수)",
       "query.SRS_CD_30": "종목코드2 (필수)"
-    }
+    },
+    "required": [
+      "query.QRY_CNT",
+      "query.SRS_CD_01",
+      "query.SRS_CD_02",
+      "query.SRS_CD_03",
+      "query.SRS_CD_04",
+      "query.SRS_CD_05",
+      "query.SRS_CD_06",
+      "query.SRS_CD_07",
+      "query.SRS_CD_08",
+      "query.SRS_CD_09",
+      "query.SRS_CD_10",
+      "query.SRS_CD_11",
+      "query.SRS_CD_12",
+      "query.SRS_CD_13",
+      "query.SRS_CD_14",
+      "query.SRS_CD_15",
+      "query.SRS_CD_16",
+      "query.SRS_CD_17",
+      "query.SRS_CD_18",
+      "query.SRS_CD_19",
+      "query.SRS_CD_20",
+      "query.SRS_CD_21",
+      "query.SRS_CD_22",
+      "query.SRS_CD_23",
+      "query.SRS_CD_24",
+      "query.SRS_CD_25",
+      "query.SRS_CD_26",
+      "query.SRS_CD_27",
+      "query.SRS_CD_28",
+      "query.SRS_CD_29",
+      "query.SRS_CD_30"
+    ]
   },
   {
     "id": "해외선물-030",
@@ -3247,7 +4680,15 @@
       "query.OPT_YN": "옵션여부 (필수) — %(전체), N(선물), Y(옵션)",
       "query.CTX_AREA_NK200": "연속조회키200 (필수)",
       "query.CTX_AREA_FK200": "연속조회검색조건200 (필수)"
-    }
+    },
+    "required": [
+      "query.FM_PDGR_CD",
+      "query.FM_CLAS_CD",
+      "query.FM_EXCG_CD",
+      "query.OPT_YN",
+      "query.CTX_AREA_NK200",
+      "query.CTX_AREA_FK200"
+    ]
   },
   {
     "id": "국내주식-132",
@@ -3260,7 +4701,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — B: 장내",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 채권종목코드 ex. KR2088012A16"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-200",
@@ -3273,7 +4718,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — B (업종코드)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 채권종목코드(ex KR2033022D33)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-201",
@@ -3286,7 +4735,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — B (업종코드)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 채권종목코드(ex KR2033022D33)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-202",
@@ -3299,7 +4752,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — B (업종코드)",
       "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 채권종목코드(ex KR2033022D33)"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-159",
@@ -3312,7 +4769,11 @@
     "params": {
       "query.FID_COND_MRKT_DIV_CODE": "조건 시장 구분 코드 (필수) — Unique key(B)",
       "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드"
-    }
+    },
+    "required": [
+      "query.FID_COND_MRKT_DIV_CODE",
+      "query.FID_INPUT_ISCD"
+    ]
   },
   {
     "id": "국내주식-158",
@@ -3330,7 +4791,16 @@
       "query.VRFC_KIND_CD": "검증종류코드 (필수) — Unique key(00)",
       "query.CTX_AREA_NK30": "연속조회키30 (필수) — 공백",
       "query.CTX_AREA_FK100": "연속조회검색조건100 (필수) — 공백"
-    }
+    },
+    "required": [
+      "query.INQR_STRT_DT",
+      "query.INQR_END_DT",
+      "query.PDNO",
+      "query.PRDT_TYPE_CD",
+      "query.VRFC_KIND_CD",
+      "query.CTX_AREA_NK30",
+      "query.CTX_AREA_FK100"
+    ]
   },
   {
     "id": "국내주식-156",
@@ -3343,7 +4813,11 @@
     "params": {
       "query.PDNO": "사용자권한정보 (필수) — 채권 종목번호(ex. KR6449111CB8)",
       "query.PRDT_TYPE_CD": "거래소코드 (필수) — Unique key(302)"
-    }
+    },
+    "required": [
+      "query.PDNO",
+      "query.PRDT_TYPE_CD"
+    ]
   },
   {
     "id": "국내주식-129",
@@ -3356,7 +4830,11 @@
     "params": {
       "query.PDNO": "상품번호 (필수) — 상품번호",
       "query.PRDT_TYPE_CD": "상품유형코드 (필수) — Unique key(302)"
-    }
+    },
+    "required": [
+      "query.PDNO",
+      "query.PRDT_TYPE_CD"
+    ]
   },
   {
     "id": "get_candles",

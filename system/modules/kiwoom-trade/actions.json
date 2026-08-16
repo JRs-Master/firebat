@@ -17,7 +17,10 @@
     "path": "/api/dostk/acnt",
     "params": {
       "qry_dt": "조회일자 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "qry_dt"
+    ]
   },
   {
     "id": "ka10072",
@@ -29,7 +32,10 @@
     "params": {
       "stk_cd": "종목코드 — 종목코드 6자리",
       "strt_dt": "시작일자 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "strt_dt"
+    ]
   },
   {
     "id": "ka10073",
@@ -42,7 +48,11 @@
       "stk_cd": "종목코드 — 종목코드 6자리",
       "strt_dt": "시작일자 (필수) — YYYYMMDD",
       "end_dt": "종료일자 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "strt_dt",
+      "end_dt"
+    ]
   },
   {
     "id": "ka10074",
@@ -54,7 +64,11 @@
     "params": {
       "strt_dt": "시작일자 (필수) — YYYYMMDD",
       "end_dt": "종료일자 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "strt_dt",
+      "end_dt"
+    ]
   },
   {
     "id": "ka10075",
@@ -68,7 +82,12 @@
       "trde_tp": "매매구분 (필수) — 0:전체, 1:매도, 2:매수",
       "stk_cd": "종목코드 — 종목코드 6자리",
       "stex_tp": "거래소구분 (필수) — 0 : 통합, 1 : KRX, 2 : NXT"
-    }
+    },
+    "required": [
+      "all_stk_tp",
+      "trde_tp",
+      "stex_tp"
+    ]
   },
   {
     "id": "ka10076",
@@ -83,7 +102,12 @@
       "sell_tp": "매도수구분 (필수) — 0:전체, 1:매도, 2:매수",
       "ord_no": "주문번호 — 검색 기준 값으로 입력한 주문번호 보다 과거에 체결된 내역이 조회됩니다.",
       "stex_tp": "거래소구분 (필수) — 0 : 통합, 1 : KRX, 2 : NXT"
-    }
+    },
+    "required": [
+      "qry_tp",
+      "sell_tp",
+      "stex_tp"
+    ]
   },
   {
     "id": "ka10077",
@@ -94,7 +118,10 @@
     "path": "/api/dostk/acnt",
     "params": {
       "stk_cd": "종목코드 (필수) — 종목코드 6자리"
-    }
+    },
+    "required": [
+      "stk_cd"
+    ]
   },
   {
     "id": "ka10085",
@@ -105,7 +132,10 @@
     "path": "/api/dostk/acnt",
     "params": {
       "stex_tp": "거래소구분 (필수) — 0 : 통합, 1 : KRX, 2 : NXT"
-    }
+    },
+    "required": [
+      "stex_tp"
+    ]
   },
   {
     "id": "ka10088",
@@ -116,7 +146,10 @@
     "path": "/api/dostk/acnt",
     "params": {
       "ord_no": "주문번호 (필수) — 주문번호 7자리"
-    }
+    },
+    "required": [
+      "ord_no"
+    ]
   },
   {
     "id": "ka10170",
@@ -129,7 +162,11 @@
       "base_dt": "기준일자 — YYYYMMDD(공백입력시 금일데이터,최근 2개월까지 제공)",
       "ottks_tp": "단주구분 (필수) — 1:당일매수에 대한 당일매도,2:당일매도 전체",
       "ch_crd_tp": "현금신용구분 (필수) — 0:전체, 1:현금매매만, 2:신용매매만"
-    }
+    },
+    "required": [
+      "ottks_tp",
+      "ch_crd_tp"
+    ]
   },
   {
     "id": "kt00001",
@@ -140,7 +177,10 @@
     "path": "/api/dostk/acnt",
     "params": {
       "qry_tp": "조회구분 (필수) — 3:추정조회, 2:일반조회"
-    }
+    },
+    "required": [
+      "qry_tp"
+    ]
   },
   {
     "id": "kt00002",
@@ -152,7 +192,11 @@
     "params": {
       "start_dt": "시작조회기간 (필수) — YYYYMMDD",
       "end_dt": "종료조회기간 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "start_dt",
+      "end_dt"
+    ]
   },
   {
     "id": "kt00003",
@@ -163,7 +207,10 @@
     "path": "/api/dostk/acnt",
     "params": {
       "qry_tp": "상장폐지조회구분 (필수) — 0:전체, 1:상장폐지종목제외"
-    }
+    },
+    "required": [
+      "qry_tp"
+    ]
   },
   {
     "id": "kt00004",
@@ -175,7 +222,11 @@
     "params": {
       "qry_tp": "상장폐지조회구분 (필수) — 0:전체, 1:상장폐지종목제외",
       "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
-    }
+    },
+    "required": [
+      "qry_tp",
+      "dmst_stex_tp"
+    ]
   },
   {
     "id": "kt00005",
@@ -186,7 +237,10 @@
     "path": "/api/dostk/acnt",
     "params": {
       "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
-    }
+    },
+    "required": [
+      "dmst_stex_tp"
+    ]
   },
   {
     "id": "kt00007",
@@ -203,7 +257,13 @@
       "stk_cd": "종목코드 — 전체 종목 조회는 빈값('')으로 설정",
       "fr_ord_no": "시작주문번호 — 시작주문번호 입력 시 이전 주문은 조회되지 않음, 전체 조회는 빈값('')으로 설정",
       "dmst_stex_tp": "국내거래소구분 (필수) — %:(전체),KRX:한국거래소,NXT:넥스트트레이드,SOR:최선주문집행"
-    }
+    },
+    "required": [
+      "qry_tp",
+      "stk_bond_tp",
+      "sell_tp",
+      "dmst_stex_tp"
+    ]
   },
   {
     "id": "kt00008",
@@ -232,7 +292,14 @@
       "stk_cd": "종목코드 — 전문 조회할 종목코드",
       "fr_ord_no": "시작주문번호 — 시작주문번호의 이전 주문은 조회 되지 않으며 약정금액에도 포함 되지 않음",
       "dmst_stex_tp": "국내거래소구분 (필수) — %:(전체),KRX:한국거래소,NXT:넥스트트레이드,SOR:최선주문집행"
-    }
+    },
+    "required": [
+      "stk_bond_tp",
+      "mrkt_tp",
+      "sell_tp",
+      "qry_tp",
+      "dmst_stex_tp"
+    ]
   },
   {
     "id": "kt00010",
@@ -248,7 +315,12 @@
       "trde_qty": "매매수량 — 단위: 1주",
       "uv": "매수가격 (필수) — 단위: 원",
       "exp_buy_unp": "예상매수단가 — 단위: 원"
-    }
+    },
+    "required": [
+      "stk_cd",
+      "trde_tp",
+      "uv"
+    ]
   },
   {
     "id": "kt00011",
@@ -260,7 +332,10 @@
     "params": {
       "stk_cd": "종목번호 (필수) — 종목 코드 입력",
       "uv": "매수가격 — 단위: 원"
-    }
+    },
+    "required": [
+      "stk_cd"
+    ]
   },
   {
     "id": "kt00012",
@@ -272,7 +347,10 @@
     "params": {
       "stk_cd": "종목번호 (필수) — 종목 코드 입력",
       "uv": "매수가격 — 단위: 원"
-    }
+    },
+    "required": [
+      "stk_cd"
+    ]
   },
   {
     "id": "kt00013",
@@ -300,7 +378,14 @@
       "frgn_stex_code": "해외거래소코드",
       "dmst_stex_tp": "국내거래소구분 (필수) — %:(전체),KRX:한국거래소,NXT:넥스트트레이드",
       "qry_sort_tp": "조회정렬구분 — 1:최근거래순, 2:과거거래순(미입력시 과거거래순)"
-    }
+    },
+    "required": [
+      "strt_dt",
+      "end_dt",
+      "tp",
+      "gds_tp",
+      "dmst_stex_tp"
+    ]
   },
   {
     "id": "kt00016",
@@ -312,7 +397,11 @@
     "params": {
       "fr_dt": "평가시작일 (필수) — YYYYMMDD",
       "to_dt": "평가종료일 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "fr_dt",
+      "to_dt"
+    ]
   },
   {
     "id": "kt00017",
@@ -333,7 +422,11 @@
     "params": {
       "qry_tp": "조회구분 (필수) — 1:합산, 2:개별",
       "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
-    }
+    },
+    "required": [
+      "qry_tp",
+      "dmst_stex_tp"
+    ]
   },
   {
     "id": "kt10000",
@@ -349,7 +442,13 @@
       "ord_uv": "주문단가 — 단위: 원",
       "trde_tp": "매매구분 (필수) — 0:보통 , 3:시장가 , 5:조건부지정가 , 81:장마감후시간외 , 61:장시작전시간외, 62:시간외단일가 , 6:최유리지정가 , 7:최우선지…",
       "cond_uv": "조건단가 — 단위: 원"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "stk_cd",
+      "ord_qty",
+      "trde_tp"
+    ]
   },
   {
     "id": "kt10001",
@@ -365,7 +464,13 @@
       "ord_uv": "주문단가 — 단위: 원",
       "trde_tp": "매매구분 (필수) — 0:보통 , 3:시장가 , 5:조건부지정가 , 81:장마감후시간외 , 61:장시작전시간외, 62:시간외단일가 , 6:최유리지정가 , 7:최우선지…",
       "cond_uv": "조건단가 — 단위: 원"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "stk_cd",
+      "ord_qty",
+      "trde_tp"
+    ]
   },
   {
     "id": "kt10002",
@@ -381,7 +486,14 @@
       "mdfy_qty": "정정수량 (필수) — 단위: 1주, '0' 입력 시 잔량 전부 정정",
       "mdfy_uv": "정정단가 (필수) — 단위: 원",
       "mdfy_cond_uv": "정정조건단가 — 단위: 원"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "orig_ord_no",
+      "stk_cd",
+      "mdfy_qty",
+      "mdfy_uv"
+    ]
   },
   {
     "id": "kt10003",
@@ -395,7 +507,13 @@
       "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
       "stk_cd": "종목코드 (필수)",
       "cncl_qty": "취소수량 (필수) — 단위: 1주, '0' 입력시 잔량 전부 취소"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "orig_ord_no",
+      "stk_cd",
+      "cncl_qty"
+    ]
   },
   {
     "id": "kt10006",
@@ -411,7 +529,13 @@
       "ord_uv": "주문단가 — 단위: 원",
       "trde_tp": "매매구분 (필수) — 0:보통 , 3:시장가 , 5:조건부지정가 , 81:장마감후시간외 , 61:장시작전시간외, 62:시간외단일가 , 6:최유리지정가 , 7:최우선지…",
       "cond_uv": "조건단가 — 단위: 원"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "stk_cd",
+      "ord_qty",
+      "trde_tp"
+    ]
   },
   {
     "id": "kt10007",
@@ -429,7 +553,14 @@
       "crd_deal_tp": "신용거래구분 (필수) — 33:융자 , 99:융자합",
       "crd_loan_dt": "대출일 — YYYYMMDD(융자일경우필수)",
       "cond_uv": "조건단가 — 단위: 원"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "stk_cd",
+      "ord_qty",
+      "trde_tp",
+      "crd_deal_tp"
+    ]
   },
   {
     "id": "kt10008",
@@ -445,7 +576,14 @@
       "mdfy_qty": "정정수량 (필수) — 단위: 1주, '0' 입력시 잔량 전부 정정",
       "mdfy_uv": "정정단가 (필수) — 단위: 원",
       "mdfy_cond_uv": "정정조건단가 — 단위: 원"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "orig_ord_no",
+      "stk_cd",
+      "mdfy_qty",
+      "mdfy_uv"
+    ]
   },
   {
     "id": "kt10009",
@@ -459,7 +597,13 @@
       "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
       "stk_cd": "종목코드 (필수)",
       "cncl_qty": "취소수량 (필수) — 단위: 1주, '0' 입력시 잔량 전부 취소"
-    }
+    },
+    "required": [
+      "dmst_stex_tp",
+      "orig_ord_no",
+      "stk_cd",
+      "cncl_qty"
+    ]
   },
   {
     "id": "kt50000",
@@ -473,7 +617,12 @@
       "ord_qty": "주문수량 (필수) — 단위: 1주",
       "ord_uv": "주문단가 — 단위: 원",
       "trde_tp": "매매구분 (필수) — 00:보통, 10:보통(IOC), 20:보통(FOK)"
-    }
+    },
+    "required": [
+      "stk_cd",
+      "ord_qty",
+      "trde_tp"
+    ]
   },
   {
     "id": "kt50001",
@@ -487,7 +636,12 @@
       "ord_qty": "주문수량 (필수) — 단위: 1주",
       "ord_uv": "주문단가 — 단위: 원",
       "trde_tp": "매매구분 (필수) — 00:보통, 10:보통(IOC), 20:보통(FOK)"
-    }
+    },
+    "required": [
+      "stk_cd",
+      "ord_qty",
+      "trde_tp"
+    ]
   },
   {
     "id": "kt50002",
@@ -501,7 +655,13 @@
       "orig_ord_no": "원주문번호 (필수)",
       "mdfy_qty": "정정수량 (필수) — 단위: 1주, '0' 입력시 잔량 전부 정정",
       "mdfy_uv": "정정단가 (필수) — 단위: 원"
-    }
+    },
+    "required": [
+      "stk_cd",
+      "orig_ord_no",
+      "mdfy_qty",
+      "mdfy_uv"
+    ]
   },
   {
     "id": "kt50003",
@@ -514,7 +674,12 @@
       "orig_ord_no": "원주문번호 (필수) — 매수/매도 주문 요청 응답 결과로 받은 7자리 주문번호",
       "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
       "cncl_qty": "취소수량 (필수) — 단위: 1주, '0' 입력시 잔량 전부 취소"
-    }
+    },
+    "required": [
+      "orig_ord_no",
+      "stk_cd",
+      "cncl_qty"
+    ]
   },
   {
     "id": "kt50020",
@@ -550,7 +715,13 @@
       "stk_cd": "종목코드 — M04020000: 금 99.99_1kg, M04020100: 미니금 99.99_100g, 전체 조회는 빈값('')으로 설정",
       "fr_ord_no": "시작주문번호 — 시작주문번호 입력 시 이전 주문은 조회되지 않음, 전체 조회는 빈값('')으로 설정",
       "dmst_stex_tp": "국내거래소구분 — %:(전체), KRX, NXT, SOR"
-    }
+    },
+    "required": [
+      "ord_dt",
+      "mrkt_deal_tp",
+      "stk_bond_tp",
+      "slby_tp"
+    ]
   },
   {
     "id": "kt50031",
@@ -567,7 +738,13 @@
       "stk_cd": "종목코드 — M04020000: 금 99.99_1kg, M04020100: 미니금 99.99_100g, 전체 조회는 빈값('')으로 설정",
       "fr_ord_no": "시작주문번호 — 시작주문번호 입력 시 이전 주문은 조회되지 않음, 전체 조회는 빈값('')으로 설정",
       "dmst_stex_tp": "국내거래소구분 (필수) — %:(전체),KRX:한국거래소,NXT:넥스트트레이드,SOR:최선주문집행"
-    }
+    },
+    "required": [
+      "qry_tp",
+      "stk_bond_tp",
+      "sell_tp",
+      "dmst_stex_tp"
+    ]
   },
   {
     "id": "kt50032",
@@ -599,7 +776,13 @@
       "stk_cd": "종목코드 — M04020000: 금 99.99_1kg, M04020100: 미니금 99.99_100g, 전체 조회는 빈값('')으로 설정",
       "fr_ord_no": "시작주문번호 — 시작주문번호 입력 시 이전 주문은 조회되지 않음, 전체 조회는 빈값('')으로 설정",
       "dmst_stex_tp": "국내거래소구분 — %:(전체), KRX, NXT, SOR"
-    }
+    },
+    "required": [
+      "ord_dt",
+      "mrkt_deal_tp",
+      "stk_bond_tp",
+      "sell_tp"
+    ]
   },
   {
     "id": "usa21670",
@@ -611,7 +794,11 @@
     "params": {
       "from": "from 일자 (필수) — YYYYMMDD",
       "to": "to 일자 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "from",
+      "to"
+    ]
   },
   {
     "id": "usa21680",
@@ -623,7 +810,11 @@
     "params": {
       "from": "from 년월 (필수) — YYYYMM",
       "to": "to 년월 (필수) — YYYYMM"
-    }
+    },
+    "required": [
+      "from",
+      "to"
+    ]
   },
   {
     "id": "usa21690",
@@ -635,7 +826,11 @@
     "params": {
       "from": "from 년도 (필수) — YYYY",
       "to": "to 년도 (필수) — YYYY"
-    }
+    },
+    "required": [
+      "from",
+      "to"
+    ]
   },
   {
     "id": "usa21730",
@@ -649,7 +844,12 @@
       "to": "to 일자 (필수) — YYYYMMDD",
       "stex_tp": "거래소구분 — NA: AMEX, ND: NASDAQ, NY: NYSE",
       "stk_cd": "종목코드 (필수)"
-    }
+    },
+    "required": [
+      "from",
+      "to",
+      "stk_cd"
+    ]
   },
   {
     "id": "usa21731",
@@ -663,7 +863,12 @@
       "to": "to 년월 (필수) — YYYYMM",
       "stex_tp": "거래소구분 — NA: AMEX, ND: NASDAQ, NY: NYSE",
       "stk_cd": "종목코드 (필수)"
-    }
+    },
+    "required": [
+      "from",
+      "to",
+      "stk_cd"
+    ]
   },
   {
     "id": "usa21732",
@@ -677,7 +882,12 @@
       "to": "to 년도 (필수) — YYYY",
       "stex_tp": "거래소구분 — NA: AMEX, ND: NASDAQ, NY: NYSE",
       "stk_cd": "종목코드 (필수)"
-    }
+    },
+    "required": [
+      "from",
+      "to",
+      "stk_cd"
+    ]
   },
   {
     "id": "ust20000",
@@ -692,7 +902,13 @@
       "ord_qty": "주문수량 (필수)",
       "ord_uv": "주문단가 — trde_tp가 00(지정가),30(LOC)...인 경우 필수 입력, 그 외 시장가 거래유형 설정 시 입력 값은 빈 값 처리",
       "trde_tp": "해외매매구분 (필수) — 00:지정가 03시장가 26:VWAP지정가 27:TWAP지정가 30:LOC 36:VWAP시장가 37:TWAP시장가"
-    }
+    },
+    "required": [
+      "stex_tp",
+      "stk_cd",
+      "ord_qty",
+      "trde_tp"
+    ]
   },
   {
     "id": "ust20001",
@@ -708,7 +924,13 @@
       "ord_uv": "주문단가 — trde_tp가 00(지정가),30(LOC)...인 경우 필수 입력, 그 외 시장가 거래유형 설정 시 입력 값은 빈 값 처리",
       "stop_pric": "STOP가격 — trde_tp가 34(STOP LIMIT) 또는 35(STOP)인 경우 필수 입력, 그 외 거래유형(지정가,시장가 등) 설정 시 입력 값은 무시…",
       "trde_tp": "매매구분 (필수) — 00:지정가 03시장가 26:VWAP지정가 27:TWAP지정가 30:LOC 33:MOC 36:VWAP시장가 37:TWAP시장가 35:STOP 3…"
-    }
+    },
+    "required": [
+      "stk_cd",
+      "stex_tp",
+      "ord_qty",
+      "trde_tp"
+    ]
   },
   {
     "id": "ust20002",
@@ -723,7 +945,12 @@
       "stk_cd": "종목코드 (필수)",
       "mdfy_uv": "정정단가",
       "stop_pric": "STOP가격 — 원주문 trde_tp가 34(STOP LIMIT) 또는 35(STOP)인 경우 필수 입력, 그 외 거래유형(지정가 등) 설정 시 입력 값은 무시…"
-    }
+    },
+    "required": [
+      "orig_ord_no",
+      "stex_tp",
+      "stk_cd"
+    ]
   },
   {
     "id": "ust20003",
@@ -736,7 +963,12 @@
       "orig_ord_no": "원주문번호 (필수) — 주문 요청 응답 결과로 받은 ord_no를 설정",
       "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
       "stk_cd": "종목코드 (필수)"
-    }
+    },
+    "required": [
+      "orig_ord_no",
+      "stex_tp",
+      "stk_cd"
+    ]
   },
   {
     "id": "ust21050",
@@ -831,7 +1063,10 @@
     "path": "/api/us/acnt",
     "params": {
       "base_dt": "기준일자 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "base_dt"
+    ]
   },
   {
     "id": "ust21132",
@@ -842,7 +1077,10 @@
     "path": "/api/us/acnt",
     "params": {
       "base_dt": "기준일자 (필수) — YYYYMMDD"
-    }
+    },
+    "required": [
+      "base_dt"
+    ]
   },
   {
     "id": "ust21150",
@@ -859,7 +1097,11 @@
       "stk_cd": "종목코드 — 미입력시 전체",
       "oppo_trde_tp": "반대매매구분 — %:전체,0:일반,1:반대매매",
       "fr_ord_no": "시작주문번호"
-    }
+    },
+    "required": [
+      "query_tp",
+      "slby_tp"
+    ]
   },
   {
     "id": "ust21160",
@@ -879,7 +1121,10 @@
     "path": "/api/us/acnt",
     "params": {
       "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
-    }
+    },
+    "required": [
+      "fc_krw_tp"
+    ]
   },
   {
     "id": "ust21180",
@@ -895,7 +1140,11 @@
       "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
       "stk_cd": "종목코드 — 미입력시 전체",
       "oppo_trde_tp": "반대매매구분 — %:전체,0:일반,1:반대매매"
-    }
+    },
+    "required": [
+      "strt_dt",
+      "end_dt"
+    ]
   },
   {
     "id": "ust21510",
@@ -934,7 +1183,11 @@
       "base_dt": "기준일자 — YYYYMMDD",
       "qry_tp": "조회구분 (필수) — 0:당일매수에대한당일매도,1:당일매도전체",
       "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
-    }
+    },
+    "required": [
+      "qry_tp",
+      "fc_krw_tp"
+    ]
   },
   {
     "id": "ust21620",
@@ -947,7 +1200,10 @@
       "stex_tp": "거래소구분 — NA :AMEX, ND :NASDAQ, NY:NYSE",
       "stk_cd": "종목코드 — 기본값 전체",
       "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
-    }
+    },
+    "required": [
+      "fc_krw_tp"
+    ]
   },
   {
     "id": "ust21630",
@@ -960,7 +1216,10 @@
       "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
       "stk_cd": "종목코드",
       "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
-    }
+    },
+    "required": [
+      "fc_krw_tp"
+    ]
   },
   {
     "id": "ust21640",
@@ -974,7 +1233,11 @@
       "stk_cd": "종목코드",
       "cntr_dt": "체결일자 (필수) — YYYYMMDD",
       "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
-    }
+    },
+    "required": [
+      "cntr_dt",
+      "fc_krw_tp"
+    ]
   },
   {
     "id": "ust21650",
@@ -1022,7 +1285,10 @@
     "params": {
       "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)",
       "fc_exmn_amt": "매도통화기준 환전금액 — (EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다) (EXCH_TP = 2 인 경우, 매도통화:…"
-    }
+    },
+    "required": [
+      "exch_tp"
+    ]
   },
   {
     "id": "ust31301",
@@ -1033,7 +1299,10 @@
     "path": "/api/us/exchange",
     "params": {
       "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)"
-    }
+    },
+    "required": [
+      "exch_tp"
+    ]
   },
   {
     "id": "ust31302",
@@ -1045,7 +1314,11 @@
     "params": {
       "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)",
       "fc_exmn_amt": "매도통화기준 환전금액 (필수) — 매도통화기준 환전금액 (EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다) (EXCH_TP = 2…"
-    }
+    },
+    "required": [
+      "exch_tp",
+      "fc_exmn_amt"
+    ]
   },
   {
     "id": "ust31490",
@@ -1058,7 +1331,11 @@
       "stex_tp": "거래소구분 — NA :AMEX, ND :NASDAQ, NY:NYSE",
       "stk_cd": "종목코드 (필수)",
       "uv": "매수가격 (필수)"
-    }
+    },
+    "required": [
+      "stk_cd",
+      "uv"
+    ]
   },
   {
     "id": "place_order",

@@ -322,6 +322,23 @@ impl ModuleActionSource {
                 // So the selection stays with the catalog and the wording comes from the
                 // declaration. An entry that names no params at all takes the whole schema, which
                 // is what lets a single-action module carry no copy in the first place.
+                // A declared per-action `required` overrides the computed one (the ride-along
+                // above), and the vendor sheets list only the API's own mandatory fields — so the
+                // selector, which this rung dispatches on, fell out of the contract it states.
+                // Put it back at the front: `action` is required of every call to a module that
+                // has one, whatever else is.
+                if config
+                    .get("input")
+                    .and_then(|i| i.get("properties"))
+                    .and_then(|p| p.get("action"))
+                    .is_some()
+                {
+                    if let Some(req) = extra.get_mut("required").and_then(|r| r.as_array_mut()) {
+                        if !req.iter().any(|v| v.as_str() == Some("action")) {
+                            req.insert(0, serde_json::Value::String("action".to_string()));
+                        }
+                    }
+                }
                 fill_param_docs_from_input(&mut extra, config, &id);
                 add_cache_key_params(&mut extra, config);
                 // Attach resolve guidance for grounded params this action actually takes —

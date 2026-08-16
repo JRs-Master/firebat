@@ -31,7 +31,14 @@ const cap = (s, n) => {
 const actions = apis
   .filter(a => a.id && a.name)
   .map(a => {
+    // The sheet marks required-ness as a boolean. Writing it only into the prose — `(필수)` —
+    // downgraded a fact the schema rung could have used: `get_action_schema` builds its `fill`
+    // list (what the call is refused without) from a structured `required`, so with none declared
+    // it answered `fill: []` for an action with three mandatory params, and the model had to
+    // learn them from a rejection. Keep the marker for a human reading the row, and keep the
+    // structure for the rung.
     const params = {};
+    const required = [];
     for (const [loc, list] of [['query', a.request?.query ?? []], ['body', a.request?.body ?? []]]) {
       for (const p of list) {
         if (!p.name) continue;
@@ -39,6 +46,7 @@ const actions = apis
         const req = p.required ? ' (필수)' : '';
         const desc = p.desc ? ' — ' + cap(p.desc, 80) : '';
         params[`${loc}.${p.name}`] = `${label}${req}${desc}`;
+        if (p.required) required.push(`${loc}.${p.name}`);
       }
     }
     const entry = {
@@ -50,6 +58,7 @@ const actions = apis
       path: a.path || undefined,
       trId: a.trIdReal || undefined,
       params,
+      required: required.length ? required : undefined,
     };
     const ov = overrides[a.id];
     if (ov) {
