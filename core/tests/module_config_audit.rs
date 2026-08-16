@@ -697,6 +697,126 @@ fn every_runnable_action_is_discoverable() {
     assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
 }
 
+/// The last direction: a param the schema declares must be one the module's code reads.
+///
+/// The two checks above compare declarations with declarations. This one crosses to the
+/// implementation, which is where the remaining silence lives: an input schema is a promise about
+/// what the module accepts, and nothing has ever checked that the module does anything with it.
+/// browser-scrape offered a screenshot, a viewport, a locale, custom headers and a JavaScript
+/// toggle — eight options its 114-line implementation never mentions (measured 2026-08-16). A
+/// model reading that schema is told about capabilities that do not exist, and no error will ever
+/// say otherwise: the call succeeds and the option is dropped on the floor.
+///
+/// The test is a NAME search over every source file in the module directory plus the shared
+/// `_runtime` helpers, so a param read through destructuring, `input["x"]`, or a helper still
+/// counts. Only a name that appears NOWHERE is reported — 13 of 783 params when this was written,
+/// and after the cacheKey exemption below, ten, all of them real.
+///
+/// `<base>CacheKey` / `Limit` / `Range` are exempt, derived from the module's own `cacheInputs`:
+/// core expands them into the base param BEFORE the module runs, so the module is not supposed to
+/// know their names.
+#[test]
+fn every_declared_param_is_read_by_the_module() {
+    let runtime_src = {
+        let mut s = String::new();
+        if let Ok(rd) = fs::read_dir(modules_dir().join("_runtime")) {
+            for e in rd.filter_map(Result::ok) {
+                if let Ok(t) = fs::read_to_string(e.path()) {
+                    s.push_str(&t);
+                }
+            }
+        }
+        s
+    };
+
+    let mut problems = Vec::new();
+    let mut audited = 0usize;
+    for entry in fs::read_dir(modules_dir()).unwrap().filter_map(Result::ok) {
+        let dir = entry.path();
+        let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
+        let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        let Some(props) = config.pointer("/input/properties").and_then(|v| v.as_object()) else {
+            continue;
+        };
+
+        let mut src = String::new();
+        if let Ok(rd) = fs::read_dir(&dir) {
+            for e in rd.filter_map(Result::ok) {
+                let p = e.path();
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
+                if matches!(ext, "mjs" | "js" | "cjs" | "py" | "ts") {
+                    if let Ok(t) = fs::read_to_string(&p) {
+                        src.push_str(&t);
+                    }
+                }
+            }
+        }
+        if src.is_empty() {
+            continue; // nothing to read it in — a config-only entry, not this test's business
+        }
+        src.push_str(&runtime_src);
+        audited += 1;
+
+        // Names core fills in before the module sees them.
+        let expanded: BTreeSet<String> = cache_key_siblings(&config);
+
+        let unread: Vec<&str> = props
+            .keys()
+            .map(|s| s.as_str())
+            .filter(|k| *k != "action")
+            .filter(|k| !expanded.contains(*k))
+            .filter(|k| !mentions_word(&src, k))
+            .collect();
+        if !unread.is_empty() {
+            problems.push(format!(
+                "{name}: declares {} param(s) its code never mentions — {}. Implement them or drop \
+                 the declaration; as written the schema promises what the module cannot do.",
+                unread.len(),
+                unread.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+    assert!(audited >= 25, "only {audited} modules audited — the path drifted");
+    assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
+/// `<param>CacheKey` / `Limit` / `Range` for every `cacheInputs` entry — core expands these into
+/// the base param before the sandbox runs, so the module never names them.
+fn cache_key_siblings(config: &Value) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for entry in firebat_core::utils::cache_inputs::declared(config) {
+        let base = match firebat_core::utils::cache_inputs::parse_nested(&entry) {
+            Some(spec) => spec.field,
+            None => entry,
+        };
+        for suffix in ["CacheKey", "Limit", "Range"] {
+            out.insert(format!("{base}{suffix}"));
+        }
+    }
+    out
+}
+
+/// Whole-word search — `id` must not match `valid`, and a param is "read" wherever its name shows
+/// up: destructured, indexed, or handed to a helper.
+fn mentions_word(src: &str, word: &str) -> bool {
+    let w: Vec<char> = word.chars().collect();
+    let s: Vec<char> = src.chars().collect();
+    let boundary = |c: char| !(c.is_alphanumeric() || c == '_');
+    let mut i = 0;
+    while i + w.len() <= s.len() {
+        if s[i..i + w.len()] == w[..] {
+            let before_ok = i == 0 || boundary(s[i - 1]);
+            let after_ok = i + w.len() == s.len() || boundary(s[i + w.len()]);
+            if before_ok && after_ok {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 /// A module's cron files run UNATTENDED — the autotrade ones place real orders. Their steps are
 /// PipelineStep values, so the executor's own parser is the only honest validator: if serde
 /// cannot read a step here, the scheduler could not have run it there.

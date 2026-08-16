@@ -77,65 +77,12 @@
         "default": "networkidle",
         "description": "Page load wait strategy"
       },
-      "waitForSelector": {
-        "type": "string",
-        "description": "Wait until this CSS selector appears"
-      },
       "excludeDomains": {
         "type": "array",
         "items": {
           "type": "string"
         },
         "description": "List of domains to exclude when filtering links"
-      },
-      "viewport": {
-        "type": "object",
-        "properties": {
-          "width": {
-            "type": "integer",
-            "default": 1280,
-            "description": "Viewport width"
-          },
-          "height": {
-            "type": "integer",
-            "default": 720,
-            "description": "Viewport height"
-          }
-        },
-        "additionalProperties": false,
-        "description": "Browser viewport size"
-      },
-      "locale": {
-        "type": "string",
-        "default": "ko-KR",
-        "description": "Browser locale (BCP 47)"
-      },
-      "timezoneId": {
-        "type": "string",
-        "default": "Asia/Seoul",
-        "description": "Browser timezone (IANA)"
-      },
-      "extraHeaders": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "string"
-        },
-        "description": "Additional HTTP headers"
-      },
-      "javascriptEnabled": {
-        "type": "boolean",
-        "default": true,
-        "description": "Whether to execute JavaScript"
-      },
-      "screenshot": {
-        "type": "boolean",
-        "default": false,
-        "description": "Capture a screenshot (returned as base64)"
-      },
-      "fullPage": {
-        "type": "boolean",
-        "default": false,
-        "description": "Full-page screenshot (when screenshot=true)"
       }
     },
     "additionalProperties": false

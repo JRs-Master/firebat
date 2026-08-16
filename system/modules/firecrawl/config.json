@@ -62,10 +62,6 @@
         },
         "description": "[extract] Target URL array. Supports wildcards (example.com/*)"
       },
-      "keyword": {
-        "type": "string",
-        "description": "[scrape] Extract only sections containing the keyword (post-processed locally)"
-      },
       "formats": {
         "type": "array",
         "items": {
