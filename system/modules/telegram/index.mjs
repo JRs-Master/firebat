@@ -41,7 +41,7 @@ process.stdin.on('end', async () => {
     // Webhook family first — none of these speak INTO a chat, so the chatId requirement
     // below does not apply to them.
     switch (action) {
-      case 'parse-webhook':      return handleParseWebhook(data, defaultChatId);
+      case 'parse-webhook':      return handleParseWebhook(data);
       case 'set-webhook':        return await handleSetWebhook(token, data);
       case 'remove-webhook':     return await handleRemoveWebhook(token);
       case 'webhook-info':       return await handleWebhookInfo(token);
@@ -154,17 +154,18 @@ async function handleSendLocation(token, chatId, data) {
 //  Webhook 핸들러 — 벤더 모양은 전부 여기(모듈)에 산다
 // ────────────────────────────────────────────────────────────────────────
 
-/** 프레임워크가 /hooks/telegram 수신분을 넘겨 부른다. 텔레그램 update 를
- *  {proceed, prompt, replyArgs} 로 증류 — 누가 주인인지도 여기서 판정한다
- *  (TELEGRAM_OWNER_IDS 콤마 목록, 미설정 시 TELEGRAM_CHAT_ID 하나가 주인). */
-function handleParseWebhook(data, defaultChatId) {
+/** 프레임워크가 /api/hooks/telegram 수신분을 넘겨 부른다. 텔레그램 update 를
+ *  {proceed, prompt, replyArgs} 로 증류 — 누가 주인인지도 여기서 판정한다.
+ *  주인 = TELEGRAM_OWNER_IDS 콤마 목록 **명시만** — 폴백 없음, 미설정 = 아무도 아님
+ *  (부재는 동의가 아니다). */
+function handleParseWebhook(data) {
   const payload = data?.payload || {};
   const msg = payload.message;
   if (!msg) return out(true, null, { proceed: false, note: 'not a message update' });
   const fromId = String(msg.from?.id ?? '').trim();
   const chatId = String(msg.chat?.id ?? '').trim();
   if (!fromId || !chatId) return out(true, null, { proceed: false, note: 'no sender/chat id' });
-  const owners = String(process.env['TELEGRAM_OWNER_IDS'] || defaultChatId || '')
+  const owners = String(process.env['TELEGRAM_OWNER_IDS'] || '')
     .split(',').map(s => s.trim()).filter(Boolean);
   if (owners.length === 0) {
     return out(true, null, { proceed: false, note: 'TELEGRAM_OWNER_IDS unset — nobody is authorized' });
@@ -201,7 +202,7 @@ async function handleWebhookInfo(token) {
   const r = await tgRequest(token, 'getWebhookInfo', {});
   if (!r.ok) return outErr(r.errorKey, r.errorParams);
   const info = r.result || {};
-  const owners = String(process.env['TELEGRAM_OWNER_IDS'] || process.env['TELEGRAM_CHAT_ID'] || '')
+  const owners = String(process.env['TELEGRAM_OWNER_IDS'] || '')
     .split(',').map(s => s.trim()).filter(Boolean);
   // The settings screen's contract: active/url/configured/ownerCount.
   return out(true, null, {
