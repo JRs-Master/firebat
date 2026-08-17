@@ -447,6 +447,8 @@
       "saved": "Saved",
       "registered": "Registered",
       "change": "Change",
+      "issue": "Issue",
+      "machine_issued_hint": "Issued and managed by the framework. After regenerating, re-register the webhook.",
       "connected": "Connected",
       "not_connected": "Not connected",
       "connect": "Connect",

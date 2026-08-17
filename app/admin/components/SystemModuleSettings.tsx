@@ -34,6 +34,7 @@ interface SettingField {
   oauthUrl?: string;        // oauth 타입 전용: 인증 시작 URL
   oauthSecrets?: string[];  // oauth 타입 전용: 연동 상태 확인용 시크릿 키
   secretName?: string;      // secret 타입 전용: Vault에 저장할 시크릿 키 이름
+  machineIssued?: boolean;  // secret 타입 전용: 기계 발급 값(config webhook.secret) — 입력 대신 발급/재생성 버튼
   vaultKey?: string;        // shared-secret 전용: 값이 사는 시스템 키 (`system:...`)
   options?: SelectOption[]; // select 타입 전용: dropdown 옵션
   widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
@@ -366,6 +367,14 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           const hasAccounts = !!config?.accounts;
           setDeclaresAccounts(hasAccounts);
           const autoFields = hasAccounts ? [] : secretsToFields(configSecrets, oauthManagedNames);
+          // 기계 발급 시크릿 — config `webhook.secret` 이 지목한 이름은 사람이 타이핑할 값이
+          // 아니라 프레임워크가 발급하는 값이라, 입력 칸 대신 발급/재생성 버튼으로 그린다.
+          const machineSecret = (config?.webhook as { secret?: string } | undefined)?.secret;
+          if (machineSecret) {
+            for (const f of autoFields) {
+              if (f.secretName === machineSecret) f.machineIssued = true;
+            }
+          }
 
           const allFields = [...autoFields, ...configFields];
           // title — lang/{lang}.json 의 'title' 키 우선 (mcp-server-app / mcp-server-llm 등) → 옛 alias 입력값 → resolved 모듈명
@@ -450,6 +459,21 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
       await apiPost('/api/vault/secrets', { name: field.secretName, value }, { category: 'system-module' });
       setSecretSaved(prev => ({ ...prev, [field.key]: true }));
       setSecretValues(prev => ({ ...prev, [field.key]: '' }));
+    } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
+    finally { setSecretSaving(prev => ({ ...prev, [field.key]: false })); }
+  };
+
+  // 기계 발급 시크릿(webhook.secret) — 값을 사람이 만들지 않는다. 여기서 난수를 만들어 같은
+  // 저장 경로로 넣는다. 서버(모듈 첫 실행)도 같은 형태(32-hex)를 발급하므로 어느 쪽이 먼저든 동일.
+  const handleIssueSecret = async (field: SettingField) => {
+    if (!field.secretName) return;
+    setSecretSaving(prev => ({ ...prev, [field.key]: true }));
+    try {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      const value = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      await apiPost('/api/vault/secrets', { name: field.secretName, value }, { category: 'system-module' });
+      setSecretSaved(prev => ({ ...prev, [field.key]: true }));
     } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
     finally { setSecretSaving(prev => ({ ...prev, [field.key]: false })); }
   };
@@ -907,7 +931,33 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   </div>
                 )}
                 <div className="flex flex-col gap-1.5 mb-1">
-                {field.type === 'secret' ? (
+                {field.type === 'secret' && field.machineIssued ? (
+                  // 기계 발급 값 — 입력 칸 없음. 미발급 = [발급], 발급됨 = 등록 배지 + [재생성].
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</span>
+                    <div className="flex items-center gap-2">
+                      {secretSaved[field.key] ? (
+                        <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
+                          <CheckCircle2 size={15} /> {t('system_modules.common.registered')}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-slate-400 text-[13px] font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg flex-1">
+                          <AlertCircle size={14} /> {t('system_modules.common.unregistered')}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => handleIssueSecret(field)}
+                        disabled={secretSaving[field.key]}
+                        className="px-3 py-2 text-[12px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                      >
+                        {secretSaving[field.key]
+                          ? <Loader2 size={14} className="animate-spin" />
+                          : t(secretSaved[field.key] ? 'system_modules.common.regenerate' : 'system_modules.common.issue')}
+                      </button>
+                    </div>
+                    <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t('system_modules.common.machine_issued_hint')}</p>
+                  </div>
+                ) : field.type === 'secret' ? (
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor={`${fieldIdBase}-${field.key}`}>{localize(t, field.label)}</label>
                     {secretSaved[field.key] ? (

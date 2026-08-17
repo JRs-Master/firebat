@@ -447,6 +447,8 @@
       "saved": "저장 완료",
       "registered": "등록됨",
       "change": "변경",
+      "issue": "발급",
+      "machine_issued_hint": "프레임워크가 발급해 관리하는 값입니다. 재생성하면 웹훅을 다시 등록해야 합니다.",
       "connected": "연동 완료",
       "not_connected": "미연동",
       "connect": "연동하기",
