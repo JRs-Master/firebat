@@ -206,6 +206,35 @@ pub fn is_ui_only_value(decl: &serde_json::Value, action: &str) -> bool {
     requires_approval_value(decl, action)
 }
 
+/// Dual-home approval verdict (v2 transition): the action's own catalog row (`"approval": true`)
+/// ∨ the legacy top-level `requiresApproval` list. OR on purpose — a migration commit must never
+/// loosen a gate on a live trading system; the legacy half leaves only after every module's data
+/// has moved and the audit says so.
+pub fn approval_gated(
+    config: &serde_json::Value,
+    gates: &crate::utils::action_decl::ActionGates,
+    action: &str,
+) -> bool {
+    gates.approval.contains(action)
+        || requires_approval_value(
+            config.get("requiresApproval").unwrap_or(&serde_json::Value::Null),
+            action,
+        )
+}
+
+/// Dual-home uiOnly verdict — same transition rule as `approval_gated`.
+pub fn ui_only_gated(
+    config: &serde_json::Value,
+    gates: &crate::utils::action_decl::ActionGates,
+    action: &str,
+) -> bool {
+    gates.ui_only.contains(action)
+        || is_ui_only_value(
+            config.get("uiOnly").unwrap_or(&serde_json::Value::Null),
+            action,
+        )
+}
+
 /// The refusal a model gets, naming where the action actually lives. i18n-free on purpose: this
 /// text is read by a model, not shown in the UI (the UI never hits this path).
 pub fn ui_only_refusal(module: &str, action: &str) -> String {

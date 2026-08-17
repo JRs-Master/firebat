@@ -48,9 +48,9 @@ fn gate_allows_extra_declared_actions_only() {
             "blocks": [{ "type": "stock_chart", "props": { "data": "$.minute" } }]
         } }
     } }));
-    assert_eq!(binding_gate(&c, "ka10081").unwrap(), "ka10081");
-    assert_eq!(binding_gate(&c, "ka10080").unwrap(), "ka10080");
-    assert!(binding_gate(&c, "ka10001").is_err(), "미선언 액션은 거부");
+    assert_eq!(binding_gate(&c, &Default::default(), "ka10081").unwrap(), "ka10081");
+    assert_eq!(binding_gate(&c, &Default::default(), "ka10080").unwrap(), "ka10080");
+    assert!(binding_gate(&c, &Default::default(), "ka10001").is_err(), "미선언 액션은 거부");
 
     // spec_for — 추가 액션은 자기 args·blocks, 기본은 최상위.
     let b = parse_page_binding(&c).expect("declared");
@@ -65,20 +65,20 @@ fn gate_allows_extra_declared_actions_only() {
 #[test]
 fn gate_undeclared_module_is_refused() {
     let c = cfg(json!({ "input": {} }));
-    assert!(binding_gate(&c, "").is_err());
+    assert!(binding_gate(&c, &Default::default(), "").is_err());
 }
 
 #[test]
 fn gate_empty_request_uses_declared_action() {
     let c = cfg(json!({ "pageBinding": { "action": "page_blocks" } }));
-    assert_eq!(binding_gate(&c, "").unwrap(), "page_blocks");
-    assert_eq!(binding_gate(&c, "page_blocks").unwrap(), "page_blocks");
+    assert_eq!(binding_gate(&c, &Default::default(), "").unwrap(), "page_blocks");
+    assert_eq!(binding_gate(&c, &Default::default(), "page_blocks").unwrap(), "page_blocks");
 }
 
 #[test]
 fn gate_other_action_is_refused() {
     let c = cfg(json!({ "pageBinding": { "action": "page_blocks" } }));
-    assert!(binding_gate(&c, "history").is_err());
+    assert!(binding_gate(&c, &Default::default(), "history").is_err());
 }
 
 #[test]
@@ -88,18 +88,18 @@ fn gate_requires_approval_is_refused() {
         "pageBinding": { "action": "create-order" },
         "requiresApproval": true
     }));
-    assert!(binding_gate(&c, "").is_err());
+    assert!(binding_gate(&c, &Default::default(), "").is_err());
     // array form — only when the declared action is listed.
     let c = cfg(json!({
         "pageBinding": { "action": "create-order" },
         "requiresApproval": ["create-order"]
     }));
-    assert!(binding_gate(&c, "").is_err());
+    assert!(binding_gate(&c, &Default::default(), "").is_err());
     let c = cfg(json!({
         "pageBinding": { "action": "quotes" },
         "requiresApproval": ["create-order"]
     }));
-    assert_eq!(binding_gate(&c, "").unwrap(), "quotes");
+    assert_eq!(binding_gate(&c, &Default::default(), "").unwrap(), "quotes");
 }
 
 fn aliases() -> AliasMap {

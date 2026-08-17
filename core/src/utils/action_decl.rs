@@ -70,6 +70,49 @@ pub fn action_calls(rows: &[serde_json::Value]) -> HashMap<String, serde_json::V
     out
 }
 
+/// Action-axis gate declarations, read off a row about ITSELF.
+///
+/// These used to live at module top level as parallel lists keyed by action id
+/// (`requiresApproval` / `uiOnly` / `unsupportedActions`) — one action's truth spread over
+/// several hand-lists that could disagree, which is what the four-direction audit existed to
+/// catch. A row that says `"approval": true`, `"uiOnly": true` or `"unsupported": true|"reason"`
+/// moves with its action. During migration the readers take row ∨ legacy list (OR — a live
+/// trading system's gate must never loosen mid-migration).
+#[derive(Debug, Default, Clone)]
+pub struct ActionGates {
+    pub approval: std::collections::HashSet<String>,
+    pub ui_only: std::collections::HashSet<String>,
+    /// action id → reason ("" when declared as a bare `true`).
+    pub unsupported: HashMap<String, String>,
+}
+
+/// The gate sets out of catalog rows. Rows without gate fields contribute nothing.
+pub fn action_gates(rows: &[serde_json::Value]) -> ActionGates {
+    let mut out = ActionGates::default();
+    for row in rows {
+        let Some(id) = row.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let truthy = |k: &str| row.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+        if truthy("approval") {
+            out.approval.insert(id.to_string());
+        }
+        if truthy("uiOnly") {
+            out.ui_only.insert(id.to_string());
+        }
+        match row.get("unsupported") {
+            Some(serde_json::Value::Bool(true)) => {
+                out.unsupported.insert(id.to_string(), String::new());
+            }
+            Some(serde_json::Value::String(reason)) => {
+                out.unsupported.insert(id.to_string(), reason.clone());
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// `param → issuer` out of a config's `paramSource` declaration.
 ///
 /// Which action mints which opaque id used to live as a table inside one module's code (tago's
@@ -114,6 +157,35 @@ mod tests {
         let inline = json!({ "actionCatalog": [{ "id": "a" }] });
         assert_eq!(catalog_file(&inline), None);
         assert_eq!(inline_catalog_rows(&inline).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn gates_come_off_the_row_itself() {
+        let rows = vec![
+            json!({"id": "order", "approval": true}),
+            json!({"id": "screen", "uiOnly": true}),
+            json!({"id": "old", "unsupported": "use the stream instead"}),
+            json!({"id": "bare", "unsupported": true}),
+            json!({"id": "plain"}),
+        ];
+        let g = action_gates(&rows);
+        assert!(g.approval.contains("order"));
+        assert!(g.ui_only.contains("screen"));
+        assert_eq!(g.unsupported["old"], "use the stream instead");
+        assert_eq!(g.unsupported["bare"], "");
+        assert!(!g.approval.contains("plain") && !g.ui_only.contains("plain"));
+    }
+
+    #[test]
+    fn dual_home_gate_is_an_or_never_a_replacement() {
+        // The migration rule: a gate opened by EITHER home stays closed to a bare call.
+        // Row-only, list-only, both, neither — four states, one truth table.
+        let gates = action_gates(&[json!({"id": "row_gated", "approval": true})]);
+        let cfg = json!({ "requiresApproval": ["list_gated"] });
+        assert!(crate::utils::pending_tools::approval_gated(&cfg, &gates, "row_gated"));
+        assert!(crate::utils::pending_tools::approval_gated(&cfg, &gates, "list_gated"));
+        assert!(!crate::utils::pending_tools::approval_gated(&cfg, &gates, "open"));
+        assert!(!crate::utils::pending_tools::approval_gated(&json!({}), &gates, "list_gated"));
     }
 
     #[test]

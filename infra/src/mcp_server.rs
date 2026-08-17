@@ -1030,12 +1030,10 @@ impl McpToolHandler for SysmodToolHandler {
                         .await
                 }
             };
-            let decl = cfg
-                .as_ref()
-                .and_then(|c| c.get("requiresApproval"))
-                .cloned()
-                .unwrap_or(Value::Null);
-            if firebat_core::utils::pending_tools::requires_approval_value(&decl, action_name) {
+            // Dual-home (v2): the action's own catalog row ∨ the legacy top-level list.
+            let gates = self.module_manager.action_gates(&module_name).await;
+            let cfg_val = cfg.clone().unwrap_or(Value::Null);
+            if firebat_core::utils::pending_tools::approval_gated(&cfg_val, &gates, action_name) {
                 if firebat_core::utils::hub_context::is_hub_context_active() {
                     return Ok(serde_json::json!({
                         "success": false,

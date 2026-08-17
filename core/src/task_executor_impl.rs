@@ -116,29 +116,30 @@ impl RealTaskExecutor {
         // by PATH and skips `ModuleManager.run` entirely — the one door into a sysmod that the
         // TOOL_CALL gate never sees. Leaving it out would mean the boundary held on three surfaces
         // and the fourth answered a different way for the same call.
-        if let Some(ui_decl) = cfg.get("uiOnly") {
-            let act = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
-            if crate::utils::pending_tools::is_ui_only_value(ui_decl, act)
-                && !crate::utils::pending_tools::ui_confirmed()
-            {
-                return Err(crate::utils::pending_tools::ui_only_refusal(name, act));
-            }
+        // Dual-home (v2): the action's own catalog row ∨ the legacy top-level lists.
+        let gates = mm.action_gates(name).await;
+        let action = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        if crate::utils::pending_tools::ui_only_gated(&cfg, &gates, action)
+            && !crate::utils::pending_tools::ui_confirmed()
+        {
+            return Err(crate::utils::pending_tools::ui_only_refusal(name, action));
         }
-        let Some(decl) = cfg.get("requiresApproval") else {
+        let declares_approval =
+            cfg.get("requiresApproval").is_some() || !gates.approval.is_empty();
+        if !declares_approval {
             return Ok(());
-        };
+        }
         if fallback_target {
             return Err(format!(
                 "module '{name}' declares approval-gated actions — excluded from unattended fallback"
             ));
         }
-        let action = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
         // 승인 액션 분기 — cron 컨텍스트(등록 시 스케줄 승인 카드 통과 = 잡에 담긴 매매까지 승인,
         // 사용자 확정 2026-07-07: "오늘 TQQQ 1주 매수" → 새벽 미국장에 예약 실행)는 허용.
         // 인터랙티브 run_task 는 승인 카드 없이 파이프라인으로 게이트를 우회하는 경로라 차단
         // (2026-07-07 토스 매수 실측 — 모델이 정확히 이 우회를 시도함). 한도(가격 상한·잔고 %)
         // 세팅은 core 몫 아님 — 전용 자동매매 sysmod 의 설정 영역.
-        if crate::utils::pending_tools::requires_approval_value(decl, action)
+        if crate::utils::pending_tools::approval_gated(&cfg, &gates, action)
             && !crate::utils::cron_context::is_cron_context_active()
         {
             return Err(format!(
@@ -184,20 +185,17 @@ impl RealTaskExecutor {
             return Ok(());
         };
         let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        // Dual-home (v2): row ∨ legacy list, both surfaces.
+        let gates = mm.action_gates(module_name).await;
         // uiOnly — a screen action. The one pipeline allowed to carry it is the one the screen
         // itself started (UI_CONFIRMED), which is how the manual liquidation reaches the broker
         // through the SAME ordering path as the cron instead of growing a second one.
-        if let Some(ui_decl) = cfg.get("uiOnly") {
-            if crate::utils::pending_tools::is_ui_only_value(ui_decl, action)
-                && !crate::utils::pending_tools::ui_confirmed()
-            {
-                return Err(crate::utils::pending_tools::ui_only_refusal(module_name, action));
-            }
+        if crate::utils::pending_tools::ui_only_gated(&cfg, &gates, action)
+            && !crate::utils::pending_tools::ui_confirmed()
+        {
+            return Err(crate::utils::pending_tools::ui_only_refusal(module_name, action));
         }
-        let Some(decl) = cfg.get("requiresApproval") else {
-            return Ok(());
-        };
-        if crate::utils::pending_tools::requires_approval_value(decl, action)
+        if crate::utils::pending_tools::approval_gated(&cfg, &gates, action)
             && !crate::utils::pending_tools::ui_confirmed()
             && !crate::utils::cron_context::is_cron_context_active()
         {

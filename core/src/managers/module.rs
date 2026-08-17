@@ -88,7 +88,7 @@ pub struct ModuleManager {
     action_calls: Mutex<HashMap<String, CachedCalls>>,
 }
 
-/// One module's `_call` rows and the directory state they were read from.
+/// One module's action-axis declarations and the directory state they were read from.
 struct CachedCalls {
     /// `name:size:mtime` over the module directory — the same signal the action catalog uses,
     /// scoped to one module. An edit to `actions.json` changes it; five quiet minutes do not.
@@ -96,6 +96,9 @@ struct CachedCalls {
     /// Empty when the module declares no `_call` anywhere, which is most of them. Cached all the
     /// same: "this module has nothing to inject" is an answer worth not re-deriving per call.
     calls: Arc<HashMap<String, serde_json::Value>>,
+    /// Row-declared gates (`approval` / `uiOnly` / `unsupported`) — the v2 home of what the
+    /// top-level lists used to say. Read out of the same rows in the same pass.
+    gates: Arc<crate::utils::action_decl::ActionGates>,
 }
 
 /// Alias length cap. The alias is the account's name everywhere it appears — settings rows,
@@ -1038,12 +1041,16 @@ impl ModuleManager {
         // volume is self-limiting: these are orders, not queries.
         if let Some(cfg) = &config {
             let action = input_data.get("action").and_then(|v| v.as_str()).unwrap_or("");
-            if !action.is_empty()
-                && crate::utils::pending_tools::requires_approval_value(
-                    cfg.get("requiresApproval").unwrap_or(&serde_json::Value::Null),
-                    action,
-                )
-            {
+            let gated = if action.is_empty() {
+                false
+            } else {
+                let gates = self
+                    .cached_rows_for(scope, module_name, &dir_fp, cfg)
+                    .await
+                    .1;
+                crate::utils::pending_tools::approval_gated(cfg, &gates, action)
+            };
+            if gated {
                 tracing::info!(
                     target: "module_order",
                     module = %module_name,
@@ -1259,10 +1266,26 @@ impl ModuleManager {
         dir_fp: &str,
         config: &serde_json::Value,
     ) -> Arc<HashMap<String, serde_json::Value>> {
+        self.cached_rows_for(scope, module_name, dir_fp, config).await.0
+    }
+
+    /// Everything dispatch reads off a module's action rows, one cached pass: the `_call` map and
+    /// the row-declared gates. Same fingerprint discipline as before — an unchanged module is a
+    /// map lookup, a changed one costs the read it would have cost anyway.
+    async fn cached_rows_for(
+        &self,
+        scope: &str,
+        module_name: &str,
+        dir_fp: &str,
+        config: &serde_json::Value,
+    ) -> (
+        Arc<HashMap<String, serde_json::Value>>,
+        Arc<crate::utils::action_decl::ActionGates>,
+    ) {
         let key = format!("{}:{}", scope, module_name);
         if let Ok(cache) = self.action_calls.lock() {
             if let Some(hit) = cache.get(&key).filter(|c| c.fingerprint == dir_fp) {
-                return hit.calls.clone();
+                return (hit.calls.clone(), hit.gates.clone());
             }
         }
         let rows = match crate::utils::action_decl::catalog_file(config) {
@@ -1275,16 +1298,54 @@ impl ModuleManager {
             None => crate::utils::action_decl::inline_catalog_rows(config).unwrap_or_default(),
         };
         let calls = Arc::new(crate::utils::action_decl::action_calls(&rows));
+        let gates = Arc::new(crate::utils::action_decl::action_gates(&rows));
         if let Ok(mut cache) = self.action_calls.lock() {
             cache.insert(
                 key,
                 CachedCalls {
                     fingerprint: dir_fp.to_string(),
                     calls: calls.clone(),
+                    gates: gates.clone(),
                 },
             );
         }
-        calls
+        (calls, gates)
+    }
+
+    /// Row-declared gates for a module, resolved by name from outside the run path — what the
+    /// approval / uiOnly gates on every transport consult (∨ the legacy top-level lists, via
+    /// `pending_tools::approval_gated`). One listing per call when the cache is cold; a map
+    /// lookup when it is warm, which it is for anything being called repeatedly.
+    pub async fn action_gates(
+        &self,
+        module_name: &str,
+    ) -> Arc<crate::utils::action_decl::ActionGates> {
+        if !is_safe_name(module_name) {
+            return Arc::new(crate::utils::action_decl::ActionGates::default());
+        }
+        for scope in ["user", "system"] {
+            let dir = format!("{}/modules/{}", scope, module_name);
+            let Ok(entries) = self.storage.list_dir(&dir).await else {
+                continue;
+            };
+            let mut parts: Vec<String> = entries
+                .iter()
+                .filter(|e| !e.is_directory)
+                .map(|e| {
+                    format!("{}:{}:{}", e.name, e.size.unwrap_or(0), e.modified_ms.unwrap_or(0))
+                })
+                .collect();
+            parts.sort();
+            let dir_fp = parts.join("\n");
+            let Some(config) = self.get_module_config(scope, module_name).await else {
+                break;
+            };
+            return self
+                .cached_rows_for(scope, module_name, &dir_fp, &config)
+                .await
+                .1;
+        }
+        Arc::new(crate::utils::action_decl::ActionGates::default())
     }
 
     /// Hand the module the row for the action it was asked to run, as `_call`.

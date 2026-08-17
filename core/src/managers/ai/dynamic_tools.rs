@@ -216,6 +216,30 @@ impl DynamicToolRegistry {
         map.get(module).cloned()
     }
 
+    /// Dual-home approval verdict for the FC gate (v2): the action's own catalog row
+    /// (`ModuleManager::action_gates`) ∨ the legacy top-level list this registry cached at
+    /// refresh. OR — a migration commit must never loosen a live gate.
+    pub async fn approval_gated(&self, module: &str, action: &str) -> bool {
+        if self.module.action_gates(module).await.approval.contains(action) {
+            return true;
+        }
+        match self.approval_for(module).await {
+            Some(decl) => crate::utils::pending_tools::requires_approval_value(&decl, action),
+            None => false,
+        }
+    }
+
+    /// Dual-home uiOnly verdict — same transition rule as `approval_gated`.
+    pub async fn ui_only_gated(&self, module: &str, action: &str) -> bool {
+        if self.module.action_gates(module).await.ui_only.contains(action) {
+            return true;
+        }
+        match self.ui_only_for(module).await {
+            Some(decl) => crate::utils::pending_tools::is_ui_only_value(&decl, action),
+            None => false,
+        }
+    }
+
     /// Re-register the `sysmod_*` / `mcp_*` tools when something has actually changed.
     ///
     /// This used to rebuild every 60 seconds unconditionally: forty configs re-read and re-parsed,

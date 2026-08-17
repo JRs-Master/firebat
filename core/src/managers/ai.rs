@@ -4098,19 +4098,15 @@ impl AiManager {
                 let ui_only_reject: Option<String> = if let (Some(reg), Some(module_name)) =
                     (&self.dynamic_tools, call_module.as_deref())
                 {
-                    match reg.ui_only_for(module_name).await {
-                        Some(decl) => {
-                            let act = effective_call
-                                .arguments
-                                .get("action")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            crate::utils::pending_tools::is_ui_only_value(&decl, act).then(|| {
-                                crate::utils::pending_tools::ui_only_refusal(module_name, act)
-                            })
-                        }
-                        None => None,
-                    }
+                    let act = effective_call
+                        .arguments
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    // Dual-home (v2): the action's own catalog row ∨ the legacy top-level list.
+                    reg.ui_only_gated(module_name, act)
+                        .await
+                        .then(|| crate::utils::pending_tools::ui_only_refusal(module_name, act))
                 } else {
                     None
                 };
@@ -4122,14 +4118,15 @@ impl AiManager {
                 let approval_gate: Option<serde_json::Value> = if let (Some(reg), Some(module_name)) =
                     (&self.dynamic_tools, call_module.as_deref())
                 {
-                    match reg.approval_for(module_name).await {
-                        Some(decl) => {
+                    {
+                        {
                             let act = effective_call
                                 .arguments
                                 .get("action")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
-                            if crate::utils::pending_tools::requires_approval_value(&decl, act) {
+                            // Dual-home (v2): row ∨ legacy list — see `approval_gated`.
+                            if reg.approval_gated(module_name, act).await {
                                 // The turn's own standing, not a process-wide flag: this turn is a
                                 // scheduled run only when IT was started as one. A chat turn that
                                 // merely overlaps a firing schedule reads interactive (the counter
@@ -4164,7 +4161,6 @@ impl AiManager {
                                 None
                             }
                         }
-                        None => None,
                     }
                 } else {
                     None

@@ -219,7 +219,12 @@ fn collect_data_refs(v: &serde_json::Value, f: &mut impl FnMut(&str)) {
 /// Pure gate decision — shared by publish-bake (Rust) and mirrored by the TS request-resolve
 /// gate (lib/page-binding-gate.ts). Returns the resolved action or a refusal reason.
 /// `requested_action` empty = use the declared action (authoring convenience).
-pub fn binding_gate(config: &serde_json::Value, requested_action: &str) -> Result<String, String> {
+/// `gates` = row-declared action gates (v2) — checked ∨ the legacy top-level list.
+pub fn binding_gate(
+    config: &serde_json::Value,
+    gates: &crate::utils::action_decl::ActionGates,
+    requested_action: &str,
+) -> Result<String, String> {
     let Some(binding) = parse_page_binding(config) else {
         return Err("module does not declare pageBinding — page binding is opt-in".to_string());
     };
@@ -244,11 +249,9 @@ pub fn binding_gate(config: &serde_json::Value, requested_action: &str) -> Resul
                 .unwrap_or_default()
         ));
     }
-    // requiresApproval(주문류) 는 페이지 표면에서 실행 금지 — page-form 게이트 미러.
-    if let Some(decl) = config.get("requiresApproval") {
-        if crate::utils::pending_tools::requires_approval_value(decl, &action) {
-            return Err("requiresApproval actions cannot run from a page binding".to_string());
-        }
+    // 승인류(주문) 는 페이지 표면에서 실행 금지 — page-form 게이트 미러. 행 ∨ 옛 목록.
+    if crate::utils::pending_tools::approval_gated(config, gates, &action) {
+        return Err("approval-gated actions cannot run from a page binding".to_string());
     }
     Ok(action)
 }
@@ -405,7 +408,9 @@ pub async fn resolve_binding(
     let Some(config) = modules.get_config_any_scope(module).await else {
         return Err(format!("module '{module}' not found"));
     };
-    let action = binding_gate(&config, requested_action).map_err(|reason| format!("'{module}': {reason}"))?;
+    let gates = modules.action_gates(module).await;
+    let action = binding_gate(&config, &gates, requested_action)
+        .map_err(|reason| format!("'{module}': {reason}"))?;
 
     // 실행 — run_raw = 풀 데이터(auto-cache truncation 없음). 게이트(enabled·스키마 검증·
     // sandbox·net_guard)는 run_impl 이 그대로 적용.
