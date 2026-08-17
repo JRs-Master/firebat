@@ -93,6 +93,11 @@ def parse_score(score):
         if root and beats > 0:
             chords.append((root, beats, str(c.get("quality") or "").strip()))
     style = str(score.get("style") or "trot").strip().lower()
+    style = STYLE_ALIASES.get(style, style)
+    if style not in DRUM_PATTERNS:
+        return None, None, None, None, None, None, \
+            f"style {style!r} 를 모릅니다 — 가능한 스타일: {' | '.join(sorted(DRUM_PATTERNS))} " \
+            f"(별칭: {', '.join(f'{a}→{b}' for a, b in sorted(STYLE_ALIASES.items()))})"
     # band = per-part instrument override. An unknown name is refused WITH the full library in
     # the message — the error is the discovery surface here, nobody browses the module source.
     band = {}
@@ -186,15 +191,18 @@ def crash(dur=1.2):
     return (bright * 0.7 + sheen * 0.45) * _env(n, 0.38) * 0.35
 
 
-def pluck_ks(freq, dur, damp=0.996):
+def pluck_ks(freq, dur, damp=0.996, mellow=False):
     """Karplus-Strong plucked string — a noise burst run through its own reflection. This is the
     one acoustic instrument the numpy backend can be honest about: the algorithm IS the physics
     (a wave bouncing on a string), so an acoustic guitar lives here while a saxophone cannot.
-    Iterates per string period, not per sample — a few hundred numpy ops for seconds of audio."""
+    Iterates per string period, not per sample — a few hundred numpy ops for seconds of audio.
+    `mellow` pre-smooths the pluck: a nylon string is struck by flesh, steel by a pick."""
     n = max(1, int(SR * dur))
     period = max(2, int(round(SR / max(20.0, freq))))
     rng = np.random.default_rng(int(freq) + 3)
     prev = rng.standard_normal(period)
+    if mellow:
+        prev = np.convolve(prev, np.ones(4) / 4.0, "same")
     out = np.empty(n)
     filled = 0
     while filled < n:
@@ -254,8 +262,10 @@ PATCHES = {
                    "detune": 0.006, "noise": 0.0, "atk": 0.02, "rel": 0.06, "gain": 0.20, "gm": 19},
     "accordion":  {"harm": [1.0, 0.72, 0.65, 0.40, 0.33, 0.22, 0.14], "hdecay": 0.18, "hslope": 0.7,
                    "detune": 0.012, "noise": 0.03, "atk": 0.045, "rel": 0.09, "gain": 0.20, "gm": 21},
-    # guitars — the acoustic one is a physical model, the electric ones are clipping
+    # guitars — the acoustic ones are a physical model, the electric ones are clipping
     "aguitar":    {"engine": "ks", "damp": 0.9955, "atk": 0.002, "rel": 0.08, "gain": 0.34, "gm": 25},
+    "cguitar":    {"engine": "ks", "damp": 0.994, "mellow": True, "atk": 0.003, "rel": 0.09,
+                   "gain": 0.34, "gm": 24},
     "eguitar":    {"harm": [1.0, 0.58, 0.36, 0.22, 0.12, 0.07], "hdecay": 2.6, "hslope": 1.15,
                    "detune": 0.002, "noise": 0.04, "shape": 1.8, "atk": 0.003, "rel": 0.10,
                    "gain": 0.30, "gm": 27},
@@ -301,7 +311,7 @@ def synth_note(freq, dur, patch="bass", vel=0.8):
     n = max(1, int(SR * dur))
     t = np.arange(n) / SR
     if p.get("engine") == "ks":
-        x = pluck_ks(freq, dur, p.get("damp", 0.996))
+        x = pluck_ks(freq, dur, p.get("damp", 0.996), p.get("mellow", False))
     else:
         x = np.zeros(n)
         # Velocity opens the timbre: the upper harmonics are the ones it reaches.
@@ -361,15 +371,39 @@ def synth_note(freq, dur, patch="bass", vel=0.8):
 
 # Per-style one-bar (4 beats) groove: (instrument, beat offset, velocity). The kit speaks
 # Korean: kick 쿵 · snare 덕 · hat 칙 (ohat rings) · toms 두구두구 · crash 쨍.
+# A genre here is a ROW — groove + feel + band — not code. classic/newage carry no drums on
+# purpose (they are "none" with their own bands and comping).
+_HATS8 = [("hat", o / 2.0, 0.4 if o % 2 else 0.45) for o in range(8)]
 DRUM_PATTERNS = {
-    "trot":   [("kick", 0.0, 0.9), ("hat", 0.5, 0.45), ("snare", 1.0, 0.8), ("hat", 1.5, 0.45),
-               ("kick", 2.0, 0.85), ("hat", 2.5, 0.45), ("snare", 3.0, 0.8), ("ohat", 3.5, 0.55)],
-    "ballad": [("kick", 0.0, 0.75), ("hat", 0.5, 0.3), ("hat", 1.0, 0.35), ("hat", 1.5, 0.3),
-               ("snare", 2.0, 0.6), ("hat", 2.5, 0.3), ("kick", 3.0, 0.5), ("hat", 3.5, 0.3)],
-    "march":  [("kick", 0.0, 0.9), ("snare", 0.5, 0.4), ("snare", 1.0, 0.7), ("kick", 2.0, 0.85),
-               ("snare", 2.5, 0.4), ("snare", 3.0, 0.7), ("snare", 3.5, 0.45), ("snare", 3.75, 0.5)],
-    "none":   [],
+    "trot":      [("kick", 0.0, 0.9), ("hat", 0.5, 0.45), ("snare", 1.0, 0.8), ("hat", 1.5, 0.45),
+                  ("kick", 2.0, 0.85), ("hat", 2.5, 0.45), ("snare", 3.0, 0.8), ("ohat", 3.5, 0.55)],
+    "ballad":    [("kick", 0.0, 0.75), ("hat", 0.5, 0.3), ("hat", 1.0, 0.35), ("hat", 1.5, 0.3),
+                  ("snare", 2.0, 0.6), ("hat", 2.5, 0.3), ("kick", 3.0, 0.5), ("hat", 3.5, 0.3)],
+    "march":     [("kick", 0.0, 0.9), ("snare", 0.5, 0.4), ("snare", 1.0, 0.7), ("kick", 2.0, 0.85),
+                  ("snare", 2.5, 0.4), ("snare", 3.0, 0.7), ("snare", 3.5, 0.45), ("snare", 3.75, 0.5)],
+    "rock":      _HATS8 + [("kick", 0.0, 0.95), ("kick", 2.5, 0.8),
+                           ("snare", 1.0, 0.85), ("snare", 3.0, 0.85)],
+    "metal":     [("kick", o / 2.0, 0.85) for o in range(8)] +
+                 [("snare", 1.0, 0.9), ("snare", 3.0, 0.9),
+                  ("ohat", 0.0, 0.5), ("ohat", 1.0, 0.5), ("ohat", 2.0, 0.5), ("ohat", 3.0, 0.5)],
+    "pop":       _HATS8 + [("kick", 0.0, 0.85), ("kick", 2.0, 0.75),
+                           ("snare", 1.0, 0.75), ("snare", 3.0, 0.75)],
+    "dance":     [("kick", 0.0, 0.95), ("kick", 1.0, 0.95), ("kick", 2.0, 0.95), ("kick", 3.0, 0.95),
+                  ("ohat", 0.5, 0.5), ("ohat", 1.5, 0.5), ("ohat", 2.5, 0.5), ("ohat", 3.5, 0.5),
+                  ("snare", 1.0, 0.6), ("snare", 3.0, 0.6)],
+    "rnb":       [("hat", o / 2.0, 0.3) for o in range(8)] +
+                 [("kick", 0.0, 0.8), ("kick", 2.5, 0.6), ("snare", 1.0, 0.7), ("snare", 3.0, 0.7)],
+    "rocknroll": _HATS8 + [("kick", 0.0, 0.9), ("kick", 2.0, 0.85),
+                           ("snare", 1.0, 0.8), ("snare", 3.0, 0.8)],
+    "classic":   [],
+    "newage":    [],
+    "none":      [],
 }
+
+# Familiar names people actually say → the row that plays them. kpop/jpop are pop grooves here
+# honestly: what makes them THEM is production this synth does not do.
+STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
+                 "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad"}
 
 # 쿵덕 for three bars, 두구두구 on the fourth, 쨍 on the downbeat after: every 4th bar keeps its
 # groove up to the fill start and rolls down the toms; every 4-bar group opens on a crash.
@@ -391,9 +425,18 @@ DRUM_NOTE = {"kick": 36, "snare": 38, "hat": 42, "ohat": 46,
 # Which band a style hires — part → instrument name in PATCHES. The score's own `band` field
 # overrides per part, so any instrument in the library can front any style.
 STYLE_BAND = {
-    "trot":   {"melody": "melody", "chord": "accordion", "bass": "bass"},
-    "ballad": {"melody": "piano", "chord": "strings", "bass": "bass"},
-    "march":  {"melody": "brass", "chord": "organ", "bass": "bass"},
+    "trot":      {"melody": "melody", "chord": "accordion", "bass": "bass"},
+    "ballad":    {"melody": "piano", "chord": "strings", "bass": "bass"},
+    "march":     {"melody": "brass", "chord": "organ", "bass": "bass"},
+    "rock":      {"melody": "eguitar", "chord": "dguitar", "bass": "bass"},
+    "metal":     {"melody": "dguitar", "chord": "dguitar", "bass": "synthbass"},
+    "pop":       {"melody": "piano", "chord": "epiano", "bass": "synthbass"},
+    "dance":     {"melody": "synthlead", "chord": "strings", "bass": "synthbass"},
+    "rnb":       {"melody": "epiano", "chord": "epiano", "bass": "bass"},
+    "rocknroll": {"melody": "eguitar", "chord": "eguitar", "bass": "bass"},
+    "classic":   {"melody": "eviolin", "chord": "strings", "bass": "bass"},
+    "newage":    {"melody": "piano", "chord": "strings", "bass": "bass"},
+    "none":      {"melody": "melody", "chord": "chord", "bass": "bass"},
 }
 
 # How a style PLAYS — the arrangement was static before this: the chord part held whole notes
@@ -402,12 +445,20 @@ STYLE_BAND = {
 # eighths lean (0 straight, 1 full triplet; drums/comp/bass only — the melody stays straight
 # because the vocal is cut to the written grid). Every knob is score-overridable.
 STYLE_FEEL = {
-    "trot":   {"comp": "stabs", "bass": "twobeat", "swing": 0.3},
-    "ballad": {"comp": "arp", "bass": "hold", "swing": 0.0},
-    "march":  {"comp": "quarters", "bass": "alt", "swing": 0.0},
-    "none":   {"comp": "pad", "bass": "hold", "swing": 0.0},
+    "trot":      {"comp": "stabs", "bass": "twobeat", "swing": 0.3},
+    "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0},
+    "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0},
+    "rock":      {"comp": "eighths", "bass": "alt", "swing": 0.0},
+    "metal":     {"comp": "eighths", "bass": "alt", "swing": 0.0},
+    "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0},
+    "dance":     {"comp": "stabs", "bass": "alt", "swing": 0.0},
+    "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.55},
+    "rocknroll": {"comp": "quarters", "bass": "alt", "swing": 0.6},
+    "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0},
+    "newage":    {"comp": "arp", "bass": "hold", "swing": 0.0},
+    "none":      {"comp": "pad", "bass": "hold", "swing": 0.0},
 }
-COMP_KINDS = ("pad", "stabs", "arp", "quarters")
+COMP_KINDS = ("pad", "stabs", "arp", "quarters", "eighths")
 BASS_KINDS = ("hold", "twobeat", "alt")
 
 # 3/4 grooves — a waltz bar is not a trimmed 4/4 bar, so the tables are their own.
@@ -486,6 +537,8 @@ def _comp_hits(kind, beats, meter):
         return [(float(off), 0.9, 0.7) for off in np.arange(1.0, beats, step)]
     if kind == "quarters":
         return [(float(b), 0.9, 0.74 if b % 2 == 0 else 0.64) for b in range(int(beats))]
+    if kind == "eighths":  # driving on-and-off strokes — the rock/pop rhythm guitar hand
+        return [(s * 0.5, 0.5, 0.68 if s % 2 == 0 else 0.55) for s in range(int(beats * 2))]
     return [(0.0, float(beats), 0.6)]  # pad
 
 
@@ -1228,6 +1281,22 @@ def action_selftest():
                               None, {"meter": 3, "swing": 0.0, "comp": None, "bass": None})
     kicks = [e["beat"] for e in waltz if e["part"] == "drum" and e["drum"] == "kick"]
     ck("3/4 bars advance by three beats", [0.0, 3.0], kicks, kicks == [0.0, 3.0])
+
+    # A genre is a row — so every row must be complete: groove ∧ feel ∧ band, one key set.
+    ck("every style has a feel and a band (no half-declared genre)", True,
+       set(DRUM_PATTERNS) == set(STYLE_FEEL) == set(STYLE_BAND),
+       set(DRUM_PATTERNS) == set(STYLE_FEEL) == set(STYLE_BAND))
+    edm = parse_score({"bpm": 124, "style": "edm",
+                       "notes": [{"syl": "라", "note": "C4", "beats": 4}]})
+    ck("aliases resolve (edm plays the dance row)", "dance", edm[3], edm[3] == "dance")
+    floor = build_arrangement(events, [(note_freq("C3"), 4.0, "")], "dance", 4)
+    dance_kicks = [e["beat"] for e in floor if e["part"] == "drum" and e["drum"] == "kick"]
+    ck("dance is four-on-the-floor", [0.0, 1.0, 2.0, 3.0], dance_kicks,
+       dance_kicks == [0.0, 1.0, 2.0, 3.0])
+    nostyle = parse_score({"bpm": 120, "style": "polka",
+                           "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
+    ck("an unknown style is refused WITH the list", True, (nostyle[-1] or "")[:50],
+       bool(nostyle[-1]) and "dance" in (nostyle[-1] or ""))
 
     # The kit is a kit, not a lone kick: 4 bars in, the 4th bar rolls down the toms (두구두구)
     # and every 4-bar group opens on a crash (쨍).

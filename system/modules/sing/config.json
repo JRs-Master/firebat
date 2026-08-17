@@ -46,7 +46,7 @@
       },
       "score": {
         "type": "object",
-        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style picks the drum groove (with tom fills every 4th bar and a crash opening each 4-bar group) AND the default band: trot | ballad | march | none.",
+        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?, meter?, swing?, comp?, bassline?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style is a genre row (groove + feel + default band): trot | ballad | rock | metal | pop | dance | rnb | rocknroll | march | classic | newage | none, with aliases edm/house/kpop/jpop/waltz — an unknown style is refused with the full list.",
         "properties": {
           "bpm": {
             "type": "number"
@@ -135,7 +135,7 @@
           "string",
           "null"
         ],
-        "description": "Drum style override when the score comes from MIDI: trot | ballad | march | none."
+        "description": "Style (genre) override when the score comes from MIDI — any style name the score contract accepts; an unknown one is refused with the full list."
       },
       "outPath": {
         "type": [
