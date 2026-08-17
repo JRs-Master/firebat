@@ -1365,6 +1365,17 @@ impl ModuleActionCatalog {
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
                     "score": score,
                 });
+                // A declared prerequisite shows at candidate-picking time, not first at dispatch.
+                // The gate still enforces; this is the same declaration two rungs earlier — a
+                // model that batches schema+call in one round (measured 2026-08-18: the needs
+                // reject was its first notice) can now put the resolver in the batch BEFORE.
+                if let Some(n) = m
+                    .extra
+                    .get("needs")
+                    .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))
+                {
+                    row["needs"] = n.clone();
+                }
                 // `domain` on a module that declares none was a `null` on every row.
                 if let Some(d) = m.extra.get("domain").filter(|v| !v.is_null()) {
                     row["domain"] = d.clone();
@@ -1676,6 +1687,36 @@ impl ModuleActionCatalog {
                 "fill": fill,
             })
         };
+        // A declared prerequisite, promoted from a field to the FIRST call — assembled, in the
+        // same handoff shape every rung uses. As a bare `needs` array it is data a model can
+        // batch past: measured 2026-08-18, schema and quote call fired in one parallel round,
+        // so the dispatch reject was its first notice of the prerequisite. `first` before
+        // `call` is an order, not a fact.
+        if let Some(needs) = out
+            .get("needs")
+            .and_then(|v| v.as_array())
+            .filter(|a| !a.is_empty())
+            .cloned()
+        {
+            let firsts: Vec<serde_json::Value> = needs
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|m| {
+                    serde_json::json!({
+                        "tool": crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL,
+                        "arguments": { "module": m },
+                        "why": format!(
+                            "`{module}:{action}` dispatches only after `{m}` has run in this \
+                             conversation (30-minute window). Run this first and take the \
+                             identifiers for `call` from its result."
+                        ),
+                    })
+                })
+                .collect();
+            if !firsts.is_empty() {
+                out["first"] = serde_json::Value::Array(firsts);
+            }
+        }
         Some(out)
     }
 
