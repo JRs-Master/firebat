@@ -6,7 +6,7 @@
 //! Phase B 진행하며 17 포트 설정:
 //!   IStoragePort / IVaultPort / IDatabasePort / ICronPort / ILlmPort / ISandboxPort /
 //!   ILogPort / INetworkPort / IMcpClientPort / IAuthPort / IEmbedderPort /
-//!   IToolRouterPort / IMediaPort / IImageProcessorPort / IImageGenPort /
+//!   IMediaPort / IImageProcessorPort / IImageGenPort /
 //!   IEntityPort / IEpisodicPort
 
 /// Infra layer 표준 결과 — InfraResult<T>. 옛 TS 의 패턴 그대로.

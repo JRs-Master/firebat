@@ -1731,7 +1731,7 @@ impl ModuleActionCatalog {
     /// rejected by `ModuleManager::run` three rounds later — the rungs of one ladder disagreeing.
     ///
     /// Read here rather than at each call site, for the same reason the accounts detail is: every
-    /// discovery surface (search, browse, list, schema, and the shadow TurnBrief) comes through
+    /// discovery surface (search, browse, list, and schema) comes through
     /// this type, and a check copied into four handlers is a check that drifts — which is exactly
     /// how the hub scope filter drifted from the dispatch gate before it was centralized.
     pub fn module_enabled(&self, module: &str) -> bool {

@@ -19,14 +19,12 @@ pub mod data_on_hand;
 pub mod tool_dispatcher;
 pub mod result_processor;
 pub mod retrieval_engine;
-pub mod tool_router;
 pub mod plan_mode;
 pub mod code_assist;
 // 옛 llm/ 에 설정되어 있던 순수 검색 index — infra 의존 0건이라 core (managers/ai) 로 이동.
 pub mod component_registry;
 pub mod render_exec;
 pub mod component_search_index;
-pub mod tool_search_index;
 // One derivation of the sysmod_* tool surface, consumed by BOTH transports (FC dynamic_tools +
 // MCP register_sysmod_tools) — a gate planted once instead of twice.
 pub mod sysmod_surface;
@@ -362,12 +360,6 @@ pub struct AiManager {
     /// 캐시 records 로 치환(주입). 모델이 큰 배열을 손으로 베끼지 않게(truncation·날조 차단 +
     /// cache_read 왕복 토큰 절감). 미설정 시 dataCacheKey 미해석(모델 제공 data 만 사용).
     sysmod_cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
-    /// Intent Agent S0 — shadow-mode TurnBrief 재료 (registration 시 카탈로그 Arc 공유).
-    /// S0 = 계산·기록만(행동 0): 매 턴 쿼리를 액션/스킬 카탈로그와 E5 매칭한 shortlist 를
-    /// 실제 디스패치와 대조해 recall 을 journal(target=intent_shadow) 에 남긴다 — L2 세계
-    /// 좁히기의 임계·정확도를 실측으로 확정하기 위한 선행 측정 (plan Intent Agent 섹션).
-    intent_actions: Option<Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>>,
-    intent_skills: Option<Arc<crate::managers::ai::semantic_catalog::RefreshingCatalog>>,
     /// 진행 중인 턴의 취소 신호 — 키 = 프론트가 발급한 턴 id(`aiMsgId`).
     ///
     /// 왜 필요한가: 턴은 **detached 태스크**로 돈다(클라이언트가 탭을 닫아도 답을 잃지 않게 넣은
@@ -406,8 +398,6 @@ impl AiManager {
             memory_file: None,
             skill_file: None,
             sysmod_cache: None,
-            intent_actions: None,
-            intent_skills: None,
             cancels: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
@@ -1056,15 +1046,13 @@ impl AiManager {
     /// semantic candidates → `get_action_schema` = exact params + call envelope. Registered as
     /// source="core" so register_builtin_tools auto-syncs both to hosted MCP (dual-registry rule).
     pub fn register_action_catalog_tools(
-        mut self,
+        self,
         catalog: Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>,
     ) -> Self {
         // Which modules a hub caller may see in discovery results is decided by one shared
         // policy — `hub_context::module_permitted_for_args` — so it cannot drift from the tool
         // filter and the dispatch gate again. It did: discovery kept exempting a tenant after the
         // other two stopped, listing order actions the same turn would refuse to call.
-        // Intent Agent S0 — 같은 카탈로그를 shadow TurnBrief 계산에도 공유 (행동 0, 측정 전용).
-        self.intent_actions = Some(catalog.clone());
         let cat = catalog.clone();
         let search_handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = cat.clone();
@@ -1393,7 +1381,7 @@ impl AiManager {
     /// / 나머지=[](빈 결과) — admin 자료 누수 0, per-session 임베딩 churn 0 (hub 자기 자료는
     /// list/index 도구가 커버, 세션 자료는 원래 소수).
     pub fn register_discovery_search_tools(
-        mut self,
+        self,
         skills: Arc<crate::managers::skill_file::SkillFileManager>,
         templates: Arc<crate::managers::template::TemplateManager>,
         pages: Arc<crate::managers::page::PageManager>,
@@ -1474,8 +1462,6 @@ impl AiManager {
             Arc::new(SkillCatalogSource { skills }),
             TTL,
         )));
-        // Intent Agent S0 — 스킬 카탈로그도 shadow TurnBrief 공유 (측정 전용).
-        self.intent_skills = Some(skill_cat.clone());
         let sc = skill_cat.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = sc.clone();
@@ -2342,58 +2328,6 @@ impl AiManager {
         // 옛 TS `finalSystemPrompt = planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection`
         // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미저장 — 후속 batch.
 
-        // ── Intent Agent S0 — TurnBrief shortlist (측정 전용) ──
-        // 쿼리를 액션/스킬 카탈로그와 매칭한 shortlist. 용도는 이제 하나 —
-        // **S0 섀도우**: 턴 종료 시 실제 디스패치와 대조해 recall 을 journal(intent_shadow) 에
-        // 기록한다. 옛 용도였던 `<LIKELY_TOOLS>` 선주입은 제거됐다(2026-08-14) — 218턴 측정에서
-        // 발견 라운드를 아낀 것이 17턴뿐이었고, shortlist 가 맞은 58턴 중 41턴은 모델이 어차피
-        // 다시 검색했다. 이유는 정확도가 아니라 지시 충돌이었다: 발견 게이트는 사다리를 밟으라
-        // 하고 선주입은 건너뛰라 했으며, 모델은 게이트 쪽을 따랐다. 상세 = 주입 지점의 주석.
-        // 계측은 남긴다 — 제거가 옳았는지도 같은 수치로 본다.
-        // 비용 = 쿼리 임베딩 2회. 카탈로그 미배선(테스트 등) = skip.
-        let mut shadow_actions: Vec<(String, f32)> = Vec::new(); // "module:action"
-        let mut shadow_skills: Vec<(String, f32)> = Vec::new(); // slug
-        // 질의 위생 사실 — shortlist 가 실제로 무엇을 보고 뽑혔나. 이 사실 없이 recall 을 세면
-        // **측정이 낮게 나온다**: 기능어가 없는 질의(순수 URL·맥락 의존 후속 질문)는 shortlist 가
-        // 커버할 수가 없는데 분모엔 들어간다(2026-07-29 판독: 불일치 7 중 2가 이 계열).
-        // 여기서는 **사실만 남긴다** — 어떤 턴을 집계에서 뺄지는 판독 쪽 규칙이고, 검증도 안 된
-        // 분류기를 로거에 박으면 그 heuristic 이 배포에 굳는다.
-        let mut history_chars: usize = 0;
-        let mut shadow_searched_with = String::new();
-        let mut shadow_dropped: Vec<String> = Vec::new();
-        if prompt.trim().len() >= 2 {
-            if let Some(cat) = &self.intent_actions {
-                if let Ok((rows, _oov, dropped, searched_with, _emb)) =
-                    cat.search_analyzed(prompt, None, 8).await
-                {
-                    shadow_searched_with = searched_with;
-                    shadow_dropped = dropped;
-                    for r in rows {
-                        let m = r.get("module").and_then(|v| v.as_str()).unwrap_or("");
-                        let a = r.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                        let s = r.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                        if !m.is_empty() && !a.is_empty() {
-                            shadow_actions.push((format!("{m}:{a}"), s));
-                        }
-                    }
-                }
-            }
-            if let Some(cat) = &self.intent_skills {
-                let scopes = vec!["system:".to_string(), "admin:".to_string()];
-                if let Ok(hits) = cat.query(prompt, 3, Some(&scopes)).await {
-                    for h in hits {
-                        let slug = h
-                            .extra
-                            .get("slug")
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                            .unwrap_or_else(|| h.id.clone());
-                        shadow_skills.push((slug, h.score));
-                    }
-                }
-            }
-        }
-
         // Plan compiled replay (2026-07-11) — steps the planning turn verified down to
         // tool+args are replayed as a synthetic round-0 through the SAME gated dispatch
         // (approval / grounding / validation / caps), skipping the LLM for that round.
@@ -2471,16 +2405,10 @@ impl AiManager {
                     // across a conversation, which is what the prefix cache wants.
                     if structured_history {
                         let turns = hr.recent_turns(owner, conv_id);
-                        history_chars = turns
-                            .iter()
-                            .map(|t| t.content.as_str().map(|s| s.chars().count()).unwrap_or(0))
-                            .sum();
                         if !turns.is_empty() {
                             effective_opts.history = turns;
                         }
                     } else if let Some(hist) = hr.resolve(owner, conv_id) {
-                        // 0 = 대화 첫 턴(기댈 맥락 없음) / >0 = 모델이 맥락을 보고 움직일 수 있었다.
-                        history_chars = hist.chars().count();
                         extra_parts.push(hist);
                     }
                     // Vector recall of related past conversations used to be injected HERE too, as
@@ -2728,29 +2656,15 @@ impl AiManager {
                         extra_parts.push(format!("<MEMORY_WRITE_MODE>\n{mode}\n</MEMORY_WRITE_MODE>"));
                     }
                 }
-                // The `<LIKELY_TOOLS>` pre-injection is gone. The shortlist above is still computed
-                // — it is the S0 shadow, and it is what measured this — but it no longer reaches
-                // the model.
-                //
-                // Measured over 218 turns (2026-08-14): the shortlist saved a discovery round on
-                // 17 of them. When it was RIGHT the model searched anyway 41 times out of 58, so
-                // the problem was never its accuracy. It is that we were giving two instructions
-                // that contradict each other — the discovery gate says climb the ladder, and this
-                // block said skip it and go straight to get_action_schema. The model resolves that
-                // by climbing, which is correct, and the hint becomes dead weight it still has to
-                // read. On the 103 turns that called no tool at all it was pure noise, and on 57
-                // of the tool-using turns every candidate was wrong ("금지된 아니라고" →
-                // dart:nonAuditService, from a follow-up message whose meaning lives in the prior
-                // turn, not in its own words).
-                //
-                // The deeper reason it cannot be fixed by a score floor: this embeds the user's
-                // QUESTION, while what has to match is a CAPABILITY. Those are different texts. A
-                // model reading the same message plus the history writes the query the user did
-                // not — measured the same day, "카카오맵으로 대중교통 경로를 뽑아라" became the
-                // search "대중교통 경로 길찾기 bus transit route". Query formulation is the step
-                // this path structurally cannot perform, and it is the step that decides the
-                // result.
-                let _ = &shadow_skills;
+                // No tool shortlist is pre-injected here. `<LIKELY_TOOLS>` (an embedding match of
+                // the user's message against the action catalog) was removed 2026-08-14 after a
+                // 218-turn measurement, and its shadow instrumentation followed 2026-08-18. The
+                // structural reason, kept so it is not rebuilt: that path embeds the user's
+                // QUESTION, while what has to match is a CAPABILITY — query formulation ("카카오맵
+                // 대중교통 경로" → "transit route 길찾기") is the step that decides the result,
+                // and only the model can perform it. Discovery is therefore the model's own
+                // search_module_actions ladder, and search quality is measured on those real
+                // queries (target=embed_shadow), not on synthetic ones.
                 let extra = if extra_parts.is_empty() {
                     None
                 } else {
@@ -5307,102 +5221,6 @@ impl AiManager {
                     ));
                 }
             }
-        }
-
-        // ── Intent Agent S0 — shadow recall 기록 (행동 0) ──
-        // shortlist 가 실제 디스패치를 커버했는지(recall) + 디스패치 없는 턴의 매칭 분포
-        // (false-positive율 = L3 포인터 임계 입력). grep: journalctl | grep intent_shadow.
-        if !shadow_actions.is_empty() || !shadow_skills.is_empty() {
-            let mut dispatched_actions: Vec<(String, String)> = Vec::new(); // (tool suffix, action)
-            let mut dispatched_skills: Vec<String> = Vec::new();
-            for tr in &tool_results_summary {
-                if let Some(rest) = tr.name.strip_prefix("sysmod_") {
-                    if let Some(act) = tr
-                        .input
-                        .as_ref()
-                        .and_then(|i| i.get("action"))
-                        .and_then(|v| v.as_str())
-                    {
-                        dispatched_actions.push((rest.to_string(), act.to_string()));
-                    }
-                } else if tr.name == "get_skill" {
-                    if let Some(slug) = tr
-                        .input
-                        .as_ref()
-                        .and_then(|i| i.get("slug"))
-                        .and_then(|v| v.as_str())
-                    {
-                        dispatched_skills.push(slug.to_string());
-                    }
-                }
-            }
-            // 방언 정규화 — 디스패치 도구 suffix 는 언더스코어·도메인 분리(kiwoom_chart, toss_invest_account)라
-            // 카탈로그 모듈명(kiwoom, toss-invest)과 직접 비교 불가 → 모듈명 하이픈→언더스코어 후 prefix 매치.
-            // recall 분모 = 카탈로그 등재 모듈 디스패치만 — 미등재 모듈(kma 등)은 shortlist 에
-            // 구조적으로 나올 수 없어 분모 포함 시 recall 이 항상 낮게 왜곡된다(첫날 0/2·0/7 사례).
-            let cataloged_norm: Vec<String> = if let Some(ac) = &self.intent_actions {
-                ac.cataloged_modules()
-                    .await
-                    .iter()
-                    .map(|m| m.replace('-', "_"))
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            let denom_actions: Vec<&(String, String)> = dispatched_actions
-                .iter()
-                .filter(|(tool_suffix, _)| {
-                    cataloged_norm.iter().any(|m| tool_suffix.starts_with(m.as_str()))
-                })
-                .collect();
-            let act_hits = denom_actions
-                .iter()
-                .filter(|(tool_suffix, act)| {
-                    shadow_actions.iter().any(|(ma, _)| {
-                        ma.split_once(':')
-                            .map(|(m, a)| a == act && tool_suffix.starts_with(&m.replace('-', "_")))
-                            .unwrap_or(false)
-                    })
-                })
-                .count();
-            let skill_hits = dispatched_skills
-                .iter()
-                .filter(|slug| shadow_skills.iter().any(|(s, _)| s == *slug))
-                .count();
-            let fmt_short = |v: &Vec<(String, f32)>| {
-                v.iter()
-                    .map(|(n, s)| format!("{n}:{s:.2}"))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            };
-            // model= 로 궤적 분리 — recall/분류기 라벨은 강한 모델(Claude) 궤적이 ground truth,
-            // 약한 모델(Solar) 궤적은 오선택·루프가 섞여 라벨 오염(카나리아 행동 데이터로만).
-            // 서빙 임베더 태그 — post-Upstage(스왑) 데이터를 날짜 추측 없이 필터링 (S0 분석 전제:
-            // action recall 은 임베더별로 갈리는데 옛 로그엔 임베더 식별자가 없어 stale E5 와 섞였다).
-            let embedder_label = self
-                .intent_actions
-                .as_ref()
-                .map(|c| c.embedder_label().to_string())
-                .unwrap_or_else(|| "none".to_string());
-            self.log.info(&format!(
-                "[intent_shadow] model={} embedder={} q=\"{}\" searched_with=\"{}\" q_kept={} q_dropped={} dropped_tokens={:?} history_chars={} actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
-                last_model_id,
-                embedder_label,
-                prompt.chars().take(80).collect::<String>().replace('\n', " "),
-                shadow_searched_with.chars().take(80).collect::<String>().replace('\n', " "),
-                shadow_searched_with.split_whitespace().count(),
-                shadow_dropped.len(),
-                shadow_dropped,
-                history_chars,
-                fmt_short(&shadow_actions),
-                fmt_short(&shadow_skills),
-                dispatched_actions,
-                dispatched_skills,
-                act_hits,
-                denom_actions.len(),
-                skill_hits,
-                dispatched_skills.len(),
-            ));
         }
 
         // ── L5 fence-repair round (Intent Agent L5, 2026-07-14) — 관대 파서 4-rung(strict →
