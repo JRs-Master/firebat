@@ -13,8 +13,20 @@ the declaration surface is missing something and that is a Firebat bug, not your
 
 ## The contract
 
-- **I/O** — stdin JSON in, the **last line of stdout** is `{"success":true,"data":{…}}`. No argv.
+- **I/O** — stdin JSON in, the **last line of stdout** is the envelope. No argv.
   Python writes `True/False/None`, not `true/false/null`.
+
+  ```jsonc
+  {"success": true,  "data": {…}}                       // success
+  {"success": false, "error": "what and the next move"}  // failure, plain
+  {"success": false, "errorKey": "error.x", "errorParams": {…}}  // failure, i18n (lang/*.json)
+  ```
+
+  Logs go to **stderr** — anything on stdout after the envelope line breaks the parse. The
+  framework enforces this at the boundary: empty stdout or a non-JSON last line on exit 0 comes
+  back as a failure that STATES this contract (never as a silent success). A valid JSON value
+  without envelope fields is accepted as the `data` itself. A non-zero exit that still printed
+  an envelope keeps its message — say why you died, then die.
 - **Entry** — `node`→`index.mjs`, `python`→`main.py`, `php`→`index.php`, `bash`→`index.sh`.
   Override with `entry`.
 - **config.json** — only `name`, `runtime` and `input` are needed. `description`, `tags`,
@@ -64,6 +76,20 @@ A caller reaches an action through `search_module_actions` → `get_action_schem
   accepted on purpose", so an audit can tell it from an omission.
 - Descriptions say **what a thing is, never what to do about it.** Instructions belong in the
   response at the moment they apply.
+
+## The run, in order
+
+Every call takes the same road, whichever transport it arrived on — this order IS the runtime
+standard, and each step speaks for itself when it refuses:
+
+```
+enabled? → validate(input) → gates (grounding · approval card · uiOnly)
+        → inject (_call · account · _recall · cache-key expansion · env)
+        → run (sandbox | ws) → envelope parse → auto-cache (_cacheKey) → timeseries absorb
+```
+
+Your module runs as a **fresh process per call** — nothing in memory survives to the next one.
+State lives in your `data/` files; everything situational arrives injected.
 
 ## What the framework hands you (do not fetch it yourself)
 

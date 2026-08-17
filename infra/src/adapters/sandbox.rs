@@ -1706,10 +1706,58 @@ impl ProcessSandboxAdapter {
         }
 
         let trimmed = stdout_buf.trim();
-        let parsed: serde_json::Value = if trimmed.is_empty() {
-            serde_json::Value::Null
-        } else {
-            serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::json!({"stdout": trimmed}))
+        // The I/O contract, spoken at the moment it is broken. Empty stdout used to read as
+        // success-with-null and non-JSON used to be wrapped `{"stdout": …}` and read as success —
+        // both absorbed an author's broken module into a shape nobody could diagnose (the module
+        // "worked" and returned garbage). Every shipped module speaks the envelope, so the
+        // generosity served only to hide the one bug a module author most needs to see. The
+        // refusal names the contract; the raw output rides along so the author can see what the
+        // module actually said. (A valid-JSON value WITHOUT envelope fields is still accepted as
+        // the data below — a generous reading of a kept contract, not a broken one.)
+        if trimmed.is_empty() {
+            tracing::warn!(target: "module_envelope", module = module_name, action = input_action,
+                "module exited 0 with empty stdout — no envelope");
+            return Ok(ModuleOutput {
+                protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
+                success: false,
+                data: serde_json::Value::Null,
+                error: Some(
+                    "the module printed nothing — its LAST stdout line must be the envelope \
+                     {\"success\": true, \"data\": …} or {\"success\": false, \"error\": \"…\"} \
+                     (errorKey/errorParams for i18n). Fix the module's output, not the call."
+                        .to_string(),
+                ),
+                error_key: None,
+                error_params: None,
+                stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
+                exit_code,
+                remember: None,
+            });
+        }
+        let parsed: serde_json::Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => {
+                tracing::warn!(target: "module_envelope", module = module_name, action = input_action,
+                    "module exited 0 with non-JSON stdout — no envelope");
+                let preview: String = trimmed.chars().take(400).collect();
+                return Ok(ModuleOutput {
+                    protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
+                    success: false,
+                    data: serde_json::json!({ "stdout": preview }),
+                    error: Some(
+                        "the module's last stdout line is not JSON — the contract is one \
+                         envelope line, {\"success\": true, \"data\": …} or {\"success\": false, \
+                         \"error\": \"…\"}. Its raw output is in `stdout`; print the envelope \
+                         LAST (logs go to stderr)."
+                            .to_string(),
+                    ),
+                    error_key: None,
+                    error_params: None,
+                    stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
+                    exit_code,
+                    remember: None,
+                });
+            }
         };
 
         // sysmod stdout envelope 인식 — `{success, data, error, errorKey?, errorParams?, __updateSecrets?}` 형태면 그대로 unwrap.
