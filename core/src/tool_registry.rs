@@ -251,20 +251,27 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "sing".to_string(),
-        description: "Compose and SING a short song (autotune vocal over a synthesized band). YOU write the score: bpm (60-160), style (trot|ballad|march|none, picks the drum pattern), notes[] = {syl, note, beats} where syl is ONE sung syllable ('-' extends the previous one across pitches), note is a pitch name like 'G4', beats counts quarter notes; chords[] = {root, beats} drives the bass. 8-32 notes, one verse. Returns { url } — put it in a `listening` component's audioUrl. You cannot recall a real melody: if asked for an existing song, say yours is a NEW composition inspired by it, never the original tune."
+        description: "Make music: compose and SING a short song (autotune vocal over a synthesized band), render an INSTRUMENTAL (vocal:false), or PLAY an uploaded MIDI (scoreMediaPath). YOU write the score: bpm (60-160), style = a genre row that picks groove + feel + default band (trot, ballad, rock, metal, pop, dance/edm, rnb, rocknroll, march, classic, newage, none — an unknown style is refused with the full list), notes[] = {syl, note, beats} where syl is ONE sung syllable ('-' extends the previous one across pitches), note is a pitch name like 'G4', beats counts quarter notes; chords[] = {root, beats, quality?} ('m','7','sus4'...). Pick instruments with band {melody?, chord?, bass?} — an unknown name is refused with the full instrument library, so just try one. Returns { url } for a `listening` component's audioUrl, plus midiUrl when midiOut:true. You cannot recall a real melody from memory: for an existing song ask for its MIDI (upload → scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
-            "required": ["bpm", "notes"],
+            "required": [],
             "properties": {
                 "title": {"type": "string"},
                 "bpm": {"type": "number"},
-                "style": {"type": "string", "enum": ["trot", "ballad", "march", "none"]},
+                "style": {"type": "string", "description": "genre row — the module owns the list and refuses unknown names with it (trot, ballad, rock, metal, pop, dance, rnb, rocknroll, march, classic, newage, none + aliases edm/house/kpop/jpop/waltz)"},
                 "notes": {"type": "array", "items": {"type": "object", "properties": {
                     "syl": {"type": "string"}, "note": {"type": "string"},
                     "beats": {"type": "number"}}, "required": ["syl", "note", "beats"]}},
                 "chords": {"type": "array", "items": {"type": "object", "properties": {
-                    "root": {"type": "string"}, "beats": {"type": "number"}}}}
+                    "root": {"type": "string"}, "beats": {"type": "number"},
+                    "quality": {"type": "string"}}}},
+                "band": {"type": "object", "description": "instrument per part, e.g. {\"melody\":\"eguitar\",\"chord\":\"strings\",\"bass\":\"aguitar\"} — library includes piano/epiano/organ/accordion/aguitar/eguitar/dguitar/eviolin/strings/brass/flute/marimba/bell/musicbox/synthlead/squarelead/synthbass"},
+                "score": {"type": "object", "description": "full score object passed to the module as-is (bpm/notes/chords/style/band/meter/swing/comp/bassline) — overrides the top-level shorthand; get_action_schema('sing','render') documents every field"},
+                "scoreMediaPath": {"type": "string", "description": "an uploaded MIDI's media URL (/user/media/<slug>.mid) or workspace path — plays that file as the score (instrumental)"},
+                "lyrics": {"type": "string", "description": "syllables to lay onto a MIDI's notes when the file has no lyric events"},
+                "vocal": {"type": "boolean", "description": "false = instrumental, no TTS voice. Default: true when inline notes carry syllables, false for scoreMediaPath"},
+                "midiOut": {"type": "boolean", "description": "also return the arrangement as a .mid (midiUrl) — open it in any real synthesizer"}
             }
         }),
         source: "core".to_string(),
@@ -280,37 +287,75 @@ fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             let module = module.clone();
             async move {
                 use std::hash::{Hash, Hasher};
-                let notes = args
+                // Three doors, one bridge: a full `score` object, the top-level shorthand
+                // (bpm/notes/...), or an uploaded MIDI (`scoreMediaPath`). The module owns the
+                // score contract — this bridge only decides vocal-vs-instrumental, runs the TTS
+                // take when there is one, and moves the results into media storage.
+                let score_media = args
+                    .get("scoreMediaPath")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let mut score = args
+                    .get("score")
+                    .filter(|v| v.is_object())
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                if score.is_null() && args.get("notes").is_some() {
+                    score = serde_json::json!({
+                        "bpm": args.get("bpm").cloned().unwrap_or(serde_json::json!(100)),
+                        "style": args.get("style").cloned().unwrap_or(serde_json::json!("trot")),
+                        "notes": args.get("notes").cloned().unwrap_or(serde_json::json!([])),
+                        "chords": args.get("chords").cloned().unwrap_or(serde_json::json!([])),
+                    });
+                }
+                if let Some(band) = args.get("band").filter(|v| v.is_object()) {
+                    if score.is_object() && score.get("band").is_none() {
+                        score["band"] = band.clone();
+                    }
+                }
+                if score.is_null() && score_media.is_none() {
+                    return Err("no score: pass `notes` (+bpm), a full `score` object, or an \
+                                uploaded MIDI via `scoreMediaPath`"
+                        .to_string());
+                }
+                let notes_len = score
                     .get("notes")
                     .and_then(|v| v.as_array())
-                    .filter(|a| !a.is_empty())
-                    .ok_or_else(|| {
-                        crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "notes")])
-                    })?;
-                if notes.len() > 64 {
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                if notes_len > 64 {
                     return Err(format!(
-                        "{} notes — keep a song to 64 notes or fewer (one verse)",
-                        notes.len()
+                        "{notes_len} notes — keep a song to 64 notes or fewer (one verse)"
                     ));
                 }
                 // The spoken take: syllables separated by spaces so the TTS articulates each one
                 // — which is exactly what the module's equal-split segmentation assumes.
-                let lyrics: String = notes
-                    .iter()
-                    .filter_map(|n| n.get("syl").and_then(|v| v.as_str()))
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty() && *s != "-")
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if lyrics.is_empty() {
-                    return Err("모든 음표의 syl 이 비어 있습니다 — 부를 가사가 없습니다".to_string());
+                let lyrics: String = score
+                    .get("notes")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|n| n.get("syl").and_then(|v| v.as_str()))
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty() && *s != "-")
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .unwrap_or_default();
+                // Vocal by default only when there is something to sing; a MIDI score plays
+                // instrumental (its syllables are not known until the module parses it).
+                let vocal = args
+                    .get("vocal")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(!lyrics.is_empty() && score_media.is_none());
+                if vocal && lyrics.is_empty() {
+                    return Err("vocal:true 인데 부를 음절이 없습니다 — notes[].syl 을 채우거나 \
+                                vocal:false (연주곡) 로 부르세요"
+                        .to_string());
                 }
-                let score = serde_json::json!({
-                    "bpm": args.get("bpm").cloned().unwrap_or(serde_json::json!(100)),
-                    "style": args.get("style").cloned().unwrap_or(serde_json::json!("trot")),
-                    "notes": notes,
-                    "chords": args.get("chords").cloned().unwrap_or(serde_json::json!([])),
-                });
+                let midi_out = args.get("midiOut").and_then(|v| v.as_bool()).unwrap_or(false);
                 let conv = args
                     .get("convId")
                     .or_else(|| args.get("currentConvId"))
@@ -319,51 +364,83 @@ fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .unwrap_or("_shared")
                     .to_string();
                 let (provider, model) = tts.effective_config();
-                if provider == "browser" {
+                if vocal && provider == "browser" {
                     return Err("노래 합성에는 서버 TTS(OpenAI 또는 Gemini 키)가 필요합니다 — \
                                 browser TTS 로는 목소리 파일을 만들 수 없습니다"
                         .to_string());
                 }
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                provider.hash(&mut hasher);
+                if vocal {
+                    provider.hash(&mut hasher);
+                }
+                vocal.hash(&mut hasher);
                 score.to_string().hash(&mut hasher);
+                score_media.hash(&mut hasher);
                 let id = format!("{:016x}", hasher.finish());
                 let out_name = format!("song-{id}.wav");
-                if let Some(url) = media.conv_attachment_url(&conv, &out_name).await? {
-                    return Ok(serde_json::json!({ "url": url, "cached": true }));
-                }
-                let req = crate::ports::TtsRequest {
-                    provider,
-                    model,
-                    text: lyrics,
-                    voice: String::new(),
-                    speakers: Vec::new(),
-                    style: Some(
-                        "또박또박, 음절 하나하나를 또렷하게, 일정한 속도로 읽어 주세요.".to_string(),
-                    ),
-                    align: false,
-                    wav: true, // the DSP reads via libsndfile — mp3 does not decode there
+                let mid_name = format!("song-{id}.mid");
+                let cached_wav = media.conv_attachment_url(&conv, &out_name).await?;
+                let cached_mid = if midi_out {
+                    media.conv_attachment_url(&conv, &mid_name).await?
+                } else {
+                    None
                 };
-                let take = tts.synthesize(&req).await?;
+                if let Some(url) = cached_wav {
+                    if !midi_out || cached_mid.is_some() {
+                        return Ok(serde_json::json!({
+                            "url": url, "midiUrl": cached_mid, "cached": true
+                        }));
+                    }
+                }
                 let dir = std::path::Path::new("data/sing");
                 let _ = std::fs::create_dir_all(dir);
-                let vocal_path = format!("data/sing/vocal-{id}.wav");
                 let out_path = format!("data/sing/song-{id}.wav");
-                std::fs::write(&vocal_path, &take.audio)
-                    .map_err(|e| format!("vocal take write failed: {e}"))?;
-                let run = module
-                    .run(
-                        "sing",
-                        &serde_json::json!({
-                            "action": "render",
-                            "score": score,
-                            "vocalPath": vocal_path,
-                            "outPath": out_path,
-                        }),
-                    )
-                    .await?;
+                let mid_path = format!("data/sing/song-{id}.mid");
+                let mut vocal_path: Option<String> = None;
+                if vocal {
+                    let req = crate::ports::TtsRequest {
+                        provider,
+                        model,
+                        text: lyrics,
+                        voice: String::new(),
+                        speakers: Vec::new(),
+                        style: Some(
+                            "또박또박, 음절 하나하나를 또렷하게, 일정한 속도로 읽어 주세요."
+                                .to_string(),
+                        ),
+                        align: false,
+                        wav: true, // the DSP reads via libsndfile — mp3 does not decode there
+                    };
+                    let take = tts.synthesize(&req).await?;
+                    let vp = format!("data/sing/vocal-{id}.wav");
+                    std::fs::write(&vp, &take.audio)
+                        .map_err(|e| format!("vocal take write failed: {e}"))?;
+                    vocal_path = Some(vp);
+                }
+                let mut run_args = serde_json::json!({
+                    "action": "render",
+                    "outPath": out_path,
+                });
+                if score.is_object() {
+                    run_args["score"] = score.clone();
+                }
+                if let Some(mp) = &score_media {
+                    run_args["scoreMediaPath"] = serde_json::json!(mp);
+                }
+                if let Some(l) = args.get("lyrics").and_then(|v| v.as_str()) {
+                    run_args["lyrics"] = serde_json::json!(l);
+                }
+                if let Some(vp) = &vocal_path {
+                    run_args["vocalPath"] = serde_json::json!(vp);
+                }
+                if midi_out {
+                    run_args["midiOutPath"] = serde_json::json!(mid_path);
+                }
+                let run = module.run("sing", &run_args).await?;
                 if !run.success {
-                    let _ = std::fs::remove_file(&vocal_path);
+                    if let Some(vp) = &vocal_path {
+                        let _ = std::fs::remove_file(vp);
+                    }
                     return Err(run
                         .error
                         .unwrap_or_else(|| "sing module refused the score".to_string()));
@@ -371,15 +448,37 @@ fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let bytes = std::fs::read(&out_path)
                     .map_err(|e| format!("rendered song read failed ({out_path}): {e}"))?;
                 let url = media.save_conv_attachment(&conv, &out_name, &bytes).await?;
+                let mut midi_url = serde_json::Value::Null;
+                if midi_out {
+                    // A missing `mido` on the server degrades to wav-only — the module already
+                    // said so in midiNote, which rides through below.
+                    if let Ok(mb) = std::fs::read(&mid_path) {
+                        midi_url =
+                            serde_json::json!(media.save_conv_attachment(&conv, &mid_name, &mb).await?);
+                    }
+                }
                 // media holds the durable copy — the working files are scratch.
-                let _ = std::fs::remove_file(&vocal_path);
+                if let Some(vp) = &vocal_path {
+                    let _ = std::fs::remove_file(vp);
+                }
                 let _ = std::fs::remove_file(&out_path);
-                Ok(serde_json::json!({
+                let _ = std::fs::remove_file(&mid_path);
+                let mut out = serde_json::json!({
                     "url": url,
+                    "midiUrl": midi_url,
                     "cached": false,
                     "seconds": run.data.get("seconds").cloned().unwrap_or(serde_json::Value::Null),
                     "backend": run.data.get("backend").cloned().unwrap_or(serde_json::Value::Null),
-                }))
+                });
+                // A MIDI score comes back parsed — show the caller what the file became so a
+                // wrong parse is visible and correctable, same contract as the module itself.
+                if let Some(parsed) = run.data.get("score") {
+                    out["score"] = parsed.clone();
+                }
+                if let Some(note) = run.data.get("midiNote") {
+                    out["midiNote"] = note.clone();
+                }
+                Ok(out)
             }
         }),
     );
