@@ -733,6 +733,26 @@ async fn gated_tool_call(
             conversation_scope::record_schema(&scope, m, a);
         }
     }
+    // needs gate (v3) — a row-declared prerequisite module must have RUN in this conversation.
+    // Cron CLI turns are exempt like the approval gate (operator-authored arguments).
+    if let Some(module) = target_module.as_deref() {
+        if !firebat_core::utils::cron_context::is_cron_context_active() {
+            if let Some(mm) = state.module_manager.as_ref() {
+                let gates = mm.action_gates(module).await;
+                let act = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+                // Single-action modules key their one derived row by the module name.
+                let declared = gates.needs.get(act).or_else(|| gates.needs.get(module));
+                if let Some(list) = declared {
+                    let unmet = conversation_scope::unmet_needs(&scope, list);
+                    if !unmet.is_empty() {
+                        tracing::info!(target: "needs", tool = name, module = module, action = act,
+                            unmet = ?unmet, "needs reject — declared prerequisite not run");
+                        return Err(conversation_scope::needs_reject(module, act, &unmet));
+                    }
+                }
+            }
+        }
+    }
     // L1 grounding — the declaration belongs to the module, so it is looked up by module.
     let grounded = match target_module.as_deref() {
         Some(module) => state.grounding.read().await.get(module).cloned(),
@@ -763,6 +783,13 @@ async fn gated_tool_call(
         if firebat_core::utils::grounding::records_provenance(name) {
             if let Ok(text) = serde_json::to_string(v) {
                 conversation_scope::observe(&scope, &text);
+            }
+        }
+        // needs ledger — a successful module run satisfies `needs` declarations for the rest of
+        // the window (mirror of the FC path; success only).
+        if let Some(m) = target_module.as_deref() {
+            if !matches!(v.get("success").and_then(Value::as_bool), Some(false)) {
+                conversation_scope::record_run(&scope, m);
             }
         }
         // Produced-file receipt — the file card's evidence. A CLI model calls its tools inside its

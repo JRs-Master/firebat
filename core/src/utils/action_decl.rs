@@ -84,6 +84,10 @@ pub struct ActionGates {
     pub ui_only: std::collections::HashSet<String>,
     /// action id → reason ("" when declared as a bare `true`).
     pub unsupported: HashMap<String, String>,
+    /// action id → modules that must have RUN in this conversation before it dispatches
+    /// (`"needs": ["stock-lookup"]`). The framework never knows what the prerequisite is for;
+    /// it checks "ran here" and repeats the declaration in the refusal.
+    pub needs: HashMap<String, Vec<String>>,
 }
 
 /// The gate sets out of catalog rows. Rows without gate fields contribute nothing.
@@ -108,6 +112,16 @@ pub fn action_gates(rows: &[serde_json::Value]) -> ActionGates {
                 out.unsupported.insert(id.to_string(), reason.clone());
             }
             _ => {}
+        }
+        if let Some(needs) = row.get("needs").and_then(|v| v.as_array()) {
+            let mods: Vec<String> = needs
+                .iter()
+                .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
+                .map(String::from)
+                .collect();
+            if !mods.is_empty() {
+                out.needs.insert(id.to_string(), mods);
+            }
         }
     }
     out

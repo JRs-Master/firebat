@@ -4090,6 +4090,43 @@ impl AiManager {
                 } else {
                     None
                 };
+                // needs gate (v3) — a row-declared prerequisite module must have RUN in this
+                // conversation. Cron turns are exempt like the approval gate: a scheduled run's
+                // arguments are operator-authored, and there is nobody mid-turn to run a lookup.
+                let needs_reject: Option<String> = if let (Some(reg), Some(module)) =
+                    (&self.dynamic_tools, call_module.as_deref())
+                {
+                    if ai_opts.cron_agent.is_some()
+                        || crate::utils::cron_context::is_cron_context_active()
+                    {
+                        None
+                    } else {
+                        let act = effective_call
+                            .arguments
+                            .get("action")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let gates = reg.action_gates(module).await;
+                        // Single-action modules key their one derived row by the module name.
+                        let declared = gates
+                            .needs
+                            .get(act)
+                            .or_else(|| gates.needs.get(module));
+                        declared.and_then(|list| {
+                            let unmet = crate::utils::conversation_scope::unmet_needs(
+                                &tool_scope,
+                                list,
+                            );
+                            (!unmet.is_empty()).then(|| {
+                                crate::utils::conversation_scope::needs_reject(
+                                    module, act, &unmet,
+                                )
+                            })
+                        })
+                    }
+                } else {
+                    None
+                };
                 // uiOnly gate — actions that are not model-callable at all (screen actions).
                 // Checked BEFORE the approval gate on purpose: an approval card for one of these
                 // would still be the model doing it, one click removed, and the card cannot show
@@ -4437,6 +4474,27 @@ impl AiManager {
                         }),
                         success: false,
                         error: Some("action schema not fetched yet".to_string()),
+                        arguments: call.arguments.clone(),
+                    }
+                } else if let Some(why) = needs_reject {
+                    // needs reject — the declared prerequisite has not run in this conversation.
+                    // Same discipline as discovery: cache key inserted so the identical call
+                    // cannot re-run; the model must run the prerequisite and come back.
+                    self.log.info(&format!(
+                        "[AiManager] needs reject (FC): {} — declared prerequisite not run",
+                        effective_call.name
+                    ));
+                    turn_call_set.insert(cache_key.clone());
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: serde_json::json!({
+                            "success": false,
+                            "error": why,
+                            "needs": true,
+                        }),
+                        success: false,
+                        error: Some("declared prerequisite not run".to_string()),
                         arguments: call.arguments.clone(),
                     }
                 } else if let Some(hint) = grounding_reject {
@@ -4797,6 +4855,13 @@ impl AiManager {
                 if action.success && crate::utils::grounding::records_provenance(&call.name) {
                     if let Ok(text) = serde_json::to_string(&action.result) {
                         crate::utils::conversation_scope::observe(&tool_scope, &text);
+                    }
+                }
+                // needs ledger — a successful module run satisfies `needs` declarations for the
+                // rest of the window. Success only: a failed lookup resolved nothing.
+                if action.success {
+                    if let Some(m) = call_module.as_deref() {
+                        crate::utils::conversation_scope::record_run(&tool_scope, m);
                     }
                 }
                 // Produced-file harvest — the receipt the file card is drawn from. Only a SUCCESS

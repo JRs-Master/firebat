@@ -216,6 +216,14 @@ impl DynamicToolRegistry {
         map.get(module).cloned()
     }
 
+    /// Row-declared gates passthrough — the FC gates read them without holding a ModuleManager.
+    pub async fn action_gates(
+        &self,
+        module: &str,
+    ) -> std::sync::Arc<crate::utils::action_decl::ActionGates> {
+        self.module.action_gates(module).await
+    }
+
     /// Dual-home approval verdict for the FC gate (v2): the action's own catalog row
     /// (`ModuleManager::action_gates`) ∨ the legacy top-level list this registry cached at
     /// refresh. OR — a migration commit must never loosen a live gate.

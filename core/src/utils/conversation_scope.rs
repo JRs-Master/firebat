@@ -66,6 +66,32 @@ pub const MAX_SCOPES: usize = 200;
 /// here so a runaway loop cannot grow the entry without bound.
 pub const PRODUCED_MAX: usize = 20;
 
+#[cfg(test)]
+mod needs_tests {
+    use super::*;
+
+    #[test]
+    fn a_prerequisite_counts_only_after_it_ran_and_only_in_its_scope() {
+        let a = "conv:needs-a";
+        let b = "conv:needs-b";
+        let needs = vec!["stock-lookup".to_string()];
+        assert_eq!(unmet_needs(a, &needs), vec!["stock-lookup".to_string()]);
+        record_run(a, "stock-lookup");
+        assert!(unmet_needs(a, &needs).is_empty(), "ran here — satisfied");
+        assert_eq!(unmet_needs(b, &needs).len(), 1, "another conversation is not this one");
+        // Dialect names canonicalize the same way the discovery gate's do.
+        record_run(b, "sysmod_stock_lookup");
+        assert!(unmet_needs(b, &needs).is_empty());
+    }
+
+    #[test]
+    fn the_refusal_names_the_prerequisite_and_the_window() {
+        let msg = needs_reject("dart", "financial", &["stock-lookup".to_string()]);
+        assert!(msg.contains("`stock-lookup`"), "{msg}");
+        assert!(msg.contains("30 minutes"), "{msg}");
+    }
+}
+
 /// The discovery-first rejection, spoken identically on both transports.
 ///
 /// It used to live twice — the FC copy had grown a thirty-minute clause the MCP copy never got,
@@ -77,6 +103,23 @@ pub fn discovery_reject(module: &str, action: &str) -> String {
         "Standard procedure: call get_action_schema(\"{module}\", \"{action}\") first — it counts \
          for the next 30 minutes of this conversation — then invoke with exactly the parameters \
          it lists. Several schemas can be fetched in one round."
+    )
+}
+
+/// The needs-gate rejection — a row-declared prerequisite has not run in this conversation.
+/// Next move + the one piece of state worth disclosing, nothing else.
+pub fn needs_reject(module: &str, action: &str, unmet: &[String]) -> String {
+    let list = unmet
+        .iter()
+        .map(|m| format!("`{m}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "`{}:{}` runs after {list} has run in this conversation — call {list} first and take \
+         this call's identifiers from its result, then retry. A run counts for the next 30 \
+         minutes.",
+        canon_module(module),
+        action.trim(),
     )
 }
 
@@ -96,6 +139,11 @@ struct ScopeState {
     observed: VecDeque<(Instant, String)>,
     /// `"module:action"` → the stamp of the last fetch *or* the last successful check.
     schema_seen: HashMap<String, Instant>,
+    /// Module (canon name) → the stamp of its last SUCCESSFUL run in this scope. What the
+    /// `needs` gate reads: an action that declares `"needs": ["stock-lookup"]` runs only after
+    /// that module ran here. Same window, same sliding as the discovery gate — one notion of
+    /// "recent" for every procedure.
+    runs_seen: HashMap<String, Instant>,
     /// Files produced by tool calls that assemble no answer of their own (the CLI's own MCP
     /// loop), oldest first, waiting for the turn's final assembly to drain them.
     produced: VecDeque<(Instant, ProducedFile)>,
@@ -108,6 +156,7 @@ impl ScopeState {
         Self {
             observed: VecDeque::new(),
             schema_seen: HashMap::new(),
+            runs_seen: HashMap::new(),
             produced: VecDeque::new(),
             last_touch: now,
         }
@@ -244,6 +293,78 @@ pub fn discovered_all(scope_key: &str) -> Vec<(String, Vec<String>)> {
         .collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
+}
+
+// ── needs gate (declared prerequisites) ──────────────────────────────────────
+//
+// An action row that declares `"needs": ["stock-lookup"]` runs only after that module ran
+// successfully in this scope. Pure mechanism: the framework never knows what the prerequisite
+// is FOR — the declaration names it, the refusal repeats it, and this store answers "did it
+// run". Same shape as the discovery gate on purpose: one window, one eviction, one philosophy
+// (force the step, trust the flow).
+
+/// Record that `module` completed a successful run in this scope.
+pub fn record_run(scope_key: &str, module: &str) {
+    record_run_at(scope_key, module, Instant::now());
+}
+
+fn record_run_at(scope_key: &str, module: &str, now: Instant) {
+    let mut map = store();
+    enforce_scope_cap(&mut map, now);
+    let state = map
+        .entry(scope_key.to_string())
+        .or_insert_with(|| ScopeState::new(now));
+    state.last_touch = now;
+    evict_runs(&mut state.runs_seen, now);
+    if state.runs_seen.len() >= SCHEMA_SEEN_MAX {
+        // Same bound as the schema stamps — distinct modules a conversation runs is far below it.
+        if let Some(oldest) = state
+            .runs_seen
+            .iter()
+            .min_by_key(|(_, t)| **t)
+            .map(|(k, _)| k.clone())
+        {
+            state.runs_seen.remove(&oldest);
+        }
+    }
+    state.runs_seen.insert(canon_module(module), now);
+}
+
+/// True when `module` ran successfully in this scope within the window — **and restamps it**,
+/// the same slide as `schema_ok`: a prerequisite the conversation actively builds on stays
+/// satisfied, one it fetched once and abandoned ages out.
+pub fn run_ok(scope_key: &str, module: &str) -> bool {
+    run_ok_at(scope_key, module, Instant::now())
+}
+
+fn run_ok_at(scope_key: &str, module: &str, now: Instant) -> bool {
+    let mut map = store();
+    let Some(state) = map.get_mut(scope_key) else {
+        return false;
+    };
+    state.last_touch = now;
+    evict_runs(&mut state.runs_seen, now);
+    match state.runs_seen.get_mut(&canon_module(module)) {
+        Some(stamp) => {
+            *stamp = now;
+            true
+        }
+        None => false,
+    }
+}
+
+fn evict_runs(runs: &mut HashMap<String, Instant>, now: Instant) {
+    runs.retain(|_, stamp| now.duration_since(*stamp) < SCOPE_TTL);
+}
+
+/// The declared prerequisites not yet satisfied in this scope, for one action's `needs` list.
+/// Empty = clear to dispatch. The caller builds the refusal from what comes back.
+pub fn unmet_needs(scope_key: &str, needs: &[String]) -> Vec<String> {
+    needs
+        .iter()
+        .filter(|m| !run_ok(scope_key, m))
+        .cloned()
+        .collect()
 }
 
 // ── grounding corpus ─────────────────────────────────────────────────────────
