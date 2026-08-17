@@ -2768,7 +2768,7 @@
                   "restaurant",
                   null
                 ],
-                "description": "marker icon. WEATHER (animated badge — icon + the label as a temp/name pill): wx-clear(맑음) / wx-partly(구름조금) / wx-cloudy(흐림) / wx-rain(비) / wx-shower(소나기) / wx-snow(눈) / wx-thunder(뇌우). typhoon(current typhoon — swirl spins, hemisphere-correct by lat) / forecast (forecast typhoon — same swirl, static) / current(📍) / food restaurant·cafe·bakery·bar / finance & medical bank·atm·hospital·pharmacy·clinic·dental / education school·library·academy·university / shopping & transit convenience·mart·mall·subway·bus·train·parking·gas·airport / others hotel·park·gym·cinema·police·fire·post·gov·church·home·office. Default marker if unspecified."
+                "description": "marker icon. OMIT for a normal place, building or address — omitted = the standard position pin, which is what almost every marker wants. Category badges (round POI badge, only when the CATEGORY itself matters): food restaurant·cafe·bakery·bar / finance & medical bank·atm·hospital·pharmacy·clinic·dental / education school·library·academy·university / shopping & transit convenience·mart·mall·subway·bus·train·parking·gas·airport / others hotel·park·gym·cinema·police·fire·post·gov·church·home·office. current = the viewer's own current position dot ONLY — never a place or company. WEATHER (animated badge — icon + the label as a temp/name pill): wx-clear(맑음) / wx-partly(구름조금) / wx-cloudy(흐림) / wx-rain(비) / wx-shower(소나기) / wx-snow(눈) / wx-thunder(뇌우). typhoon(current typhoon — swirl spins, hemisphere-correct by lat) / forecast(forecast typhoon — same swirl, static)."
               },
               "size": {
                 "type": [
