@@ -29,6 +29,7 @@ pub const VK_SYSTEM_RETENTION_ENABLED: &str = "system:retention:enabled";
 pub const VK_SYSTEM_RETENTION_DAYS: &str = "system:retention:days";
 pub const VK_SYSTEM_MEMORY_AUTO_SAVE: &str = "system:memory:auto-save";
 pub const VK_HUB_CORE_SYSMODS: &str = "system:hub:core-sysmods";
+pub const VK_CRON_RECORD_MODULE: &str = "system:cron:record-module";
 
 pub const AUTH_SESSION_PREFIX: &str = "auth:session:";
 pub const USER_SECRET_PREFIX: &str = "user:";

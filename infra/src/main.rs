@@ -1150,6 +1150,13 @@ async fn main() -> Result<()> {
             // handle_trigger 가 info 를 소비하므로 기록 메타를 먼저 추출.
             let builtin = info.builtin_kind.clone();
             let show_cal = info.show_in_calendar == Some(true);
+            // Which module receives run records is policy, so the vault names it (v3 — policy to
+            // setting). Key absent = the built-in default; key present but blank = explicitly none.
+            let record_module = vault_b
+                .get_secret(firebat_core::vault_keys::VK_CRON_RECORD_MODULE)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| "calendar".to_string());
+            let record_run = show_cal && !record_module.is_empty();
             let title = info
                 .title
                 .clone()
@@ -1242,8 +1249,8 @@ async fn main() -> Result<()> {
                     &format!("system:cron:lastrun:{kind}"),
                     &chrono::Utc::now().timestamp_millis().to_string(),
                 );
-                // 캘린더 표시 체크 시 시스템 잡도 실행기록을 캘린더에 남긴다(사용자 cron 과 동일).
-                if show_cal {
+                // 캘린더 표시 체크 시 시스템 잡도 실행기록을 기록 모듈에 남긴다(사용자 cron 과 동일).
+                if record_run {
                     let cal_input = serde_json::json!({
                         "action": "add",
                         "title": title,
@@ -1252,7 +1259,7 @@ async fn main() -> Result<()> {
                         "linkedJobId": job_id,
                         "description": serde_json::Value::String(error.clone().unwrap_or_default()),
                     });
-                    let _ = modmgr.run("calendar", &cal_input).await;
+                    let _ = modmgr.run(&record_module, &cal_input).await;
                 }
                 return firebat_core::ports::CronJobResult {
                     job_id,
@@ -1270,8 +1277,8 @@ async fn main() -> Result<()> {
             let result = mgr.handle_trigger(info, &core_b).await;
             // 캘린더 기록 — 사용자가 "캘린더에 표시" 체크한 잡만 (시스템·미체크 잡 제외).
             // 진단: show_cal 값 + add 결과를 남긴다(옛 silent `let _` 라 실패/미실행이 안 보였음).
-            if show_cal {
-                // description 은 항상 string — calendar add 스키마가 string 요구(null 거부 → 성공 잡이 기록 안 됨).
+            if record_run {
+                // description 은 항상 string — record 모듈의 add 스키마가 string 요구(null 거부 → 성공 잡이 기록 안 됨).
                 let desc = serde_json::Value::String(
                     if result.success { String::new() } else { result.error.clone().unwrap_or_default() },
                 );
@@ -1283,13 +1290,13 @@ async fn main() -> Result<()> {
                     "linkedJobId": job_id,
                     "description": desc,
                 });
-                // sysmod_calendar add — admin scope(_hubScope 없음). hub cron 별도 scope 는 추후.
-                match modmgr.run("calendar", &cal_input).await {
-                    Ok(_) => tracing::info!(target: "cron", job = %job_id, "[cron-cal] run record added to calendar"),
-                    Err(e) => tracing::warn!(target: "cron", job = %job_id, error = %e, "[cron-cal] calendar add failed"),
+                // record-module add — admin scope(_hubScope 없음). hub cron 별도 scope 는 추후.
+                match modmgr.run(&record_module, &cal_input).await {
+                    Ok(_) => tracing::info!(target: "cron", job = %job_id, module = %record_module, "[cron-cal] run record added"),
+                    Err(e) => tracing::warn!(target: "cron", job = %job_id, module = %record_module, error = %e, "[cron-cal] run record failed"),
                 }
             } else {
-                tracing::info!(target: "cron", job = %job_id, "[cron-cal] show_cal=false — calendar record skipped");
+                tracing::info!(target: "cron", job = %job_id, "[cron-cal] show_cal=false or record module blank — run record skipped");
             }
             result
         })

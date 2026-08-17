@@ -80,7 +80,7 @@ const STANDING: &[(&str, &str, &str)] = &[
     (
         "infra/src/main.rs",
         "calendar",
-        "[cron-cal] writes cron run records into the calendar module — standing debt, disposal to decide (declare, like schedulesFrom)",
+        "built-in default of the system:cron:record-module setting — the run sites read the vault",
     ),
     (
         "infra/src/main.rs",
