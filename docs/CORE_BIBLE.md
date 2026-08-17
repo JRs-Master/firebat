@@ -214,7 +214,7 @@ interface FirebatInfraContainer {
 
 ### Step 2-1. 디스패치 게이트 (실행 전 코드 거부 계층, FC + MCP 대칭)
 도구 실행 직전에 통과하는 선언형 게이트 — 프롬프트가 아니라 코드가 거부([[MODULE_BIBLE 제3장 선언형 필드]]):
-- **requiresApproval** — 승인 카드(`PendingActionArgs::RunModule`) 생성 + **턴 즉시 종료**(카드 1장 보장). cron 컨텍스트 = 스케줄 승인이 잡의 매매까지 승인이라 통과.
+- **approval (액션 행 선언 — v2. 판정 = `pending_tools::approval_gated`, 행∨옛목록)** — 승인 카드(`PendingActionArgs::RunModule`) 생성 + **턴 즉시 종료**(카드 1장 보장). cron 컨텍스트 = 스케줄 승인이 잡의 매매까지 승인이라 통과.
 - **grounding (L1)** — 선언 param 값이 세션 provenance corpus 에 없으면 거부 + resolveHint.
 - **per-turn discovery 캡** — 선언된 discovery 도구(search 류) 한 턴 상한 초과 시 "지금 정보로 진행" firm 에러 (search 무한 루프 차단).
 - **hub 정책** — `permits_tool` 단일 게이트 (아래 Hub 보안 모델).

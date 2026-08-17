@@ -34,6 +34,21 @@ Firebat은 어떤 언어로 작성되었건(불가지론적) 동일한 방식으
 `config.json` 의 `entry` 필드로 override 가능 (예: `"entry": "run.py"`).
 명시 안 하면 prompt-builder 가 위 표준에 따라 path 결정.
 
+### 봉투 계약 (v2 명문화, 2026-08-17)
+
+stdin JSON 입력 → **stdout 마지막 줄이 봉투** (로그는 stderr 로):
+
+```jsonc
+{"success": true,  "data": {…}}
+{"success": false, "error": "무엇이·다음 수"}
+{"success": false, "errorKey": "error.x", "errorParams": {…}}   // i18n (제6장)
+```
+
+경계 동작(`ca0c1ca2`): exit 0 인데 **stdout 이 비었거나 마지막 줄이 JSON 이 아니면** 프레임워크가
+계약을 말하는 실패로 돌려준다(원문 보존, `target=module_envelope` WARN) — 조용한 성공 둔갑 없음.
+봉투 필드 없는 유효 JSON 값 = data 그 자체로 수용. 봉투를 찍고 비정상 종료한 경우 = 메시지 보존
+(upbit 404 교훈). 수명주기 = enabled→검증→게이트→주입→실행→봉투→auto-cache→timeseries, 전송 무관.
+
 ### Multi-file 모듈
 
 entry 파일이 같은 디렉토리의 다른 파일들을 자유 import 가능 — 언어 표준 module
@@ -192,29 +207,36 @@ system/modules/<name>/
 
 인프라 choke-point 가 config 선언을 읽어 처리하는 opt-in 필드들. 모듈 코드는 아무것도 import 하지 않는다 (모듈 dumb 원칙). 미선언 = 기존 동작 그대로.
 
-#### `requiresApproval` — 실행 승인 게이트 (2026-07-05)
-```json
-{ "requiresApproval": true }                        // 모듈 전체
-{ "requiresApproval": ["kt10000", "kt10001"] }      // 특정 액션만
+> **v2 (2026-08-17): 선언은 자기 축에 산다.** 액션의 속성은 **카탈로그 행**에(`approval`·`uiOnly`·
+> `unsupported`·`_call`), 인자의 속성은 **`input.properties` 의 그 칸**에(`grounding`·`source`·
+> `cacheInput`). 액션 id 를 키로 한 top-level 목록(requiresApproval·uiOnly)은 폐지 — 카탈로그 행이
+> 있는 모듈에서 감사가 거부한다. 리더는 이행기 동안 듀얼 홈(행∨목록·스펙∨맵) OR. 예외 = 브로커
+> 와이어 어휘(stk_cd 등 input 미선언 인자)는 모듈 수준 인자 맵이 곧 그들의 축이라 유지.
+
+#### `approval` — 실행 승인 게이트 (행 선언, v2)
+```jsonc
+// actions.json 행 (또는 inline actionCatalog 행)
+{ "id": "kt10000", "approval": true, ... }
 ```
 - 선언된 액션을 AI 가 호출하면 **디스패치 계층**(FC=ai.rs + MCP=SysmodHandler — 코드가 거부, 프롬프트 아님)이 즉시 실행 대신:
   채팅 = 승인 카드(`PendingActionArgs::RunModule`, 승인 시 재생 + **턴 즉시 종료** = 카드 1장 보장) / cron = **스케줄 승인 = 잡에 담긴 매매 승인** → 실행 허용(인터랙티브 run_task 우회만 차단) / hub = 차단.
-- 대상: 실주문·비가역·real-money 액션 (키움 주문 12 / 토스 6 — 주문 3+조건주문 3 / 한투 7 선언 예시). 새 매매/파괴 모듈 = config 한 줄로 자동 포함.
+- 판정은 한 함수(`pending_tools::approval_gated` — 행∨옛목록). `uiOnly: true` 도 같은 자리·같은 규칙
+  (화면 전용 — 승인 카드조차 안 만들고 설정 화면을 가리킴).
+- 대상: 실주문·비가역·real-money 액션 (키움 18 / 한투 19 / 토스 6 / autotrade 8 — 전부 행 선언). 새 매매/파괴 모듈 = 행 한 필드로 자동 포함.
 
-#### `grounding` — 불투명 식별자 날조 차단 (Fact-Provenance L1, 2026-06-30)
-```json
-{
-  "grounding": {
-    "stk_cd": {
-      "pattern": "^Q?[0-9]{6}$",
-      "exemptActions": ["ka10100"],
-      "resolveHint": "코드는 lookup 으로 resolve 하라는 AI 안내문 (영어)"
-    }
-  }
+#### `grounding` — 불투명 식별자 날조 차단 (인자 스펙 선언, Fact-Provenance L1)
+```jsonc
+// input.properties 의 그 인자 칸에
+"stock_code": {
+  "type": "string",
+  "grounding": { "pattern": "^[0-9]{6}$", "exemptActions": ["lookup"],
+                 "resolveHint": "코드는 lookup 으로 resolve 하라는 AI 안내문 (영어)" },
+  "source": "lookup"        // 발급처 지목 — 검증·grounding 거부가 이 액션을 이름으로 가리킨다
 }
 ```
-- 선언된 param 값이 **세션 provenance corpus**(사용자 입력 ∪ 이전 도구 결과)에 없으면 디스패치 계층(MCP + FC 양쪽)이 실행 거부 + `resolveHint` 반환 → AI 가 resolve(예: dart lookup) 후 재시도.
+- 선언된 param 값이 **대화 provenance corpus**(사용자 입력 ∪ 이전 도구 결과, 30분 창)에 없으면 디스패치 계층(MCP + FC 양쪽)이 실행 거부 + `resolveHint`(+`source` 발급처) 반환 → AI 가 resolve 후 재시도.
 - `pattern` = 값-shape 필터(예: 6자리 종목코드만 gate, 4자리 지수코드는 통과 — 한투 FID_INPUT_ISCD 오버로딩 대응). 닫힌 enum 값은 기존 input schema 타입체크가 이미 막으므로 **열린 값(종목코드류)만** 선언.
+- input 에 없는 와이어 인자(브로커 stk_cd 류)는 top-level `grounding`/`paramSource` 맵으로 — 그게 그들의 인자 축이다.
 
 #### `ws` — WebSocket 전용 API (스냅샷 + 상시 감시, 2026-07-05)
 ```json
@@ -291,7 +313,7 @@ system/modules/<name>/
        건너뛰어 **모듈이 발견에서 통째로 사라졌다** — 실행·설정은 멀쩡해서 아무도 안 찾아볼 0.)
   2. 없으면 **`input` 스키마에서 자동 파생** — `input.properties.action.enum` 의 값마다 엔트리(설명 = `action.description` blob 조각, params = 나머지 input properties). **작은 모듈·usermod 는 별도 authoring 0** — 이미 있는 input 스키마가 곧 카탈로그.
   3. action enum 도 없으면(단일 목적 모듈) → 모듈 1엔트리(`get_action_schema` = input 스키마 통째).
-- `actions.json` 엔트리 = `{ id, name, description, domain?, tags?: [...], aliases?: [...], params?: [이름], required?: [이름], example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
+- `actions.json` 엔트리 = `{ id, name, description, domain?, tags?: [...], aliases?: [...], params?: [이름], required?: [이름], approval?: true, uiOnly?: true, unsupported?: true|"이유", _call?: {...}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. **행이 자기 게이트를 가진다**(v2). ~~gen 스크립트·overrides 병합~~ 폐기(2026-08-17 — 선언이 원본, 상주 생성 절차 0. 수입 도구는 1회 돌리고 결과를 원본으로 승격).
   - ⚠️ **`params` 는 이름 **목록**이지 설명 맵이 아니다** (2026-08-16). 맵이던 시절 선택을 적으려면 스키마에 이미 있는 문장을 또 써야 했고 — **형식이 사본을 강제했다** — 그 사본이 어긋나 daum-search `sort` 가 실제 enum `["accuracy","recency","latest"]` 옆에서 "newest-first" 를 광고했다. 게다가 한 줄 더 쓰기 싫으니 **선택이 짧아졌다**(naver-ads 46개 중 33개만). 지금은 목록이라 설명을 넣을 자리가 없고, 문구는 항상 `input.properties.<param>.description` 에서 온다.
   - **인자를 안 받는 액션은 `"params": []`** — 생략과 다르다. 생략 = "스키마에서 파생", 빈 목록 = "없음". 빈 목록이 없으면 태그 필터가 *전부* 를 돌려주는 폴백에 걸려 `fa/selftest` 가 `ratios` 의 11개를 광고했다(2026-08-16).
   - **`required`** = 그 액션이 없으면 거부되는 인자. `get_action_schema` 의 `fill` 이 여기서 나온다. 벤더 시트의 `required:true` 를 생성기가 **한국어 `(필수)` 문구로만** 적던 시절엔 `fill` 이 늘 비어 있었다 — 구조는 구조로 남긴다.
@@ -308,14 +330,18 @@ system/modules/<name>/
   접두사 매칭(`list-*`). **태그가 없으면 모듈 전체 인자**로 취급된다.
   ⚠️ 이게 있어서 카탈로그가 `params` 목록을 안 적어도 된다. 안 적으면 태그가 정한다.
 
-- **세 방향 감사가 CI 에서 돈다** (`core/tests/module_config_audit.rs`, 2026-08-16). 선언은 **오류가 아니라
-  침묵**으로 틀리기 때문에:
-  ① **선언 → 존재**: `requiresApproval`·`grounding`·`pageBinding`·카탈로그가 가리키는 액션·파일이 있나
+- **감사가 CI 에서 돈다** (`core/tests/module_config_audit.rs`. ⚠️ 2026-08-17 까지 `--lib` 만 걸려
+  **한 번도 CI 에서 안 돌았다** — `3c020e49` 에서 `--tests` 로 수리). 선언은 **오류가 아니라 침묵**으로
+  틀리기 때문에:
+  ① **선언 → 존재**: `grounding`·`pageBinding`·카탈로그가 가리키는 액션·파일이 있나
   ② **존재 → 발견**: `input.properties.action.enum` 의 액션이 카탈로그 id 나 `aliases` 에 있나
      (없으면 그 액션은 실행되는데 검색으로는 못 찾는다)
   ③ **선언 → 구현**: 스키마가 선언한 인자를 **모듈 소스가 이름으로라도 쓰나**. 전수 783개 중 10개가
      허구였다 — browser-scrape 가 스크린샷·뷰포트·헤더·JS 토글을 광고했는데 114줄 구현이 하나도 안 읽었다.
-     `<param>CacheKey/Limit/Range` 는 core 가 검증 전에 펼쳐 넣으므로 면제(`cacheInputs` 에서 파생).
+     `<param>CacheKey/Limit/Range` 면제(검증 전 확장) · **`_call.by` 축 면제**(방언이 `data[call.by]` 로
+     간접 읽음 — 이름이 코드에 안 나온다).
+  ④ **`_call` 완결성** + **축 규율**: 선언하면 전 실행 액션에 / 카탈로그 행이 있는 모듈의 top-level
+     `requiresApproval`·`uiOnly` 는 거부(행으로 — 규칙이지 이행 명단이 아니다).
 
 - **`tags` 는 두 층이고 뜻이 다르다** (둘 다 **string 배열**, 둘 다 임베딩에 들어간다 — 2026-08-15)
   - **모듈 `tags` = 뭐라고 불리는가** — `한투`·`한국투자`·`한국투자증권`·`kis`. 그 모듈의 모든 액션이 공유하므로 **모듈을 통째로** 질의 쪽으로 끌어당기고, 모듈 안에서는 아무것도 가르지 않는다.
@@ -329,9 +355,11 @@ system/modules/<name>/
   - 검색 결과 행에 파라미터를 나열하지 않는 원칙은 그대로다(모델이 get 을 건너뛰고 추측한다).
 - **usermod authoring**: input 스키마에 `action` enum + 각 액션 설명을 넣으면 → 등록 즉시 search_module_actions 로 발견(파생). per-action 정밀 params 를 원하면 `actionCatalog` + `actions.json` 선언. 둘 다 없어도 단일 엔트리로 발견은 된다.
 
-#### `cacheInputs` — 캐시 키를 모듈 입력으로 (호출 비용 제거, 2026-07-31)
-```json
-{ "cacheInputs": ["bars"] }
+#### `cacheInput` — 캐시 키를 모듈 입력으로 (호출 비용 제거. v2 홈 = 인자 스펙)
+```jsonc
+// input.properties 의 그 인자 칸에 — 중첩 필드는 자기 자리에서 선언하고 경로는 파생된다
+"bars":  { "type": "array", "cacheInput": true }
+"sheets": { "items": { "properties": { "rows": { "cacheInput": true } } } }  // = 옛 "sheets.*.rows"
 ```
 - 선언한 **배열 파라미터**를 `<param>CacheKey` 로도 받는다. 호출자가 `barsCacheKey: "<_cacheKey>"` 를 보내면 **스키마 검증 전에** 서버가 캐시를 펼쳐 `bars` 에 넣는다 → `required` 의 뜻이 그대로 살고 모듈 코드는 무변.
 - 키 이름은 규약(`bars` → `barsCacheKey`) — 선언을 둘로 나누지 않는다. 인라인 배열을 직접 주면 그쪽이 우선. 만료·판독 불가 키는 **필드명을 담은 에러**(조용히 건너뛰면 "bars is required" 로 되돌아와 진짜 원인이 숨는다).
@@ -421,15 +449,15 @@ system/modules/<name>/
 | `packages` | 런타임 의존성 자동 설치 | sandbox |
 | `secrets` | Vault → env 주입 | sandbox |
 | `secrets[].oauth` | 토큰 발급·선제갱신·재발급 (`OAuthTokenProvider`) | infra TokenProvider |
-| `requiresApproval` | 실주문 등 승인 게이트 (카드/차단) | 디스패치 (FC + MCP) |
-| `grounding` | 불투명 식별자 날조 차단 (L1) | 디스패치 (FC + MCP) |
+| 행 `approval` / `uiOnly` / `unsupported` | 승인 카드 / 화면 전용 거부 / 미지원 안내 — **액션 축**(v2. 옛 top-level 목록은 이행기 OR 로만 읽힘) | 디스패치 전 표면 (`pending_tools::approval_gated`) |
+| 인자 `grounding` / `source` | 불투명 식별자 날조 차단 (L1) / 발급처 지목 — **인자 축**(v2. input 미선언 와이어 인자만 모듈 맵) | 디스패치 (FC + MCP) + 검증 힌트 |
 | `ws` | WebSocket 스냅샷·상시 감시 라우팅 | ModuleManager.run → IWsApiPort/IWsStreamPort |
 | `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
 | `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`, 없으면 input 스키마에서 자동 파생) | AI 도구 (E5 카탈로그) |
 | `tags` | 모듈 선택 신호(얇은 도구 설명에 append) **+ 액션 검색의 게이트 어휘**. 랭커 문서에는 안 들어간다 — 같은 태그를 233행에 이면 액션끼리 흐려진다 | 도구 등록 + `vocab_text` |
 | `aliases` | **그 모듈을 사람들이 실제로 부르는 이름**(`한투`·`한국투자증권`·`KIS`). 모듈 이름과 함께 **랭커 문서**에 들어간다 — 거래소를 대는 게 곧 라우팅 신호다. 파생 불가라 선언이 유일한 소스. recall 의 `entity_passage_text`(name+aliases)와 같은 패턴 | 액션 카탈로그 (`module_identity`) |
 | `accounts` | 계좌별 앱키 등록·주계좌 지정 (`account` 로 선택, `mock` 은 계좌가 결정) | `ModuleManager.run` + sandbox/WS 시크릿 해석 (`account_secrets.rs`) |
-| `cacheInputs` | 배열·object 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장, object 는 레코드 자체) | `ModuleManager.run` (`cache_inputs.rs`) |
+| 인자 `cacheInput: true` | 그 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장, object 는 레코드 자체. 중첩은 플래그 자리에서 경로 파생 — **인자 축**, v2) | `ModuleManager.run` (`cache_inputs.rs`) |
 | `autoCacheWhole` | 선언 액션의 응답을 통째 단일 레코드로 캐시 (다섹션 datum — cacheInputs object 의 짝) | sandbox `apply_auto_cache` (`cache_whole`) |
 | `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
 | `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |

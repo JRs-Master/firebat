@@ -119,7 +119,7 @@ User prompt
 - **Multi-provider**: OpenAI / Anthropic Claude / Google Gemini / GCP Vertex AI / OpenAI-compatible servers (Upstage Solar Pro 3, Ollama, …) — one `ILlmPort`, 8 format handlers (5 API + 3 CLI), add models by dropping a JSON config
 - **CLI mode**: Subscription-based (Claude Pro/Max, ChatGPT Plus/Pro, Google AI Pro) — no API key, runs the local CLI as a child process with session resume (`--resume`)
 - **Tool discovery at scale**: modules with hundreds of actions (broker APIs) expose a semantic action catalog — the AI searches (`search_module_actions`), fetches the exact schema (`get_action_schema`), then calls precisely instead of guessing from enum dumps
-- **Safety gates in code, not prompts**: `requiresApproval` (real-money orders become approval cards), `grounding` (opaque identifiers like ticker codes must come from tool results — fabrication rejected at dispatch)
+- **Safety gates in code, not prompts**: row-level `approval` (real-money orders become approval cards), param-level `grounding` (opaque identifiers like ticker codes must come from tool results — fabrication rejected at dispatch)
 - **Streaming**: `onChunk` callback → SSE `chunk` event delivers tokens and thinking in real time
 - **Core tools**: File CRUD, page management, module execution, scheduling, secrets, MCP calls, inline component rendering
 - **Auto vs. confirm policy**: Irreversible actions prompt for approval; everything else runs automatically
@@ -225,7 +225,7 @@ Group multiple modules that perform the same capability, manage priority and fal
 | `calendar` | calendar (local) |
 | `note` | notes (local) |
 
-18 built-in system modules across these capabilities. Admins set the provider order in settings; failures cascade to the next provider automatically (modules with `requiresApproval` actions are excluded from cross-provider fallback — a rejected real-money order never auto-retries on another broker).
+18 built-in system modules across these capabilities. Admins set the provider order in settings; failures cascade to the next provider automatically (modules with approval-gated actions are excluded from cross-provider fallback — a rejected real-money order never auto-retries on another broker).
 
 > 🇰🇷 **Capability-Provider 시스템** — 같은 기능을 수행하는 여러 모듈을 `capability`로 묶고, 관리자가 UI에서 provider 실행 순서를 지정합니다. 실패 시 다음 provider로 자동 폴백.
 
