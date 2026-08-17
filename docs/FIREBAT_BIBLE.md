@@ -456,7 +456,7 @@ Frontend ↔ Rust Core 사이는 gRPC. 시니어 audit 결과 도입한 정책:
 
 모듈 config 선언을 **디스패치 계층**(FC + MCP 양 경로)이 읽어 강제하는 안전망 — "프롬프트로 부탁" 이 아니라 코드가 거부:
 - **행 `approval`** (v2 — 액션 카탈로그 행 선언) — 실주문·비가역 액션은 즉시 실행 대신 승인 카드(채팅) / cron 은 스케줄 승인 = 잡에 담긴 매매 승인.
-- **`grounding`** — 불투명 식별자(종목코드류)가 세션 provenance(사용자 입력 ∪ 이전 도구 결과)에 없으면 실행 거부 + resolve 힌트 (Fact-Provenance L1, 날조 차단).
+- **행 `needs`** (v3 — 옛 grounding 기계 대체) — 액션 행이 선행 모듈을 선언(`"needs":["stock-lookup"]`)하면 그 모듈이 이 대화 30분 창에서 성공 실행됐어야 디스패치. core 는 값의 모양을 모른다 — 값 검증 대신 절차 검증(잔여 방어 = 모듈의 identity echo + 승인 카드).
 - **`actionCatalog`** — 액션 수백 개 모듈의 progressive disclosure: `search_module_actions` → `get_action_schema` → 정확 호출 (덤프 대신 계층 발견 — "인덱스 = 트리거, 행동 재료는 get").
 
 상세 규격은 `docs/MODULE_BIBLE.md` 제3장 선언형 인프라 필드.

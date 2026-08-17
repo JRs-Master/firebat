@@ -119,7 +119,7 @@ User prompt
 - **Multi-provider**: OpenAI / Anthropic Claude / Google Gemini / GCP Vertex AI / OpenAI-compatible servers (Upstage Solar Pro 3, Ollama, …) — one `ILlmPort`, 8 format handlers (5 API + 3 CLI), add models by dropping a JSON config
 - **CLI mode**: Subscription-based (Claude Pro/Max, ChatGPT Plus/Pro, Google AI Pro) — no API key, runs the local CLI as a child process with session resume (`--resume`)
 - **Tool discovery at scale**: modules with hundreds of actions (broker APIs) expose a semantic action catalog — the AI searches (`search_module_actions`), fetches the exact schema (`get_action_schema`), then calls precisely instead of guessing from enum dumps
-- **Safety gates in code, not prompts**: row-level `approval` (real-money orders become approval cards), param-level `grounding` (opaque identifiers like ticker codes must come from tool results — fabrication rejected at dispatch)
+- **Safety gates in code, not prompts**: row-level `approval` (real-money orders become approval cards), row-level `needs` (an action declares its resolver — e.g. a quote runs only after the symbol lookup has run in this conversation; the id-fabrication path is closed by procedure, and modules echo `identity: "005930 = 삼성전자"` off the venue's own reply)
 - **Streaming**: `onChunk` callback → SSE `chunk` event delivers tokens and thinking in real time
 - **Core tools**: File CRUD, page management, module execution, scheduling, secrets, MCP calls, inline component rendering
 - **Auto vs. confirm policy**: Irreversible actions prompt for approval; everything else runs automatically
@@ -565,7 +565,7 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │       ├── task_executor_impl.rs
 │       ├── managers/         #   27 domain managers (+ ai/ collaborator subfolder — semantic_catalog / action_catalog / retrieval_engine 등)
 │       ├── services/         #   32 gRPC service impl
-│       ├── utils/            #   path_resolve / sanitize / grounding / timeseries / pipeline_resolver 등
+│       ├── utils/            #   path_resolve / sanitize / conversation_scope / timeseries / pipeline_resolver 등
 │       └── llm/registry.rs   #   LlmModelConfig JSON registry resolve
 │
 ├── infra/                    # Rust crate — adapters + main binary (firebat → core 단방향 의존)
