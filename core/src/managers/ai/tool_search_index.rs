@@ -34,116 +34,100 @@ const SMALL_CATEGORY: usize = 2;
 /// 안전망 — 어느 카테고리도 매칭 못 해도 항상 포함 (옛 TS ALWAYS_INCLUDE 1:1).
 pub const ALWAYS_INCLUDE: &[&str] = &["render_alert", "render_callout", "suggest"];
 
-/// 카테고리 정의 — 옛 TS CategoryDef 1:1.
+/// 카테고리 정의.
+///
+/// v3 (2026-08-17): 벤더·모듈 이름 매처 은퇴 — core 가 모듈 이름을 알면 새 벤더마다 core 배포다.
+/// 모듈 도구의 소속은 **모듈이 config 에 선언한 `capability`** 로만 정해지고(호출자가
+/// `capability_of` 로 공급), 여기 이름으로 남는 것은 core 가 소유한 붙박이 도구뿐이다.
 struct CategoryDef {
     id: &'static str,
     label: &'static str,
     semantic_text: &'static str,
-    /// 도구 이름 매칭 — 옛 TS matchByName closure 1:1 (function pointer).
-    match_by_name: fn(&str) -> bool,
-    /// capability 매칭 — 옛 TS matchByCapability 1:1.
+    /// Core-owned tool names (exact). Module tools never appear here — a module joins a
+    /// category by declaring `capability`, never by being named in core.
+    core_tools: &'static [&'static str],
+    /// Declared module capabilities (config `capability`) that place a module's tools here.
     match_by_capability: &'static [&'static str],
 }
 
-// ── 11 카테고리 정의 — 옛 TS CATEGORIES 1:1 ─────────────────────────────────
+// ── 카테고리 정의 ─────────────────────────────────────────────────────────────
 const CATEGORIES: &[CategoryDef] = &[
     CategoryDef {
         id: "stock",
         label: "주식·증권",
         semantic_text: "주식 증권 시세 주가 종목 종목명 종목코드 티커 차트 캔들 OHLCV 이동평균 주문 매수 매도 체결 잔고 호가 거래량 코스피 코스닥 상장 공시 재무 실적 ELW ETF 선물 옵션 채권 해외주식 미국주식 나스닥",
-        // 2026-05-14 옵션 C — 단일 sysmod (kiwoom + korea-invest) + domains 분기.
-        // LLM 한테는 sysmod_kiwoom_<domain> / sysmod_korea_invest_<domain> 으로 노출.
-        match_by_name: |n| n.starts_with("sysmod_kiwoom_") || n.starts_with("sysmod_korea_invest_"),
-        match_by_capability: &["stock-trading", "stock-quote"],
+        core_tools: &[],
+        match_by_capability: &["stock-quote", "stock-order", "stock-symbol"],
     },
     CategoryDef {
         id: "crypto",
         label: "가상자산·암호화폐",
         semantic_text: "업비트 비트코인 이더리움 가상자산 암호화폐 코인 알트코인 시세 거래 매수 매도 체인 블록체인 지갑",
-        match_by_name: |n| n == "sysmod_upbit",
-        match_by_capability: &["crypto-trading"],
+        core_tools: &[],
+        match_by_capability: &["crypto-quote", "crypto-order"],
     },
     CategoryDef {
         id: "search",
         label: "검색·뉴스·웹 스크래핑",
         semantic_text: "검색 뉴스 웹 인터넷 블로그 쇼핑 카페 지식인 백과사전 네이버 구글 기사 스크랩 크롤링 웹페이지 URL 콘텐츠 키워드 트렌드 데이터랩",
-        match_by_name: |n| {
-            n.contains("naver_search")
-                || n.contains("naver_ads")
-                || n.contains("firecrawl")
-                || n.contains("browser_scrape")
-        },
+        core_tools: &[],
         match_by_capability: &["web-search", "web-scrape", "keyword-analytics"],
     },
     CategoryDef {
         id: "messaging",
         label: "메시지·이메일 발송",
         semantic_text: "메시지 알림 발송 전송 카톡 카카오톡 이메일 메일 지메일 Gmail 보내다 발송하다 푸시 알람 공지",
-        match_by_name: |n| {
-            n.contains("kakao_talk")
-                || (n.starts_with("mcp_gmail_") && (n.contains("send") || n.contains("draft")))
-        },
+        core_tools: &[],
         match_by_capability: &["notification"],
     },
     CategoryDef {
         id: "mail-read",
         label: "이메일 읽기·검색",
         semantic_text: "메일 이메일 편지 받은편지함 인박스 수신 검색 조회 읽기 확인 발신자 제목 내용 요약 Gmail Outlook",
-        match_by_name: |n| {
-            n.starts_with("mcp_gmail_") && !n.contains("send") && !n.contains("draft")
-        },
-        match_by_capability: &[],
+        core_tools: &[],
+        match_by_capability: &["mail-read"],
     },
     CategoryDef {
         id: "law",
         label: "법률·법령·판례",
         semantic_text: "법 법령 법률 판례 행정규칙 자치법규 헌법 조문 조항 판결 법원 소송 계약 형법 민법 상법 헌재 조약",
-        match_by_name: |n| n.contains("law_search"),
+        core_tools: &[],
         match_by_capability: &["law-search"],
     },
     CategoryDef {
         id: "storage",
         label: "파일·페이지 저장·읽기·삭제",
         semantic_text: "파일 페이지 문서 저장 읽기 쓰기 삭제 목록 디렉토리 폴더 업로드 다운로드 슬러그 PageSpec HTML 컴포넌트",
-        match_by_name: |n| {
-            matches!(
-                n,
-                "read_file"
-                    | "write_file"
-                    | "delete_file"
-                    | "list_dir"
-                    | "save_page"
-                    | "delete_page"
-                    | "list_pages"
-            )
-        },
+        core_tools: &[
+            "read_file",
+            "write_file",
+            "delete_file",
+            "list_dir",
+            "save_page",
+            "delete_page",
+            "list_pages",
+        ],
         match_by_capability: &[],
     },
     CategoryDef {
         id: "memory",
         label: "과거 대화 검색·참조",
         semantic_text: "이전 대화 과거 예전 지난번 전에 말한 기억 복기 회상 맥락 이어서 참조 다시 물어본 전번 그때 그거 그 이야기 어제 오늘 아까 방금",
-        match_by_name: |n| n == "search_history",
+        core_tools: &["search_history"],
         match_by_capability: &[],
     },
     CategoryDef {
         id: "scheduling",
         label: "스케줄·예약·태스크",
         semantic_text: "스케줄 예약 크론 정기 매일 매시간 몇시에 태스크 작업 자동화 즉시 실행 취소 해제 목록 조회 파이프라인",
-        match_by_name: |n| matches!(n, "schedule_task" | "run_task" | "cancel_cron_job" | "list_cron_jobs"),
+        core_tools: &["schedule_task", "run_task", "cancel_cron_job", "list_cron_jobs"],
         match_by_capability: &[],
     },
     CategoryDef {
         id: "module",
         label: "모듈 실행·외부 호출",
         semantic_text: "모듈 실행 execute 사용자 정의 직접 호출 네트워크 요청 HTTP API 외부 서비스 MCP 서버 통합 커스텀",
-        match_by_name: |n| {
-            n == "execute"
-                || n == "network_request"
-                || n == "mcp_call"
-                || (n.starts_with("mcp_") && !n.starts_with("mcp_gmail_"))
-                || (!n.starts_with("sysmod_") && !n.starts_with("render_"))
-        },
+        core_tools: &["run_module_action", "execute", "network_request", "mcp_call"],
         match_by_capability: &[],
     },
 ];
@@ -185,10 +169,11 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     dot
 }
 
-/// 도구 → 카테고리 매핑. 매칭 안 되면 None. 옛 TS categorizeTool 1:1.
+/// 도구 → 카테고리 매핑. 매칭 안 되면 None (그 도구는 좁히기에서 선택되지 않는다).
+/// 이름으로는 core 붙박이만, 모듈 도구는 선언된 capability 로만.
 fn categorize_tool(tool: &ToolDefinition, capability: Option<&str>) -> Option<&'static str> {
     for cat in CATEGORIES {
-        if (cat.match_by_name)(&tool.name) {
+        if cat.core_tools.contains(&tool.name.as_str()) {
             return Some(cat.id);
         }
         if let Some(cap) = capability {
@@ -565,16 +550,13 @@ mod tests {
     }
 
     #[test]
-    fn categorize_tool_by_name() {
-        // 2026-05-14 옵션 C: 단일 sysmod (kiwoom + korea-invest) + domains 분기.
-        let t = tool("sysmod_kiwoom_quote", "");
-        assert_eq!(categorize_tool(&t, None), Some("stock"));
+    fn categorize_tool_core_names() {
+        // 이름으로 소속이 정해지는 것은 core 붙박이뿐이다.
+        let t = tool("read_file", "");
+        assert_eq!(categorize_tool(&t, None), Some("storage"));
 
-        let t = tool("sysmod_korea_invest_overseas_stock", "");
-        assert_eq!(categorize_tool(&t, None), Some("stock"));
-
-        let t = tool("sysmod_upbit", "");
-        assert_eq!(categorize_tool(&t, None), Some("crypto"));
+        let t = tool("run_module_action", "");
+        assert_eq!(categorize_tool(&t, None), Some("module"));
 
         let t = tool("schedule_task", "");
         assert_eq!(categorize_tool(&t, None), Some("scheduling"));
@@ -584,10 +566,13 @@ mod tests {
     }
 
     #[test]
-    fn categorize_tool_by_capability() {
-        // matchByName 매칭 안 되지만 capability 매칭
-        let t = tool("custom_stock_tool", "");
-        assert_eq!(categorize_tool(&t, Some("stock-trading")), Some("stock"));
+    fn categorize_module_tool_by_declared_capability_only() {
+        // 모듈 도구는 이름이 무엇이든 선언된 capability 로만 소속된다 (core 어휘 0).
+        let t = tool("sysmod_acme_quote", "");
+        assert_eq!(categorize_tool(&t, None), None);
+        assert_eq!(categorize_tool(&t, Some("stock-quote")), Some("stock"));
+        assert_eq!(categorize_tool(&t, Some("crypto-order")), Some("crypto"));
+        assert_eq!(categorize_tool(&t, Some("law-search")), Some("law"));
     }
 
     #[test]

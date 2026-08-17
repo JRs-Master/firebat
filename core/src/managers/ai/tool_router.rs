@@ -162,6 +162,11 @@ impl ToolRouter {
         }
 
         // ToolSearchIndex 호출 — 카테고리·도구 cosine 검색 (옛 TS 1:1)
+        //
+        // 모듈 도구의 카테고리 소속은 모듈이 선언한 `capability` 로만 정해진다(v3 — 이름 매처
+        // 은퇴). 이 경로가 재활성될 때(LIKELY_TOOLS 재측정 뒤) 호출자는 sysmod 도구명 → 모듈
+        // `capability_of` 스냅샷을 여기로 공급해야 모듈 카테고리가 채워진다. None 공급 =
+        // core 붙박이 카테고리(storage/scheduling/…)만 동작.
         let no_capability = |_: &str| -> Option<String> { None };
         let search_result = match search_index
             .query(user_query, &all_tools, ToolSearchOpts::default(), &no_capability)
