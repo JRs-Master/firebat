@@ -2990,7 +2990,7 @@
             "integer",
             "null"
           ],
-          "description": "zoom level. Leaflet 1-18 / Kakao level 1-14. default 12"
+          "description": "zoom level, Leaflet scale ONLY: 1-18, larger = closer. default 12 (city). One place/building = 15-16, neighborhood = 13-14, whole country = 7. Never pass a Kakao 'level' — the renderer converts internally, and a Kakao-style small number here renders zoomed far OUT."
         },
         "height": {
           "type": [
