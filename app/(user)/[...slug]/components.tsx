@@ -5423,7 +5423,7 @@ function MapComp({
   const fitItemCount = safeMarkers.length + safeCircles.length + safeLines.length
     + safeCones.reduce((a, c) => a + c.points.length, 0);
   const singleFocus = !hasExplicitZoom && fitItemCount === 1;
-  const finalZoom = hasExplicitZoom ? (zoom as number) : singleFocus ? 15 : 12;
+  const finalZoom = hasExplicitZoom ? (zoom as number) : singleFocus ? 14 : 12;
 
   // 중심 좌표 — center 명시 우선, 없으면 markers 평균
   const finalCenter = center && typeof center.lat === 'number' && typeof center.lon === 'number'
@@ -5475,9 +5475,9 @@ function MapComp({
           const map = new w.kakao.maps.Map(container, {
             center: new w.kakao.maps.LatLng(finalCenter.lat, finalCenter.lon),
             // Leaflet zoom (12=도시) → kakao level (3=동네). 한 곳짜리 자동 뷰는 변환식을 안 태우고
-            // 카카오 자체 척도로 고른다(level 4 ≈ 건물·상호가 읽히는 동네 뷰) — 선형 변환 하나로
-            // 두 지도의 "보기 좋음"을 다 맞출 수 없어서, 자동일 때만 지도별로 따로 정한다.
-            level: singleFocus ? 4 : Math.max(1, Math.min(14, 15 - finalZoom)),
+            // 카카오 자체 척도로 고른다(level 5 — 건물이 읽히면서 주변 블록까지, 4는 실측서 과확대) —
+            // 선형 변환 하나로 두 지도의 "보기 좋음"을 다 맞출 수 없어서, 자동일 때만 지도별로 따로 정한다.
+            level: singleFocus ? 5 : Math.max(1, Math.min(14, 15 - finalZoom)),
           });
           resizeObserver = new ResizeObserver(() => map.relayout());
           resizeObserver.observe(container);
