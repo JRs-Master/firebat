@@ -133,6 +133,12 @@ identifier, skip the id lookup. **Every dialect has a declaration slot, and the 
 your declaration at the exact moment of refusal.** Fixing a dialect means editing your module's
 files — never prompt text, never framework code.
 
+**One field, one meaning, said once.** A description that offers two readings — two scales
+("Leaflet 1-18 / Kakao 1-14"), two units, two id formats — makes the model pick one, validly.
+The value passes the schema, so no gate refuses it and no dialect ledger records it: a
+valid-but-misread value is invisible to every net, and only an unambiguous description
+prevents it (measured 2026-08-18 — zoom:4 meant "level 4, close" and rendered "zoom 4, wide").
+
 **A declaration lives on the thing it is about** — an action's on its catalog row, a parameter's
 on its own spec in `input.properties`. (Module-level maps for these are still read during the
 migration, and remain the home for wire-vocabulary params that are not declared in `input` —
