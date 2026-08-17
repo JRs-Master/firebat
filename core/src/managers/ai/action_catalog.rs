@@ -152,11 +152,6 @@ impl ModuleActionSource {
             return derive_entries_from_input(name, config, approval_decl);
         };
         // Grounded params (config `grounding`) — surface the resolveHint PROACTIVELY in the
-        // schema, not only on gate rejection. Observed (2026-07-11): a model that needed a
-        // stock code hunted it through action-search/recall for 11 rounds because nothing on
-        // the discovery surface said HOW to turn a name into the code; the hint existed but
-        // only fired after a rejected call it never made. Declarative — no per-module logic.
-        let grounded = crate::utils::grounding::parse_grounding(config);
         let tag_words = module_tags(config);
         // What the MODULE is, in one clause, on every one of its actions.
         //
@@ -357,26 +352,6 @@ impl ModuleActionSource {
                 }
                 fill_param_docs_from_input(&mut extra, config, &id);
                 add_cache_key_params(&mut extra, config);
-                // Attach resolve guidance for grounded params this action actually takes —
-                // the model reads it exactly where it reads the params (get_action_schema),
-                // BEFORE its first call, instead of after a grounding rejection.
-                if !grounded.is_empty() {
-                    let mut resolve = serde_json::Map::new();
-                    for g in &grounded {
-                        if g.hint.is_empty() || g.exempt_actions.iter().any(|e| e == &id) {
-                            continue;
-                        }
-                        let takes_param = param_names
-                            .iter()
-                            .any(|p| p.eq_ignore_ascii_case(&g.param));
-                        if takes_param {
-                            resolve.insert(g.param.clone(), serde_json::Value::String(g.hint.clone()));
-                        }
-                    }
-                    if !resolve.is_empty() {
-                        extra["resolveFirst"] = serde_json::Value::Object(resolve);
-                    }
-                }
                 // Row prose = the action's own description; the embedded document also carries
                 // the domain and every param blurb, which reads as run-on text in a list.
                 if !desc.trim().is_empty() {

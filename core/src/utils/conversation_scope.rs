@@ -1,12 +1,12 @@
 //! Conversation-scoped tool-procedure state — one store for both tool paths.
 //!
-//! Two procedures need to remember what already happened before the current tool call:
+//! The procedures that need to remember what already happened before the current tool call:
 //!
-//! - **L1 grounding corpus** (Fact-Provenance Firewall): a declared opaque param (a stock code,
-//!   an account id) must trace to a value the model actually observed — the user's prompt or a
-//!   prior tool result — or the call is rejected with a resolve hint.
 //! - **Discovery-first gate** (표준 절차 ②): a multi-action sysmod call runs only after
 //!   `get_action_schema(module, action)` was fetched for that exact pair.
+//! - **needs gate** (v3): an action whose row declares `"needs": ["<module>"]` runs only after
+//!   that module ran successfully here.
+//! - **Produced-file receipts**: what a CLI turn's tools really wrote, drained at final assembly.
 //!
 //! Both were kept twice, in two different scopes. The FC path (`managers::ai`) held them
 //! *turn-local* — a `Vec<String>` seeded with the prompt and a `HashSet<String>` of
@@ -22,16 +22,10 @@
 //!
 //! Sliding means a lookup is also a touch: asking `schema_ok` for a pair the model keeps using
 //! restamps it, so a long working conversation never re-fetches a schema it is actively relying
-//! on, while a pair fetched once and abandoned falls out of the window on schedule. The corpus
-//! window slides in the other, simpler sense — a snapshot is the entries observed within the last
-//! 30 minutes, so provenance ages out even while the conversation stays alive.
-//!
-//! Caps mirror the MCP accumulator this replaces (`mcp_server.rs` `observed_store`): 30-minute
-//! TTL, 60 entries per scope, 256 KiB per entry, truncated on a char boundary because byte
-//! slicing panics on multi-byte (Korean) content. Added on top, because a conversation-scoped
-//! store outlives the session-scoped one it replaces: a global cap on how many conversations are
-//! remembered at once, LRU by last touch, so a server that runs for weeks does not grow without
-//! bound.
+//! on, while a pair fetched once and abandoned falls out of the window on schedule. A global cap
+//! bounds how many conversations are remembered at once (LRU by last touch), so a server that
+//! runs for weeks does not grow without bound. (The grounding value-corpus that used to live here
+//! retired with the grounding machinery, 2026-08-17 — the needs gate reads runs, not values.)
 //!
 //! Process-wide singleton: the deployed binary is one process and `infra` links `core`, so both
 //! tool paths reach the same map without a handle having to be threaded through either of them.
@@ -40,17 +34,9 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
-/// How long a schema stamp or a corpus entry stays valid. Both procedures use one window so the
+/// How long a schema stamp or a run stamp stays valid. Every procedure uses one window so the
 /// model does not have to hold two different notions of "recent".
 pub const SCOPE_TTL: Duration = Duration::from_secs(30 * 60);
-
-/// Corpus entries kept per scope — mirrors `OBSERVED_MAX` in `mcp_server.rs`.
-pub const OBSERVED_MAX: usize = 60;
-
-/// Bytes kept per corpus entry — mirrors `OBSERVED_TEXT_CAP` in `mcp_server.rs`. Identifier
-/// provenance arrives in small lookup/grep results, not in huge numeric payloads, so the cap
-/// bounds memory without losing codes.
-pub const OBSERVED_TEXT_CAP: usize = 256 * 1024;
 
 /// Distinct `module:action` pairs remembered per scope. The MCP store bounded these with the
 /// corpus cap (60); a conversation that works across several modules can legitimately pass that,
@@ -135,8 +121,6 @@ pub struct ProducedFile {
 }
 
 struct ScopeState {
-    /// Provenance the model legitimately observed, oldest first, each stamped when recorded.
-    observed: VecDeque<(Instant, String)>,
     /// `"module:action"` → the stamp of the last fetch *or* the last successful check.
     schema_seen: HashMap<String, Instant>,
     /// Module (canon name) → the stamp of its last SUCCESSFUL run in this scope. What the
@@ -154,7 +138,6 @@ struct ScopeState {
 impl ScopeState {
     fn new(now: Instant) -> Self {
         Self {
-            observed: VecDeque::new(),
             schema_seen: HashMap::new(),
             runs_seen: HashMap::new(),
             produced: VecDeque::new(),
@@ -367,20 +350,6 @@ pub fn unmet_needs(scope_key: &str, needs: &[String]) -> Vec<String> {
         .collect()
 }
 
-// ── grounding corpus ─────────────────────────────────────────────────────────
-
-/// Append text the model legitimately observed (the user's prompt, an approved plan, a
-/// successful tool result) to this scope's provenance corpus.
-pub fn observe(scope_key: &str, text: &str) {
-    observe_at(scope_key, text, Instant::now());
-}
-
-/// This scope's provenance corpus — entries observed within the window, oldest first. Hand
-/// straight to `grounding::check_grounding`.
-pub fn observed_snapshot(scope_key: &str) -> Vec<String> {
-    observed_snapshot_at(scope_key, Instant::now())
-}
-
 // ── produced files ───────────────────────────────────────────────────────────
 //
 // A CLI model runs its tool calls inside its OWN loop, so the FC harvester in `managers::ai`
@@ -504,27 +473,7 @@ fn schema_ok_at(scope_key: &str, module: &str, action: &str, now: Instant) -> bo
     }
 }
 
-fn observe_at(scope_key: &str, text: &str, now: Instant) {
-    let capped = truncate_on_char_boundary(text, OBSERVED_TEXT_CAP);
-    let mut map = store();
-    let state = map
-        .entry(scope_key.to_string())
-        .or_insert_with(|| ScopeState::new(now));
-    state.last_touch = now;
-    state.observed.push_back((now, capped));
-    evict_observed(&mut state.observed, now);
-    enforce_scope_cap(&mut map, now);
-}
 
-fn observed_snapshot_at(scope_key: &str, now: Instant) -> Vec<String> {
-    let mut map = store();
-    let Some(state) = map.get_mut(scope_key) else {
-        return Vec::new();
-    };
-    state.last_touch = now;
-    evict_observed(&mut state.observed, now);
-    state.observed.iter().map(|(_, s)| s.clone()).collect()
-}
 
 fn record_produced_file_at(scope_key: &str, file: ProducedFile, now: Instant) {
     if file.url.is_empty() {
@@ -570,17 +519,6 @@ fn truncate_on_char_boundary(text: &str, max: usize) -> String {
 }
 
 /// Lazy eviction — expired entries off the front (the deque is stamp-ordered), then the size cap.
-fn evict_observed(q: &mut VecDeque<(Instant, String)>, now: Instant) {
-    while q
-        .front()
-        .is_some_and(|(t, _)| now.saturating_duration_since(*t) > SCOPE_TTL)
-    {
-        q.pop_front();
-    }
-    while q.len() > OBSERVED_MAX {
-        q.pop_front();
-    }
-}
 
 /// Same hygiene for the receipts — expired off the front (the deque is stamp-ordered), then the
 /// size cap. A receipt older than the window belongs to a turn that already ended without
@@ -750,76 +688,12 @@ mod tests {
         let k = "test:no-create";
         forget(k);
         assert!(!schema_ok(k, "kiwoom", "ka10081"));
-        assert!(observed_snapshot(k).is_empty());
         assert!(!store().contains_key(k));
     }
 
-    #[test]
-    fn corpus_entries_leave_the_window() {
-        let _g = lock();
-        let k = "test:corpus-ttl";
-        forget(k);
-        let t0 = Instant::now();
 
-        observe_at(k, "005930 삼성전자", t0);
-        observe_at(k, "035720 카카오", t0 + mins(20));
-        // Both still inside the window.
-        assert_eq!(observed_snapshot_at(k, t0 + mins(25)).len(), 2);
-        // The first has aged out, the second has not. Reading does NOT restamp corpus entries —
-        // provenance ages by when it was observed, not by when it was last looked at.
-        let later = observed_snapshot_at(k, t0 + mins(40));
-        assert_eq!(later, vec!["035720 카카오".to_string()]);
-        // Everything is gone once the window passes the newest entry.
-        assert!(observed_snapshot_at(k, t0 + mins(51)).is_empty());
-        forget(k);
-    }
-
-    #[test]
-    fn the_corpus_keeps_the_newest_entries_and_drops_the_rest() {
-        let _g = lock();
-        let k = "test:corpus-cap";
-        forget(k);
-        let t0 = Instant::now();
-
-        for i in 0..(OBSERVED_MAX + 15) {
-            observe_at(k, &format!("entry-{i}"), t0 + Duration::from_millis(i as u64));
-        }
-        let snap = observed_snapshot_at(k, t0 + mins(1));
-        assert_eq!(snap.len(), OBSERVED_MAX);
-        // Oldest first, and the 15 that overflowed are the 15 oldest.
-        assert_eq!(snap.first().unwrap(), "entry-15");
-        assert_eq!(snap.last().unwrap(), &format!("entry-{}", OBSERVED_MAX + 14));
-        forget(k);
-    }
-
-    /// Byte slicing a 256 KiB prefix out of Korean tool output panics on a multi-byte boundary.
-    /// The cap has to back up to a char boundary — and the result must still be valid UTF-8 that
-    /// carries the identifiers at the front of the payload.
-    #[test]
-    fn an_oversized_entry_is_capped_on_a_char_boundary() {
-        let _g = lock();
-        let k = "test:char-cap";
-        forget(k);
-
-        // "삼" is 3 bytes, so this string's length is not a multiple of the cap — the truncation
-        // point lands mid-character unless it backs up.
-        let big = "삼".repeat(OBSERVED_TEXT_CAP);
-        observe(k, &big);
-        let snap = observed_snapshot(k);
-        assert_eq!(snap.len(), 1);
-        let stored = &snap[0];
-        assert!(stored.len() <= OBSERVED_TEXT_CAP);
-        assert!(stored.len() > OBSERVED_TEXT_CAP - 4); // backed up at most one char
-        assert!(stored.chars().all(|c| c == '삼'));
-        // Under the cap, text is stored verbatim.
-        forget(k);
-        observe(k, "005930");
-        assert_eq!(observed_snapshot(k), vec!["005930".to_string()]);
-        forget(k);
-    }
-
-    /// Two conversations must not see each other's provenance or unlock each other's schemas —
-    /// this is the same isolation the MCP session key gave, now stated per conversation.
+    /// Two conversations must not satisfy each other's prerequisites or unlock each other's
+    /// schemas — the same isolation the MCP session key gave, now stated per conversation.
     #[test]
     fn scopes_are_isolated() {
         let _g = lock();
@@ -828,12 +702,12 @@ mod tests {
         forget(b);
         let t0 = Instant::now();
 
-        observe_at(a, "005930", t0);
+        record_run_at(a, "stock-lookup", t0);
         record_schema_at(a, "kiwoom", "ka10081", t0);
 
-        assert!(observed_snapshot_at(b, t0).is_empty());
+        assert!(!run_ok_at(b, "stock-lookup", t0));
         assert!(!schema_ok_at(b, "kiwoom", "ka10081", t0));
-        assert_eq!(observed_snapshot_at(a, t0), vec!["005930".to_string()]);
+        assert!(run_ok_at(a, "stock-lookup", t0));
         forget(a);
         forget(b);
     }
@@ -850,13 +724,13 @@ mod tests {
         // Distinct, strictly increasing touches — all well inside the window, so this measures
         // the LRU and not the TTL.
         for i in 0..total {
-            observe_at(&key(i), "x", t0 + Duration::from_millis(i as u64));
+            record_run_at(&key(i), "m", t0 + Duration::from_millis(i as u64));
         }
         assert!(scope_count() <= MAX_SCOPES);
         // The newest survive; the oldest are gone.
         let now = t0 + Duration::from_millis(total as u64);
-        assert_eq!(observed_snapshot_at(&key(total - 1), now), vec!["x".to_string()]);
-        assert!(observed_snapshot_at(&key(0), now).is_empty());
+        assert!(run_ok_at(&key(total - 1), "m", now));
+        assert!(!run_ok_at(&key(0), "m", now));
 
         for i in 0..total {
             forget(&key(i));
@@ -874,15 +748,15 @@ mod tests {
         forget(live);
 
         for i in 0..MAX_SCOPES {
-            observe_at(&key(i), "x", t0 + Duration::from_millis(i as u64));
+            record_run_at(&key(i), "m", t0 + Duration::from_millis(i as u64));
         }
         // The live scope is touched an hour later — every scope above is expired by then, and
         // this insert is the one that takes the map over the cap and triggers the sweep.
         let t1 = t0 + mins(60);
-        observe_at(live, "005930", t1);
-        assert_eq!(observed_snapshot_at(live, t1), vec!["005930".to_string()]);
+        record_run_at(live, "stock-lookup", t1);
+        assert!(run_ok_at(live, "stock-lookup", t1));
         // The dead ones went, not the live one.
-        assert!(observed_snapshot_at(&key(0), t1).is_empty());
+        assert!(!run_ok_at(&key(0), "m", t1));
 
         forget(live);
         for i in 0..MAX_SCOPES {

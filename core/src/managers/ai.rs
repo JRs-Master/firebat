@@ -2953,18 +2953,7 @@ impl AiManager {
         // different tools is still one file.
         let mut produced_files: Vec<serde_json::Value> = Vec::new();
         let mut produced_file_urls: HashSet<String> = HashSet::new();
-        // The corpus this turn writes into is the same conversation scope the tool list was built
-        // from (derived above): provenance the model legitimately observed — the user's prompt
-        // (user-typed codes), an approved plan, and each successful tool result. A declared opaque
-        // param (a stock code) must trace to it or the call is rejected with the resolve hint. The
-        // gate remembers `get_action_schema(module, action)` fetches; the store canonicalises the
-        // module name on both sides, so a schema fetched as `sysmod_kma_weather` unlocks a call
-        // made on `kma-weather`.
-        crate::utils::conversation_scope::observe(&tool_scope, prompt);
-        if let Some(p) = &plan_provenance {
-            // Approved-plan identifiers are legitimate provenance (verified during planning).
-            crate::utils::conversation_scope::observe(&tool_scope, p);
-        }
+        let _ = &plan_provenance; // provenance corpus retired with grounding (v3-R1) — needs gate reads runs, not values
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
@@ -4075,21 +4064,6 @@ impl AiManager {
                 } else {
                     None
                 };
-                let grounding_reject: Option<String> = if let (Some(reg), Some(module)) =
-                    (&self.dynamic_tools, call_module.as_deref())
-                {
-                    match reg.grounding_for(module).await {
-                        Some(g) if !g.is_empty() => crate::utils::grounding::check_grounding(
-                            &effective_call.arguments,
-                            &g,
-                            &crate::utils::conversation_scope::observed_snapshot(&tool_scope),
-                        )
-                        .err(),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
                 // needs gate (v3) — a row-declared prerequisite module must have RUN in this
                 // conversation. Cron turns are exempt like the approval gate: a scheduled run's
                 // arguments are operator-authored, and there is nobody mid-turn to run a lookup.
@@ -4497,27 +4471,6 @@ impl AiManager {
                         error: Some("declared prerequisite not run".to_string()),
                         arguments: call.arguments.clone(),
                     }
-                } else if let Some(hint) = grounding_reject {
-                    // L1 grounding reject — do NOT dispatch. Return the resolve hint so the model looks
-                    // the identifier up first, then retries with a grounded value (resolve → use). Insert
-                    // the cache key so the identical ungrounded args don't re-run — the model must change args.
-                    self.log.info(&format!(
-                        "[AiManager] grounding reject (FC): {} — ungrounded identifier dispatch blocked",
-                        effective_call.name
-                    ));
-                    turn_call_set.insert(cache_key.clone());
-                    ToolResult {
-                        call_id: call.id.clone(),
-                        name: call.name.clone(),
-                        result: serde_json::json!({
-                            "success": false,
-                            "error": hint,
-                            "grounding": true,
-                        }),
-                        success: false,
-                        error: Some("ungrounded".to_string()),
-                        arguments: call.arguments.clone(),
-                    }
                 } else {
                     turn_call_set.insert(cache_key.clone());
                     if let Some(cached) = get_cached_tool_result(&cache_key) {
@@ -4843,18 +4796,6 @@ impl AiManager {
                             }
                         }
                         _ => {}
-                    }
-                }
-                // grounding corpus (#8-2) — record successful tool-result text as provenance so a
-                // later call in this conversation can reference resolved identifiers (e.g. dart
-                // lookup → stock code). The store char-caps each entry (256 KiB, mirroring the MCP
-                // accumulator), so the whole serialized result goes in as it always did.
-                // F6 — but NOT discovery/schema tools: their output embeds documentation examples
-                // (get_action_schema param docs carry `KRX:005930` etc.), which would let a
-                // fabricated code "ground" against a doc example that merely matched.
-                if action.success && crate::utils::grounding::records_provenance(&call.name) {
-                    if let Ok(text) = serde_json::to_string(&action.result) {
-                        crate::utils::conversation_scope::observe(&tool_scope, &text);
                     }
                 }
                 // needs ledger — a successful module run satisfies `needs` declarations for the

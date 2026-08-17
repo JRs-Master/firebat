@@ -208,7 +208,7 @@ system/modules/<name>/
 인프라 choke-point 가 config 선언을 읽어 처리하는 opt-in 필드들. 모듈 코드는 아무것도 import 하지 않는다 (모듈 dumb 원칙). 미선언 = 기존 동작 그대로.
 
 > **v2 (2026-08-17): 선언은 자기 축에 산다.** 액션의 속성은 **카탈로그 행**에(`approval`·`uiOnly`·
-> `unsupported`·`_call`), 인자의 속성은 **`input.properties` 의 그 칸**에(`grounding`·`source`·
+> `unsupported`·`needs`·`_call`), 인자의 속성은 **`input.properties` 의 그 칸**에(`source`·
 > `cacheInput`). 액션 id 를 키로 한 top-level 목록(requiresApproval·uiOnly)은 폐지 — 카탈로그 행이
 > 있는 모듈에서 감사가 거부한다. 리더는 이행기 동안 듀얼 홈(행∨목록·스펙∨맵) OR. 예외 = 브로커
 > 와이어 어휘(stk_cd 등 input 미선언 인자)는 모듈 수준 인자 맵이 곧 그들의 축이라 유지.
@@ -224,19 +224,17 @@ system/modules/<name>/
   (화면 전용 — 승인 카드조차 안 만들고 설정 화면을 가리킴).
 - 대상: 실주문·비가역·real-money 액션 (키움 18 / 한투 19 / 토스 6 / autotrade 8 — 전부 행 선언). 새 매매/파괴 모듈 = 행 한 필드로 자동 포함.
 
-#### `grounding` — 불투명 식별자 날조 차단 (인자 스펙 선언, Fact-Provenance L1)
+#### `needs` — 선행 절차 게이트 (행 선언, v3. grounding 기계 대체 2026-08-17)
 ```jsonc
-// input.properties 의 그 인자 칸에
-"stock_code": {
-  "type": "string",
-  "grounding": { "pattern": "^[0-9]{6}$", "exemptActions": ["lookup"],
-                 "resolveHint": "코드는 lookup 으로 resolve 하라는 AI 안내문 (영어)" },
-  "source": "lookup"        // 발급처 지목 — 검증·grounding 거부가 이 액션을 이름으로 가리킨다
-}
+// actions.json 행 — 이 액션 전에 저 모듈이 이 대화에서 성공 실행돼야 한다
+{ "id": "financial", "needs": ["stock-lookup"], ... }
 ```
-- 선언된 param 값이 **대화 provenance corpus**(사용자 입력 ∪ 이전 도구 결과, 30분 창)에 없으면 디스패치 계층(MCP + FC 양쪽)이 실행 거부 + `resolveHint`(+`source` 발급처) 반환 → AI 가 resolve 후 재시도.
-- `pattern` = 값-shape 필터(예: 6자리 종목코드만 gate, 4자리 지수코드는 통과 — 한투 FID_INPUT_ISCD 오버로딩 대응). 닫힌 enum 값은 기존 input schema 타입체크가 이미 막으므로 **열린 값(종목코드류)만** 선언.
-- input 에 없는 와이어 인자(브로커 stk_cd 류)는 top-level `grounding`/`paramSource` 맵으로 — 그게 그들의 인자 축이다.
+- 디스패치 직전 판정은 한 질문뿐: **"선언된 모듈이 이 대화(30분 슬라이딩 창)에서 성공 실행됐나."**
+  계단 게이트와 같은 저장소(`conversation_scope`)·같은 창·같은 철학(절차는 구조로, 판단은 흐름에).
+  거부문은 선언에서 파생. cron 은 면제(운영자가 인자를 작성한 실행).
+- core 는 값의 모양(6자리·KRX 접두 등)을 **아무것도 모른다** — 옛 grounding 기계(코퍼스·패턴·
+  벤더 장식 스트립)는 개별 모듈 사정이 core 에 스민 것이라 은퇴했다. 새 브로커 = 행 선언만.
+- resolver 성 액션(lookup 류)은 자기 `needs` 를 선언하지 않으면 된다 — 면제 목록이 따로 없다.
 
 #### `ws` — WebSocket 전용 API (스냅샷 + 상시 감시, 2026-07-05)
 ```json
@@ -333,7 +331,7 @@ system/modules/<name>/
 - **감사가 CI 에서 돈다** (`core/tests/module_config_audit.rs`. ⚠️ 2026-08-17 까지 `--lib` 만 걸려
   **한 번도 CI 에서 안 돌았다** — `3c020e49` 에서 `--tests` 로 수리). 선언은 **오류가 아니라 침묵**으로
   틀리기 때문에:
-  ① **선언 → 존재**: `grounding`·`pageBinding`·카탈로그가 가리키는 액션·파일이 있나
+  ① **선언 → 존재**: `needs`·`pageBinding`·카탈로그가 가리키는 모듈·액션·파일이 있나
   ② **존재 → 발견**: `input.properties.action.enum` 의 액션이 카탈로그 id 나 `aliases` 에 있나
      (없으면 그 액션은 실행되는데 검색으로는 못 찾는다)
   ③ **선언 → 구현**: 스키마가 선언한 인자를 **모듈 소스가 이름으로라도 쓰나**. 전수 783개 중 10개가
@@ -450,7 +448,7 @@ system/modules/<name>/
 | `secrets` | Vault → env 주입 | sandbox |
 | `secrets[].oauth` | 토큰 발급·선제갱신·재발급 (`OAuthTokenProvider`) | infra TokenProvider |
 | 행 `approval` / `uiOnly` / `unsupported` | 승인 카드 / 화면 전용 거부 / 미지원 안내 — **액션 축**(v2. 옛 top-level 목록은 이행기 OR 로만 읽힘) | 디스패치 전 표면 (`pending_tools::approval_gated`) |
-| 인자 `grounding` / `source` | 불투명 식별자 날조 차단 (L1) / 발급처 지목 — **인자 축**(v2. input 미선언 와이어 인자만 모듈 맵) | 디스패치 (FC + MCP) + 검증 힌트 |
+| 행 `needs` / 인자 `source` | 선행 모듈 실행 강제 (대화 30분 창) / 발급처 지목 | 디스패치 (FC + MCP) / 검증 힌트 |
 | `ws` | WebSocket 스냅샷·상시 감시 라우팅 | ModuleManager.run → IWsApiPort/IWsStreamPort |
 | `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
 | `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`, 없으면 input 스키마에서 자동 파생) | AI 도구 (E5 카탈로그) |

@@ -1,6 +1,9 @@
 [
  {
   "id": "orderbook",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "호가·잔량 조회",
   "description": "실시간 호가창 — 매수/매도 호가와 잔량. 국내(KRX/NXT)·미국 공통",
   "domain": "시세",
@@ -12,6 +15,9 @@
  },
  {
   "id": "prices",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "현재가 조회",
   "description": "현재가·등락률 — 콤마 구분으로 최대 200종목 일괄 조회. 국내·미국 공통",
   "domain": "시세",
@@ -23,6 +29,9 @@
  },
  {
   "id": "trades",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "최근 체결 조회",
   "description": "당일 최근 체결 내역 (최대 50건)",
   "domain": "시세",
@@ -35,6 +44,9 @@
  },
  {
   "id": "price-limits",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "상·하한가 조회",
   "description": "당일 상한가/하한가 (미국 종목은 null)",
   "domain": "시세",
@@ -46,6 +58,9 @@
  },
  {
   "id": "candles",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "캔들 차트 조회",
   "description": "캔들 OHLCV — 1분봉/일봉, 최대 200봉. 일봉 차트·차트 데이터. 국내·미국 공통",
   "domain": "시세",
@@ -61,6 +76,9 @@
  },
  {
   "id": "stocks",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "종목 기본정보 조회",
   "description": "종목명·시장·통화·상장상태·발행주식수 — 콤마 구분 최대 200건. 영업일 단위 갱신",
   "domain": "종목정보",
@@ -72,6 +90,9 @@
  },
  {
   "id": "stock-warnings",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "매수 유의사항 조회",
   "description": "정리매매·단기과열·투자경고/위험·VI·신주인수권 등 매수 유의 플래그",
   "domain": "종목정보",
@@ -123,6 +144,9 @@
  },
  {
   "id": "market-indicator-prices",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "시장 지표 현재가 조회",
   "description": "코스피·코스닥 지수와 한국 국채 금리 현재가 — 심볼 8종 고정 (개별 종목 시세는 prices 사용)",
   "domain": "시장지표",
@@ -134,6 +158,9 @@
  },
  {
   "id": "market-indicator-candles",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "시장 지표 캔들 조회",
   "description": "코스피·코스닥·국채 금리 캔들 OHLCV — 1분봉/일봉, 최대 200봉 (개별 종목 캔들은 candles 사용)",
   "domain": "시장지표",
@@ -148,6 +175,9 @@
  },
  {
   "id": "investor-trading",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "투자자별 매매대금 조회",
   "description": "KRX 투자자별 매매대금 — 개인/외국인/기관(세부 7분류)/기타법인 매수·매도 (KRW 정수), 코스피·코스닥만, 일/주/월/연 집계",
   "domain": "시장지표",

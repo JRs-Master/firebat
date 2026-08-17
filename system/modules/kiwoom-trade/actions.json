@@ -32,6 +32,9 @@
  },
  {
   "id": "ka10072",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "일자별종목별실현손익요청_일자",
   "description": "일자별종목별실현손익요청_일자",
   "domain": "국내주식/계좌",
@@ -51,6 +54,9 @@
  },
  {
   "id": "ka10073",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "일자별종목별실현손익요청_기간",
   "description": "일자별종목별실현손익요청_기간",
   "domain": "국내주식/계좌",
@@ -92,6 +98,9 @@
  },
  {
   "id": "ka10075",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미체결요청",
   "description": "미체결요청",
   "domain": "국내주식/계좌",
@@ -115,6 +124,9 @@
  },
  {
   "id": "ka10076",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "체결요청",
   "description": "체결요청",
   "domain": "국내주식/계좌",
@@ -139,6 +151,9 @@
  },
  {
   "id": "ka10077",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "당일실현손익상세요청",
   "description": "당일실현손익상세요청",
   "domain": "국내주식/계좌",
@@ -308,6 +323,9 @@
  },
  {
   "id": "kt00007",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "계좌별주문체결내역상세요청",
   "description": "계좌별주문체결내역상세요청",
   "domain": "국내주식/계좌",
@@ -350,6 +368,9 @@
  },
  {
   "id": "kt00009",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "계좌별주문체결현황요청",
   "description": "계좌별주문체결현황요청",
   "domain": "국내주식/계좌",
@@ -379,6 +400,9 @@
  },
  {
   "id": "kt00010",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주문인출가능금액요청",
   "description": "주문인출가능금액요청",
   "domain": "국내주식/계좌",
@@ -404,6 +428,9 @@
  },
  {
   "id": "kt00011",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "증거금율별주문가능수량조회요청",
   "description": "증거금율별주문가능수량조회요청",
   "domain": "국내주식/계좌",
@@ -423,6 +450,9 @@
  },
  {
   "id": "kt00012",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "신용보증금율별주문가능수량조회요청",
   "description": "신용보증금율별주문가능수량조회요청",
   "domain": "국내주식/계좌",
@@ -455,6 +485,9 @@
  },
  {
   "id": "kt00015",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "위탁종합거래내역요청",
   "description": "위탁종합거래내역요청",
   "domain": "국내주식/계좌",
@@ -538,6 +571,9 @@
  },
  {
   "id": "kt10000",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식 매수주문",
   "description": "주식 매수주문",
@@ -565,6 +601,9 @@
  },
  {
   "id": "kt10001",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식 매도주문",
   "description": "주식 매도주문",
@@ -592,6 +631,9 @@
  },
  {
   "id": "kt10002",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식 정정주문",
   "description": "주식 정정주문",
@@ -620,6 +662,9 @@
  },
  {
   "id": "kt10003",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식 취소주문",
   "description": "주식 취소주문",
@@ -645,6 +690,9 @@
  },
  {
   "id": "kt10006",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "신용 매수주문",
   "description": "신용 매수주문",
@@ -672,6 +720,9 @@
  },
  {
   "id": "kt10007",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "신용 매도주문",
   "description": "신용 매도주문",
@@ -702,6 +753,9 @@
  },
  {
   "id": "kt10008",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "신용 정정주문",
   "description": "신용 정정주문",
@@ -730,6 +784,9 @@
  },
  {
   "id": "kt10009",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "신용 취소주문",
   "description": "신용 취소주문",
@@ -755,6 +812,9 @@
  },
  {
   "id": "kt50000",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "금현물 매수주문",
   "description": "금현물 매수주문",
@@ -779,6 +839,9 @@
  },
  {
   "id": "kt50001",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "금현물 매도주문",
   "description": "금현물 매도주문",
@@ -803,6 +866,9 @@
  },
  {
   "id": "kt50002",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "금현물 정정주문",
   "description": "금현물 정정주문",
@@ -828,6 +894,9 @@
  },
  {
   "id": "kt50003",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "금현물 취소주문",
   "description": "금현물 취소주문",
@@ -877,6 +946,9 @@
  },
  {
   "id": "kt50030",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "금현물 주문체결전체조회",
   "description": "금현물 주문체결전체조회",
   "domain": "국내주식/계좌",
@@ -905,6 +977,9 @@
  },
  {
   "id": "kt50031",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "금현물 주문체결조회",
   "description": "금현물 주문체결조회",
   "domain": "국내주식/계좌",
@@ -932,6 +1007,9 @@
  },
  {
   "id": "kt50032",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "금현물 거래내역조회",
   "description": "금현물 거래내역조회",
   "domain": "국내주식/계좌",
@@ -950,6 +1028,9 @@
  },
  {
   "id": "kt50075",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "금현물 미체결조회",
   "description": "금현물 미체결조회",
   "domain": "국내주식/계좌",
@@ -1038,6 +1119,9 @@
  },
  {
   "id": "usa21730",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 일별종목수익률현황",
   "description": "미국주식 일별종목수익률현황",
   "domain": "미국주식/계좌",
@@ -1061,6 +1145,9 @@
  },
  {
   "id": "usa21731",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 월별종목수익률현황",
   "description": "미국주식 월별종목수익률현황",
   "domain": "미국주식/계좌",
@@ -1084,6 +1171,9 @@
  },
  {
   "id": "usa21732",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 연도별종목수익률현황",
   "description": "미국주식 연도별종목수익률현황",
   "domain": "미국주식/계좌",
@@ -1107,6 +1197,9 @@
  },
  {
   "id": "ust20000",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "미국주식 매수 주문",
   "description": "미국주식 매수 주문",
@@ -1133,6 +1226,9 @@
  },
  {
   "id": "ust20001",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "미국주식 매도 주문",
   "description": "미국주식 매도 주문",
@@ -1160,6 +1256,9 @@
  },
  {
   "id": "ust20002",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "미국주식 정정 주문",
   "description": "미국주식 정정 주문",
@@ -1185,6 +1284,9 @@
  },
  {
   "id": "ust20003",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "미국주식 취소 주문",
   "description": "미국주식 취소 주문",
@@ -1208,6 +1310,9 @@
  },
  {
   "id": "ust21050",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 원장 미체결",
   "description": "미국주식 원장 미체결",
   "domain": "미국주식/계좌",
@@ -1226,6 +1331,9 @@
  },
  {
   "id": "ust21070",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 원장잔고확인",
   "description": "미국주식 원장잔고확인",
   "domain": "미국주식/계좌",
@@ -1242,6 +1350,9 @@
  },
  {
   "id": "ust21100",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 거래내역",
   "description": "미국주식 거래내역",
   "domain": "미국주식/계좌",
@@ -1356,6 +1467,9 @@
  },
  {
   "id": "ust21150",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 일별 주문체결내역",
   "description": "미국주식 일별 주문체결내역",
   "domain": "미국주식/계좌",
@@ -1412,6 +1526,9 @@
  },
  {
   "id": "ust21180",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 기간별 주문내역",
   "description": "미국주식 기간별 주문내역",
   "domain": "미국주식/계좌",
@@ -1436,6 +1553,9 @@
  },
  {
   "id": "ust21510",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 당일 주문체결 확인",
   "description": "미국주식 당일 주문체결 확인",
   "domain": "미국주식/계좌",
@@ -1491,6 +1611,9 @@
  },
  {
   "id": "ust21620",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 당일매매정리",
   "description": "미국주식 당일매매정리",
   "domain": "미국주식/계좌",
@@ -1511,6 +1634,9 @@
  },
  {
   "id": "ust21630",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 당일 실현손익",
   "description": "미국주식 당일 실현손익",
   "domain": "미국주식/계좌",
@@ -1531,6 +1657,9 @@
  },
  {
   "id": "ust21640",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 일별 종목별 실현손익",
   "description": "미국주식 일별 종목별 실현손익",
   "domain": "미국주식/계좌",
@@ -1658,6 +1787,9 @@
  },
  {
   "id": "ust31490",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "미국주식 주문가능수량(종목/증거금률별)",
   "description": "미국주식 주문가능수량(종목/증거금률별)",
   "domain": "미국주식/주문",
@@ -1679,6 +1811,9 @@
  },
  {
   "id": "place_order",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주문 전송 place_order (중립 계약)",
   "description": "[중립 계약] Buy or sell one symbol without knowing this broker's raw API ids — the dialect maps order types (kr: limit/market/conditional/best/priority · us: limit/market/loc/moc), rounds to the tick grid and picks the endpoint family by market. Params are FLAT. The credential IS the account here — no account number param. 매수 매도 주문 지정가 시장가 주문전송 buy sell order",
@@ -1723,6 +1858,9 @@
  },
  {
   "id": "cancel_order",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주문 취소 cancel_order (중립 계약)",
   "description": "[중립 계약] Cancel a resting order by broker order number. 주문취소 미체결 취소",

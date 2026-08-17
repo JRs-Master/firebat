@@ -371,14 +371,6 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", \"params\": { <params from actions.json> } }"
   },
-  "grounding": {
-    "stk_cd": {
-      "resolveHint": "A stock code (stk_cd) must come from a lookup, never from memory. To resolve a company name to its code, call the stock-lookup tool directly NOW: sysmod_stock-lookup {\"query\":\"<company name>\"} (underscore form sysmod_stock_lookup also works). One arg, one call — this is a direct tool call, NOT something to find with search_module_actions (never search for \"lookup\"). It returns the official corp_name + stock_code (e.g. LG에너지솔루션 → 373220); if several companies match it returns candidates — ask the user with a suggest picker when unsure. Alternatively ka10100 can confirm a code you were given. Use the returned stock_code as-is, and don't re-guess the name if a lookup already returned a code.",
-      "exemptActions": [
-        "ka10100"
-      ]
-    }
-  },
   "tags": [
     "키움증권",
     "키움",

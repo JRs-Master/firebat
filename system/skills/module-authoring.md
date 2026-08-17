@@ -1,7 +1,7 @@
 ---
 name: module-authoring
 kind: procedure
-description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, 액션 선언, secrets, entry, _call 엔드포인트, 승인 게이트, 방언 선언, paramSource, grounding, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·선언 표면 위반 = 조용한 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(schedule_task 의 pipeline 파라미터 설명), 스킬 작성(skill-authoring).
+description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, 액션 선언, secrets, entry, _call 엔드포인트, 승인 게이트, 방언 선언, needs, source, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·선언 표면 위반 = 조용한 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(schedule_task 의 pipeline 파라미터 설명), 스킬 작성(skill-authoring).
 ---
 
 # Module authoring — a module declares, Firebat reads and runs
@@ -83,7 +83,7 @@ Every call takes the same road, whichever transport it arrived on — this order
 standard, and each step speaks for itself when it refuses:
 
 ```
-enabled? → validate(input) → gates (grounding · approval card · uiOnly)
+enabled? → validate(input) → gates (needs · approval card · uiOnly)
         → inject (_call · account · _recall · cache-key expansion · env)
         → run (sandbox | ws) → envelope parse → auto-cache (_cacheKey) → timeseries absorb
 ```
@@ -144,7 +144,7 @@ a broker's `stk_cd` that only exists inside action rows.)
 | gets a param's name or type wrong | the param spec — the schema IS the correction; validation errors derive from it |
 | omits a required param | `required` (catalog row) — surfaces in `fill` before the first call |
 | omits a discriminator | `_call.by` + that axis in `input` and `required` — the refusal lists the choices |
-| invents an opaque id from memory | the param spec: `"grounding": { resolveHint, pattern, exemptActions }` |
+| invents an opaque id from memory | the row: `"needs": ["stock-lookup"]` — the prerequisite must have RUN in this conversation |
 | uses an id from the wrong list | the param spec: `"source": "<issuing action>"` — see below |
 | fires a dangerous call directly | the row: `"approval": true` |
 | calls a screen-only action | the row: `"uiOnly": true` |
@@ -158,7 +158,7 @@ param's own spec:
             "source": "bus-stop-search or bus-stop-nearby" }
 ```
 
-When validation refuses a call over that param, or grounding rejects an ungrounded value for it,
+When validation refuses a call over that param,
 the refusal names the issuer — "`nodeId` is issued by bus-stop-search or bus-stop-nearby". Your
 own code may read the same rows out of your `config.json` for the angles only you can see (an
 empty result whose ids were all well-formed, say). One declaration, several readers — never keep
@@ -173,10 +173,10 @@ your declarations; only you can point at your data.
 
 - **`"approval": true` on the action's catalog row** — the call produces a user approval card and
   does not run until it is confirmed. Cards for module actions expire in **5 minutes**.
-- **`"grounding": { "resolveHint": "…", "pattern": "^[0-9]{6}$", "exemptActions": ["lookup"] }`
-  on the param's spec** — an opaque identifier must have been resolved in this conversation,
-  never recalled from memory. `resolveHint` is the sentence the caller is handed when it has not
-  been; the action that does the resolving is exempt.
+- **`"needs": ["stock-lookup"]` on the action's row** — the named module must have RUN
+  successfully in this conversation (30-minute sliding window) before this action dispatches.
+  The refusal names the prerequisite; the framework never learns what the value looks like.
+  Resolver-type actions simply declare no `needs` of their own.
 - **`"uiOnly": true` on the row** — refused from chat; only a screen action may run it.
 - Switching the module off removes it from search, schema and dispatch — a disabled module
   answers "this is a setting", not "no such thing".

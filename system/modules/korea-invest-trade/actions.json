@@ -1,6 +1,9 @@
 [
  {
   "id": "국내주식-211",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "기간별계좌권리현황조회",
   "description": "기간별계좌권리현황조회",
   "domain": "[국내주식] 주문/계좌",
@@ -93,6 +96,9 @@
  },
  {
   "id": "v1_국내주식-018,019",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식예약주문정정취소",
   "description": "주식예약주문정정취소",
@@ -147,6 +153,9 @@
  },
  {
   "id": "v1_국내주식-042",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "신용매수가능조회",
   "description": "신용매수가능조회",
   "domain": "[국내주식] 주문/계좌",
@@ -255,6 +264,9 @@
  },
  {
   "id": "v1_국내주식-060",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "기간별매매손익현황조회",
   "description": "기간별매매손익현황조회",
   "domain": "[국내주식] 주문/계좌",
@@ -330,6 +342,9 @@
  },
  {
   "id": "v1_국내주식-020",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식예약주문조회",
   "description": "주식예약주문조회",
   "domain": "[국내주식] 주문/계좌",
@@ -372,6 +387,9 @@
  },
  {
   "id": "v1_국내주식-034",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "퇴직연금 매수가능조회",
   "description": "퇴직연금 매수가능조회",
   "domain": "[국내주식] 주문/계좌",
@@ -470,6 +488,9 @@
  },
  {
   "id": "v1_국내주식-007",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "매수가능조회",
   "description": "매수가능조회",
   "domain": "[국내주식] 주문/계좌",
@@ -502,6 +523,9 @@
  },
  {
   "id": "v1_국내주식-052",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "기간별손익일별합산조회",
   "description": "기간별손익일별합산조회",
   "domain": "[국내주식] 주문/계좌",
@@ -540,6 +564,9 @@
  },
  {
   "id": "v1_국내주식-001",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식주문(현금)",
   "description": "주식주문(현금)",
@@ -586,6 +613,9 @@
  },
  {
   "id": "국내주식-165",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "매도가능수량조회",
   "description": "매도가능수량조회",
   "domain": "[국내주식] 주문/계좌",
@@ -610,6 +640,9 @@
  },
  {
   "id": "v1_국내주식-005",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식일별주문체결조회",
   "description": "주식일별주문체결조회",
   "domain": "[국내주식] 주문/계좌",
@@ -698,6 +731,9 @@
  },
  {
   "id": "v1_국내주식-017",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식예약주문",
   "description": "주식예약주문",
@@ -736,6 +772,9 @@
  },
  {
   "id": "v1_국내주식-002",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주식주문(신용)",
   "description": "주식주문(신용)",
@@ -1033,6 +1072,9 @@
  },
  {
   "id": "v1_국내선물-001",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "선물옵션 주문",
   "description": "선물옵션 주문",
@@ -1184,6 +1226,9 @@
  },
  {
   "id": "v1_국내선물-003",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "선물옵션 주문체결내역조회",
   "description": "선물옵션 주문체결내역조회",
   "domain": "[국내선물옵션] 주문/계좌",
@@ -1226,6 +1271,9 @@
  },
  {
   "id": "국내선물-009",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "(야간)선물옵션 주문체결 내역조회",
   "description": "(야간)선물옵션 주문체결 내역조회",
   "domain": "[국내선물옵션] 주문/계좌",
@@ -1284,6 +1332,9 @@
  },
  {
   "id": "국내선물-011",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "(야간)선물옵션 주문가능 조회",
   "description": "(야간)선물옵션 주문가능 조회",
   "domain": "[국내선물옵션] 주문/계좌",
@@ -1356,6 +1407,9 @@
  },
  {
   "id": "v1_국내선물-005",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "선물옵션 주문가능",
   "description": "선물옵션 주문가능",
   "domain": "[국내선물옵션] 주문/계좌",
@@ -1498,6 +1552,9 @@
  },
  {
   "id": "v1_해외주식-032",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외주식 기간손익",
   "description": "해외주식 기간손익",
   "domain": "[해외주식] 주문/계좌",
@@ -1566,6 +1623,9 @@
  },
  {
   "id": "v1_해외주식-003",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "해외주식 정정취소주문",
   "description": "해외주식 정정취소주문",
@@ -1607,6 +1667,9 @@
  },
  {
   "id": "v1_해외주식-002",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "해외주식 예약주문접수",
   "description": "해외주식 예약주문접수",
@@ -1698,6 +1761,9 @@
  },
  {
   "id": "v1_해외주식-027",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외주식 미국주간정정취소",
   "description": "해외주식 미국주간정정취소",
   "domain": "[해외주식] 주문/계좌",
@@ -1738,6 +1804,9 @@
  },
  {
   "id": "v1_해외주식-007",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외주식 주문체결내역",
   "description": "해외주식 주문체결내역",
   "domain": "[해외주식] 주문/계좌",
@@ -1812,6 +1881,9 @@
  },
  {
   "id": "해외주식-063",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외주식 일별거래내역",
   "description": "해외주식 일별거래내역",
   "domain": "[해외주식] 주문/계좌",
@@ -1850,6 +1922,9 @@
  },
  {
   "id": "v1_해외주식-026",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "해외주식 미국주간주문",
   "description": "해외주식 미국주간주문",
@@ -1947,6 +2022,9 @@
  },
  {
   "id": "v1_해외주식-001",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "해외주식 주문",
   "description": "해외주식 주문",
@@ -2079,6 +2157,9 @@
  },
  {
   "id": "v1_해외선물-001",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "해외선물옵션 주문",
   "description": "해외선물옵션 주문",
@@ -2232,6 +2313,9 @@
  },
  {
   "id": "v1_해외선물-006",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외선물옵션 주문가능조회",
   "description": "해외선물옵션 주문가능조회",
   "domain": "[해외선물옵션] 주문/계좌",
@@ -2464,6 +2548,9 @@
  },
  {
   "id": "국내주식-124",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "장내채권 매수주문",
   "description": "장내채권 매수주문",
@@ -2505,6 +2592,9 @@
  },
  {
   "id": "국내주식-123",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "장내채권 매도주문",
   "description": "장내채권 매도주문",
@@ -2554,6 +2644,9 @@
  },
  {
   "id": "국내주식-125",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "장내채권 정정취소주문",
   "description": "장내채권 정정취소주문",
@@ -2625,6 +2718,9 @@
  },
  {
   "id": "국내주식-127",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권 주문체결내역",
   "description": "장내채권 주문체결내역",
   "domain": "[장내채권] 주문/계좌",
@@ -2663,6 +2759,9 @@
  },
  {
   "id": "국내주식-198",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권 잔고조회",
   "description": "장내채권 잔고조회",
   "domain": "[장내채권] 주문/계좌",
@@ -2695,6 +2794,9 @@
  },
  {
   "id": "국내주식-199",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권 매수가능조회",
   "description": "장내채권 매수가능조회",
   "domain": "[장내채권] 주문/계좌",
@@ -2723,6 +2825,9 @@
  },
  {
   "id": "place_order",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주문 전송 place_order (중립 계약)",
   "description": "[중립 계약] Buy or sell one symbol without knowing this broker's raw API ids — the dialect resolves the tr_id sentence, CANO split, tick rounding and SLL_TYPE. Params are FLAT (no query/body wrapper). market decides kr|us; a US market order sends unit price \"0\" (measured 2026-08-08). 매수 매도 주문 지정가 시장가 주문전송 buy sell order",
@@ -2760,6 +2865,9 @@
  },
  {
   "id": "cancel_order",
+  "needs": [
+   "stock-lookup"
+  ],
   "approval": true,
   "name": "주문 취소 cancel_order (중립 계약)",
   "description": "[중립 계약] Cancel a resting order by broker order number. Use THIS, not the raw 정정취소 API — the raw path derives its tr_id hint from side and dies on the sheet label. Mock cancels same-day orders only (measured 2026-08-08: older ones answer 원주문번호가 존재하지 않습니다). 주문취소 미체결 취소",

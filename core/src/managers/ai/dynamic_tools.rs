@@ -16,7 +16,7 @@
 //! Sysmod 활성/비활성 토글 — `ModuleManager.is_enabled(name)` 검사. 비활성 시 unregister.
 //!
 //! What a sysmod tool LOOKS like is not decided here: `ai::sysmod_surface::build_surface` derives
-//! the name, description, thin params, selector judgment and grounding once for both transports.
+//! the name, description, thin params and selector judgment once for both transports.
 //! This registry only owns registration and the lookup state the FC dispatch path reads.
 
 use std::collections::HashMap;
@@ -29,7 +29,6 @@ use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::tool::{make_handler, ToolDefinition, ToolListFilter, ToolManager};
 use crate::ports::InfraResult;
-use crate::utils::grounding::GroundedParam;
 
 /// How long to go without asking whether the module tree changed. Once a rebuild interval (60s,
 /// carried over from the TS original), now a debounce on the fingerprint check — see `refresh`.
@@ -55,10 +54,6 @@ pub struct DynamicToolRegistry {
     /// serves every module. `module_for_call` reads this map instead; the day a unified executor
     /// arrives it reads `args.module` there and nothing else moves.
     tool_modules: RwLock<HashMap<String, String>>,
-    /// L1 grounding 선언 — **module** → grounded params (모듈 config 의 `grounding`).
-    /// refresh 마다 config 에서 재구성. FC 경로(ai.rs 도구 루프)가 dispatch 전 `grounding_for` 로 조회해
-    /// `check_grounding` 강제 — MCP 경로(mcp_server `state.grounding`) 와 대칭, 같은 pure 헬퍼 공유 (#8-2).
-    grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
     /// requiresApproval 선언 — **module** → 선언 값. FC 게이트가 dispatch 전 조회 (#1-9b).
     approval: RwLock<HashMap<String, serde_json::Value>>,
     /// uiOnly 선언 — same shape. Actions a model may not call at all (screen actions).
@@ -71,7 +66,7 @@ pub struct DynamicToolRegistry {
     /// names. Held per module (not per tool) because the overlay that fills the tool's
     /// `parameters` runs per turn, keyed by what THIS conversation discovered.
     forms: RwLock<HashMap<String, ActionForm>>,
-    /// Modules whose config has been read into the four declaration maps above.
+    /// Modules whose config has been read into the declaration maps above.
     ///
     /// Without it, a map miss has two meanings that must never be confused: "this module declares
     /// no approval" and "this module's config was never read". The maps only answer the first, and
@@ -89,7 +84,6 @@ impl DynamicToolRegistry {
             last_refresh: Mutex::new(None),
             fingerprint: Mutex::new(None),
             tool_modules: RwLock::new(HashMap::new()),
-            grounding: RwLock::new(HashMap::new()),
             approval: RwLock::new(HashMap::new()),
             ui_only: RwLock::new(HashMap::new()),
             action_selectors: RwLock::new(std::collections::HashSet::new()),
@@ -131,9 +125,6 @@ impl DynamicToolRegistry {
         }
         if let Some(uo) = config.get("uiOnly") {
             self.ui_only.write().await.insert(module.to_string(), uo.clone());
-        }
-        if !surface.grounding.is_empty() {
-            self.grounding.write().await.insert(module.to_string(), surface.grounding);
         }
         if surface.has_action_selector {
             self.action_selectors.write().await.insert(module.to_string());
@@ -193,13 +184,6 @@ impl DynamicToolRegistry {
             .and_then(|e| e.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
             .unwrap_or_default()
-    }
-
-    /// FC 경로가 dispatch 전 조회 — 이 모듈에 선언된 grounded params (없으면 None).
-    pub async fn grounding_for(&self, module: &str) -> Option<Vec<GroundedParam>> {
-        self.ensure_known(module).await;
-        let map = self.grounding.read().await;
-        map.get(module).cloned()
     }
 
     /// FC 경로가 dispatch 전 조회 — 이 모듈의 requiresApproval 선언.
@@ -289,7 +273,6 @@ impl DynamicToolRegistry {
         // grounding 맵은 로컬에 쌓고 끝에 한 번에 swap — clear→개별 insert 사이 rebuild 창에
         // 동시 read 가 빈 맵(fail-open)을 보는 race 회피 + write lock 획득 N회→1회.
         let mut new_tool_modules: HashMap<String, String> = HashMap::new();
-        let mut new_grounding: HashMap<String, Vec<GroundedParam>> = HashMap::new();
         let mut new_approval: HashMap<String, serde_json::Value> = HashMap::new();
         let mut new_ui_only: HashMap<String, serde_json::Value> = HashMap::new();
         let mut new_selectors: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -322,9 +305,6 @@ impl DynamicToolRegistry {
             }
             if let Some(uo) = config.get("uiOnly") {
                 new_ui_only.insert(entry.name.clone(), uo.clone());
-            }
-            if !surface.grounding.is_empty() {
-                new_grounding.insert(entry.name.clone(), surface.grounding);
             }
             if surface.has_action_selector {
                 new_selectors.insert(entry.name.clone());
@@ -393,7 +373,6 @@ impl DynamicToolRegistry {
 
         // 4. grounding 맵 atomic swap (rebuild 완료 후 한 번에 교체 — read 가 부분 상태 안 봄).
         *self.tool_modules.write().await = new_tool_modules;
-        *self.grounding.write().await = new_grounding;
         *self.approval.write().await = new_approval;
         *self.ui_only.write().await = new_ui_only;
         *self.action_selectors.write().await = new_selectors;

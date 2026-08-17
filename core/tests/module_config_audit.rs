@@ -1,11 +1,11 @@
 //! Module-config audit — a declaration that names nothing is a declaration that does nothing.
 //!
-//! A system module is a config file plus a script: `cacheInputs`, `grounding`, `requiresApproval`,
+//! A system module is a config file plus a script: `cacheInputs`, `needs`, `requiresApproval`,
 //! `timeseries`, `pageBinding`, `uiOnly`, `accounts` are all declarative, and the framework reads
 //! them by exact key and exact value. Which means a typo is not an error — it is SILENCE. A
 //! misspelled `cacheInput` never expands a key; a `requiresApproval` naming an action that was
-//! renamed stops gating it; a `grounding` on a param the schema no longer declares stops guarding
-//! it. Nothing fails, nothing logs, and the module keeps working in the one way nobody wanted.
+//! renamed stops gating it; a `needs` naming a module that does not exist blocks its action
+//! forever. Nothing fails, nothing logs, and the module keeps working in the one way nobody wanted.
 //!
 //! So this walks every module config and checks two things a human cannot hold in their head:
 //!   1. every top-level key is one the framework actually reads (`_`-prefixed keys are the
@@ -33,7 +33,7 @@ const KNOWN_KEYS: &[&str] = &[
     // credentials
     "secrets", "accounts", "credentialScope", "accountFrom",
     // behaviour declarations
-    "actionCatalog", "cacheInputs", "autoCacheWhole", "grounding", "requiresApproval", "uiOnly",
+    "actionCatalog", "cacheInputs", "autoCacheWhole", "requiresApproval", "uiOnly",
     "timeseries", "ws", "pageBinding", "recall", "schedules", "schedulesFrom", "settings_fields",
     "editorSchema", "unsupportedActions", "notify", "notifyJob", "paramSource",
 ];
@@ -390,21 +390,18 @@ fn every_module_declaration_names_something_that_exists() {
                 }
             }
         }
-        // A grounded param may sit inside a declared object container (kiwoom's `params`,
-        // korea-invest's `query`/`body`) — `check_grounding` walks nested args, so "is it a
-        // top-level property" is the wrong question for a module that has a container.
-        let has_container = config
-            .pointer("/input/properties")
-            .and_then(|p| p.as_object())
-            .is_some_and(|o| {
-                o.values().any(|v| {
-                    matches!(v.get("type"), Some(Value::String(t)) if t == "object")
-                })
-            });
-        if let Some(g) = config.get("grounding").and_then(|v| v.as_object()) {
-            for key in g.keys() {
-                if !params.contains(key) && !has_container {
-                    say(format!("grounding names param `{key}`, which is not declared"));
+        // needs → 존재: a prerequisite a row names must be a module that exists, or the gate
+        // refuses forever with a name nothing can satisfy.
+        for (aid, mods) in
+            firebat_core::utils::action_decl::action_gates(&catalog_rows_of(&module_dir, &config))
+                .needs
+        {
+            for m in mods {
+                if !modules_dir().join(&m).join("config.json").is_file() {
+                    say(format!(
+                        "action `{aid}` needs `{m}`, which is not an installed module — the \
+                         declaration would block the action forever"
+                    ));
                 }
             }
         }

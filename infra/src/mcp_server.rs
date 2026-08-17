@@ -43,7 +43,6 @@ use firebat_core::managers::storage::StorageManager;
 use firebat_core::managers::task::{PipelineStep, TaskManager};
 use firebat_core::managers::tool::{ToolListFilter, ToolManager};
 use firebat_core::utils::conversation_scope;
-use firebat_core::utils::grounding::{check_grounding, GroundedParam};
 use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 // ToolManager / ToolListFilter — 옛 register_render_tools 가 사용했으나 2026-05-14 폐기 후
 // 단일 RenderUnifiedHandler 로 통합 → 이 모듈에서는 직접 import 불필요.
@@ -93,7 +92,6 @@ pub struct McpServerState {
     ///
     /// Keyed by module, not by tool name: a declaration belongs to the module that made it, and
     /// the tool that carries it is a publishing decision that has already changed once.
-    pub grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
     /// CLI 자기 홈에 떨어진 이미지의 갤러리 편입 — 도구 인자 치환에 사용(아래 게이트).
     /// 미설정 시 치환 skip(옛 동작).
     pub image_import: Option<Arc<dyn firebat_core::managers::media::IImageImportPort>>,
@@ -127,7 +125,6 @@ impl McpServerState {
             vault,
             auth: None,
             module_manager: None,
-            grounding: RwLock::new(HashMap::new()),
             image_import: None,
             action_selectors: RwLock::new(std::collections::HashSet::new()),
             forms: RwLock::new(HashMap::new()),
@@ -152,12 +149,6 @@ impl McpServerState {
         self.known_modules.write().await.insert(module.to_string());
         let Some(config) = config else { return };
         let surface = sysmod_surface::build_surface(module, &config);
-        if !surface.grounding.is_empty() {
-            self.grounding
-                .write()
-                .await
-                .insert(module.to_string(), surface.grounding);
-        }
         if surface.has_action_selector {
             self.action_selectors
                 .write()
@@ -753,20 +744,6 @@ async fn gated_tool_call(
             }
         }
     }
-    // L1 grounding — the declaration belongs to the module, so it is looked up by module.
-    let grounded = match target_module.as_deref() {
-        Some(module) => state.grounding.read().await.get(module).cloned(),
-        None => None,
-    };
-    if let Some(grounded) = grounded {
-        if !grounded.is_empty() {
-            let corpus = conversation_scope::observed_snapshot(&scope);
-            if let Err(hint) = check_grounding(&args, &grounded, &corpus) {
-                tracing::info!(target: "grounding", tool = name, "L1 grounding reject");
-                return Err(hint);
-            }
-        }
-    }
     // Anything this call caches belongs to the conversation, not to a clock — it stays reachable
     // for exactly as long as the conversation does. A cron turn is already inside its own run's
     // scope (`in_cron_scope`), and re-entering here would hand its entries to whatever
@@ -778,13 +755,6 @@ async fn gated_tool_call(
         firebat_core::utils::cache_owner::in_conversation(conv.as_deref(), handler.call(args))
             .await;
     if let Ok(ref v) = result {
-        // F6 — skip discovery/schema tools: their output carries documentation example ids that
-        // would let a fabricated code "ground" against a doc example (mirror of the FC path).
-        if firebat_core::utils::grounding::records_provenance(name) {
-            if let Ok(text) = serde_json::to_string(v) {
-                conversation_scope::observe(&scope, &text);
-            }
-        }
         // needs ledger — a successful module run satisfies `needs` declarations for the rest of
         // the window (mirror of the FC path; success only).
         if let Some(m) = target_module.as_deref() {
@@ -1220,13 +1190,6 @@ pub async fn register_sysmod_tools(
             .insert(tool_name.clone(), (surface.module.clone(), surface.form.clone()));
         // Both keyed by MODULE — see the field docs. The tool name that happens to carry a
         // module today is a publishing decision, and the gates must not depend on it.
-        if !surface.grounding.is_empty() {
-            state
-                .grounding
-                .write()
-                .await
-                .insert(surface.module.clone(), surface.grounding);
-        }
         if surface.has_action_selector {
             state
                 .action_selectors

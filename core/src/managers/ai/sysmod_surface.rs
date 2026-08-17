@@ -4,7 +4,7 @@
 //! (`dynamic_tools.rs`) and the MCP server (`infra/src/mcp_server.rs`) — and each used to derive
 //! the same four things from `config.json` on its own: the tool name, the description (module
 //! text + declared tags), the thin parameter schema (params hidden behind the discovery
-//! procedure), whether the module really has an `action` selector, and the L1 grounding
+//! procedure), and whether the module really has an `action` selector
 //! declaration. Two derivations means every new gate had to be planted twice, and the measured
 //! result was drift: the selector gate, the key canonicalisation and the discovery-gate notice
 //! each shipped as two separate edits, and the two notices still disagree today.
@@ -29,7 +29,6 @@
 //! 4. **module set** — FC registers `list_system_modules()`, MCP `list_system()` (modules +
 //!    services). That is the caller's loop, not this derivation.
 
-use crate::utils::grounding::{parse_grounding, GroundedParam};
 
 /// Everything needed to build the step-three form, kept small enough to hold for every module:
 /// the declared property schemas, and which of them each action uses.
@@ -66,8 +65,6 @@ pub struct SysmodSurface {
     /// Whether the module's input declares an `action` selector, i.e. whether the discovery-first
     /// gate applies at all.
     pub has_action_selector: bool,
-    /// L1 grounding requirements parsed from `config.grounding` (empty when undeclared).
-    pub grounding: Vec<GroundedParam>,
     /// Material for the step-three form, once the conversation has discovered an action.
     pub form: ActionForm,
 }
@@ -352,9 +349,6 @@ pub fn build_surface(module_name: &str, config: &serde_json::Value) -> SysmodSur
         description,
         thin_parameters: thin_parameters(),
         has_action_selector: declares_action_selector(config),
-        // L1 grounding — the config declaration mapped onto this tool. Both transports gate with
-        // the same pure `check_grounding`, so they must also parse with the same reader.
-        grounding: parse_grounding(config),
         form: build_action_form(config),
     }
 }
@@ -520,19 +514,6 @@ mod tests {
         let bare = build_surface("nameless", &json!({}));
         assert_eq!(bare.description, "");
         assert_eq!(bare.tool_name, "sysmod_nameless");
-    }
-
-    #[test]
-    fn grounding_is_parsed_onto_the_surface() {
-        let s = build_surface("kiwoom", &multi_action_config());
-        assert_eq!(s.grounding.len(), 1);
-        assert_eq!(s.grounding[0].param, "stk_cd");
-        assert!(s.grounding[0].hint.contains("ka10099"));
-        assert_eq!(s.grounding[0].exempt_actions, vec!["ka10100".to_string()]);
-        // Undeclared → empty, never gated (opt-in).
-        assert!(build_surface("stock-lookup", &single_action_config())
-            .grounding
-            .is_empty());
     }
 
     /// A single-action module has no gate, so the thin schema bought nothing there — it only

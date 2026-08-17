@@ -1,6 +1,9 @@
 [
  {
   "id": "v1_국내주식-010",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 일자별",
   "description": "주식현재가 일자별",
   "domain": "[국내주식] 기본시세",
@@ -27,6 +30,9 @@
  },
  {
   "id": "v1_국내주식-008",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 시세",
   "description": "주식현재가 시세 — 종목 현재가·등락률·거래량 실시간 스냅샷 조회",
   "domain": "[국내주식] 기본시세",
@@ -49,6 +55,9 @@
  },
  {
   "id": "국내주식-076",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시간외현재가",
   "description": "국내주식 시간외현재가",
   "domain": "[국내주식] 기본시세",
@@ -71,6 +80,9 @@
  },
  {
   "id": "국내주식-073",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ETF 구성종목시세",
   "description": "ETF 구성종목시세",
   "domain": "[국내주식] 기본시세",
@@ -95,6 +107,9 @@
  },
  {
   "id": "v1_국내주식-025",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 시간외시간별체결",
   "description": "주식현재가 시간외시간별체결",
   "domain": "[국내주식] 기본시세",
@@ -119,6 +134,9 @@
  },
  {
   "id": "v1_국내주식-069",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "NAV 비교추이(종목)",
   "description": "NAV 비교추이(종목)",
   "domain": "[국내주식] 기본시세",
@@ -141,6 +159,9 @@
  },
  {
   "id": "v1_국내주식-026",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 시간외일자별주가",
   "description": "주식현재가 시간외일자별주가",
   "domain": "[국내주식] 기본시세",
@@ -163,6 +184,9 @@
  },
  {
   "id": "국내주식-077",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시간외호가",
   "description": "국내주식 시간외호가",
   "domain": "[국내주식] 기본시세",
@@ -185,6 +209,9 @@
  },
  {
   "id": "v1_국내주식-023",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 당일시간대별체결",
   "description": "주식현재가 당일시간대별체결",
   "domain": "[국내주식] 기본시세",
@@ -209,6 +236,9 @@
  },
  {
   "id": "v1_국내주식-054",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 시세2",
   "description": "주식현재가 시세2",
   "domain": "[국내주식] 기본시세",
@@ -231,6 +261,9 @@
  },
  {
   "id": "ETF 현재가 호가",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ETF 현재가 호가",
   "description": "ETF 현재가 호가",
   "domain": "[국내주식] 기본시세",
@@ -253,6 +286,9 @@
  },
  {
   "id": "국내주식-213",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식일별분봉조회",
   "description": "주식일별분봉조회",
   "domain": "[국내주식] 기본시세",
@@ -297,6 +333,9 @@
  },
  {
   "id": "v1_국내주식-071",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "NAV 비교추이(일)",
   "description": "NAV 비교추이(일)",
   "domain": "[국내주식] 기본시세",
@@ -338,6 +377,9 @@
  },
  {
   "id": "v1_국내주식-009",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 체결",
   "description": "주식현재가 체결",
   "domain": "[국내주식] 기본시세",
@@ -360,6 +402,9 @@
  },
  {
   "id": "v1_국내주식-013",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 회원사",
   "description": "주식현재가 회원사",
   "domain": "[국내주식] 기본시세",
@@ -382,6 +427,9 @@
  },
  {
   "id": "v1_국내주식-070",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "NAV 비교추이(분)",
   "description": "NAV 비교추이(분)",
   "domain": "[국내주식] 기본시세",
@@ -406,6 +454,9 @@
  },
  {
   "id": "v1_국내주식-012",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 투자자",
   "description": "주식현재가 투자자",
   "domain": "[국내주식] 기본시세",
@@ -443,6 +494,9 @@
  },
  {
   "id": "국내주식-120",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 장마감 예상체결가",
   "description": "국내주식 장마감 예상체결가",
   "domain": "[국내주식] 기본시세",
@@ -471,6 +525,9 @@
  },
  {
   "id": "v1_국내주식-022",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식당일분봉조회",
   "description": "주식당일분봉조회 — 종목 당일 분봉 캔들 차트 (분 단위 시세) 조회",
   "domain": "[국내주식] 기본시세",
@@ -499,6 +556,9 @@
  },
  {
   "id": "v1_국내주식-014",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 현재가 시세",
   "description": "ELW 현재가 시세",
   "domain": "[국내주식] ELW 시세",
@@ -521,6 +581,9 @@
  },
  {
   "id": "국내주식-181",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 신규상장종목",
   "description": "ELW 신규상장종목",
   "domain": "[국내주식] ELW 시세",
@@ -553,6 +616,9 @@
  },
  {
   "id": "국내주식-173",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 투자지표추이(일별)",
   "description": "ELW 투자지표추이(일별)",
   "domain": "[국내주식] ELW 시세",
@@ -575,6 +641,9 @@
  },
  {
   "id": "국내주식-170",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 민감도 순위",
   "description": "ELW 민감도 순위",
   "domain": "[국내주식] ELW 시세",
@@ -619,6 +688,9 @@
  },
  {
   "id": "국내주식-186",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 기초자산별 종목시세",
   "description": "ELW 기초자산별 종목시세",
   "domain": "[국내주식] ELW 시세",
@@ -669,6 +741,9 @@
  },
  {
   "id": "국내주식-166",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 종목검색",
   "description": "ELW 종목검색",
   "domain": "[국내주식] ELW 시세",
@@ -801,6 +876,9 @@
  },
  {
   "id": "국내주식-179",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 변동성 추이(분별)",
   "description": "ELW 변동성 추이(분별)",
   "domain": "[국내주식] ELW 시세",
@@ -827,6 +905,9 @@
  },
  {
   "id": "국내주식-177",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 변동성추이(체결)",
   "description": "ELW 변동성추이(체결)",
   "domain": "[국내주식] ELW 시세",
@@ -849,6 +930,9 @@
  },
  {
   "id": "국내주식-171",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 당일급변종목",
   "description": "ELW 당일급변종목",
   "domain": "[국내주식] ELW 시세",
@@ -895,6 +979,9 @@
  },
  {
   "id": "국내주식-174",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 투자지표추이(분별)",
   "description": "ELW 투자지표추이(분별)",
   "domain": "[국내주식] ELW 시세",
@@ -921,6 +1008,9 @@
  },
  {
   "id": "국내주식-185",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 기초자산 목록조회",
   "description": "ELW 기초자산 목록조회",
   "domain": "[국내주식] ELW 시세",
@@ -945,6 +1035,9 @@
  },
  {
   "id": "국내주식-178",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 변동성 추이(일별)",
   "description": "ELW 변동성 추이(일별)",
   "domain": "[국내주식] ELW 시세",
@@ -967,6 +1060,9 @@
  },
  {
   "id": "국내주식-168",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 거래량순위",
   "description": "ELW 거래량순위",
   "domain": "[국내주식] ELW 시세",
@@ -1015,6 +1111,9 @@
  },
  {
   "id": "국내주식-169",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 지표순위",
   "description": "ELW 지표순위",
   "domain": "[국내주식] ELW 시세",
@@ -1055,6 +1154,9 @@
  },
  {
   "id": "국내주식-172",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 투자지표추이(체결)",
   "description": "ELW 투자지표추이(체결)",
   "domain": "[국내주식] ELW 시세",
@@ -1077,6 +1179,9 @@
  },
  {
   "id": "국내주식-167",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 상승률순위",
   "description": "ELW 상승률순위",
   "domain": "[국내주식] ELW 시세",
@@ -1123,6 +1228,9 @@
  },
  {
   "id": "국내주식-176",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 민감도 추이(일별)",
   "description": "ELW 민감도 추이(일별)",
   "domain": "[국내주식] ELW 시세",
@@ -1145,6 +1253,9 @@
  },
  {
   "id": "국내주식-183",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 비교대상종목조회",
   "description": "ELW 비교대상종목조회",
   "domain": "[국내주식] ELW 시세",
@@ -1182,6 +1293,9 @@
  },
  {
   "id": "국내주식-182",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW LP매매추이",
   "description": "ELW LP매매추이",
   "domain": "[국내주식] ELW 시세",
@@ -1204,6 +1318,9 @@
  },
  {
   "id": "국내주식-175",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 민감도 추이(체결)",
   "description": "ELW 민감도 추이(체결)",
   "domain": "[국내주식] ELW 시세",
@@ -1226,6 +1343,9 @@
  },
  {
   "id": "국내주식-180",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "ELW 변동성 추이(틱)",
   "description": "ELW 변동성 추이(틱)",
   "domain": "[국내주식] ELW 시세",
@@ -1248,6 +1368,9 @@
  },
  {
   "id": "국내주식-121",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 예상체결지수 추이",
   "description": "국내주식 예상체결지수 추이",
   "domain": "[국내주식] 업종/기타",
@@ -1289,6 +1412,9 @@
  },
  {
   "id": "국내주식-119",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내업종 시간별지수(분)",
   "description": "국내업종 시간별지수(분)",
   "domain": "[국내주식] 업종/기타",
@@ -1313,6 +1439,9 @@
  },
  {
   "id": "v1_국내주식-066",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내업종 구분별전체시세",
   "description": "국내업종 구분별전체시세",
   "domain": "[국내주식] 업종/기타",
@@ -1341,6 +1470,9 @@
  },
  {
   "id": "v1_국내주식-045",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "업종 분봉조회",
   "description": "업종 분봉조회",
   "domain": "[국내주식] 업종/기타",
@@ -1393,6 +1525,9 @@
  },
  {
   "id": "국내주식-122",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 예상체결 전체지수",
   "description": "국내주식 예상체결 전체지수",
   "domain": "[국내주식] 업종/기타",
@@ -1421,6 +1556,9 @@
  },
  {
   "id": "v1_국내주식-063",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내업종 현재지수",
   "description": "국내업종 현재지수",
   "domain": "[국내주식] 업종/기타",
@@ -1458,6 +1596,9 @@
  },
  {
   "id": "국내주식-064",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내업종 시간별지수(초)",
   "description": "국내업종 시간별지수(초)",
   "domain": "[국내주식] 업종/기타",
@@ -1480,6 +1621,9 @@
  },
  {
   "id": "v1_국내주식-065",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내업종 일자별지수",
   "description": "국내업종 일자별지수",
   "domain": "[국내주식] 업종/기타",
@@ -1521,6 +1665,9 @@
  },
  {
   "id": "v1_국내주식-055",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "변동성완화장치(VI) 현황",
   "description": "변동성완화장치(VI) 현황",
   "domain": "[국내주식] 업종/기타",
@@ -1570,6 +1717,9 @@
  },
  {
   "id": "v1_국내주식-029",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "상품기본조회",
   "description": "상품기본조회",
   "domain": "[국내주식] 종목정보",
@@ -1644,6 +1794,9 @@
  },
  {
   "id": "v1_국내주식-080",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 재무비율",
   "description": "국내주식 재무비율",
   "domain": "[국내주식] 종목정보",
@@ -1720,6 +1873,9 @@
  },
  {
   "id": "국내주식-189",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 증권사별 투자의견",
   "description": "국내주식 증권사별 투자의견",
   "domain": "[국내주식] 종목정보",
@@ -1750,6 +1906,9 @@
  },
  {
   "id": "국내주식-111",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 당사 신용가능종목",
   "description": "국내주식 당사 신용가능종목",
   "domain": "[국내주식] 종목정보",
@@ -1862,6 +2021,9 @@
  },
  {
   "id": "국내주식-188",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 종목투자의견",
   "description": "국내주식 종목투자의견",
   "domain": "[국내주식] 종목정보",
@@ -1890,6 +2052,9 @@
  },
  {
   "id": "v1_국내주식-083",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 안정성비율",
   "description": "국내주식 안정성비율",
   "domain": "[국내주식] 종목정보",
@@ -1914,6 +2079,9 @@
  },
  {
   "id": "v1_국내주식-081",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 수익성비율",
   "description": "국내주식 수익성비율",
   "domain": "[국내주식] 종목정보",
@@ -1990,6 +2158,9 @@
  },
  {
   "id": "v1_국내주식-079",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 손익계산서",
   "description": "국내주식 손익계산서",
   "domain": "[국내주식] 종목정보",
@@ -2014,6 +2185,9 @@
  },
  {
   "id": "국내주식-195",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "당사 대주가능 종목",
   "description": "당사 대주가능 종목",
   "domain": "[국내주식] 종목정보",
@@ -2044,6 +2218,9 @@
  },
  {
   "id": "v1_국내주식-067",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식기본조회",
   "description": "주식기본조회",
   "domain": "[국내주식] 종목정보",
@@ -2120,6 +2297,9 @@
  },
  {
   "id": "v1_국내주식-085",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 성장성비율",
   "description": "국내주식 성장성비율",
   "domain": "[국내주식] 종목정보",
@@ -2144,6 +2324,9 @@
  },
  {
   "id": "v1_국내주식-078",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 대차대조표",
   "description": "국내주식 대차대조표",
   "domain": "[국내주식] 종목정보",
@@ -2203,6 +2386,9 @@
  },
  {
   "id": "v1_국내주식-082",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 기타주요비율",
   "description": "국내주식 기타주요비율",
   "domain": "[국내주식] 종목정보",
@@ -2227,6 +2413,9 @@
  },
  {
   "id": "국내주식-114",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "프로그램매매 종합현황(시간)",
   "description": "프로그램매매 종합현황(시간)",
   "domain": "[국내주식] 시세분석",
@@ -2257,6 +2446,9 @@
  },
  {
   "id": "국내주식-110",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 신용잔고 일별추이",
   "description": "국내주식 신용잔고 일별추이",
   "domain": "[국내주식] 시세분석",
@@ -2283,6 +2475,9 @@
  },
  {
   "id": "국내주식-075",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "시장별 투자자매매동향(일별)",
   "description": "시장별 투자자매매동향(일별)",
   "domain": "[국내주식] 시세분석",
@@ -2313,6 +2508,9 @@
  },
  {
   "id": "국내주식-134",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 공매도 일별추이",
   "description": "국내주식 공매도 일별추이",
   "domain": "[국내주식] 시세분석",
@@ -2339,6 +2537,9 @@
  },
  {
   "id": "종목별 투자자매매동향(일별)",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "종목별 투자자매매동향(일별)",
   "description": "종목별 투자자매매동향(일별)",
   "domain": "[국내주식] 시세분석",
@@ -2387,6 +2588,9 @@
  },
  {
   "id": "국내주식-190",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 상하한가 포착",
   "description": "국내주식 상하한가 포착",
   "domain": "[국내주식] 시세분석",
@@ -2516,6 +2720,9 @@
  },
  {
   "id": "국내주식-037",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내기관_외국인 매매종목가집계",
   "description": "국내기관_외국인 매매종목가집계",
   "domain": "[국내주식] 시세분석",
@@ -2580,6 +2787,9 @@
  },
  {
   "id": "국내주식-197",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "주식현재가 회원사 종목매매동향",
   "description": "주식현재가 회원사 종목매매동향",
   "domain": "[국내주식] 시세분석",
@@ -2610,6 +2820,9 @@
  },
  {
   "id": "국내주식-113",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "종목별 프로그램매매추이(일별)",
   "description": "종목별 프로그램매매추이(일별)",
   "domain": "[국내주식] 시세분석",
@@ -2678,6 +2891,9 @@
  },
  {
   "id": "v1_국내주식-056",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "종목별일별매수매도체결량",
   "description": "종목별일별매수매도체결량",
   "domain": "[국내주식] 시세분석",
@@ -2706,6 +2922,9 @@
  },
  {
   "id": "국내주식-192",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 체결금액별 매매비중",
   "description": "국내주식 체결금액별 매매비중",
   "domain": "[국내주식] 시세분석",
@@ -2772,6 +2991,9 @@
  },
  {
   "id": "국내주식-118",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 예상체결가 추이",
   "description": "국내주식 예상체결가 추이",
   "domain": "[국내주식] 시세분석",
@@ -2796,6 +3018,9 @@
  },
  {
   "id": "국내주식-163",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "회원사 실시간 매매동향(틱)",
   "description": "회원사 실시간 매매동향(틱)",
   "domain": "[국내주식] 시세분석",
@@ -2826,6 +3051,9 @@
  },
  {
   "id": "v1_국내주식-074",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "시장별 투자자매매동향(시세)",
   "description": "시장별 투자자매매동향(시세)",
   "domain": "[국내주식] 시세분석",
@@ -2848,6 +3076,9 @@
  },
  {
   "id": "v1_국내주식-044",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "종목별 프로그램매매추이(체결)",
   "description": "종목별 프로그램매매추이(체결)",
   "domain": "[국내주식] 시세분석",
@@ -2870,6 +3101,9 @@
  },
  {
   "id": "국내주식-161",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "외국계 매매종목 가집계",
   "description": "외국계 매매종목 가집계",
   "domain": "[국내주식] 시세분석",
@@ -2898,6 +3132,9 @@
  },
  {
   "id": "국내주식-140",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시간외예상체결등락률",
   "description": "국내주식 시간외예상체결등락률",
   "domain": "[국내주식] 시세분석",
@@ -2932,6 +3169,9 @@
  },
  {
   "id": "국내주식-164",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "종목별 외국계 순매수추이",
   "description": "종목별 외국계 순매수추이",
   "domain": "[국내주식] 시세분석",
@@ -2956,6 +3196,9 @@
  },
  {
   "id": "국내주식-205",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "관심종목(멀티종목) 시세조회",
   "description": "관심종목(멀티종목) 시세조회",
   "domain": "[국내주식] 시세분석",
@@ -3109,6 +3352,9 @@
  },
  {
   "id": "국내주식-089",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 호가잔량 순위",
   "description": "국내주식 호가잔량 순위",
   "domain": "[국내주식] 순위분석",
@@ -3147,6 +3393,9 @@
  },
  {
   "id": "국내주식-109",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 신용잔고 상위",
   "description": "국내주식 신용잔고 상위",
   "domain": "[국내주식] 순위분석",
@@ -3175,6 +3424,9 @@
  },
  {
   "id": "국내주식-139",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시간외거래량순위",
   "description": "국내주식 시간외거래량순위",
   "domain": "[국내주식] 순위분석",
@@ -3245,6 +3497,9 @@
  },
  {
   "id": "v1_국내주식-093",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시간외잔량 순위",
   "description": "국내주식 시간외잔량 순위",
   "domain": "[국내주식] 순위분석",
@@ -3283,6 +3538,9 @@
  },
  {
   "id": "국내주식-133",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 공매도 상위종목",
   "description": "국내주식 공매도 상위종목",
   "domain": "[국내주식] 순위분석",
@@ -3321,6 +3579,9 @@
  },
  {
   "id": "v1_국내주식-095",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 이격도 순위",
   "description": "국내주식 이격도 순위",
   "domain": "[국내주식] 순위분석",
@@ -3376,6 +3637,9 @@
  },
  {
   "id": "v1_국내주식-047",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "거래량순위",
   "description": "거래량순위",
   "domain": "[국내주식] 순위분석",
@@ -3414,6 +3678,9 @@
  },
  {
   "id": "v1_국내주식-090",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 수익자산지표 순위",
   "description": "국내주식 수익자산지표 순위",
   "domain": "[국내주식] 순위분석",
@@ -3488,6 +3755,9 @@
  },
  {
   "id": "국내주식-107",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 대량체결건수 상위",
   "description": "국내주식 대량체결건수 상위",
   "domain": "[국내주식] 순위분석",
@@ -3530,6 +3800,9 @@
  },
  {
   "id": "v1_국내주식-092",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 재무비율 순위",
   "description": "국내주식 재무비율 순위",
   "domain": "[국내주식] 순위분석",
@@ -3574,6 +3847,9 @@
  },
  {
   "id": "v1_국내주식-091",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시가총액 상위",
   "description": "국내주식 시가총액 상위",
   "domain": "[국내주식] 순위분석",
@@ -3610,6 +3886,9 @@
  },
  {
   "id": "v1_국내주식-104",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 당사매매종목 상위",
   "description": "국내주식 당사매매종목 상위",
   "domain": "[국내주식] 순위분석",
@@ -3652,6 +3931,9 @@
  },
  {
   "id": "v1_국내주식-088",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 등락률 순위",
   "description": "국내주식 등락률 순위",
   "domain": "[국내주식] 순위분석",
@@ -3698,6 +3980,9 @@
  },
  {
   "id": "v1_국내주식-096",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시장가치 순위",
   "description": "국내주식 시장가치 순위",
   "domain": "[국내주식] 순위분석",
@@ -3742,6 +4027,9 @@
  },
  {
   "id": "v1_국내주식-102",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 관심종목등록 상위",
   "description": "국내주식 관심종목등록 상위",
   "domain": "[국내주식] 순위분석",
@@ -3782,6 +4070,9 @@
  },
  {
   "id": "v1_국내주식-101",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 체결강도 상위",
   "description": "국내주식 체결강도 상위",
   "domain": "[국내주식] 순위분석",
@@ -3818,6 +4109,9 @@
  },
  {
   "id": "국내주식-138",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내주식 시간외등락율순위",
   "description": "국내주식 시간외등락율순위",
   "domain": "[국내주식] 순위분석",
@@ -3924,6 +4218,9 @@
  },
  {
   "id": "v1_국내선물-006",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "선물옵션 시세",
   "description": "선물옵션 시세",
   "domain": "[국내선물옵션] 기본시세",
@@ -3946,6 +4243,9 @@
  },
  {
   "id": "국내선물-021",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "국내선물 기초자산 시세",
   "description": "국내선물 기초자산 시세",
   "domain": "[국내선물옵션] 기본시세",
@@ -3976,6 +4276,9 @@
  },
  {
   "id": "국내선물-018",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "선물옵션 일중예상체결추이",
   "description": "선물옵션 일중예상체결추이",
   "domain": "[국내선물옵션] 기본시세",
@@ -4037,6 +4340,9 @@
  },
  {
   "id": "v1_국내선물-012",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "선물옵션 분봉조회",
   "description": "선물옵션 분봉조회",
   "domain": "[국내선물옵션] 기본시세",
@@ -4093,6 +4399,9 @@
  },
  {
   "id": "v1_국내선물-007",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "선물옵션 시세호가",
   "description": "선물옵션 시세호가",
   "domain": "[국내선물옵션] 기본시세",
@@ -4361,6 +4670,9 @@
  },
  {
   "id": "v1_해외주식-034",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외주식 상품기본정보",
   "description": "해외주식 상품기본정보",
   "domain": "[해외주식] 기본시세",
@@ -4383,6 +4695,9 @@
  },
  {
   "id": "v1_해외주식-031",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외지수분봉조회",
   "description": "해외지수분봉조회",
   "domain": "[해외주식] 기본시세",
@@ -4586,6 +4901,9 @@
  },
  {
   "id": "해외주식-052",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외주식 기간별권리조회",
   "description": "해외주식 기간별권리조회",
   "domain": "[해외주식] 시세분석",
@@ -4815,6 +5133,9 @@
  },
  {
   "id": "해외주식-051",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "당사 해외주식담보대출 가능 종목",
   "description": "당사 해외주식담보대출 가능 종목",
   "domain": "[해외주식] 시세분석",
@@ -4883,6 +5204,9 @@
  },
  {
   "id": "해외주식-055",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "해외속보(제목)",
   "description": "해외속보(제목)",
   "domain": "[해외주식] 시세분석",
@@ -5672,6 +5996,9 @@
  },
  {
   "id": "국내주식-132",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권현재가(호가)",
   "description": "장내채권현재가(호가)",
   "domain": "[장내채권] 기본시세",
@@ -5694,6 +6021,9 @@
  },
  {
   "id": "국내주식-200",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권현재가(시세)",
   "description": "장내채권현재가(시세)",
   "domain": "[장내채권] 기본시세",
@@ -5716,6 +6046,9 @@
  },
  {
   "id": "국내주식-201",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권현재가(체결)",
   "description": "장내채권현재가(체결)",
   "domain": "[장내채권] 기본시세",
@@ -5738,6 +6071,9 @@
  },
  {
   "id": "국내주식-202",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권현재가(일별)",
   "description": "장내채권현재가(일별)",
   "domain": "[장내채권] 기본시세",
@@ -5760,6 +6096,9 @@
  },
  {
   "id": "국내주식-159",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권 기간별시세(일)",
   "description": "장내채권 기간별시세(일)",
   "domain": "[장내채권] 기본시세",
@@ -5782,6 +6121,9 @@
  },
  {
   "id": "국내주식-158",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권 평균단가조회",
   "description": "장내채권 평균단가조회",
   "domain": "[장내채권] 기본시세",
@@ -5814,6 +6156,9 @@
  },
  {
   "id": "국내주식-156",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권 발행정보",
   "description": "장내채권 발행정보",
   "domain": "[장내채권] 기본시세",
@@ -5836,6 +6181,9 @@
  },
  {
   "id": "국내주식-129",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "장내채권 기본조회",
   "description": "장내채권 기본조회",
   "domain": "[장내채권] 기본시세",
@@ -5858,6 +6206,9 @@
  },
  {
   "id": "get_candles",
+  "needs": [
+   "stock-lookup"
+  ],
   "name": "캔들 조회 get_candles (중립 계약)",
   "description": "[중립 계약] OHLCV candles with auto-paging (~100/page) and a _cacheKey for charting (stock_chart dataCacheKey). Intervals: kr 1d/1w/1M/1y · us 1d/1w/1M — this broker's period endpoint has NO minute bars. 캔들 일봉 주봉 월봉 차트 시세 히스토리 OHLCV",
   "domain": "[중립 계약] 기본시세",
