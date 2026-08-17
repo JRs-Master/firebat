@@ -116,7 +116,8 @@
         "items": {
           "type": "object"
         },
-        "description": "[make_*] For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / callout{title,message} / key_value{items} / progress{label,value,max} / timeline{items} / compare{left,right} / chart{chartType,labels,data|series,title} / stock_chart{data:[{date,open,high,low,close,volume}]} / image{src} / divider. CONTAINERS are flattened into their children, so nothing authored inside one is lost: grid/card/carousel/slideshow splice their children in order, tabs/accordion emit each section's title as a level-3 header before its blocks, and a page `module` block splices its rendered output (props._baked). Table rows may be lists OR records ([{column: value}]) — a record is ordered by the table's headers, and with no headers the first record's keys become the header row. header.level accepts 1, \"1\" or \"h2\". Render-fence dialect ({name:'Header',type:'component'}) is absorbed, and alert is an alias of callout. Interactive-only blocks (button/form/slider/countdown/html/lottie/plan_card/ad_slot/result_display) have no document form and are dropped — each dropped TYPE is named once in data.notes. A live_* block degrades to its static sibling labelled \"(스냅샷)\" when it carries inline seed rows, otherwise it is dropped with a note. In make_pptx, header level 1 or divider starts a new slide. In make_xlsx, table blocks become data sheets while metric blocks become KPI cards and chart/stock_chart blocks become native charts on a Dashboard sheet."
+        "description": "[make_*] For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / callout{title,message} / key_value{items} / progress{label,value,max} / timeline{items} / compare{left,right} / chart{chartType,labels,data|series,title} / stock_chart{data:[{date,open,high,low,close,volume}]} / image{src} / divider. CONTAINERS are flattened into their children, so nothing authored inside one is lost: grid/card/carousel/slideshow splice their children in order, tabs/accordion emit each section's title as a level-3 header before its blocks, and a page `module` block splices its rendered output (props._baked). Table rows may be lists OR records ([{column: value}]) — a record is ordered by the table's headers, and with no headers the first record's keys become the header row. header.level accepts 1, \"1\" or \"h2\". Render-fence dialect ({name:'Header',type:'component'}) is absorbed, and alert is an alias of callout. Interactive-only blocks (button/form/slider/countdown/html/lottie/plan_card/ad_slot/result_display) have no document form and are dropped — each dropped TYPE is named once in data.notes. A live_* block degrades to its static sibling labelled \"(스냅샷)\" when it carries inline seed rows, otherwise it is dropped with a note. In make_pptx, header level 1 or divider starts a new slide. In make_xlsx, table blocks become data sheets while metric blocks become KPI cards and chart/stock_chart blocks become native charts on a Dashboard sheet.",
+        "cacheInput": true
       },
       "blocksCacheKey": {
         "type": [
@@ -159,7 +160,8 @@
                   "object"
                 ]
               },
-              "description": "Row data: [[cell, ...], ...] positional, or [{field: value}, ...] keyed by the headers. Long row sets belong in rowsCacheKey instead."
+              "description": "Row data: [[cell, ...], ...] positional, or [{field: value}, ...] keyed by the headers. Long row sets belong in rowsCacheKey instead.",
+              "cacheInput": true
             },
             "style": {
               "type": "string",
@@ -237,10 +239,6 @@
       }
     }
   },
-  "cacheInputs": [
-    "blocks",
-    "sheets.*.rows"
-  ],
   "output": {
     "type": "object",
     "properties": {

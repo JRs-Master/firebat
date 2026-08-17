@@ -16,14 +16,6 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", <params flat at top level — no params wrapper> }"
   },
-  "requiresApproval": [
-    "create-order",
-    "modify-order",
-    "cancel-order",
-    "create-conditional-order",
-    "modify-conditional-order",
-    "cancel-conditional-order"
-  ],
   "secrets": [
     {
       "name": "TOSS_API_KEY",

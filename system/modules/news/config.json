@@ -24,11 +24,6 @@
     "악재",
     "event-study"
   ],
-  "cacheInputs": [
-    "items",
-    "bars",
-    "benchmarkBars"
-  ],
   "actionCatalog": {
     "actions": [
       {
@@ -72,7 +67,8 @@
         "items": {
           "type": "object"
         },
-        "description": "[impact/timeline] News rows as naver_search returns them: {title, link, description, pubDate}. Other shapes work if they carry a title and an RFC-2822 or ISO date field."
+        "description": "[impact/timeline] News rows as naver_search returns them: {title, link, description, pubDate}. Other shapes work if they carry a title and an RFC-2822 or ISO date field.",
+        "cacheInput": true
       },
       "itemsCacheKey": {
         "type": [
@@ -93,7 +89,8 @@
         "items": {
           "type": "object"
         },
-        "description": "[impact] Daily OHLCV rows of the stock, any broker dialect — a date-like field (date/time/stck_bsop_date/...) and a close-like field (close/clpr/stck_clpr/trade_price/...) are found by name."
+        "description": "[impact] Daily OHLCV rows of the stock, any broker dialect — a date-like field (date/time/stck_bsop_date/...) and a close-like field (close/clpr/stck_clpr/trade_price/...) are found by name.",
+        "cacheInput": true
       },
       "barsCacheKey": {
         "type": [
@@ -114,7 +111,8 @@
         "items": {
           "type": "object"
         },
-        "description": "[impact] Optional index daily bars (e.g. KOSPI) — enables benchmark-relative excess returns. Without it, raw returns are labeled as raw."
+        "description": "[impact] Optional index daily bars (e.g. KOSPI) — enables benchmark-relative excess returns. Without it, raw returns are labeled as raw.",
+        "cacheInput": true
       },
       "benchmarkBarsCacheKey": {
         "type": [

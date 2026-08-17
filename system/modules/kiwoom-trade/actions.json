@@ -538,6 +538,7 @@
  },
  {
   "id": "kt10000",
+  "approval": true,
   "name": "주식 매수주문",
   "description": "주식 매수주문",
   "domain": "국내주식/주문",
@@ -564,6 +565,7 @@
  },
  {
   "id": "kt10001",
+  "approval": true,
   "name": "주식 매도주문",
   "description": "주식 매도주문",
   "domain": "국내주식/주문",
@@ -590,6 +592,7 @@
  },
  {
   "id": "kt10002",
+  "approval": true,
   "name": "주식 정정주문",
   "description": "주식 정정주문",
   "domain": "국내주식/주문",
@@ -617,6 +620,7 @@
  },
  {
   "id": "kt10003",
+  "approval": true,
   "name": "주식 취소주문",
   "description": "주식 취소주문",
   "domain": "국내주식/주문",
@@ -641,6 +645,7 @@
  },
  {
   "id": "kt10006",
+  "approval": true,
   "name": "신용 매수주문",
   "description": "신용 매수주문",
   "domain": "국내주식/신용주문",
@@ -667,6 +672,7 @@
  },
  {
   "id": "kt10007",
+  "approval": true,
   "name": "신용 매도주문",
   "description": "신용 매도주문",
   "domain": "국내주식/신용주문",
@@ -696,6 +702,7 @@
  },
  {
   "id": "kt10008",
+  "approval": true,
   "name": "신용 정정주문",
   "description": "신용 정정주문",
   "domain": "국내주식/신용주문",
@@ -723,6 +730,7 @@
  },
  {
   "id": "kt10009",
+  "approval": true,
   "name": "신용 취소주문",
   "description": "신용 취소주문",
   "domain": "국내주식/신용주문",
@@ -747,6 +755,7 @@
  },
  {
   "id": "kt50000",
+  "approval": true,
   "name": "금현물 매수주문",
   "description": "금현물 매수주문",
   "domain": "국내주식/주문",
@@ -770,6 +779,7 @@
  },
  {
   "id": "kt50001",
+  "approval": true,
   "name": "금현물 매도주문",
   "description": "금현물 매도주문",
   "domain": "국내주식/주문",
@@ -793,6 +803,7 @@
  },
  {
   "id": "kt50002",
+  "approval": true,
   "name": "금현물 정정주문",
   "description": "금현물 정정주문",
   "domain": "국내주식/주문",
@@ -817,6 +828,7 @@
  },
  {
   "id": "kt50003",
+  "approval": true,
   "name": "금현물 취소주문",
   "description": "금현물 취소주문",
   "domain": "국내주식/주문",
@@ -1095,6 +1107,7 @@
  },
  {
   "id": "ust20000",
+  "approval": true,
   "name": "미국주식 매수 주문",
   "description": "미국주식 매수 주문",
   "domain": "미국주식/주문",
@@ -1120,6 +1133,7 @@
  },
  {
   "id": "ust20001",
+  "approval": true,
   "name": "미국주식 매도 주문",
   "description": "미국주식 매도 주문",
   "domain": "미국주식/주문",
@@ -1146,6 +1160,7 @@
  },
  {
   "id": "ust20002",
+  "approval": true,
   "name": "미국주식 정정 주문",
   "description": "미국주식 정정 주문",
   "domain": "미국주식/주문",
@@ -1170,6 +1185,7 @@
  },
  {
   "id": "ust20003",
+  "approval": true,
   "name": "미국주식 취소 주문",
   "description": "미국주식 취소 주문",
   "domain": "미국주식/주문",
@@ -1663,6 +1679,7 @@
  },
  {
   "id": "place_order",
+  "approval": true,
   "name": "주문 전송 place_order (중립 계약)",
   "description": "[중립 계약] Buy or sell one symbol without knowing this broker's raw API ids — the dialect maps order types (kr: limit/market/conditional/best/priority · us: limit/market/loc/moc), rounds to the tick grid and picks the endpoint family by market. Params are FLAT. The credential IS the account here — no account number param. 매수 매도 주문 지정가 시장가 주문전송 buy sell order",
   "domain": "[중립 계약] 주문/계좌",
@@ -1706,6 +1723,7 @@
  },
  {
   "id": "cancel_order",
+  "approval": true,
   "name": "주문 취소 cancel_order (중립 계약)",
   "description": "[중립 계약] Cancel a resting order by broker order number. 주문취소 미체결 취소",
   "domain": "[중립 계약] 주문/계좌",

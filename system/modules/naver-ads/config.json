@@ -35,9 +35,6 @@
     "NAVER_AD_SECRET_KEY",
     "NAVER_AD_CUSTOMER_ID"
   ],
-  "cacheInputs": [
-    "keywords"
-  ],
   "autoCacheWhole": {
     "keyword-tool": "Pass this key as keywordsCacheKey to naver-ads estimate or managed-keywords to reuse the analyzed keywords without retyping them, or as a row source when building a sheet."
   },
@@ -184,7 +181,8 @@
           ]
         },
         "maxItems": 1000,
-        "description": "[keyword-tool/estimate/managed-keywords] Keywords. Plain strings, or rows carrying a `keyword` field (which is what keywordsCacheKey expands into). Chunked automatically past the per-call vendor caps: 5 hints for keyword-tool, 200 keys for estimate."
+        "description": "[keyword-tool/estimate/managed-keywords] Keywords. Plain strings, or rows carrying a `keyword` field (which is what keywordsCacheKey expands into). Chunked automatically past the per-call vendor caps: 5 hints for keyword-tool, 200 keys for estimate.",
+        "cacheInput": true
       },
       "showDetail": {
         "type": "boolean",

@@ -125,11 +125,9 @@ fn the_published_form_names_every_key_the_expander_accepts() {
         let dir = entry.path();
         let Ok(raw) = fs::read_to_string(dir.join("config.json")) else { continue };
         let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
-        let cache_inputs: Vec<String> = config
-            .get("cacheInputs")
-            .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-            .unwrap_or_default();
+        // The same dual-home reader the server uses — an audit that read only the legacy list
+        // went to zero the day the data moved onto the param specs.
+        let cache_inputs: Vec<String> = firebat_core::utils::cache_inputs::declared(&config);
         if cache_inputs.is_empty() {
             continue;
         }
@@ -335,6 +333,20 @@ fn every_module_declaration_names_something_that_exists() {
                      it to KNOWN_KEYS with its reader)",
                     nearest(key)
                 ));
+            }
+        }
+
+        // 1b. Action-axis gates live on rows where rows exist (v2). The dual-home OR keeps a
+        // half-migrated module safe, but one home is the standard — this line is what lets the
+        // legacy reader retire without a hand-kept list of who migrated.
+        if !catalog_rows_of(&module_dir, &config).is_empty() {
+            for legacy in ["requiresApproval", "uiOnly"] {
+                if config.get(legacy).is_some() {
+                    say(format!(
+                        "`{legacy}` is a top-level list, but this module's catalog rows can carry \
+                         it — declare `\"approval\": true` / `\"uiOnly\": true` on the rows instead"
+                    ));
+                }
             }
         }
 
@@ -788,10 +800,9 @@ fn every_declared_param_is_read_by_the_module() {
     assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
 }
 
-/// Every `_call.by` axis name in a module's action rows (file or inline). These params are read
-/// by the shared dialect (`data[call.by]`), never as a literal in module code.
-fn call_by_axes(dir: &Path, config: &Value) -> BTreeSet<String> {
-    let rows: Vec<Value> = if let Some(file) =
+/// A module's catalog rows, file or inline — the same two documented shapes the loader reads.
+fn catalog_rows_of(dir: &Path, config: &Value) -> Vec<Value> {
+    if let Some(file) =
         config.get("actionCatalog").and_then(|c| c.get("file")).and_then(|v| v.as_str())
     {
         fs::read_to_string(dir.join(file))
@@ -812,8 +823,14 @@ fn call_by_axes(dir: &Path, config: &Value) -> BTreeSet<String> {
                 })
             })
             .unwrap_or_default()
-    };
-    rows.iter()
+    }
+}
+
+/// Every `_call.by` axis name in a module's action rows (file or inline). These params are read
+/// by the shared dialect (`data[call.by]`), never as a literal in module code.
+fn call_by_axes(dir: &Path, config: &Value) -> BTreeSet<String> {
+    catalog_rows_of(dir, config)
+        .iter()
         .filter_map(|r| r.get("_call"))
         .filter_map(|c| c.get("by"))
         .filter_map(|b| b.as_str())

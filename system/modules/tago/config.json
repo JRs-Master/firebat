@@ -41,24 +41,7 @@
     "대중교통"
   ],
   "paramSource": {
-    "cityCode": "the city-codes action, reading the list for THIS service",
-    "nodeId": "bus-stop-search or bus-stop-nearby",
-    "nodeid": "bus-stop-search or bus-stop-nearby",
-    "routeId": "bus-route-search",
-    "depTmnCd": "express-terminals-arr (a bare number like 010)",
-    "arrTmnCd": "express-destinations (a bare number like 700)",
-    "depTerminalId": "express-terminals or suburbs-terminals (a prefixed id like NAEK010)",
-    "arrTerminalId": "express-terminals or suburbs-terminals (a prefixed id like NAEK300)",
-    "depPlaceId": "train-stations",
-    "arrPlaceId": "train-stations",
-    "subwayStationId": "subway-stations",
-    "depAirportId": "airports",
-    "arrAirportId": "airports",
-    "airlineId": "airlines",
-    "depNodeId": "ports",
-    "busGradeId": "express-grades or suburbs-grades",
-    "trainGradeCode": "train-grades",
-    "providerName": "scooter-providers"
+    "nodeid": "bus-stop-search or bus-stop-nearby"
   },
   "runtime": "node",
   "capability": "public-transport",
@@ -149,11 +132,13 @@
       },
       "cityCode": {
         "type": "string",
-        "description": "[bus-*/train-stations/suburbs-terminals/scooters] 도시코드. ⚠️ TWO DIFFERENT NUMBERINGS share this name: for every bus, train and suburbs action it is the 도시코드 from the `city-codes` action (Daejeon = 25); for `scooters` it is the 지역번호 from `scooter-providers` and the city-codes list does not apply"
+        "description": "[bus-*/train-stations/suburbs-terminals/scooters] 도시코드. ⚠️ TWO DIFFERENT NUMBERINGS share this name: for every bus, train and suburbs action it is the 도시코드 from the `city-codes` action (Daejeon = 25); for `scooters` it is the 지역번호 from `scooter-providers` and the city-codes list does not apply",
+        "source": "the city-codes action, reading the list for THIS service"
       },
       "nodeId": {
         "type": "string",
-        "description": "[bus-arrivals/bus-arrival-route/bus-position-at-stop/bus-stop-routes] 정류소ID, e.g. DJB8001793 — from bus-stop-search or bus-stop-nearby"
+        "description": "[bus-arrivals/bus-arrival-route/bus-position-at-stop/bus-stop-routes] 정류소ID, e.g. DJB8001793 — from bus-stop-search or bus-stop-nearby",
+        "source": "bus-stop-search or bus-stop-nearby"
       },
       "nodeNm": {
         "type": "string",
@@ -173,7 +158,8 @@
       },
       "routeId": {
         "type": "string",
-        "description": "[bus-route-stops/bus-route-info/bus-arrival-route/bus-positions/bus-position-at-stop] 노선ID, e.g. DJB30300004 — from bus-route-search"
+        "description": "[bus-route-stops/bus-route-info/bus-arrival-route/bus-positions/bus-position-at-stop] 노선ID, e.g. DJB30300004 — from bus-route-search",
+        "source": "bus-route-search"
       },
       "routeNo": {
         "type": "string",
@@ -185,11 +171,13 @@
       },
       "depTmnCd": {
         "type": "string",
-        "description": "[express-destinations/express-arrivals] 출발터미널코드, a bare number like 010 — from express-terminals-arr. ⚠️ NOT interchangeable with depTerminalId, which is the prefixed form (NAEK010) used by express-schedule"
+        "description": "[express-destinations/express-arrivals] 출발터미널코드, a bare number like 010 — from express-terminals-arr. ⚠️ NOT interchangeable with depTerminalId, which is the prefixed form (NAEK010) used by express-schedule",
+        "source": "express-terminals-arr (a bare number like 010)"
       },
       "arrTmnCd": {
         "type": "string",
-        "description": "[express-arrivals] 도착터미널코드, e.g. 700 — from express-destinations"
+        "description": "[express-arrivals] 도착터미널코드, e.g. 700 — from express-destinations",
+        "source": "express-destinations (a bare number like 700)"
       },
       "terminalNm": {
         "type": "string",
@@ -197,11 +185,13 @@
       },
       "depTerminalId": {
         "type": "string",
-        "description": "[express-schedule/suburbs-schedule] 출발터미널ID, a prefixed id like NAEK010 or NAI0671801 — from express-terminals or suburbs-terminals. ⚠️ NOT the bare depTmnCd used by the arrival actions"
+        "description": "[express-schedule/suburbs-schedule] 출발터미널ID, a prefixed id like NAEK010 or NAI0671801 — from express-terminals or suburbs-terminals. ⚠️ NOT the bare depTmnCd used by the arrival actions",
+        "source": "express-terminals or suburbs-terminals (a prefixed id like NAEK010)"
       },
       "arrTerminalId": {
         "type": "string",
-        "description": "[express-schedule/suburbs-schedule] 도착터미널ID, e.g. NAEK300"
+        "description": "[express-schedule/suburbs-schedule] 도착터미널ID, e.g. NAEK300",
+        "source": "express-terminals or suburbs-terminals (a prefixed id like NAEK300)"
       },
       "depPlandTime": {
         "type": "string",
@@ -209,19 +199,23 @@
       },
       "busGradeId": {
         "type": "string",
-        "description": "[express-schedule/suburbs-schedule] 버스등급 — from express-grades or suburbs-grades"
+        "description": "[express-schedule/suburbs-schedule] 버스등급 — from express-grades or suburbs-grades",
+        "source": "express-grades or suburbs-grades"
       },
       "depPlaceId": {
         "type": "string",
-        "description": "[train-schedule] 출발기차역ID, e.g. NAT010000 — from train-stations"
+        "description": "[train-schedule] 출발기차역ID, e.g. NAT010000 — from train-stations",
+        "source": "train-stations"
       },
       "arrPlaceId": {
         "type": "string",
-        "description": "[train-schedule] 도착기차역ID, e.g. NAT010971 — from train-stations"
+        "description": "[train-schedule] 도착기차역ID, e.g. NAT010971 — from train-stations",
+        "source": "train-stations"
       },
       "trainGradeCode": {
         "type": "string",
-        "description": "[train-schedule] 차량종류코드, e.g. 02 — from train-grades"
+        "description": "[train-schedule] 차량종류코드, e.g. 02 — from train-grades",
+        "source": "train-grades"
       },
       "subwayStationName": {
         "type": "string",
@@ -229,7 +223,8 @@
       },
       "subwayStationId": {
         "type": "string",
-        "description": "[subway-exit-*/subway-timetable] 지하철역ID, e.g. MTRS11133 — from subway-stations"
+        "description": "[subway-exit-*/subway-timetable] 지하철역ID, e.g. MTRS11133 — from subway-stations",
+        "source": "subway-stations"
       },
       "dailyTypeCode": {
         "type": "string",
@@ -250,19 +245,23 @@
       },
       "depAirportId": {
         "type": "string",
-        "description": "[flight-schedule] 출발공항ID, e.g. NAARKJJ — from airports"
+        "description": "[flight-schedule] 출발공항ID, e.g. NAARKJJ — from airports",
+        "source": "airports"
       },
       "arrAirportId": {
         "type": "string",
-        "description": "[flight-schedule] 도착공항ID, e.g. NAARKPC — from airports"
+        "description": "[flight-schedule] 도착공항ID, e.g. NAARKPC — from airports",
+        "source": "airports"
       },
       "airlineId": {
         "type": "string",
-        "description": "[flight-schedule] 항공사ID, e.g. AAR — from airlines"
+        "description": "[flight-schedule] 항공사ID, e.g. AAR — from airlines",
+        "source": "airlines"
       },
       "depNodeId": {
         "type": "string",
-        "description": "[ship-schedule] 출발지(항구)ID, e.g. SEA96060 — from ports"
+        "description": "[ship-schedule] 출발지(항구)ID, e.g. SEA96060 — from ports",
+        "source": "ports"
       },
       "zoneName": {
         "type": "string",
@@ -289,7 +288,8 @@
       },
       "providerName": {
         "type": "string",
-        "description": "[scooters/scooter-providers] 운영사명, e.g. SWING — from scooter-providers"
+        "description": "[scooters/scooter-providers] 운영사명, e.g. SWING — from scooter-providers",
+        "source": "scooter-providers"
       },
       "cityName": {
         "type": "string",

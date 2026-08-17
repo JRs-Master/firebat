@@ -143,6 +143,8 @@
   },
   {
     "id": "close_position",
+    "uiOnly": true,
+    "approval": true,
     "name": "청산 close_position (UI 전용)",
     "description": "UI-ONLY: refused from chat/FC/MCP by policy - run it from the settings screen's ledger tab button (설정 > 자동매매 > 원장 탭)",
     "domain": "",
@@ -157,6 +159,8 @@
   },
   {
     "id": "liquidate_all",
+    "uiOnly": true,
+    "approval": true,
     "name": "전부 청산 liquidate_all (UI 전용)",
     "description": "UI-ONLY: refused from chat/FC/MCP by policy - run it from the settings screen's ledger tab button (설정 > 자동매매 > 원장 탭)",
     "domain": "",
@@ -169,6 +173,8 @@
   },
   {
     "id": "write_off",
+    "uiOnly": true,
+    "approval": true,
     "name": "유령 수량 정정 write_off (UI 전용)",
     "description": "UI-ONLY: refused from chat/FC/MCP by policy - run it from the settings screen's ledger tab button (설정 > 자동매매 > 원장 탭)",
     "domain": "",
@@ -182,6 +188,8 @@
   },
   {
     "id": "resolve_unassigned",
+    "uiOnly": true,
+    "approval": true,
     "name": "미배정 배정 resolve_unassigned (UI 전용)",
     "description": "UI-ONLY: refused from chat/FC/MCP by policy - run it from the settings screen's ledger tab button (설정 > 자동매매 > 원장 탭)",
     "domain": "",
@@ -195,6 +203,8 @@
   },
   {
     "id": "move_position",
+    "uiOnly": true,
+    "approval": true,
     "name": "포지션 이동 move_position (UI 전용)",
     "description": "UI-ONLY: refused from chat/FC/MCP by policy - run it from the settings screen's ledger tab button (설정 > 자동매매 > 원장 탭)",
     "domain": "",
@@ -208,6 +218,7 @@
   },
   {
     "id": "cancel_all",
+    "approval": true,
     "name": "미체결 전부 취소 cancel_all",
     "description": "Withdraw every resting order (optionally one broker/account). Human action, approval-gated. 미체결 일괄 취소 주문 취소",
     "domain": "",
@@ -219,6 +230,7 @@
   },
   {
     "id": "import_position",
+    "approval": true,
     "name": "보유 반입 import_position",
     "description": "Import an existing brokerage holding into a strategy's book at a stated price. Human action, approval-gated. 보유 종목 반입 이관",
     "domain": "",
@@ -239,6 +251,7 @@
   },
   {
     "id": "resume",
+    "approval": true,
     "name": "resume — 재개",
     "description": "Clear a tripped state after a ledger replay agrees the books are consistent. Human action, approval-gated. 재개 재가동",
     "domain": "",

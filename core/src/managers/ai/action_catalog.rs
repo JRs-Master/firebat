@@ -64,7 +64,11 @@ pub use crate::utils::action_decl::catalog_rows;
 /// the convention rather than a roster of field names that goes stale the first time a
 /// declaration grows one — silently, into the surface whose size is measured every turn.
 fn rides_along(key: &str) -> bool {
-    !matches!(key, "id" | "name" | "description") && !key.starts_with('_')
+    // Fields the loader itself consumes and republishes under their published names
+    // (approval → requiresApproval, uiOnly → uiOnly flag) don't also ride verbatim —
+    // same standing as id/name/description, not a blocklist.
+    !matches!(key, "id" | "name" | "description" | "approval" | "uiOnly" | "unsupported")
+        && !key.starts_with('_')
 }
 
 fn module_identity(name: &str, config: &serde_json::Value) -> Vec<String> {
@@ -246,7 +250,9 @@ impl ModuleActionSource {
                 } else {
                     format!("{module_clause} {own}")
                 };
-                let approval = requires_approval_value(approval_decl, &id);
+                // Dual-home (v2): the row's own `"approval": true` ∨ the legacy top-level list.
+                let approval = a.get("approval").and_then(|v| v.as_bool()).unwrap_or(false)
+                    || requires_approval_value(approval_decl, &id);
                 let mut extra = serde_json::json!({
                     "module": name,
                     "action": id,
@@ -286,10 +292,14 @@ impl ModuleActionSource {
                     }
                 }
                 // See the note in `derive_entries_from_input` — discovery names the screen actions.
-                if let Some(ui_decl) = config.get("uiOnly") {
-                    if crate::utils::pending_tools::is_ui_only_value(ui_decl, &id) {
-                        extra["uiOnly"] = serde_json::Value::Bool(true);
-                    }
+                // Dual-home (v2): the row's own `"uiOnly": true` ∨ the legacy top-level list.
+                let row_ui_only = a.get("uiOnly").and_then(|v| v.as_bool()).unwrap_or(false);
+                if row_ui_only
+                    || config.get("uiOnly").is_some_and(|d| {
+                        crate::utils::pending_tools::is_ui_only_value(d, &id)
+                    })
+                {
+                    extra["uiOnly"] = serde_json::Value::Bool(true);
                 }
                 // Ride every declared field along (params/example/method/path/trId/domain …) —
                 // get_action_schema returns them verbatim, so richer actions.json = richer detail

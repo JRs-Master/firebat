@@ -36,15 +36,6 @@
     "법정동코드",
     "지역코드"
   ],
-  "grounding": {
-    "lawdCd": {
-      "pattern": "^[0-9]{5}$",
-      "exemptActions": [
-        "lookup"
-      ],
-      "resolveHint": "A lawdCd (시군구 5자리 법정동코드) must come from a lookup or the user, never from memory — region codes change with administrative reorganizations. Resolve it NOW with this same module: {\"action\":\"lookup\",\"query\":\"<지역명>\"} (e.g. \"강남구\", \"수원시 영통구\"). It returns candidates [{lawdCd,name}] from the live 행정표준코드 API; if several regions match, ask the user with a suggest picker instead of choosing."
-    }
-  },
   "input": {
     "type": "object",
     "required": [
@@ -77,7 +68,14 @@
       },
       "lawdCd": {
         "type": "string",
-        "description": "시군구 5자리 법정동코드 (예: 11680=서울 강남구). `lookup` 액션이 지역명으로 발급합니다"
+        "description": "시군구 5자리 법정동코드 (예: 11680=서울 강남구). `lookup` 액션이 지역명으로 발급합니다",
+        "grounding": {
+          "pattern": "^[0-9]{5}$",
+          "exemptActions": [
+            "lookup"
+          ],
+          "resolveHint": "A lawdCd (시군구 5자리 법정동코드) must come from a lookup or the user, never from memory — region codes change with administrative reorganizations. Resolve it NOW with this same module: {\"action\":\"lookup\",\"query\":\"<지역명>\"} (e.g. \"강남구\", \"수원시 영통구\"). It returns candidates [{lawdCd,name}] from the live 행정표준코드 API; if several regions match, ask the user with a suggest picker instead of choosing."
+        }
       },
       "dealYmd": {
         "type": "string",

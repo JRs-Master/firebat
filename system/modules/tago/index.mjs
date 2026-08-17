@@ -114,7 +114,17 @@ const CITY_CODE_SOURCES = {
 const ID_SOURCE = (() => {
   try {
     const cfg = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf-8'));
-    return cfg.paramSource ?? {};
+    const out = {};
+    // v2 home: the param's own spec (`input.properties.<p>.source`).
+    for (const [p, spec] of Object.entries(cfg.input?.properties ?? {})) {
+      if (typeof spec?.source === 'string' && spec.source) out[p] = spec.source;
+    }
+    // Module-level map — wire aliases that are not declared input params (e.g. lowercase
+    // `nodeid`) live here; a spec-level entry wins on collision.
+    for (const [p, s] of Object.entries(cfg.paramSource ?? {})) {
+      if (!(p in out)) out[p] = s;
+    }
+    return out;
   } catch {
     return {};
   }

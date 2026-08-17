@@ -107,22 +107,29 @@ identifier, skip the id lookup. **Every dialect has a declaration slot, and the 
 your declaration at the exact moment of refusal.** Fixing a dialect means editing your module's
 files — never prompt text, never framework code.
 
-| the model… | declare in |
+**A declaration lives on the thing it is about** — an action's on its catalog row, a parameter's
+on its own spec in `input.properties`. (Module-level maps for these are still read during the
+migration, and remain the home for wire-vocabulary params that are not declared in `input` —
+a broker's `stk_cd` that only exists inside action rows.)
+
+| the model… | declare on |
 |---|---|
-| picks the wrong action | `actionCatalog` — description, `tags`, `aliases` |
-| gets a param's name or type wrong | `input` — the schema IS the correction; validation errors derive from it |
+| picks the wrong action | the row — description, `tags`, `aliases` |
+| gets a param's name or type wrong | the param spec — the schema IS the correction; validation errors derive from it |
 | omits a required param | `required` (catalog row) — surfaces in `fill` before the first call |
 | omits a discriminator | `_call.by` + that axis in `input` and `required` — the refusal lists the choices |
-| invents an opaque id from memory | `grounding` — `resolveHint` / `pattern` / `exemptActions` |
-| uses an id from the wrong list | `paramSource` — see below |
-| fires a dangerous call directly | `requiresApproval` |
+| invents an opaque id from memory | the param spec: `"grounding": { resolveHint, pattern, exemptActions }` |
+| uses an id from the wrong list | the param spec: `"source": "<issuing action>"` — see below |
+| fires a dangerous call directly | the row: `"approval": true` |
+| calls a screen-only action | the row: `"uiOnly": true` |
+| retypes big rows instead of passing a key | the param spec: `"cacheInput": true` (nested fields declare it on themselves; the dotted path is derived) |
 
-**`paramSource` — which action mints which id.** A top-level map from param name to free text
-naming the issuing action(s):
+**`source` — which action mints which id.** Free text naming the issuing action(s), on the
+param's own spec:
 
 ```jsonc
-"paramSource": { "nodeId": "bus-stop-search or bus-stop-nearby",
-                 "routeId": "bus-route-search" }
+"nodeId": { "type": "string", "description": "[bus-arrival] 정류소 id",
+            "source": "bus-stop-search or bus-stop-nearby" }
 ```
 
 When validation refuses a call over that param, or grounding rejects an ungrounded value for it,
@@ -138,13 +145,13 @@ your declarations; only you can point at your data.
 
 ## Gates — one line each
 
-- **`"requiresApproval": ["place_order"]`** — those actions produce a user approval card and do
-  not run until it is confirmed. Cards for module actions expire in **5 minutes**.
-- **`"grounding": { "stock_code": { "resolveHint": "…", "pattern": "^[0-9]{6}$",
-  "exemptActions": ["lookup"] } }`** — an opaque identifier must have been resolved in this
-  conversation, never recalled from memory. `resolveHint` is the sentence the caller is handed
-  when it has not been; the action that does the resolving is exempt.
-- **`"uiOnly": [...]`** — refused from chat; only a screen action may run it.
+- **`"approval": true` on the action's catalog row** — the call produces a user approval card and
+  does not run until it is confirmed. Cards for module actions expire in **5 minutes**.
+- **`"grounding": { "resolveHint": "…", "pattern": "^[0-9]{6}$", "exemptActions": ["lookup"] }`
+  on the param's spec** — an opaque identifier must have been resolved in this conversation,
+  never recalled from memory. `resolveHint` is the sentence the caller is handed when it has not
+  been; the action that does the resolving is exempt.
+- **`"uiOnly": true` on the row** — refused from chat; only a screen action may run it.
 - Switching the module off removes it from search, schema and dispatch — a disabled module
   answers "this is a setting", not "no such thing".
 

@@ -26,10 +26,6 @@
     "밸류에이션",
     "재무지표"
   ],
-  "cacheInputs": [
-    "statements",
-    "estimates"
-  ],
   "actionCatalog": {
     "actions": [
       {
@@ -67,7 +63,8 @@
         "items": {
           "type": "object"
         },
-        "description": "[ratios] Rows exactly as the dart module returns them (financial / financialAll): account_nm + thstrm_amount / frmtrm_amount / bfefrmtrm_amount, optional fs_div. CFS (연결) is preferred when both appear."
+        "description": "[ratios] Rows exactly as the dart module returns them (financial / financialAll): account_nm + thstrm_amount / frmtrm_amount / bfefrmtrm_amount, optional fs_div. CFS (연결) is preferred when both appear.",
+        "cacheInput": true
       },
       "statementsCacheKey": {
         "type": [
@@ -99,7 +96,8 @@
           "object",
           "null"
         ],
-        "description": "[ratios] KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4 — OR pass estimatesCacheKey with the _cacheKey from that call (preferred: no retyping). The output2/output3 rows are UNLABELED — never try to decode row meanings yourself (the labels here are live-measured), and never rebuild rows by hand; a hand-made array is refused, not normalized. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed."
+        "description": "[ratios] KIS 국내주식-187 (estimate-perform) response data as-is — output1..output4 — OR pass estimatesCacheKey with the _cacheKey from that call (preferred: no retyping). The output2/output3 rows are UNLABELED — never try to decode row meanings yourself (the labels here are live-measured), and never rebuild rows by hand; a hand-made array is refused, not normalized. Adds a normalized analyst-estimates section (revenue/op/net + YoY, EPS/PER/ROE, E-flagged periods, analyst + opinion). KIS rate convention (x10) is undone here; unlabeled indicator rows are dropped, never guessed.",
+        "cacheInput": true
       }
     }
   },

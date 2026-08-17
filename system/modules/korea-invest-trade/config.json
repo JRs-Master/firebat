@@ -17,27 +17,6 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", \"query\": { <query.* params> }, \"body\": { <body.* params> } } — param key prefix query./body. marks the location"
   },
-  "requiresApproval": [
-    "v1_국내주식-001",
-    "v1_국내주식-002",
-    "v1_국내주식-003",
-    "v1_국내주식-017",
-    "v1_국내주식-018,019",
-    "국내주식-123",
-    "국내주식-124",
-    "국내주식-125",
-    "v1_해외주식-001",
-    "v1_해외주식-002",
-    "v1_해외주식-003",
-    "v1_해외주식-004",
-    "v1_해외주식-026",
-    "v1_국내선물-001",
-    "v1_국내선물-002",
-    "v1_해외선물-001",
-    "v1_해외선물-002, 003",
-    "place_order",
-    "cancel_order"
-  ],
   "grounding": {
     "FID_INPUT_ISCD": {
       "pattern": "^Q?[0-9]{6}$",

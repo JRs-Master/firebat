@@ -44,23 +44,6 @@
     "realized pnl",
     "profit"
   ],
-  "requiresApproval": [
-    "liquidate_all",
-    "cancel_all",
-    "resolve_unassigned",
-    "move_position",
-    "import_position",
-    "resume",
-    "close_position",
-    "write_off"
-  ],
-  "uiOnly": [
-    "close_position",
-    "liquidate_all",
-    "write_off",
-    "resolve_unassigned",
-    "move_position"
-  ],
   "_schedules": [
     "The cron declarations live in this module's folder: registered when the module is enabled,",
     "withdrawn when it is disabled. Each file is scoped to one (broker, market) pair, because a",
@@ -134,7 +117,8 @@
         "description": "OHLCV rows for the strategy's symbol, newest last. Supply this (or barsCacheKey) when calling from a pipeline that already fetched the candles.",
         "items": {
           "type": "object"
-        }
+        },
+        "cacheInput": true
       },
       "barsCacheKey": {
         "type": [
@@ -345,7 +329,8 @@
         "items": {
           "type": "object"
         },
-        "description": "[match_conditions] The screener-list rows, verbatim. [screen_rank] The ranking rows, verbatim."
+        "description": "[match_conditions] The screener-list rows, verbatim. [screen_rank] The ranking rows, verbatim.",
+        "cacheInput": true
       },
       "trades": {
         "type": "array",
@@ -980,10 +965,6 @@
       "positions": {}
     }
   },
-  "cacheInputs": [
-    "bars",
-    "rows"
-  ],
   "timeoutMs": 120000,
   "recall": {
     "actions": [
