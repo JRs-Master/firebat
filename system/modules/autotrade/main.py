@@ -3634,7 +3634,22 @@ def action_selftest():
     with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "config.json"),
               encoding="utf-8") as _cf:
         _cfg = json.load(_cf)
+    # v2 declaration homes: gates live on the catalog rows ("approval"/"uiOnly": true), with the
+    # legacy top-level lists still honored — the same row-OR-list rule the framework applies, so
+    # this tripwire and the gate it guards can never disagree about where a declaration counts.
+    _rows = []
+    _cat_file = (_cfg.get("actionCatalog") or {}).get("file") if isinstance(
+        _cfg.get("actionCatalog"), dict) else None
+    if _cat_file:
+        try:
+            with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), _cat_file),
+                      encoding="utf-8") as _af:
+                _raw_rows = json.load(_af)
+            _rows = _raw_rows if isinstance(_raw_rows, list) else (_raw_rows.get("actions") or [])
+        except Exception:
+            _rows = []
     _gated = set(_cfg.get("requiresApproval") or [])
+    _gated |= {_r.get("id") for _r in _rows if _r.get("approval") is True}
     # The enum is the authority on what is a module action. Without it the scan also catches the
     # broker-call names compared inside a body — `cancel_order` is upbit's, not ours.
     _declared = set(((_cfg.get("input") or {}).get("properties") or {})
@@ -3664,6 +3679,7 @@ def action_selftest():
     # them at all, `requiresApproval` is the belt for any surface that predates the uiOnly gate.
     # Declaring one without the other is the same class of drift the check above exists for.
     _ui_only = set(_cfg.get("uiOnly") or [])
+    _ui_only |= {_r.get("id") for _r in _rows if _r.get("uiOnly") is True}
     _ui_undeclared = sorted(_ui_only - _declared)
     checks.append({"name": "every uiOnly action exists in the action enum",
                    "want": [], "got": _ui_undeclared, "ok": not _ui_undeclared})
