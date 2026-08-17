@@ -481,21 +481,6 @@ fn drain_produced_files_at(scope_key: &str, now: Instant) -> Vec<ProducedFile> {
     state.produced.drain(..).map(|(_, f)| f).collect()
 }
 
-/// Cap to `max` bytes, backing up to a char boundary — byte slicing panics on multi-byte content
-/// and this corpus is full of Korean tool output.
-fn truncate_on_char_boundary(text: &str, max: usize) -> String {
-    if text.len() <= max {
-        return text.to_string();
-    }
-    let mut end = max;
-    while end > 0 && !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text[..end].to_string()
-}
-
-/// Lazy eviction — expired entries off the front (the deque is stamp-ordered), then the size cap.
-
 /// Same hygiene for the receipts — expired off the front (the deque is stamp-ordered), then the
 /// size cap. A receipt older than the window belongs to a turn that already ended without
 /// claiming it, and re-attaching it to a later turn would be a card for a file this turn did not
