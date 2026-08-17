@@ -51,38 +51,53 @@ pub struct GroundedParam {
 /// Missing / malformed → empty (opt-in: a module without `grounding` is never gated).
 /// An invalid `pattern` regex is dropped (treated as no pattern = gate all) rather than failing.
 pub fn parse_grounding(config: &serde_json::Value) -> Vec<GroundedParam> {
-    let Some(obj) = config.get("grounding").and_then(|v| v.as_object()) else {
-        return Vec::new();
-    };
     let sources = crate::utils::action_decl::param_source(config);
-    obj.iter()
-        .filter(|(param, _)| !param.is_empty())
-        .map(|(param, spec)| GroundedParam {
-            param: param.clone(),
-            source: sources
-                .iter()
-                .find(|(p, _)| p == param)
-                .map(|(_, s)| s.clone()),
-            hint: spec
-                .get("resolveHint")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            exempt_actions: spec
-                .get("exemptActions")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            pattern: spec
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .and_then(|p| regex::Regex::new(p).ok()),
-        })
-        .collect()
+    let build = |param: &str, spec: &serde_json::Value| GroundedParam {
+        param: param.to_string(),
+        source: sources
+            .iter()
+            .find(|(p, _)| p == param)
+            .map(|(_, s)| s.clone()),
+        hint: spec
+            .get("resolveHint")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        exempt_actions: spec
+            .get("exemptActions")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        pattern: spec
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .and_then(|p| regex::Regex::new(p).ok()),
+    };
+    let mut out: Vec<GroundedParam> = Vec::new();
+    // v2 home: the parameter's OWN spec — `input.properties.<p>.grounding` — so the requirement
+    // moves with the param it is about. (The schema keyword `pattern` is untouched: the grounding
+    // shape lives inside its own object, like a component's `synonyms`.)
+    if let Some(props) = config.pointer("/input/properties").and_then(|v| v.as_object()) {
+        for (param, spec) in props {
+            if let Some(g) = spec.get("grounding").filter(|g| g.is_object()) {
+                out.push(build(param, g));
+            }
+        }
+    }
+    // Legacy top-level map — read until the migration sweep retires it; param-level wins.
+    if let Some(obj) = config.get("grounding").and_then(|v| v.as_object()) {
+        for (param, spec) in obj {
+            if param.is_empty() || out.iter().any(|g| &g.param == param) {
+                continue;
+            }
+            out.push(build(param, spec));
+        }
+    }
+    out
 }
 
 /// Case-insensitive field lookup in a JSON object (exact match first, then ascii-ci fallback).
@@ -301,6 +316,23 @@ mod tests {
             "resolveHint": "resolve via ka10099 first.",
             "exemptActions": ["ka10100"]
         } } })
+    }
+
+    #[test]
+    fn a_param_declares_its_own_grounding_and_wins_over_the_legacy_map() {
+        let config = json!({
+            "input": { "properties": {
+                "stk_cd": { "type": "string",
+                            "grounding": { "resolveHint": "param-level wording." } }
+            } },
+            "grounding": { "stk_cd": { "resolveHint": "legacy wording." },
+                           "acct": { "resolveHint": "list accounts first." } }
+        });
+        let g = parse_grounding(&config);
+        assert_eq!(g.len(), 2);
+        let stk = g.iter().find(|p| p.param == "stk_cd").unwrap();
+        assert_eq!(stk.hint, "param-level wording.");
+        assert!(g.iter().any(|p| p.param == "acct"));
     }
 
     #[test]

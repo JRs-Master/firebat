@@ -326,16 +326,45 @@ fn param_wants_object(config: &serde_json::Value, param: &str) -> bool {
 /// while the validation-error hint in `module.rs` substring-matches them against a failing JSON
 /// pointer. A nested entry simply never matches there, which costs a hint, not correctness.
 pub fn declared(config: &serde_json::Value) -> Vec<String> {
-    config
-        .get("cacheInputs")
-        .and_then(|v| v.as_array())
-        .map(|list| {
-            list.iter()
-                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+    let mut out: Vec<String> = Vec::new();
+    // v2 home: `"cacheInput": true` on the parameter's OWN spec, at any depth — a nested
+    // array-of-objects field declares it on itself and the `"<list>.*.<field>"` path is derived
+    // here rather than hand-written in a parallel list at the top of the file.
+    if let Some(props) = config.pointer("/input/properties").and_then(|v| v.as_object()) {
+        collect_declared(props, "", &mut out);
+    }
+    // Legacy top-level `cacheInputs` list — read until the migration sweep retires it.
+    if let Some(list) = config.get("cacheInputs").and_then(|v| v.as_array()) {
+        for v in list {
+            if let Some(s) = v.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                if !out.iter().any(|e| e == s) {
+                    out.push(s.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Walk property specs collecting `cacheInput: true`, deriving nested paths as it descends.
+fn collect_declared(
+    props: &serde_json::Map<String, serde_json::Value>,
+    prefix: &str,
+    out: &mut Vec<String>,
+) {
+    for (name, spec) in props {
+        let path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        if spec.get("cacheInput").and_then(|v| v.as_bool()).unwrap_or(false) {
+            out.push(path.clone());
+        }
+        if let Some(item_props) = spec.pointer("/items/properties").and_then(|v| v.as_object()) {
+            collect_declared(item_props, &format!("{path}.*"), out);
+        }
+    }
 }
 
 /// Whether a string has the cache-key SHAPE (`…-<16 hex>-<13 digit ms>`). Models hand keys to
@@ -655,6 +684,27 @@ mod tests {
         assert_eq!(out["bars"].as_array().unwrap().len(), 2);
         assert_eq!(out["action"], "signals");
         assert!(out.get("barsCacheKey").is_none());
+    }
+
+    #[test]
+    fn a_param_declares_cache_input_on_itself_and_nested_paths_are_derived() {
+        let cfg = serde_json::json!({
+            "input": { "properties": {
+                "bars": { "type": "array", "cacheInput": true },
+                "sheets": { "type": "array", "items": { "properties": {
+                    "rows": { "type": "array", "cacheInput": true },
+                    "title": { "type": "string" }
+                } } },
+                "plain": { "type": "string" }
+            } },
+            "cacheInputs": ["bars", "legacy_only"]
+        });
+        let got = declared(&cfg);
+        assert!(got.contains(&"bars".to_string()));
+        assert!(got.contains(&"sheets.*.rows".to_string()), "nested path derived: {got:?}");
+        assert!(got.contains(&"legacy_only".to_string()), "legacy list still read");
+        assert_eq!(got.iter().filter(|s| *s == "bars").count(), 1, "no duplicate: {got:?}");
+        assert!(!got.iter().any(|s| s == "plain"));
     }
 
     #[test]

@@ -124,13 +124,28 @@ pub fn action_gates(rows: &[serde_json::Value]) -> ActionGates {
 /// ("express-terminals-arr (a bare number like 010)"). The framework carries it into the refusal
 /// verbatim and never interprets it; only the module knows what its own issuers are called.
 pub fn param_source(config: &serde_json::Value) -> Vec<(String, String)> {
-    let Some(obj) = config.get("paramSource").and_then(|v| v.as_object()) else {
-        return Vec::new();
-    };
-    obj.iter()
-        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-        .filter(|(k, s)| !k.is_empty() && !s.is_empty())
-        .collect()
+    let mut out: Vec<(String, String)> = Vec::new();
+    // v2 home: `"source": "<issuer>"` on the parameter's OWN spec.
+    if let Some(props) = config.pointer("/input/properties").and_then(|v| v.as_object()) {
+        for (param, spec) in props {
+            if let Some(s) = spec.get("source").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+            {
+                out.push((param.clone(), s.to_string()));
+            }
+        }
+    }
+    // Legacy top-level map — read until the migration sweep retires it; param-level wins.
+    if let Some(obj) = config.get("paramSource").and_then(|v| v.as_object()) {
+        for (k, v) in obj {
+            let Some(s) = v.as_str().filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            if !k.is_empty() && !out.iter().any(|(p, _)| p == k) {
+                out.push((k.clone(), s.to_string()));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -200,6 +215,22 @@ mod tests {
         assert_eq!(rows[0].0, "nodeId");
         // Absent declaration = no rows, not an error — the pointer is opt-in.
         assert!(param_source(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn a_param_declares_its_own_issuer_and_wins_over_the_legacy_map() {
+        let config = json!({
+            "input": { "properties": {
+                "nodeId": { "type": "string", "source": "bus-stop-search" },
+                "plain": { "type": "string" }
+            } },
+            "paramSource": { "nodeId": "the old wording", "routeId": "bus-route-search" }
+        });
+        let rows = param_source(&config);
+        assert_eq!(rows.len(), 2);
+        let node = rows.iter().find(|(p, _)| p == "nodeId").unwrap();
+        assert_eq!(node.1, "bus-stop-search", "param-level home wins on collision");
+        assert!(rows.iter().any(|(p, s)| p == "routeId" && s == "bus-route-search"));
     }
 
     #[test]
