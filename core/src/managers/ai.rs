@@ -708,7 +708,7 @@ impl AiManager {
     pub fn register_spawn_subagent_tool(self: &Arc<Self>) {
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "spawn_subagent".to_string(),
-            description: "Run INDEPENDENT sub-tasks in parallel, each an isolated full agent (tools, empty history, main model). One call carries ALL tasks in `tasks` — not one call per task, and not for single-step work. No recursion (never from inside a sub-agent); approval-gated tools are rejected there.".to_string(),
+            description: "Run INDEPENDENT sub-tasks in parallel, each an isolated full agent (tools, empty history, main model). One call carries ALL tasks in `tasks`; a single step is faster called directly. Depth is one — a sub-agent completes its task itself, and approval-gated tools are rejected inside one.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1274,7 +1274,7 @@ impl AiManager {
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "SEARCH mode: the capability you need, in natural language (Korean+English synonyms both help) — never a subject name; resolve companies/places/people to ids with a lookup action. Omit to BROWSE a module instead." },
+                    "query": { "type": "string", "description": "SEARCH mode: the capability you need, in natural language (Korean+English synonyms both help). A subject's name matches nothing here — a lookup action turns it into an id. Omit to BROWSE a module instead." },
                     "module": { "type": "string", "description": "module name, exactly as the module index gives it. Scopes SEARCH, or selects the module to BROWSE when `query` is omitted." },
                     "domain": { "type": "string", "description": "BROWSE mode: drill into one domain returned by a previous browse of a large module." },
                     "limit": { "type": "integer", "description": "SEARCH mode: max results (default 5)" }
