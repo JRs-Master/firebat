@@ -288,7 +288,8 @@
       "synonyms": {
         "type": "chartType",
         "values": "data",
-        "datasets": "series"
+        "datasets": "series",
+        "name": "title"
       },
       "properties": {
         "chartType": {
@@ -483,7 +484,8 @@
         "text": "message",
         "body": "message",
         "variant": "type",
-        "kind": "type"
+        "kind": "type",
+        "name": "title"
       },
       "properties": {
         "message": {
@@ -734,6 +736,9 @@
     "semanticText": "카드 card 블록 박스 그룹 container wrapper 요약 summary 프리뷰 썸네일 이미지 hero 제목 내용 본문",
     "propsSchema": {
       "type": "object",
+      "synonyms": {
+        "name": "title"
+      },
       "required": [],
       "properties": {
         "title": {
@@ -1030,6 +1035,9 @@
     "semanticText": "비교 대조 vs AB 선택 옵션 compare versus 장단점 대비",
     "propsSchema": {
       "type": "object",
+      "synonyms": {
+        "name": "title"
+      },
       "required": [
         "left",
         "right"
@@ -1559,7 +1567,8 @@
       "synonyms": {
         "vocabulary": "words",
         "wordList": "words",
-        "cards": "words"
+        "cards": "words",
+        "name": "title"
       },
       "properties": {
         "title": {
@@ -1711,7 +1720,8 @@
         "words": "vocab",
         "thesis": "keyIdea",
         "mainIdea": "keyIdea",
-        "trans": "translation"
+        "trans": "translation",
+        "name": "title"
       },
       "properties": {
         "title": {
@@ -1817,7 +1827,8 @@
         "sections": "steps",
         "parts": "steps",
         "overview": "intro",
-        "summary": "intro"
+        "summary": "intro",
+        "name": "title"
       },
       "properties": {
         "title": {
@@ -1953,7 +1964,8 @@
         "audio": "audioUrl",
         "url": "audioUrl",
         "quizzes": "questions",
-        "items": "questions"
+        "items": "questions",
+        "name": "title"
       },
       "properties": {
         "title": {
@@ -2116,6 +2128,9 @@
     "semanticText": "키밸류 라벨 값 속성 정보 스펙 spec 정보 info 필드 단일 대상 한 종목 한 제품",
     "propsSchema": {
       "type": "object",
+      "synonyms": {
+        "name": "title"
+      },
       "required": [
         "items"
       ],
@@ -2187,6 +2202,9 @@
     "semanticText": "플랜 계획 로드맵 단계 step 체크리스트 todo 예정 로드맵 plan approve execute workflow 승인",
     "propsSchema": {
       "type": "object",
+      "synonyms": {
+        "name": "title"
+      },
       "required": [
         "title",
         "steps"
@@ -2359,7 +2377,8 @@
         "expr": "expressions",
         "functions": "expressions",
         "formulas": "expressions",
-        "curves": "expressions"
+        "curves": "expressions",
+        "name": "title"
       },
       "properties": {
         "expressions": {
@@ -2441,7 +2460,8 @@
         "content": "code",
         "text": "code",
         "snippet": "code",
-        "body": "code"
+        "body": "code",
+        "name": "title"
       },
       "properties": {
         "code": {
@@ -3362,6 +3382,9 @@
     "semanticText": "실시간 피드 감시 이벤트 live feed realtime watch 조건검색 편입 이탈 스트리밍 모니터링",
     "propsSchema": {
       "type": "object",
+      "synonyms": {
+        "name": "title"
+      },
       "properties": {
         "topic": {
           "type": "string",
@@ -3387,6 +3410,9 @@
     "semanticText": "실시간 차트 live chart 체결가 시세 스트리밍 틱 라인차트 realtime price tick 실시간 그래프",
     "propsSchema": {
       "type": "object",
+      "synonyms": {
+        "name": "title"
+      },
       "properties": {
         "topic": {
           "type": "string",
@@ -3416,6 +3442,9 @@
     "semanticText": "실시간 봉차트 캔들 차트 live candlestick 분봉 일봉 체결가 스트리밍 틱 집계 realtime candle chart daily 실시간 캔들 OHLC 주가 차트 오늘 봉 갱신 엘리엇 파동 주석 추세선 실시간 재계산 annotations derive 방문마다 갱신",
     "propsSchema": {
       "type": "object",
+      "synonyms": {
+        "name": "title"
+      },
       "properties": {
         "topic": {
           "type": "string",

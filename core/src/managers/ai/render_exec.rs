@@ -520,15 +520,21 @@ pub fn render_blocks(
             }
         }
 
-        // AI hallucination normalize — 'name' → 'title' 매핑 후 sanitize_to_schema 재귀 정규화.
-        if let Some(obj) = props.as_object_mut() {
-            if !obj.contains_key("title") {
-                if let Some(name_val) = obj.remove("name") {
-                    obj.insert("title".to_string(), name_val);
-                }
-            }
+        // Schema normalisation, with its ledger. Every coercion in there is generic and
+        // schema-declared (synonyms/columnar live in the component's own row); what none of them
+        // may be is SILENT — an absorbed dialect that never reaches the journal is a dialect
+        // nobody ever fixes in the declaration. One INFO per block that needed absorbing.
+        // (`name→title` was hard-coded here until 2026-08-17; it is a declared synonym now.)
+        let coercions =
+            component_registry::sanitize_to_schema_traced(&mut props, &comp.props_schema);
+        if !coercions.is_empty() {
+            tracing::info!(
+                target: "render_dialect",
+                component = %block_type,
+                coercions = ?coercions,
+                "schema coercions absorbed a model dialect"
+            );
         }
-        component_registry::sanitize_to_schema(&mut props, &comp.props_schema);
 
         // propsSchema validation — only failed blocks are split out.
         if let Err(e) = crate::managers::module::validate_value(&props, &comp.props_schema) {

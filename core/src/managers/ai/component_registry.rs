@@ -324,6 +324,36 @@ pub fn merged_props_schema(names: &[&str]) -> serde_json::Value {
 }
 
 pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Value) {
+    sanitize_collect(value, schema, &mut Vec::new());
+}
+
+/// Same normalisation, but returns WHICH coercions fired — the dialect ledger.
+///
+/// Every absorber here is generic and schema-driven, which is what makes it legal; what made it
+/// dangerous was being silent. A dialect the recogniser quietly absorbs is a dialect nobody ever
+/// fixes in the declaration, and the pure-schema test (표준 v1 S5) needs to see what still fires.
+/// One entry per coercion KIND per block, not per cell — a table of 400 numeric cells is one
+/// `scalar_to_string`, not four hundred.
+pub fn sanitize_to_schema_traced(
+    value: &mut serde_json::Value,
+    schema: &serde_json::Value,
+) -> Vec<&'static str> {
+    let mut applied = Vec::new();
+    sanitize_collect(value, schema, &mut applied);
+    applied
+}
+
+fn note(applied: &mut Vec<&'static str>, kind: &'static str) {
+    if !applied.contains(&kind) {
+        applied.push(kind);
+    }
+}
+
+fn sanitize_collect(
+    value: &mut serde_json::Value,
+    schema: &serde_json::Value,
+    applied: &mut Vec<&'static str>,
+) {
     if schema_allows_type(schema, "object") {
         let Some(obj) = value.as_object_mut() else {
             return;
@@ -349,6 +379,7 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
             for (wrong, correct_val) in synonyms {
                 let Some(correct) = correct_val.as_str() else { continue };
                 if obj.contains_key(wrong) {
+                    note(applied, "synonym");
                     let value = obj.remove(wrong);
                     if !obj.contains_key(correct) {
                         if let Some(v) = value {
@@ -383,6 +414,7 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
                         })
                         .collect();
                     if !cols.is_empty() {
+                        note(applied, "columnar");
                         let len = cols.iter().map(|(_, _, a)| a.len()).max().unwrap_or(0);
                         let mut rows = Vec::with_capacity(len);
                         for i in 0..len {
@@ -456,6 +488,7 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
                             .iter()
                             .all(|rk| movable.iter().any(|m| m == rk));
                         if !movable.is_empty() && satisfies_required {
+                            note(applied, "item_shorthand");
                             let mut item = serde_json::Map::new();
                             for k in &movable {
                                 if let Some(v) = obj.remove(k) {
@@ -480,6 +513,9 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
                     .filter(|k| !known.contains_key(k.as_str()))
                     .cloned()
                     .collect();
+                if !extras.is_empty() {
+                    note(applied, "unknown_prop");
+                }
                 for k in extras {
                     obj.remove(&k);
                 }
@@ -490,7 +526,7 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         if let Some(known) = properties {
             for (key, sub_schema) in known {
                 if let Some(v) = obj.get_mut(key.as_str()) {
-                    sanitize_to_schema(v, sub_schema);
+                    sanitize_collect(v, sub_schema, applied);
                 }
             }
 
@@ -509,6 +545,9 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
                     })
                 })
                 .collect();
+            if !to_drop.is_empty() {
+                note(applied, "invalid_optional");
+            }
             for k in to_drop {
                 obj.remove(&k);
             }
@@ -523,8 +562,10 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
                     continue;
                 };
                 if let Some(default) = sub_schema.get("default") {
+                    note(applied, "required_filled");
                     obj.insert(key.to_string(), default.clone());
                 } else if schema_allows_type(sub_schema, "null") {
+                    note(applied, "required_filled");
                     obj.insert(key.to_string(), serde_json::Value::Null);
                 }
             }
@@ -537,6 +578,7 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         // 문자열로 보내도 흡수(빈 줄 = 원소 분리, 없으면 단일 원소). 이후 str_key 가 각 문자열 원소를
         // {field} 객체로 감싼다. (render robustness 일반 규칙 — 컴포넌트명 하드코딩 0.)
         if let Some(s) = value.as_str() {
+            note(applied, "string_to_array");
             let split: Vec<String> = s
                 .split("\n\n")
                 .map(|p| p.trim().to_string())
@@ -562,7 +604,7 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         // 안 먹어 tabs 안 table 의 searchable→filterable, button label→text 가 깨졌다.
         if is_child_block_schema(items_schema) {
             for item in arr.iter_mut() {
-                sanitize_child_block(item);
+                sanitize_child_block(item, applied);
             }
             return;
         }
@@ -582,13 +624,14 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         for item in arr.iter_mut() {
             if let Some(key) = &str_key {
                 if item.is_string() {
+                    note(applied, "string_item_wrap");
                     let s = item.take();
                     let mut obj = serde_json::Map::new();
                     obj.insert(key.clone(), s);
                     *item = serde_json::Value::Object(obj);
                 }
             }
-            sanitize_to_schema(item, items_schema);
+            sanitize_collect(item, items_schema, applied);
         }
     } else if schema_allows_type(schema, "string") {
         // string 기대 위치에 {text}/{label}/{value}/{content} 단일-텍스트 객체가 오면 그 문자열로 coerce.
@@ -598,8 +641,10 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
                 .iter()
                 .find_map(|k| o.get(*k).and_then(|v| v.as_str()).map(|s| s.to_string()))
         }) {
+            note(applied, "object_to_string");
             *value = serde_json::Value::String(s);
         } else if value.is_number() || value.is_boolean() {
+            note(applied, "scalar_to_string");
             // string 기대인데 number/bool 이 오면 문자열화 — 표 셀에 숫자(25)나 불리언을 넣어
             // 검증 실패(silently skipped)하던 것 흡수. 배열 재귀가 rows[i][j] 셀까지 닿으므로
             // 표·리스트·라벨 어디든 커버 (render robustness, 일반 규칙 — 컴포넌트 하드코딩 0).
@@ -635,9 +680,16 @@ fn is_child_block_schema(items_schema: &serde_json::Value) -> bool {
 ///  - props 누락 → `{}` 채움 (divider 등 props 없는 컴포넌트 검증 통과).
 ///  - `type` 으로 실제 컴포넌트 lookup 후 props 를 그 스키마로 재귀 sanitize
 ///    (synonyms/defaults/extras-drop + 중첩 컨테이너까지 전파).
-fn sanitize_child_block(item: &mut serde_json::Value) {
+///
+/// `name→title` used to be hard-coded here (and at top level): a framework-owned synonym pair
+/// applied to every component alike, including future ones that might mean something by `name`.
+/// It is a per-component dialect, so it moved where those live — the fifteen title-bearing
+/// components each declare `"synonyms": {"name": "title"}` in `system/components.json`, on the
+/// channel a declaration fix belongs to (표준 v1 S2, 2026-08-17).
+fn sanitize_child_block(item: &mut serde_json::Value, applied: &mut Vec<&'static str>) {
     // 문자열 → text 블록.
     if let Some(s) = item.as_str() {
+        note(applied, "child_text_wrap");
         let s = s.to_string();
         *item = serde_json::json!({ "type": "text", "props": { "content": s } });
     }
@@ -658,15 +710,7 @@ fn sanitize_child_block(item: &mut serde_json::Value) {
     let Some(comp) = find_component(&t) else {
         return;
     };
-    // name→title (top-level render_blocks 와 동일 보정).
-    if let Some(p) = props.as_object_mut() {
-        if !p.contains_key("title") {
-            if let Some(name_val) = p.remove("name") {
-                p.insert("title".to_string(), name_val);
-            }
-        }
-    }
-    sanitize_to_schema(props, &comp.props_schema);
+    sanitize_collect(props, &comp.props_schema, applied);
 }
 
 #[cfg(test)]
