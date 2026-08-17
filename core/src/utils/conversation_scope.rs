@@ -52,32 +52,6 @@ pub const MAX_SCOPES: usize = 200;
 /// here so a runaway loop cannot grow the entry without bound.
 pub const PRODUCED_MAX: usize = 20;
 
-#[cfg(test)]
-mod needs_tests {
-    use super::*;
-
-    #[test]
-    fn a_prerequisite_counts_only_after_it_ran_and_only_in_its_scope() {
-        let a = "conv:needs-a";
-        let b = "conv:needs-b";
-        let needs = vec!["stock-lookup".to_string()];
-        assert_eq!(unmet_needs(a, &needs), vec!["stock-lookup".to_string()]);
-        record_run(a, "stock-lookup");
-        assert!(unmet_needs(a, &needs).is_empty(), "ran here — satisfied");
-        assert_eq!(unmet_needs(b, &needs).len(), 1, "another conversation is not this one");
-        // Dialect names canonicalize the same way the discovery gate's do.
-        record_run(b, "sysmod_stock_lookup");
-        assert!(unmet_needs(b, &needs).is_empty());
-    }
-
-    #[test]
-    fn the_refusal_names_the_prerequisite_and_the_window() {
-        let msg = needs_reject("dart", "financial", &["stock-lookup".to_string()]);
-        assert!(msg.contains("`stock-lookup`"), "{msg}");
-        assert!(msg.contains("30 minutes"), "{msg}");
-    }
-}
-
 /// The discovery-first rejection, spoken identically on both transports.
 ///
 /// It used to live twice — the FC copy had grown a thirty-minute clause the MCP copy never got,
@@ -293,7 +267,6 @@ pub fn record_run(scope_key: &str, module: &str) {
 
 fn record_run_at(scope_key: &str, module: &str, now: Instant) {
     let mut map = store();
-    enforce_scope_cap(&mut map, now);
     let state = map
         .entry(scope_key.to_string())
         .or_insert_with(|| ScopeState::new(now));
@@ -311,6 +284,9 @@ fn record_run_at(scope_key: &str, module: &str, now: Instant) {
         }
     }
     state.runs_seen.insert(canon_module(module), now);
+    // Cap AFTER the insert, so the map never rests over the bound — enforcing before it left the
+    // final insert at MAX_SCOPES + 1 (caught by the LRU test the first time CI ran it).
+    enforce_scope_cap(&mut map, now);
 }
 
 /// True when `module` ran successfully in this scope within the window — **and restamps it**,
@@ -691,6 +667,32 @@ mod tests {
         assert!(!store().contains_key(k));
     }
 
+
+    /// The needs gate end to end: unmet until the prerequisite RAN in this scope, satisfied by a
+    /// dialect spelling of the same module, and the refusal names both the module and the window.
+    /// Takes the same lock as every store test — these mutate the one global map, and a parallel
+    /// test filling the LRU can evict this scope mid-assertion (measured: exactly that broke two
+    /// sibling tests on CI when this ran unserialized).
+    #[test]
+    fn a_prerequisite_counts_only_after_it_ran_and_only_in_its_scope() {
+        let _g = lock();
+        let (a, b) = ("test:needs-a", "test:needs-b");
+        forget(a);
+        forget(b);
+        let needs = vec!["stock-lookup".to_string()];
+        assert_eq!(unmet_needs(a, &needs), vec!["stock-lookup".to_string()]);
+        record_run(a, "stock-lookup");
+        assert!(unmet_needs(a, &needs).is_empty(), "ran here — satisfied");
+        assert_eq!(unmet_needs(b, &needs).len(), 1, "another conversation is not this one");
+        // Dialect names canonicalize the same way the discovery gate's do.
+        record_run(b, "sysmod_stock_lookup");
+        assert!(unmet_needs(b, &needs).is_empty());
+        let msg = needs_reject("dart", "financial", &["stock-lookup".to_string()]);
+        assert!(msg.contains("`stock-lookup`"), "{msg}");
+        assert!(msg.contains("30 minutes"), "{msg}");
+        forget(a);
+        forget(b);
+    }
 
     /// Two conversations must not satisfy each other's prerequisites or unlock each other's
     /// schemas — the same isolation the MCP session key gave, now stated per conversation.
