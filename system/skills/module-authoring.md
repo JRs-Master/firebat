@@ -1,7 +1,7 @@
 ---
 name: module-authoring
 kind: procedure
-description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, 액션 선언, secrets, entry, _call 엔드포인트, 승인 게이트, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·선언 표면 위반 = 조용한 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(schedule_task 의 pipeline 파라미터 설명), 스킬 작성(skill-authoring).
+description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, 액션 선언, secrets, entry, _call 엔드포인트, 승인 게이트, 방언 선언, paramSource, grounding, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·선언 표면 위반 = 조용한 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(schedule_task 의 pipeline 파라미터 설명), 스킬 작성(skill-authoring).
 ---
 
 # Module authoring — a module declares, Firebat reads and runs
@@ -100,6 +100,42 @@ Declare the axis in `input` and in `required`, or the caller cannot know it exis
 `_call` for every runnable action or none** — a half migration fails only for the actions nobody
 exercised.
 
+## When the model misuses your module — declare the fix, never work around it
+
+A caller LLM will sometimes speak a dialect: pick the wrong action, guess a parameter, invent an
+identifier, skip the id lookup. **Every dialect has a declaration slot, and the framework speaks
+your declaration at the exact moment of refusal.** Fixing a dialect means editing your module's
+files — never prompt text, never framework code.
+
+| the model… | declare in |
+|---|---|
+| picks the wrong action | `actionCatalog` — description, `tags`, `aliases` |
+| gets a param's name or type wrong | `input` — the schema IS the correction; validation errors derive from it |
+| omits a required param | `required` (catalog row) — surfaces in `fill` before the first call |
+| omits a discriminator | `_call.by` + that axis in `input` and `required` — the refusal lists the choices |
+| invents an opaque id from memory | `grounding` — `resolveHint` / `pattern` / `exemptActions` |
+| uses an id from the wrong list | `paramSource` — see below |
+| fires a dangerous call directly | `requiresApproval` |
+
+**`paramSource` — which action mints which id.** A top-level map from param name to free text
+naming the issuing action(s):
+
+```jsonc
+"paramSource": { "nodeId": "bus-stop-search or bus-stop-nearby",
+                 "routeId": "bus-route-search" }
+```
+
+When validation refuses a call over that param, or grounding rejects an ungrounded value for it,
+the refusal names the issuer — "`nodeId` is issued by bus-stop-search or bus-stop-nearby". Your
+own code may read the same rows out of your `config.json` for the angles only you can see (an
+empty result whose ids were all well-formed, say). One declaration, several readers — never keep
+a second copy of the table in code.
+
+**Your error responses are part of the surface.** A bare vendor `404` teaches nothing; the caller
+retries blind. When your module fails, say the next move in the error — which action to call
+first, which param to check, what an empty result does and does not mean. The framework points at
+your declarations; only you can point at your data.
+
 ## Gates — one line each
 
 - **`"requiresApproval": ["place_order"]`** — those actions produce a user approval card and do
@@ -132,7 +168,10 @@ A user module carries **domain judgment only**; external API, UI and secrets are
 2. **No direct secrets** — declare them in `secrets` and they arrive as environment variables.
    Never read a third-party key out of `process.env` by hand; if none is registered, call
    `request_secret`.
-3. **UI is rendered by the render tools**, not by HTML a module writes.
+3. **UI is rendered by the render tools**, not by HTML a module writes. A domain-specific
+   "component" is not a new React primitive — return `blocks` of the existing catalog
+   (`search_components` shows the palette) and the page renders them; that path is auto-registered
+   like everything else a module declares.
 4. **Branching lives in module code or a pipeline `CONDITION` step.**
 5. **No module imports another.** Reach one through `run_module_action` — the same rung
    everything else uses, which applies the gates, the validation and the injection above.
