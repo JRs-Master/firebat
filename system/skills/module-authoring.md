@@ -169,6 +169,12 @@ retries blind. When your module fails, say the next move in the error — which 
 first, which param to check, what an empty result does and does not mean. The framework points at
 your declarations; only you can point at your data.
 
+**Echo identity.** When an action takes an opaque identifier (a ticker code, a corp id), lead the
+successful reply with what the venue says it is — `identity: "005930 = 삼성전자"` — read off the
+response itself, never off a table of your own. A value that drifted from the conversation's
+lookup then exposes itself exactly where the caller reads. Replies that carry no name stay
+silent; the echo is the venue's testimony, not your guess.
+
 ## Gates — one line each
 
 - **`"approval": true` on the action's catalog row** — the call produces a user approval card and
@@ -190,6 +196,26 @@ depends on what the operator has configured, do not keep a second list — let t
 "schedulesFrom": { "setting": "trades", "field": "loop",
                    "skipWhen": { "field": "state", "equals": "off" } }
 ```
+
+## When something outside calls IN (webhook)
+
+```jsonc
+"webhook": {
+  "secret": "MY_WEBHOOK_SECRET",       // your declared secret that carries the shared token
+  "secretHeader": "x-vendor-secret",   // the header the vendor sends it in — vendor dialect, so yours
+  "parseAction": "parse-webhook",      // payload → {proceed, prompt?, replyArgs?, note?}
+  "replyAction": "send-message",       // omit for a receive-only hook
+  "replyTextParam": "text",            // your reply action's parameter that carries the answer
+  "replyMaxChars": 4000                // the vendor's message limit is yours to declare
+}
+```
+
+Declaring this makes `POST /api/hooks/<module>` yours. The framework compares the declared
+header against the secret (machine-generated on your module's first run, injected as env like
+any declared secret), hands the body to `parseAction` as `payload`, runs the AI on the `prompt`
+you distilled, and delivers the answer through `replyAction` with your `replyArgs` spread in.
+Everything vendor-shaped — the header name, the payload fields, WHO is authorized — is decided
+inside your actions, never by the framework.
 
 ## Reusable 5 rules (user/modules/*)
 

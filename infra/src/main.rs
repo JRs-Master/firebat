@@ -53,7 +53,6 @@ use firebat_core::{
         network_service_server::NetworkServiceServer,
         settings_service_server::SettingsServiceServer,
         storage_service_server::StorageServiceServer,
-        telegram_service_server::TelegramServiceServer,
         consolidation_service_server::ConsolidationServiceServer,
         conversation_service_server::ConversationServiceServer,
         cost_service_server::CostServiceServer,
@@ -1381,7 +1380,9 @@ async fn main() -> Result<()> {
         // The discovery index rebuilds on a fingerprint of the module directories; a toggle moves
         // nothing on disk, so it has to be told.
         .with_action_catalog(action_catalog.clone())
-        .with_core(core.clone());
+        .with_core(core.clone())
+        // Inbound webhooks (config `webhook`) — parse → AI turn → declared reply action.
+        .with_ai(ai_manager.clone());
     // modules = module 블록 publish-bake (pending 승인 commit·hub·admin 라우트 전부 이 Save 경유).
     let page_service =
         grpc::page::PageServiceImpl::new(
@@ -1427,13 +1428,11 @@ async fn main() -> Result<()> {
     let settings_service = grpc::settings::SettingsServiceImpl::new(vault.clone())
         .with_cron(cron_adapter.clone());
     let network_service = grpc::network::NetworkServiceImpl::new(network_port.clone());
-    // Phase B-17.5b — Cache / Telegram / Database 추가.
+    // Phase B-17.5b — Cache / Database 추가.
     // cache_adapter 는 sandbox 생성 시점에 만들어 있음 (L325). 같은 인스턴스 공유 — gRPC CacheService
     // 의 read / grep / aggregate / drop 호출이 sandbox 가 저장한 cache 와 동일 디렉토리 접근.
+    // (옛 TelegramService 는 ModuleService 의 Webhook* 범용 메커니즘으로 은퇴 — v3-R4.)
     let cache_service = grpc::cache::CacheServiceImpl::new(cache_adapter.clone());
-    // TelegramService — AiManager + ModuleManager 설정하여 process_message webhook → AI → reply 활성
-    let telegram_service = grpc::telegram::TelegramServiceImpl::new(vault.clone(), network_port.clone())
-        .with_ai_and_module(ai_manager.clone(), module_manager.clone());
     // DatabaseService — raw SELECT escape hatch. 옛 raw rusqlite::Connection 직접 의존
     // (BIBLE Core 순수성 위반) → IDatabasePort port 위임으로 정정 (2026-05-06).
     let database_service = grpc::database::DatabaseServiceImpl::new(db.clone());
@@ -1633,7 +1632,6 @@ async fn main() -> Result<()> {
         .add_service(NetworkServiceServer::new(network_service))
         .add_service(LifecycleServiceServer::new(lifecycle_service))
         .add_service(CacheServiceServer::new(cache_service))
-        .add_service(TelegramServiceServer::new(telegram_service))
         .add_service(DatabaseServiceServer::new(database_service))
         .add_service(MemoryServiceServer::new(memory_file_service))
         .add_service(SkillServiceServer::new(skill_file_service))

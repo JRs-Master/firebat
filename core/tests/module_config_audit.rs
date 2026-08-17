@@ -36,6 +36,8 @@ const KNOWN_KEYS: &[&str] = &[
     "actionCatalog", "cacheInputs", "autoCacheWhole", "requiresApproval", "uiOnly",
     "timeseries", "ws", "pageBinding", "recall", "schedules", "schedulesFrom", "settings_fields",
     "editorSchema", "unsupportedActions", "notify", "notifyJob", "paramSource",
+    // inbound webhook (reader: ModuleManager::webhook_decl + grpc ModuleService Webhook*)
+    "webhook",
 ];
 
 /// Field types the settings UI can render — READ OUT OF THE RENDERER, not listed here. A

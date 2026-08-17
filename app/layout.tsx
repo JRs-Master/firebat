@@ -11,7 +11,7 @@ import type { Metadata, Viewport } from 'next';
 // connection refused → build fail (NotFound + 모든 자식 페이지 영향).
 // runtime (production server) 에서 Rust core 가 떠 있어 정상 응답.
 export const dynamic = 'force-dynamic';
-import { getCmsSettings, getKakaoMapJsKey } from '../lib/api-gen/module';
+import { getCmsSettings, getComponentVendorKeys } from '../lib/api-gen/module';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -42,16 +42,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // SEO 설정 lang — 검색엔진 언어 인식 + 접근성. 미설정 시 'ko'.
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
-  // 카카오맵 JS 키 — render_map 컴포넌트가 user / admin 양쪽 컨텍스트에서 모두 사용.
-  // (user) layout 만 설정하면 admin 채팅 미리보기에서 Leaflet 폴백 됨 → root layout 으로 통합.
-  const kakaoRes = await getKakaoMapJsKey();
-  const kakaoMapJsKey = kakaoRes.ok ? kakaoRes.data : '';
+  // 컴포넌트가 선언한 브라우저용 벤더 키(components.json `vendorKey`) — 렌더러가 자기 키 이름으로
+  // 꺼내 쓴다. user / admin 양쪽 컨텍스트에서 쓰여 root layout 에서 한 번 주입.
+  const vendorRes = await getComponentVendorKeys();
+  const vendorKeys = (vendorRes.ok && vendorRes.data && typeof vendorRes.data === 'object') ? vendorRes.data : {};
   return (
     <html lang={seo.siteLang || 'ko'}>
       <body className="antialiased bg-white text-gray-900">
-        {kakaoMapJsKey && (
+        {Object.keys(vendorKeys).length > 0 && (
           <script
-            dangerouslySetInnerHTML={{ __html: `window.__KAKAO_MAP_JS_KEY=${JSON.stringify(kakaoMapJsKey)};` }}
+            dangerouslySetInnerHTML={{ __html: `window.__VENDOR_KEYS=${JSON.stringify(vendorKeys)};` }}
           />
         )}
         {children}

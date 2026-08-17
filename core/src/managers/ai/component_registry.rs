@@ -37,6 +37,13 @@ pub struct ComponentDef {
     /// component most turns never emit (2026-08-09 측정). Optional — most components need none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guide: Option<String>,
+    /// The vault secret name (under `user:`) this component's RENDERER needs in the browser
+    /// (e.g. a map SDK's JS key). Declaring it is what makes the key readable through
+    /// `GetComponentVendorKeys` — a closed set, so the frontend never gets an arbitrary vault
+    /// read — and marks the value as browser-exposable by intent. Never serialized to the model
+    /// surface: which key a renderer loads is the browser's business, not the fence author's.
+    #[serde(default, rename = "vendorKey", skip_serializing)]
+    pub vendor_key: Option<String>,
 }
 
 /// Where the declaration file lives. cwd-relative like every module path (the server runs at the

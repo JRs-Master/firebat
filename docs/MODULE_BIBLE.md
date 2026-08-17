@@ -272,6 +272,8 @@ system/modules/<name>/
 - `argsField` = 모듈의 인자 컨테이너 규약(예: 키움 `{action, params:{...}}` 중첩)을 루트에 overlay — flat 모듈은 미선언.
 - `preFrames` = 본 요청 전 같은 세션에서 선행 왕복해야 하는 프레임(키움: CNSRLST 를 먼저 보내야 CNSRREQ 응답).
 - `ws.streams` = **`IWsStreamPort`** 상시 감시 선언(`stream_watch_start/stop/list` AI 도구) — 편입/이탈·시세 REAL 프레임이 이벤트 버스(SSE topic)로 fan-out 되고, `notify:"module:<name>"` 이면 그 모듈이 프레임 배치를 받는다. vault 영속으로 재부팅 자동 복원.
+- `webhook` = **인바운드 웹훅 선언** — `POST /api/hooks/<module>` 이 그 모듈 것이 된다. `secret`(선언 시크릿명 — 첫 실행 때 기계 발급·env 주입)·`secretHeader`(벤더가 토큰을 싣는 헤더)·`parseAction`(payload → `{proceed, prompt, replyArgs}`)·`replyAction`/`replyTextParam`/`replyMaxChars`. 프레임워크 = 수신·시크릿 대조·AI 왕복만, 벤더 모양·권한 판정은 모듈 액션 몫 (v3-R4 — 옛 TelegramService gRPC 은퇴, telegram 이 첫 소비자).
+- `vendorKey`(컴포넌트, `system/components.json`) = 렌더러가 **브라우저에서** 쓰는 벤더 키 선언 — `GetComponentVendorKeys` 가 선언된 키만 vault 에서 읽어 `window.__VENDOR_KEYS` 로 싣는다. 선언 = 브라우저 노출 가능 표식(폐쇄 집합, 임의 vault 읽기 불가).
 - `unsupportedActions` = WS 로도 REST 로도 아직 못 하는 액션에 명확한 에러 메시지(추측 호출 방지).
 - 응답 auto-cache 는 sandbox 와 **같은 choke-point 공유** — 수백 종목 스냅샷도 캐시 + 프리뷰로 처리.
 

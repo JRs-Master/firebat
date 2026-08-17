@@ -17,7 +17,7 @@ use crate::proto::{
     ModuleDeleteAccountResponse, ModuleEntryPb, ModuleGetAccountsRequest,
     ModuleGetAccountsResponse, ModuleGetCmsSettingsRequest,
     ModuleGetCmsSettingsResponse, ModuleGetConfigRequest, ModuleGetConfigResponse,
-    ModuleGetKakaoMapJsKeyRequest, ModuleGetKakaoMapJsKeyResponse, ModuleGetLangRequest,
+    ModuleGetComponentVendorKeysRequest, ModuleGetComponentVendorKeysResponse, ModuleGetLangRequest,
     ModuleGetLangResponse, ModuleGetPackageStatusRequest, ModuleGetPackageStatusResponse,
     ModuleGetSchemaRequest, ModuleGetSchemaResponse, ModuleGetSettingsRequest,
     ModuleGetSettingsResponse, ModuleInstallPackagesRequest, ModuleInstallPackagesResponse,
@@ -26,7 +26,8 @@ use crate::proto::{
     ModuleRunRequest, ModuleSaveAccountRequest, ModuleSaveAccountResponse,
     ModuleRunUiActionRequest, ModuleRunUiActionResponse,
     ModuleSetEnabledRequest, ModuleSetEnabledResponse, ModuleSetSettingsRequest,
-    ModuleSetSettingsResponse, PackageStatusPb,
+    ModuleSetSettingsResponse, ModuleWebhookProcessRequest, ModuleWebhookProcessResponse,
+    ModuleWebhookVerifyRequest, ModuleWebhookVerifyResponse, PackageStatusPb,
 };
 
 pub struct ModuleServiceImpl {
@@ -40,11 +41,19 @@ pub struct ModuleServiceImpl {
     /// tool registry has always been invalidated here; the index is the other half of the same
     /// event, and without it a module switched on stayed unsearchable until the debounce expired.
     action_catalog: Option<Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>>,
+    /// 옵션 — inbound webhook 의 AI 왕복(WebhookProcess). 미설정 = parse 만 돌고 답 없음.
+    ai: Option<Arc<crate::managers::ai::AiManager>>,
 }
 
 impl ModuleServiceImpl {
     pub fn new(manager: Arc<ModuleManager>) -> Self {
-        Self { manager, dynamic_tools: None, core: None, action_catalog: None }
+        Self { manager, dynamic_tools: None, core: None, action_catalog: None, ai: None }
+    }
+
+    /// Wire the AI so a declared webhook can answer — parse → AI turn → declared reply action.
+    pub fn with_ai(mut self, ai: Arc<crate::managers::ai::AiManager>) -> Self {
+        self.ai = Some(ai);
+        self
     }
 
     /// 토글 / settings 변경 직후 AI 가 즉시 갱신된 도구 목록 인식하도록 cache invalidate 연결.
@@ -414,19 +423,129 @@ impl ModuleService for ModuleServiceImpl {
         }))
     }
 
-    async fn get_kakao_map_js_key(
+    async fn get_component_vendor_keys(
         &self,
-        _req: Request<ModuleGetKakaoMapJsKeyRequest>,
-    ) -> Result<Response<ModuleGetKakaoMapJsKeyResponse>, TonicStatus> {
-        // kakao-map 모듈 시크릿 단일 경로 — admin 시스템 모듈 → kakao-map → 시크릿 탭에 입력한
-        // KAKAO_MAP_JS_KEY 직접 읽음. 옛 CMS settings 의 kakaoMapJsKey path 는 admin UI 입력 field
-        // 없는 죽은 path 였음 (사용자가 입력할 곳 없음). 모듈 시크릿이 원래 의도된 단일 경로.
-        let key = self
-            .manager
-            .vault()
-            .get_secret("user:KAKAO_MAP_JS_KEY")
-            .unwrap_or_default();
-        Ok(Response::new(ModuleGetKakaoMapJsKeyResponse { key }))
+        _req: Request<ModuleGetComponentVendorKeysRequest>,
+    ) -> Result<Response<ModuleGetComponentVendorKeysResponse>, TonicStatus> {
+        // Which browser-side keys exist is a component declaration (`vendorKey` in
+        // system/components.json), so this resolves ONLY declared names against the vault —
+        // a new vendor component is a declaration, never a new RPC (v3-R4; the predecessor
+        // was a kakao-named endpoint). Declaring a key marks it browser-exposable by intent.
+        let mut map = serde_json::Map::new();
+        for comp in crate::managers::ai::component_registry::components().iter() {
+            if let Some(name) = comp.vendor_key.as_deref().filter(|s| !s.is_empty()) {
+                if map.contains_key(name) {
+                    continue;
+                }
+                if let Some(v) = self.manager.vault().get_secret(&format!("user:{name}")) {
+                    if !v.is_empty() {
+                        map.insert(name.to_string(), serde_json::Value::String(v));
+                    }
+                }
+            }
+        }
+        Ok(Response::new(ModuleGetComponentVendorKeysResponse {
+            raw_json: serde_json::Value::Object(map).to_string(),
+        }))
+    }
+
+    async fn webhook_verify(
+        &self,
+        req: Request<ModuleWebhookVerifyRequest>,
+    ) -> Result<Response<ModuleWebhookVerifyResponse>, TonicStatus> {
+        // The ingress route knows nothing about vendors: it forwards every header, and the
+        // module's declaration names the one that carries the shared secret. No declaration =
+        // no webhook — absence refuses, it never permits.
+        let args = req.into_inner();
+        let Some(decl) = self.manager.webhook_decl(&args.module).await else {
+            return Ok(Response::new(ModuleWebhookVerifyResponse { ok: false }));
+        };
+        let headers: serde_json::Value =
+            serde_json::from_str(&args.headers_json).unwrap_or(serde_json::Value::Null);
+        let wanted = decl.secret_header.to_ascii_lowercase();
+        let incoming = headers
+            .as_object()
+            .and_then(|m| {
+                m.iter()
+                    .find(|(k, _)| k.to_ascii_lowercase() == wanted)
+                    .and_then(|(_, v)| v.as_str())
+            })
+            .unwrap_or("");
+        let ok = !incoming.is_empty() && incoming == self.manager.webhook_secret(&decl);
+        Ok(Response::new(ModuleWebhookVerifyResponse { ok }))
+    }
+
+    async fn webhook_process(
+        &self,
+        req: Request<ModuleWebhookProcessRequest>,
+    ) -> Result<Response<ModuleWebhookProcessResponse>, TonicStatus> {
+        // Mechanism only: hand the vendor payload to the declared parse action, run the AI turn
+        // on what it distilled, hand the answer to the declared reply action. Everything that
+        // knows the vendor's shapes ran inside the module.
+        let args = req.into_inner();
+        let reply_err = |v: serde_json::Value| {
+            Ok(Response::new(ModuleWebhookProcessResponse { raw_json: v.to_string() }))
+        };
+        let Some(decl) = self.manager.webhook_decl(&args.module).await else {
+            return reply_err(serde_json::json!({"success": false, "error": "no webhook declaration"}));
+        };
+        let payload: serde_json::Value =
+            serde_json::from_str(&args.payload_json).unwrap_or(serde_json::Value::Null);
+        let parse_input = serde_json::json!({ "action": decl.parse_action, "payload": payload });
+        let parsed = match self.manager.run(&args.module, &parse_input).await {
+            Ok(out) if out.success => out.data,
+            Ok(out) => {
+                return reply_err(serde_json::json!({
+                    "success": false,
+                    "error": format!("{} refused the payload: {}", decl.parse_action, out.error.unwrap_or_default()),
+                }))
+            }
+            Err(e) => {
+                return reply_err(serde_json::json!({"success": false, "error": e.to_string()}))
+            }
+        };
+        if !parsed.get("proceed").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let note = parsed.get("note").and_then(|v| v.as_str()).unwrap_or("");
+            return reply_err(serde_json::json!({"success": true, "skipped": true, "note": note}));
+        }
+        let prompt = parsed.get("prompt").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let (Some(ai), Some(reply_action), false) =
+            (&self.ai, decl.reply_action.as_deref(), prompt.is_empty())
+        else {
+            // Receive-only (no reply action / no AI wired / nothing to answer) — the parse ran,
+            // whatever it recorded is the outcome.
+            return reply_err(serde_json::json!({"success": true, "replied": false}));
+        };
+        let llm_opts = crate::ports::LlmCallOpts::default();
+        let ai_opts = crate::ports::AiRequestOpts::default();
+        let reply = match ai.process_with_tools_opts(&prompt, &[], &llm_opts, &ai_opts).await {
+            Ok(r) => r.reply.trim().to_string(),
+            Err(e) => {
+                return reply_err(serde_json::json!({"success": false, "error": format!("AI turn failed: {e}")}))
+            }
+        };
+        if reply.is_empty() {
+            return reply_err(serde_json::json!({"success": false, "error": "AI turn produced no reply"}));
+        }
+        let capped: String = reply.chars().take(decl.reply_max_chars).collect();
+        let mut send_input = serde_json::Map::new();
+        send_input.insert("action".into(), serde_json::Value::String(reply_action.to_string()));
+        if let Some(extra) = parsed.get("replyArgs").and_then(|v| v.as_object()) {
+            for (k, v) in extra {
+                send_input.insert(k.clone(), v.clone());
+            }
+        }
+        send_input.insert(decl.reply_text_param.clone(), serde_json::Value::String(capped));
+        match self.manager.run(&args.module, &serde_json::Value::Object(send_input)).await {
+            Ok(out) if out.success => {
+                reply_err(serde_json::json!({"success": true, "replied": true}))
+            }
+            Ok(out) => reply_err(serde_json::json!({
+                "success": false,
+                "error": format!("{} failed: {}", reply_action, out.error.unwrap_or_default()),
+            })),
+            Err(e) => reply_err(serde_json::json!({"success": false, "error": e.to_string()})),
+        }
     }
 
     async fn install_packages(

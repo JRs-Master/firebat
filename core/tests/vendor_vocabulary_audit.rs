@@ -43,11 +43,6 @@ fn module_names() -> Vec<String> {
 /// record, not an exemption by silence — and it must still match, or the test fails stale.
 const STANDING: &[(&str, &str, &str)] = &[
     (
-        "core/src/grpc/telegram.rs",
-        "telegram",
-        "telegram webhook gRPC service — pending v3-R4 (vendor services mechanized)",
-    ),
-    (
         "core/src/managers/ai/tool_search_index.rs",
         "law-search",
         "capability label that happens to spell like the module name — declared vocabulary, not a module reference",

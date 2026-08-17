@@ -105,6 +105,38 @@ struct CachedCalls {
 /// order tickets, autotrade tables — so it has to fit a column, not just a vault key.
 const ALIAS_MAX_CHARS: usize = 20;
 
+/// Parse a config's `webhook` block — shared by `webhook_decl` (name → decl) and the run path
+/// (which already holds the config and must not read it twice).
+pub fn parse_webhook_decl(cfg: &serde_json::Value) -> Option<WebhookDecl> {
+    let w = cfg.get("webhook")?;
+    let s = |k: &str| w.get(k).and_then(|v| v.as_str()).map(str::to_string);
+    Some(WebhookDecl {
+        secret: s("secret")?,
+        secret_header: s("secretHeader")?,
+        parse_action: s("parseAction")?,
+        reply_action: s("replyAction"),
+        reply_text_param: s("replyTextParam").unwrap_or_else(|| "text".to_string()),
+        reply_max_chars: w.get("replyMaxChars").and_then(|v| v.as_u64()).unwrap_or(4000) as usize,
+    })
+}
+
+/// A module's inbound-webhook declaration — parsed off config `webhook` (see `webhook_decl`).
+#[derive(Debug, Clone)]
+pub struct WebhookDecl {
+    /// Name of the module's declared secret that carries the shared webhook token (`user:` home).
+    pub secret: String,
+    /// The HTTP header the vendor sends that token in — vendor dialect, so declared.
+    pub secret_header: String,
+    /// Action that turns a vendor payload into `{proceed, prompt?, replyArgs?}`.
+    pub parse_action: String,
+    /// Action that delivers the AI reply. None = receive-only webhook (parse records, nobody answers).
+    pub reply_action: Option<String>,
+    /// The reply action's parameter that carries the text (default "text").
+    pub reply_text_param: String,
+    /// Cap on the reply text in chars — the vendor's message limit is the module's to declare.
+    pub reply_max_chars: usize,
+}
+
 /// One registered realtime watch (user intent) — the transport status lives in the port.
 /// Where a watch's frames go once they are off the wire.
 ///
@@ -390,6 +422,13 @@ impl ModuleManager {
         // Config once — input validation + ws routing + output validation all read it
         // (was fetched twice: once per validation pass).
         let config = self.get_module_config(scope, module_name).await;
+
+        // A webhook-declaring module must be able to REGISTER before anything ever arrives, and
+        // registering needs the shared secret in its env. The secret is machine-generated, so the
+        // first run materializes it; the sandbox then injects it like any declared secret.
+        if let Some(decl) = config.as_ref().and_then(parse_webhook_decl) {
+            let _ = self.webhook_secret(&decl);
+        }
 
         // Pipeline-dialect absorber — models (and plan-compiled steps) reuse the PIPELINE step
         // vocabulary `inputData` for the module envelope ({action, inputData:{...}}), which the
@@ -2334,6 +2373,30 @@ impl ModuleManager {
             Some(c) => Some(c),
             None => self.get_module_config("user", name).await,
         }
+    }
+
+    /// A module's inbound-webhook declaration (config `webhook`) — the whole vendor dialect of
+    /// "something outside POSTs at us" lives here: which header carries the shared secret, which
+    /// action parses the vendor payload, which action delivers a reply and under which parameter.
+    /// The framework owns only the mechanism (ingress, secret check, the AI round trip).
+    pub async fn webhook_decl(&self, module: &str) -> Option<WebhookDecl> {
+        parse_webhook_decl(&self.module_config(module).await?)
+    }
+
+    /// The shared secret for a module's webhook — the DECLARED secret name, resolved under the
+    /// same `user:` home every declared secret lives in (so the module receives it as env like
+    /// any other). Machine-to-machine, so an absent value is generated once rather than asked for.
+    pub fn webhook_secret(&self, decl: &WebhookDecl) -> String {
+        let key = crate::vault_keys::vk_user_secret(&decl.secret);
+        if let Some(v) = self.vault.get_secret(&key).filter(|v| !v.is_empty()) {
+            return v;
+        }
+        use rand::RngCore;
+        let mut bytes = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        let secret: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        self.vault.set_secret(&key, &secret);
+        secret
     }
 
     /// The module's declared `capability` — the gate resolves a capability allowlist through this.

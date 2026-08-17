@@ -1,71 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '../../../../lib/util/logger';
-import { getTelegramWebhookSecret, isTelegramOwner, processTelegramMessage } from '../../../../lib/api-gen/telegram';
+import { verifyModuleWebhook, processModuleWebhook } from '../../../../lib/api-gen/module';
 
 /**
- * POST /api/telegram/webhook — 텔레그램 Bot API 가 호출하는 진입점.
+ * POST /api/telegram/webhook — 옛 수신 주소의 별칭.
  *
- * 흐름:
- *   1. X-Telegram-Bot-Api-Secret-Token 헤더 검증 (Vault 의 webhook secret 과 비교).
- *      → 인증 없이 호출 시 즉시 401. spoofing 방어.
- *   2. body.message.from.id 가 TELEGRAM_OWNER_IDS whitelist 안에 있는지 확인.
- *      → 외부인은 403, 메시지 무시. AI 도구 / 시크릿 / 모듈 실행까지 가능한 권한이라 owner 만 허용.
- *   3. text 가 비어있으면 (이미지·스티커·투표 등) 무시.
- *   4. processTelegramMessage 로 위임 — AI 호출 + sysmod_telegram 응답.
- *   5. 텔레그램에 200 응답 — 처리 완료 신호 (실패해도 200, retry 폭탄 방어).
- *
- * 인증: 텔레그램 secret token 만 (admin 인증 X — 텔레그램 본체가 호출).
- *       owner whitelist 가 실질 권한 검증.
+ * 정식 수신부는 /api/hooks/telegram (모듈 무관 범용 — /api/hooks/[module]). 텔레그램 서버에는
+ * 이 옛 URL 이 등록된 채 남아 있을 수 있어(외부 호환), 같은 검증·처리로 넘긴다.
+ * 설정 화면에서 웹훅을 재등록하면 새 주소로 바뀌고, 그 뒤 이 파일은 지워도 된다.
  */
 export async function POST(req: NextRequest) {
-  // 1. Secret token 검증
-  const secretRes = await getTelegramWebhookSecret();
-  const expectedSecret = secretRes.ok
-    ? (typeof secretRes.data === 'string' ? secretRes.data : (secretRes.data as { value?: string } | null)?.value ?? null)
-    : null;
-  const incomingSecret = req.headers.get('x-telegram-bot-api-secret-token');
-  if (!expectedSecret || incomingSecret !== expectedSecret) {
-    return NextResponse.json({ ok: false, error: 'Invalid secret token' }, { status: 401 });
+  const module = 'telegram';
+  const headers: Record<string, string> = {};
+  req.headers.forEach((v, k) => { headers[k] = v; });
+  const verified = await verifyModuleWebhook({ module, headersJson: JSON.stringify(headers) });
+  if (!verified.ok || verified.data !== true) {
+    return NextResponse.json({ ok: false, error: 'Invalid webhook secret' }, { status: 401 });
   }
-
-  // 2. body parse
-  let body: any;
+  let payload = '';
   try {
-    body = await req.json();
+    payload = await req.text();
+    JSON.parse(payload);
   } catch {
     return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 });
   }
-
-  const message = body?.message;
-  if (!message) {
-    // edited_message / channel_post 등 다른 update — 단순 무시 + 200 응답
-    return NextResponse.json({ ok: true });
-  }
-
-  // 3. owner whitelist
-  const fromUserId = message.from?.id;
-  const chatId = message.chat?.id;
-  if (!fromUserId || !chatId) {
-    return NextResponse.json({ ok: true }); // 비정상 형태 무시
-  }
-  const ownerRes = await isTelegramOwner({ chatId: String(fromUserId) });
-  if (!ownerRes.ok || ownerRes.data !== true) {
-    // 외부인 — 무시 (응답 X). 텔레그램은 200 받아야 webhook 정상.
-    return NextResponse.json({ ok: true });
-  }
-
-  // 4. text 메시지만 처리 (이미지·스티커·투표 등 v1.x 후속)
-  const text = (message.text || '').trim();
-  if (!text) {
-    return NextResponse.json({ ok: true });
-  }
-
-  // 5. AI 처리 — 응답은 sysmod_telegram 이 같은 chat 으로 송신.
-  //    텔레그램에 빨리 200 응답해야 retry 안 일어남 → 처리는 비동기 fire-and-forget.
-  //    실패는 logger 에 기록 (사용자 알림은 X — 무한 응답 루프 방지).
-  processTelegramMessage({ text, chatId: String(chatId) }).catch((err: any) => {
-    logger.error('telegram', 'processMessage 실패', err);
+  processModuleWebhook({ module, payloadJson: payload }).then(res => {
+    if (!res.ok) logger.error('webhook', 'telegram(alias) process 실패', res.message);
+  }).catch((err: unknown) => {
+    logger.error('webhook', 'telegram(alias) process 실패', err);
   });
-
   return NextResponse.json({ ok: true });
 }

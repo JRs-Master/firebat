@@ -23,6 +23,8 @@ import {
   ModuleService,
   ModuleSetEnabledRequestSchema,
   ModuleSetSettingsRequestSchema,
+  ModuleWebhookProcessRequestSchema,
+  ModuleWebhookVerifyRequestSchema,
   PackageStatusPb,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
@@ -141,10 +143,28 @@ export async function getLang(args: MessageInitShape<typeof ModuleGetLangRequest
   }
 }
 
-export async function getKakaoMapJsKey(): Promise<RpcResult<string>> {
+export async function getComponentVendorKeys(): Promise<RpcResult<unknown>> {
   try {
-      const response = await moduleClient.getKakaoMapJsKey({});
-      return { ok: true, data: unBigInt(response.key) };
+      const response = await moduleClient.getComponentVendorKeys({});
+      return { ok: true, data: JSON.parse(response.rawJson) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function webhookVerify(args: MessageInitShape<typeof ModuleWebhookVerifyRequestSchema>): Promise<RpcResult<boolean>> {
+  try {
+      const response = await moduleClient.webhookVerify(args ?? {});
+      return { ok: true, data: unBigInt(response.ok) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function webhookProcess(args: MessageInitShape<typeof ModuleWebhookProcessRequestSchema>): Promise<RpcResult<unknown>> {
+  try {
+      const response = await moduleClient.webhookProcess(args ?? {});
+      return { ok: true, data: JSON.parse(response.rawJson) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -199,6 +219,8 @@ export const listSystemModules = listSystem;
 export const listUserModules = listUser;
 export const getSystemModules = listSystem;
 export const getUserModules = listUser;
+export const verifyModuleWebhook = webhookVerify;
+export const processModuleWebhook = webhookProcess;
 export const isModuleEnabled = isEnabled;
 export const getModuleSchema = getSchema;
 export const getModuleConfig = getConfig;

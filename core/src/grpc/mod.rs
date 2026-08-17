@@ -28,7 +28,6 @@ pub mod settings;
 pub mod network;
 pub mod lifecycle;
 pub mod cache;
-pub mod telegram;
 pub mod database;
 pub mod memory_file;
 pub mod skill;

@@ -2680,6 +2680,7 @@
   {
     "name": "map",
     "componentType": "Map",
+    "vendorKey": "KAKAO_MAP_JS_KEY",
     "description": "Map with markers, polylines, radius circles, forecast cones and a legend — any data that has coordinates. Provider auto-switch: Korean coordinates (lat 33–38.7, lon 124.5–132) with a Kakao JS key render on Kakao Map, which is precise for Korea only; everywhere else, and Korea without a key, renders on Leaflet + OpenStreetMap.",
     "semanticText": "지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao leaflet osm 부동산 시세 날씨 매장 South Korea",
     "propsSchema": {

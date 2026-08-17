@@ -4896,7 +4896,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
  * 흐름:
  *   1. provider 결정 — 명시 / auto (한국 좌표 → 카카오) / 카카오 키 없으면 leaflet 폴백
  *   2. Leaflet: CDN script 동적 로드 → L.map() 초기화 → L.marker() 추가
- *   3. 카카오: window.__KAKAO_MAP_JS_KEY 설정되어 있으면 SDK 동적 로드 → kakao.maps.Map() → kakao.maps.Marker()
+ *   3. 카카오: window.__VENDOR_KEYS.KAKAO_MAP_JS_KEY 있으면 SDK 동적 로드 → kakao.maps.Map() → kakao.maps.Marker()
  *
  * SSR 안전: useEffect 안에서만 window 접근. 첫 렌더 시 placeholder div.
  */
@@ -5446,7 +5446,9 @@ function MapComp({
     // kakao. 카카오는 한국 밖 타일이 없어, 태풍(14°N 145°E) 같은 해외 지오메트리가 섞이면 백지가 된다
     // (2026-07-06 실측 — "서울 위치" 마커 때문에 center 는 한국으로 판정돼 kakao 로 갔던 케이스).
     // 명시 provider='kakao' 는 그대로 존중.
-    const kakaoKey = (typeof window !== 'undefined' && (window as any).__KAKAO_MAP_JS_KEY) || '';
+    // 렌더러가 자기 벤더 키를 이름으로 꺼낸다 — 어느 컴포넌트가 어느 키를 쓰는지는 components.json
+    // `vendorKey` 선언이고, layout 은 선언된 키 묶음(__VENDOR_KEYS)만 싣는다.
+    const kakaoKey = (typeof window !== 'undefined' && (window as any).__VENDOR_KEYS?.KAKAO_MAP_JS_KEY) || '';
     const allGeoPoints: Array<{ lat: number; lon: number }> = [
       finalCenter,
       ...safeMarkers,

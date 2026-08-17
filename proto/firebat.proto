@@ -657,11 +657,28 @@ message ModuleGetLangResponse {
   // lang/{lang}.json 파일 객체 JSON. 미존재 시 "{}".
   string raw_json = 1;
 }
-message ModuleGetKakaoMapJsKeyRequest {}
-message ModuleGetKakaoMapJsKeyResponse {
-  // CMS settings 의 kakaoMapJsKey — 없으면 빈 string.
-  string key = 1;
+message ModuleGetComponentVendorKeysRequest {}
+message ModuleGetComponentVendorKeysResponse {
+  // { "<vendorKey>": "<value>" } — only keys DECLARED by a component (`vendorKey` in
+  // system/components.json) are ever read; declaring one marks it browser-exposable.
+  string raw_json = 1;
 }
+
+// ─── Module inbound webhooks — generic ingress for ANY module that declares `webhook` ─────
+// The vendor dialect (which header, how to parse, how to reply) is the module's declaration;
+// the framework owns only the mechanism. Replaced the telegram-named service (v3-R4).
+message ModuleWebhookVerifyRequest {
+  string module = 1;
+  // All request headers as a JSON object — the declaration names the one that matters.
+  string headers_json = 2;
+}
+message ModuleWebhookVerifyResponse { bool ok = 1; }
+message ModuleWebhookProcessRequest {
+  string module = 1;
+  // The vendor's POST body, verbatim.
+  string payload_json = 2;
+}
+message ModuleWebhookProcessResponse { string raw_json = 1; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // 5. ModuleService — ModuleManager
@@ -680,7 +697,13 @@ service ModuleService {
   rpc RunUiAction(ModuleRunUiActionRequest) returns (ModuleRunUiActionResponse);
   rpc GetCmsSettings(ModuleGetCmsSettingsRequest) returns (ModuleGetCmsSettingsResponse);
   rpc GetLang(ModuleGetLangRequest) returns (ModuleGetLangResponse);
-  rpc GetKakaoMapJsKey(ModuleGetKakaoMapJsKeyRequest) returns (ModuleGetKakaoMapJsKeyResponse);
+  // Browser-side vendor keys, resolved from component declarations (closed set — never an
+  // arbitrary vault read). Replaces the vendor-named GetKakaoMapJsKey (v3-R4).
+  rpc GetComponentVendorKeys(ModuleGetComponentVendorKeysRequest) returns (ModuleGetComponentVendorKeysResponse);
+  // Inbound webhook mechanism — verify checks the declared secret header; process parses the
+  // payload through the module, runs the AI turn and delivers the reply through the module.
+  rpc WebhookVerify(ModuleWebhookVerifyRequest) returns (ModuleWebhookVerifyResponse);
+  rpc WebhookProcess(ModuleWebhookProcessRequest) returns (ModuleWebhookProcessResponse);
   // 패키지 install — 매 패키지 background spawn + StatusManager job. silent install 폐기 후
   // 사용자 명시 trigger (설정 화면 [설치] / [업그레이드] 버튼) 박은 path. 2026-05-16.
   rpc InstallPackages(ModuleInstallPackagesRequest) returns (ModuleInstallPackagesResponse);
@@ -2531,39 +2554,6 @@ service CacheService {
   rpc Grep(CacheGrepRequest) returns (CacheGrepResponse);
   rpc Aggregate(CacheAggregateRequest) returns (CacheAggregateResponse);
   rpc Drop(CacheDropRequest) returns (CacheDropResponse);
-}
-
-// ─── TelegramService typed Request / Response messages ─────────────────────
-message TelegramSetupWebhookRequest { string webhook_url = 1; }
-message TelegramSetupWebhookResponse { string raw_json = 1; }
-
-message TelegramRemoveWebhookRequest {}
-message TelegramRemoveWebhookResponse { string raw_json = 1; }
-
-message TelegramGetWebhookStatusRequest {}
-message TelegramGetWebhookStatusResponse { string raw_json = 1; }
-
-message TelegramIsOwnerRequest { string chat_id = 1; }
-message TelegramIsOwnerResponse { bool is_owner = 1; }
-
-message TelegramGetWebhookSecretRequest {}
-message TelegramGetWebhookSecretResponse { string raw_json = 1; }
-
-message TelegramProcessMessageRequest {
-  string text = 1;
-  // Telegram chat id — string 또는 number. service 가 두 형식 다 받기 위해 string.
-  string chat_id = 2;
-}
-message TelegramProcessMessageResponse { string raw_json = 1; }
-
-/** Telegram — 양방향 봇 + send-only */
-service TelegramService {
-  rpc SetupWebhook(TelegramSetupWebhookRequest) returns (TelegramSetupWebhookResponse);
-  rpc RemoveWebhook(TelegramRemoveWebhookRequest) returns (TelegramRemoveWebhookResponse);
-  rpc GetWebhookStatus(TelegramGetWebhookStatusRequest) returns (TelegramGetWebhookStatusResponse);
-  rpc IsOwner(TelegramIsOwnerRequest) returns (TelegramIsOwnerResponse);
-  rpc GetWebhookSecret(TelegramGetWebhookSecretRequest) returns (TelegramGetWebhookSecretResponse);
-  rpc ProcessMessage(TelegramProcessMessageRequest) returns (TelegramProcessMessageResponse);
 }
 
 // ─── DatabaseService typed Request / Response messages ─────────────────────

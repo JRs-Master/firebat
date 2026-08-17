@@ -29,6 +29,14 @@
     "TELEGRAM_OWNER_IDS",
     "TELEGRAM_WEBHOOK_SECRET"
   ],
+  "webhook": {
+    "secret": "TELEGRAM_WEBHOOK_SECRET",
+    "secretHeader": "x-telegram-bot-api-secret-token",
+    "parseAction": "parse-webhook",
+    "replyAction": "send-message",
+    "replyTextParam": "text",
+    "replyMaxChars": 4000
+  },
   "settings_fields": [
     {
       "key": "bruteForceAlert",
@@ -45,10 +53,22 @@
           "send-message",
           "send-photo",
           "send-document",
-          "send-location"
+          "send-location",
+          "parse-webhook",
+          "set-webhook",
+          "remove-webhook",
+          "webhook-info"
         ],
         "default": "send-message",
-        "description": "send-message=텔레그램 메시지 보내기·전송, 알림 발송, send telegram text message notification / send-photo=사진·이미지 전송, send photo image / send-document=문서·파일 전송, send document file / send-location=위치 전송, send location"
+        "description": "send-message=텔레그램 메시지 보내기·전송, 알림 발송, send telegram text message notification / send-photo=사진·이미지 전송, send photo image / send-document=문서·파일 전송, send document file / send-location=위치 전송, send location / parse-webhook=수신 웹훅 update 해석 (프레임워크 전용) / set-webhook=텔레그램 서버에 수신 URL 등록 / remove-webhook=수신 등록 해제 / webhook-info=수신 등록 상태"
+      },
+      "url": {
+        "type": "string",
+        "description": "[set-webhook] 공개 수신 URL — https://<domain>/hooks/telegram"
+      },
+      "payload": {
+        "type": "object",
+        "description": "[parse-webhook] 텔레그램이 보낸 update 원문 — 프레임워크 수신부가 채운다"
       },
       "text": {
         "type": "string",
