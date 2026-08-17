@@ -708,7 +708,7 @@ impl AiManager {
     pub fn register_spawn_subagent_tool(self: &Arc<Self>) {
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "spawn_subagent".to_string(),
-            description: "Delegate INDEPENDENT sub-tasks to isolated sub-agents that run in parallel (each is a full agent run on the main model, with tools, empty history). Use for large decomposable work (e.g. researching several subjects at once) — one call with ALL tasks in the `tasks` array; do NOT call this tool once per task. Not for small single-step work (call the tool directly instead). NEVER call spawn_subagent from within a sub-agent task prompt (no recursion). Approval-gated tools are rejected inside sub-agents.".to_string(),
+            description: "Run INDEPENDENT sub-tasks in parallel, each an isolated full agent (tools, empty history, main model). One call carries ALL tasks in `tasks` — not one call per task, and not for single-step work. No recursion (never from inside a sub-agent); approval-gated tools are rejected there.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1274,7 +1274,7 @@ impl AiManager {
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "SEARCH mode: what you need, in natural language. Pack synonyms (Korean + English) of the capability into ONE query — the noun for the thing and the verb for the doing, both languages — since one rich query beats several terse retries. Never put a subject name in it (a company, an instrument, a place, a person, or wording lifted from the question): a name matches nothing, and every word of it dilutes the ones that would. Omit to BROWSE a module instead." },
+                    "query": { "type": "string", "description": "SEARCH mode: the capability you need, in natural language (Korean+English synonyms both help) — never a subject name; resolve companies/places/people to ids with a lookup action. Omit to BROWSE a module instead." },
                     "module": { "type": "string", "description": "module name, exactly as the module index gives it. Scopes SEARCH, or selects the module to BROWSE when `query` is omitted." },
                     "domain": { "type": "string", "description": "BROWSE mode: drill into one domain returned by a previous browse of a large module." },
                     "limit": { "type": "integer", "description": "SEARCH mode: max results (default 5)" }
@@ -4045,8 +4045,8 @@ impl AiManager {
                             ) {
                                 None
                             } else {
-                                Some(format!(
-                                    "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first — it counts for the next 30 minutes of this conversation — then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
+                                Some(crate::utils::conversation_scope::discovery_reject(
+                                    &module, act,
                                 ))
                             }
                         }

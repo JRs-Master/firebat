@@ -279,7 +279,7 @@ pub fn apply_auto_cache_opts(
                     // (2026-08-12). Say it where the truncated preview is being read, not in a
                     // resident rule: the consumption-point channel is the one that lands.
                     meta["next"] = serde_json::Value::String(format!(
-                        "Only {AUTO_CACHE_PREVIEW} of {total_count} rows are shown inline. The FULL data is already cached — page it with cache_read({{cacheKey}}) or filter rows with cache_grep({{cacheKey, field, op, value}}); numeric aggregates via cache_aggregate; to render everything use dataCacheKey in the fence. Feeding these rows to another module? Pass this key as its <param>CacheKey — and for part of the table add <param>Limit:N (the most-recent N rows) or <param>Range:{{from,to}} beside it. NEVER retype rows to trim them. Do NOT re-call the module with a larger limit — the inline preview stays truncated."
+                        "Only {AUTO_CACHE_PREVIEW} of {total_count} rows are shown inline; the FULL data is cached. Page cache_read({{cacheKey}}), filter cache_grep({{cacheKey, field, op, value}}), total cache_aggregate; render via dataCacheKey in the fence. To feed another module, pass this key as its <param>CacheKey (slice with <param>Limit:N / <param>Range:{{from,to}} beside it) — never retype rows. Re-calling with a larger limit keeps the preview truncated."
                     ));
                 }
                 obj.insert("_cacheMeta".to_string(), meta);

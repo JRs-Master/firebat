@@ -720,9 +720,7 @@ async fn gated_tool_call(
             if !conversation_scope::schema_ok(&scope, module, act) {
                 tracing::info!(target: "discovery", tool = name, module = module, action = act,
                     "discovery-first reject — schema not fetched in this conversation window");
-                return Err(format!(
-                    "Standard procedure: call get_action_schema(\"{module}\", \"{act}\") first, then invoke the action with exactly the parameters it lists. Every action goes through discovery before execution, familiar or not (guessed parameters are how turns break). You can fetch several schemas in one round."
-                ));
+                return Err(conversation_scope::discovery_reject(module, act));
             }
         }
     }

@@ -66,6 +66,20 @@ pub const MAX_SCOPES: usize = 200;
 /// here so a runaway loop cannot grow the entry without bound.
 pub const PRODUCED_MAX: usize = 20;
 
+/// The discovery-first rejection, spoken identically on both transports.
+///
+/// It used to live twice — the FC copy had grown a thirty-minute clause the MCP copy never got,
+/// which is exactly the dual-registry drift the shared store exists to end. The text is the next
+/// move plus the one piece of state worth disclosing (how long the fetch counts); the WHY
+/// paragraph it used to carry taught nothing the refusal itself does not already enforce.
+pub fn discovery_reject(module: &str, action: &str) -> String {
+    format!(
+        "Standard procedure: call get_action_schema(\"{module}\", \"{action}\") first — it counts \
+         for the next 30 minutes of this conversation — then invoke with exactly the parameters \
+         it lists. Several schemas can be fetched in one round."
+    )
+}
+
 /// A file a tool really produced — the receipt a file card is drawn from.
 ///
 /// `url` is the only field that cannot be missing: it is the address the media store actually
