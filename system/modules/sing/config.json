@@ -78,6 +78,34 @@
               "null"
             ],
             "description": "Per-part instrument override {melody?, chord?, bass?} from the module's library — electric/acoustic guitar, e-violin, synth/square leads, synth bass, piano, e-piano, organ, accordion, strings, brass, flute, marimba, bell, music box. An unknown name is refused with the full list in the error, so guessing is safe. Omitted parts keep the style's own band."
+          },
+          "meter": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Beats per bar: 4 (default) or 3 (waltz — its own drum grooves)."
+          },
+          "swing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "0-1: how late the rhythm section's offbeat eighths lean (0 straight, 1 full shuffle). Omit for the style's default (trot swings lightly). The melody always stays straight."
+          },
+          "comp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How the chord part moves: pad (held) | stabs (offbeat strokes) | arp (rippling eighths) | quarters. Omit for the style's default."
+          },
+          "bassline": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How the bass moves: hold (whole notes + walk into the next chord) | twobeat (root-fifth alternation) | alt (marching quarters). Omit for the style's default."
           }
         }
       },

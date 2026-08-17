@@ -55,31 +55,32 @@ def note_freq(name):
 
 
 def parse_score(score):
-    """Normalize {bpm, notes[], chords?, style?, band?} -> (spb, events, chords, style, band, err).
+    """Normalize {bpm, notes[], chords?, style?, band?, meter?, swing?, comp?, bassline?}
+    -> (spb, events, chords, style, band, feel, err).
 
     An event is one SUNG syllable: consecutive '-' notes extend the previous syllable across
     pitches (a melisma) — for the MVP the extension keeps the first pitch's duration math simple:
     each event carries a list of (freq, beats) segments.
     """
     if not isinstance(score, dict):
-        return None, None, None, None, None, "score 가 객체가 아닙니다"
+        return None, None, None, None, None, None, "score 가 객체가 아닙니다"
     bpm = float(score.get("bpm") or 0)
     if not (20 <= bpm <= 300):
-        return None, None, None, None, None, f"bpm {bpm} 은 20~300 이어야 합니다"
+        return None, None, None, None, None, None, f"bpm {bpm} 은 20~300 이어야 합니다"
     spb = 60.0 / bpm
     notes = score.get("notes")
     if not isinstance(notes, list) or not notes:
-        return None, None, None, None, None, "notes 가 비었습니다"
+        return None, None, None, None, None, None, "notes 가 비었습니다"
     events = []
     for n in notes:
         if not isinstance(n, dict):
-            return None, None, None, None, None, "notes 항목이 객체가 아닙니다"
+            return None, None, None, None, None, None, "notes 항목이 객체가 아닙니다"
         freq = note_freq(n.get("note"))
         beats = float(n.get("beats") or 1)
         if freq is None:
-            return None, None, None, None, None, f"음이름을 읽을 수 없습니다: {n.get('note')!r}"
+            return None, None, None, None, None, None, f"음이름을 읽을 수 없습니다: {n.get('note')!r}"
         if beats <= 0 or beats > 16:
-            return None, None, None, None, None, f"beats {beats} 가 이상합니다 (0 < beats <= 16)"
+            return None, None, None, None, None, None, f"beats {beats} 가 이상합니다 (0 < beats <= 16)"
         syl = str(n.get("syl") or "").strip()
         if syl == "-" and events:
             events[-1]["segments"].append((freq, beats))
@@ -99,13 +100,34 @@ def parse_score(score):
         part = str(part).strip().lower()
         name = str(name).strip().lower()
         if part not in ("melody", "chord", "bass"):
-            return None, None, None, None, None, \
+            return None, None, None, None, None, None, \
                 f"band 의 파트 {part!r} 를 모릅니다 — melody | chord | bass 만 받습니다"
         if name not in PATCHES:
-            return None, None, None, None, None, \
+            return None, None, None, None, None, None, \
                 f"악기 {name!r} 가 라이브러리에 없습니다 — 가능한 악기: {', '.join(sorted(PATCHES))}"
         band[part] = name
-    return spb, events, chords, style, band, None
+    # feel = how the band plays. Every knob has a style default, so a bare score still grooves.
+    meter = int(score.get("meter") or 4)
+    if meter not in (3, 4):
+        return None, None, None, None, None, None, "meter 는 3 또는 4 만 받습니다 (4/4 · 3/4)"
+    swing = score.get("swing")
+    if swing is not None:
+        try:
+            swing = float(swing)
+        except (TypeError, ValueError):
+            return None, None, None, None, None, None, "swing 은 0~1 숫자입니다 (0 = 스트레이트, 1 = 셔플)"
+        if not (0.0 <= swing <= 1.0):
+            return None, None, None, None, None, None, "swing 은 0~1 사이여야 합니다"
+    comp = str(score.get("comp") or "").strip().lower() or None
+    if comp is not None and comp not in COMP_KINDS:
+        return None, None, None, None, None, None, \
+            f"comp {comp!r} 를 모릅니다 — 가능한 값: {' | '.join(COMP_KINDS)}"
+    bassline = str(score.get("bassline") or "").strip().lower() or None
+    if bassline is not None and bassline not in BASS_KINDS:
+        return None, None, None, None, None, None, \
+            f"bassline {bassline!r} 를 모릅니다 — 가능한 값: {' | '.join(BASS_KINDS)}"
+    feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline}
+    return spb, events, chords, style, band, feel, None
 
 
 # ── synthesis (the rhythm section) ─────────────────────────────────────────────────────────────
@@ -374,6 +396,36 @@ STYLE_BAND = {
     "march":  {"melody": "brass", "chord": "organ", "bass": "bass"},
 }
 
+# How a style PLAYS — the arrangement was static before this: the chord part held whole notes
+# like a pad and the bass hit one root per chord, so swapping instruments still sounded slow.
+# comp = how the chord part moves · bass = how the bass moves · swing = how far the offbeat
+# eighths lean (0 straight, 1 full triplet; drums/comp/bass only — the melody stays straight
+# because the vocal is cut to the written grid). Every knob is score-overridable.
+STYLE_FEEL = {
+    "trot":   {"comp": "stabs", "bass": "twobeat", "swing": 0.3},
+    "ballad": {"comp": "arp", "bass": "hold", "swing": 0.0},
+    "march":  {"comp": "quarters", "bass": "alt", "swing": 0.0},
+    "none":   {"comp": "pad", "bass": "hold", "swing": 0.0},
+}
+COMP_KINDS = ("pad", "stabs", "arp", "quarters")
+BASS_KINDS = ("hold", "twobeat", "alt")
+
+# 3/4 grooves — a waltz bar is not a trimmed 4/4 bar, so the tables are their own.
+DRUM_PATTERNS_3 = {
+    "trot":   [("kick", 0.0, 0.9), ("hat", 0.5, 0.4), ("snare", 1.0, 0.65), ("hat", 1.5, 0.4),
+               ("snare", 2.0, 0.7), ("hat", 2.5, 0.4)],
+    "ballad": [("kick", 0.0, 0.75), ("hat", 1.0, 0.4), ("hat", 2.0, 0.4)],
+    "march":  [("kick", 0.0, 0.9), ("snare", 1.0, 0.6), ("snare", 2.0, 0.65)],
+    "none":   [],
+}
+DRUM_FILLS_3 = {
+    "trot":   (2.0, [("tom_hi", 2.0, 0.55), ("tom_mid", 2.25, 0.65), ("tom_lo", 2.5, 0.75),
+                     ("tom_lo", 2.75, 0.9)]),
+    "ballad": (2.0, [("tom_mid", 2.0, 0.45), ("tom_lo", 2.5, 0.6)]),
+    "march":  (2.0, [("snare", 2.0, 0.5), ("snare", 2.25, 0.6), ("snare", 2.5, 0.75),
+                     ("snare", 2.75, 0.9)]),
+}
+
 
 # ── arrangement — one event list, several renderers ───────────────────────────────────────────
 #
@@ -416,39 +468,122 @@ def chord_voicing(root_midi, quality=""):
     return [root_midi + s for s in semis]
 
 
-def build_arrangement(events, chords, style, total_beats, band=None):
+def smooth_voicing(notes, prev):
+    """Voice-leading: move each chord tone to the octave nearest the previous voicing's center.
+    Root-position jumps are what makes a progression sound typed; a player's hand stays put."""
+    if not prev:
+        return sorted(notes)
+    center = sum(prev) / len(prev)
+    return sorted(min((n - 12, n, n + 12), key=lambda c: abs(c - center)) for n in notes)
+
+
+def _comp_hits(kind, beats, meter):
+    """(offset, dur, vel) strokes for ONE chord segment — how the chord part moves.
+    stabs = the 짝 of 쿵-짝(offbeats) · quarters = a march's on-beats · pad = the old whole note.
+    (arp is built in the caller: it needs the voicing, not just a rhythm.)"""
+    if kind == "stabs":
+        step = 2.0 if meter == 4 else 1.0
+        return [(float(off), 0.9, 0.7) for off in np.arange(1.0, beats, step)]
+    if kind == "quarters":
+        return [(float(b), 0.9, 0.74 if b % 2 == 0 else 0.64) for b in range(int(beats))]
+    return [(0.0, float(beats), 0.6)]  # pad
+
+
+def _bass_line(kind, root_midi, beats, next_root_midi, meter):
+    """(offset, dur, pitch, vel) for one chord segment. The bass register is root-12 as before.
+    twobeat = root/5th alternation (the 뽕짝 walk) · alt = marching quarters · hold = the old
+    whole note, now with a chromatic approach into the next chord when there is one."""
+    b = root_midi - 12
+    fifth = b + 7
+    if kind == "twobeat":
+        step = 1.0 if beats <= 2 else 2.0
+        out, on_fifth = [], False
+        for off in np.arange(0.0, beats, step):
+            out.append((float(off), step * 0.85, fifth if on_fifth else b,
+                        0.68 if on_fifth else 0.78))
+            on_fifth = not on_fifth
+        return out
+    if kind == "alt":
+        return [(float(i), 0.9, fifth if i % 2 else b, 0.62 if i % 2 else 0.78)
+                for i in range(int(beats))]
+    # hold — and walk into the next chord instead of teleporting there
+    if next_root_midi is not None and next_root_midi != root_midi and beats >= 2:
+        nb = next_root_midi - 12
+        approach = nb - 1 if nb > b else nb + 1
+        return [(0.0, float(beats) - 0.5, b, 0.72), (float(beats) - 0.5, 0.5, approach, 0.6)]
+    return [(0.0, float(beats), b, 0.72)]
+
+
+def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     """Score -> flat list of {beat, beats, part, patch, pitch|drum, program, vel}. Beats, not
     samples: the renderers turn them into whatever they count in (samples here, MIDI ticks there).
-    `band` = per-part instrument override ({part: PATCHES name}) on top of the style's own."""
+    `band` = per-part instrument override ({part: PATCHES name}) on top of the style's own.
+    `feel` = {meter, swing, comp, bass} from parse_score; None = the style's own defaults."""
     hire = dict(STYLE_BAND.get(style, STYLE_BAND["trot"]))
     for part, name in (band or {}).items():
         if part in hire and name in PATCHES:
             hire[part] = name
     prog = {part: PATCHES[name].get("gm", 0) for part, name in hire.items()}
+    defaults = STYLE_FEEL.get(style, STYLE_FEEL["trot"])
+    feel = feel or {}
+    meter = int(feel.get("meter") or 4)
+    swing = float(feel.get("swing") if feel.get("swing") is not None else defaults["swing"])
+    comp = feel.get("comp") or defaults["comp"]
+    bassline = feel.get("bass") or defaults["bass"]
     out = []
     # Melody — the notes the voice sings, also given to an instrument. Without this an
     # instrumental render (no vocalPath) had rhythm and bass and no tune at all.
+    # Velocity is a phrase shape, not a constant: downbeats lean, offbeats step back.
     beat = 0.0
     for ev in events:
         for freq, beats in ev["segments"]:
             m = int(round(69 + 12 * math.log2(freq / 440.0)))
+            on_down = (beat % meter) < 1e-6
+            on_beat = (beat % 1.0) < 1e-6
+            vel = 0.82 if on_down else (0.74 if on_beat else 0.64)
             out.append({"beat": beat, "beats": beats, "part": "melody", "patch": hire["melody"],
-                        "pitch": m, "program": prog["melody"]})
+                        "pitch": m, "program": prog["melody"], "vel": vel})
             beat += beats
     pos = 0.0
-    for root, beats, quality in chords:
+    prev_voicing = None
+    for idx, (root, beats, quality) in enumerate(chords):
         rm = int(round(69 + 12 * math.log2(root / 440.0)))
-        for p in chord_voicing(rm, quality):
-            out.append({"beat": pos, "beats": beats, "part": "chord", "patch": hire["chord"],
-                        "pitch": p, "program": prog["chord"]})
-        # An octave below the written root — a root written at C3 plays bass at C2.
-        out.append({"beat": pos, "beats": beats, "part": "bass", "patch": hire["bass"],
-                    "pitch": rm - 12, "program": prog["bass"]})
+        voicing = smooth_voicing(chord_voicing(rm, quality), prev_voicing)
+        prev_voicing = voicing
+        if comp == "arp":
+            # Eighths rippling up-and-down the voicing — needs the notes, not just a rhythm.
+            order = voicing + voicing[-2:0:-1]
+            for slot in range(int(beats * 2)):
+                off = slot * 0.5
+                if pos + off >= total_beats:
+                    break
+                out.append({"beat": pos + off, "beats": 0.55, "part": "chord",
+                            "patch": hire["chord"], "pitch": order[slot % len(order)],
+                            "program": prog["chord"],
+                            "vel": 0.58 if slot % 2 == 0 else 0.48})
+        else:
+            for off, dur, vel in _comp_hits(comp, beats, meter):
+                if pos + off >= total_beats:
+                    break
+                for p in voicing:
+                    out.append({"beat": pos + off, "beats": dur, "part": "chord",
+                                "patch": hire["chord"], "pitch": p,
+                                "program": prog["chord"], "vel": vel})
+        next_rm = None
+        if idx + 1 < len(chords):
+            next_rm = int(round(69 + 12 * math.log2(chords[idx + 1][0] / 440.0)))
+        for off, dur, pitch, vel in _bass_line(bassline, rm, beats, next_rm, meter):
+            if pos + off < total_beats:
+                out.append({"beat": pos + off, "beats": dur, "part": "bass",
+                            "patch": hire["bass"], "pitch": pitch,
+                            "program": prog["bass"], "vel": vel})
         pos += beats
         if pos >= total_beats:
             break
-    base = DRUM_PATTERNS.get(style, DRUM_PATTERNS["trot"])
-    fill = DRUM_FILLS.get(style if style in DRUM_FILLS else "trot")
+    patterns = DRUM_PATTERNS_3 if meter == 3 else DRUM_PATTERNS
+    fills = DRUM_FILLS_3 if meter == 3 else DRUM_FILLS
+    base = patterns.get(style, patterns["trot"])
+    fill = fills.get(style if style in fills else "trot")
     bar, bar_i = 0.0, 0
     while bar < total_beats:
         hits = list(base)
@@ -461,16 +596,26 @@ def build_arrangement(events, chords, style, total_beats, band=None):
             if bar + off < total_beats:
                 out.append({"beat": bar + off, "beats": 0.25, "part": "drum",
                             "drum": inst, "vel": vel})
-        bar += 4.0
+        bar += float(meter)
         bar_i += 1
+    # Swing — the offbeat eighths of the rhythm section lean late. The melody stays straight:
+    # the vocal is cut to the written grid, and a straight voice over a shuffling band is the
+    # trot sound anyway.
+    if swing > 0:
+        shift = swing / 6.0
+        for e in out:
+            if e["part"] != "melody" and abs(e["beat"] % 1.0 - 0.5) < 1e-6:
+                e["beat"] += shift
     out.sort(key=lambda e: (e["beat"], e["part"]))
     return out
 
 
 def render_arrangement(arr, spb, total_beats):
-    """The numpy backend — every part of `arr` mixed into one float array."""
+    """The numpy backend — (stereo (n,2) array, mono reverb-send bus). The band is panned onto
+    a stage and each voice contributes to one shared room (add_room applies it at the end)."""
     n_total = int(SR * spb * total_beats) + int(SR * 0.5)
-    out = np.zeros(n_total)
+    out = np.zeros((n_total, 2))
+    send = np.zeros(n_total)
     hits = {"kick": kick(), "snare": snare(), "hat": hat(), "ohat": ohat(),
             "tom_hi": tom(210.0, seed=5), "tom_mid": tom(150.0, seed=6),
             "tom_lo": tom(105.0, seed=8), "crash": crash()}
@@ -480,11 +625,54 @@ def render_arrangement(arr, spb, total_beats):
             continue
         if e["part"] == "drum":
             seg = hits[e["drum"]] * float(e.get("vel", 0.8))
+            key = e["drum"]
         else:
             seg = synth_note(freq_of_midi(e["pitch"]), spb * e["beats"],
-                             e.get("patch", e["part"]))
-        out[i:i + len(seg)] += seg[: max(0, n_total - i)]
-    return out
+                             e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)))
+            key = e["part"]
+        m = min(len(seg), n_total - i)
+        seg = seg[:m]
+        # Constant-power pan: the band sits on a stage, not a point.
+        theta = (PAN.get(key, 0.0) + 1.0) * np.pi / 4.0
+        out[i:i + m, 0] += seg * np.cos(theta)
+        out[i:i + m, 1] += seg * np.sin(theta)
+        send[i:i + m] += seg * SEND.get(key, 0.1)
+    return out, send
+
+
+# Where each voice sits (−1 left … +1 right) and how much of it goes to the room. The dry mix
+# was mono and bone-dry, which doubled the synth-ness of everything: a stage and a little air
+# are half of "sounds like a record".
+PAN = {"melody": 0.0, "chord": -0.25, "bass": 0.0, "vocal": 0.0,
+       "kick": 0.0, "snare": 0.08, "hat": 0.32, "ohat": 0.32,
+       "tom_hi": -0.28, "tom_mid": 0.0, "tom_lo": 0.28, "crash": -0.32}
+SEND = {"melody": 0.22, "chord": 0.16, "bass": 0.04,
+        "kick": 0.05, "snare": 0.14, "hat": 0.08, "ohat": 0.10,
+        "tom_hi": 0.16, "tom_mid": 0.16, "tom_lo": 0.16, "crash": 0.30}
+
+
+def _reverb_ir(seconds, seed):
+    """Exponentially decaying noise = a perfectly serviceable room. Two seeds = a stereo room."""
+    n = int(SR * seconds)
+    ir = np.random.default_rng(seed).standard_normal(n) * np.exp(-np.arange(n) / (SR * 0.28))
+    ir[:int(SR * 0.018)] = 0.0  # predelay — keeps the dry attack in front of the wash
+    energy = float(np.sqrt(np.sum(ir * ir))) or 1.0
+    return ir / energy
+
+
+def _fft_convolve(x, ir):
+    n = len(x) + len(ir) - 1
+    size = 1 << max(1, (n - 1).bit_length())
+    return np.fft.irfft(np.fft.rfft(x, size) * np.fft.rfft(ir, size), size)[:len(x)]
+
+
+def add_room(stereo, send, wet=0.9):
+    """One room for the whole band — the send bus decides who stands close to it."""
+    if len(send) == 0 or not np.any(send):
+        return stereo
+    stereo[:, 0] += _fft_convolve(send, _reverb_ir(0.9, 21)) * wet
+    stereo[:, 1] += _fft_convolve(send, _reverb_ir(0.9, 22)) * wet
+    return stereo
 
 
 def write_midi(arr, bpm, path):
@@ -886,26 +1074,33 @@ def action_render(inp):
             return {"success": False,
                     "error": f"score media must be MIDI for now (.mid/.midi, got .{ext}) — "
                              "hum-to-score is a later slice"}
-    spb, events, chords, style, band, err = parse_score(score)
+    spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
     total_beats = sum(b for ev in events for _, b in ev["segments"])
     chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
-    arr = build_arrangement(events, chords, style, total_beats, band)
+    arr = build_arrangement(events, chords, style, total_beats, band, feel)
     vocal_path = str(inp.get("vocalPath") or "").strip()
     # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
     # tune, and dropping it was why an instrumental render came out as rhythm and bass only.
     if vocal_path:
         arr = [e for e in arr if e["part"] != "melody"]
-    mix = render_arrangement(arr, spb, total_beats) * 0.45
+    mix, send = render_arrangement(arr, spb, total_beats)
+    mix, send = mix * 0.45, send * 0.45
     if vocal_path:
         if not os.path.isfile(vocal_path):
             return {"success": False,
                     "error": f"vocalPath 파일이 없습니다: {vocal_path} (workspace 기준 상대 경로)"}
         vocal = render_vocal(read_wav_mono(vocal_path), events, spb)
         n = max(len(mix), len(vocal))
-        mix = np.pad(mix, (0, n - len(mix))) + np.pad(vocal, (0, n - len(vocal))) * 0.9
+        mix = np.pad(mix, ((0, n - len(mix)), (0, 0)))
+        send = np.pad(send, (0, n - len(send)))
+        v = np.pad(vocal, (0, n - len(vocal))) * 0.9
+        mix[:, 0] += v * 0.707  # the singer stands center stage
+        mix[:, 1] += v * 0.707
+        send += v * 0.18
+    mix = add_room(mix, send)
     out_path = str(inp.get("outPath") or "").strip()
     if not out_path:
         h = hashlib.sha1(json.dumps(score, sort_keys=True).encode()).hexdigest()[:12]
@@ -958,9 +1153,11 @@ def action_selftest():
                        {"syl": "-", "note": "G4", "beats": 1},
                        {"syl": "다", "note": "C5", "beats": 1}],
              "chords": [{"root": "C3", "beats": 4}]}
-    spb, events, chords, style, band, err = parse_score(score)
+    spb, events, chords, style, band, feel, err = parse_score(score)
     ck("score parses", None, err, err is None)
     ck("a '-' note extends the previous syllable (melisma)", 3, len(events), len(events) == 3)
+    ck("feel carries the style's defaults", True, feel is not None and feel["meter"] == 4,
+       feel is not None and feel["meter"] == 4)
 
     # The whole render, not just the pieces: unpacking `chords` changed shape and every caller had
     # to follow, but the selftest only reached `build_arrangement` — so `action_render` broke where
@@ -978,10 +1175,10 @@ def action_selftest():
     ck("the arrangement plays a tune, not just a rhythm section",
        ["bass", "chord", "drum", "melody"], parts,
        parts == ["bass", "chord", "drum", "melody"])
-    # A chord written as one root has to reach the ear as a chord.
-    ck("one written root becomes a triad", 3,
-       sum(1 for e in arr if e["part"] == "chord"),
-       sum(1 for e in arr if e["part"] == "chord") == 3)
+    # A chord written as one root has to reach the ear as a chord — comping repeats the strokes,
+    # so count distinct pitches, not events.
+    triad = sorted({e["pitch"] for e in arr if e["part"] == "chord"})
+    ck("one written root becomes a triad", 3, len(triad), len(triad) == 3)
     ck("quality shapes the chord: a minor third where the score says so", [0, 3, 7],
        [p - 60 for p in chord_voicing(60, "m")],
        [p - 60 for p in chord_voicing(60, "m")] == [0, 3, 7])
@@ -999,11 +1196,38 @@ def action_selftest():
        next(e["pitch"] for e in arr if e["part"] == "bass"),
        next(e["pitch"] for e in arr if e["part"] == "bass") == midi_number("C2"))
 
-    audio = render_arrangement(arr, spb, 4)
+    audio, room = render_arrangement(arr, spb, 4)
     ck("accompaniment covers the bar", int(SR * spb * 4), len(audio),
        abs(len(audio) - SR * spb * 4) <= SR)
     ck("accompaniment is not silence and not NaN", True,
        bool(np.max(np.abs(audio)) > 0.01), np.max(np.abs(audio)) > 0.01 and not np.any(np.isnan(audio)))
+    ck("the band plays on a stereo stage", (len(audio), 2), audio.shape,
+       audio.ndim == 2 and audio.shape[1] == 2)
+    ck("panning actually separates the channels", True,
+       not np.allclose(audio[:, 0], audio[:, 1]), not np.allclose(audio[:, 0], audio[:, 1]))
+    wet = add_room(audio.copy(), room)
+    ck("the room adds energy the dry mix did not have", True,
+       float(np.sum(np.abs(wet))) > float(np.sum(np.abs(audio))),
+       float(np.sum(np.abs(wet))) > float(np.sum(np.abs(audio))))
+
+    # The arrangement moves now: trot comping strikes offbeats (and swings them late), the
+    # bass alternates root and fifth, and voice-leading keeps adjacent chords under one hand.
+    ck("trot comping is strokes, not one held pad", True,
+       sum(1 for e in arr if e["part"] == "chord") > 3,
+       sum(1 for e in arr if e["part"] == "chord") > 3)
+    swung = [e for e in arr if e["part"] == "drum" and abs(e["beat"] % 1.0 - 0.55) < 0.01]
+    ck("trot offbeats lean late (swing)", True, len(swung) > 0, len(swung) > 0)
+    two = build_arrangement(events, [(note_freq("C3"), 4.0, ""), (note_freq("G3"), 4.0, "")],
+                            "ballad", 8)
+    c1 = [e["pitch"] for e in two if e["part"] == "chord" and e["beat"] < 4]
+    c2 = [e["pitch"] for e in two if e["part"] == "chord" and e["beat"] >= 4]
+    drift = abs(sum(set(c2)) / len(set(c2)) - sum(set(c1)) / len(set(c1)))
+    ck("voice-leading keeps the next chord under the same hand", True,
+       round(drift, 1) <= 4.0, drift <= 4.0)
+    waltz = build_arrangement(events, [(note_freq("C3"), 3.0, "")] * 2, "ballad", 6,
+                              None, {"meter": 3, "swing": 0.0, "comp": None, "bass": None})
+    kicks = [e["beat"] for e in waltz if e["part"] == "drum" and e["drum"] == "kick"]
+    ck("3/4 bars advance by three beats", [0.0, 3.0], kicks, kicks == [0.0, 3.0])
 
     # The kit is a kit, not a lone kick: 4 bars in, the 4th bar rolls down the toms (두구두구)
     # and every 4-bar group opens on a crash (쨍).
@@ -1028,7 +1252,7 @@ def action_selftest():
     bad = parse_score({"bpm": 120, "notes": [{"syl": "가", "note": "C4", "beats": 1}],
                        "band": {"melody": "kazoo"}})
     ck("an unknown instrument is refused WITH the library in the message", True,
-       (bad[5] or "")[:60], bool(bad[5]) and "aguitar" in (bad[5] or ""))
+       (bad[-1] or "")[:60], bool(bad[-1]) and "aguitar" in (bad[-1] or ""))
 
     # Every instrument in the library renders sound, not NaN — the KS string and the vibrato
     # path included. One sweep so a new patch cannot ship silent.
