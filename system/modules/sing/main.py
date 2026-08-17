@@ -198,7 +198,12 @@ def pluck_ks(freq, dur, damp=0.996, mellow=False):
     Iterates per string period, not per sample — a few hundred numpy ops for seconds of audio.
     `mellow` pre-smooths the pluck: a nylon string is struck by flesh, steel by a pick."""
     n = max(1, int(SR * dur))
-    period = max(2, int(round(SR / max(20.0, freq))))
+    freq = max(20.0, freq)
+    # The averaging reflection delays the wave half a sample per pass, so the string's true
+    # period is P + 0.5 — pick P for that, then resample away the integer remainder. Without
+    # both, notes land up to ~10 cents off and a tremolo rubs the error against the chords
+    # for the whole bar (실측: "너무 시다").
+    period = max(2, int(round(SR / freq - 0.5)))
     rng = np.random.default_rng(int(freq) + 3)
     prev = rng.standard_normal(period)
     if mellow:
@@ -210,6 +215,10 @@ def pluck_ks(freq, dur, damp=0.996, mellow=False):
         take = min(period, n - filled)
         out[filled:filled + take] = prev[:take]
         filled += take
+    actual = SR / (period + 0.5)
+    if abs(actual - freq) > 0.01:
+        idx = np.linspace(0.0, n - 1, n) * (freq / actual)
+        out = np.interp(np.clip(idx, 0, n - 1), np.arange(n), out)
     return out
 
 
@@ -395,6 +404,9 @@ DRUM_PATTERNS = {
                  [("kick", 0.0, 0.8), ("kick", 2.5, 0.6), ("snare", 1.0, 0.7), ("snare", 3.0, 0.7)],
     "rocknroll": _HATS8 + [("kick", 0.0, 0.9), ("kick", 2.0, 0.85),
                            ("snare", 1.0, 0.8), ("snare", 3.0, 0.8)],
+    "hiphop":    [("hat", o / 2.0, 0.35) for o in range(8)] +
+                 [("kick", 0.0, 0.9), ("kick", 1.75, 0.6), ("kick", 2.5, 0.75),
+                  ("snare", 1.0, 0.85), ("snare", 3.0, 0.85)],
     "classic":   [],
     "newage":    [],
     "none":      [],
@@ -403,7 +415,8 @@ DRUM_PATTERNS = {
 # Familiar names people actually say → the row that plays them. kpop/jpop are pop grooves here
 # honestly: what makes them THEM is production this synth does not do.
 STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
-                 "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad"}
+                 "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad",
+                 "rap": "hiphop", "boombap": "hiphop"}
 
 # 쿵덕 for three bars, 두구두구 on the fourth, 쨍 on the downbeat after: every 4th bar keeps its
 # groove up to the fill start and rolls down the toms; every 4-bar group opens on a crash.
@@ -434,6 +447,7 @@ STYLE_BAND = {
     "dance":     {"melody": "synthlead", "chord": "strings", "bass": "synthbass"},
     "rnb":       {"melody": "epiano", "chord": "epiano", "bass": "bass"},
     "rocknroll": {"melody": "eguitar", "chord": "eguitar", "bass": "bass"},
+    "hiphop":    {"melody": "epiano", "chord": "epiano", "bass": "synthbass"},
     "classic":   {"melody": "eviolin", "chord": "strings", "bass": "bass"},
     "newage":    {"melody": "piano", "chord": "strings", "bass": "bass"},
     "none":      {"melody": "melody", "chord": "chord", "bass": "bass"},
@@ -454,6 +468,7 @@ STYLE_FEEL = {
     "dance":     {"comp": "stabs", "bass": "alt", "swing": 0.0},
     "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.55},
     "rocknroll": {"comp": "quarters", "bass": "alt", "swing": 0.6},
+    "hiphop":    {"comp": "pad", "bass": "hold", "swing": 0.45},
     "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0},
     "newage":    {"comp": "arp", "bass": "hold", "swing": 0.0},
     "none":      {"comp": "pad", "bass": "hold", "swing": 0.0},
@@ -559,10 +574,12 @@ def _bass_line(kind, root_midi, beats, next_root_midi, meter):
     if kind == "alt":
         return [(float(i), 0.9, fifth if i % 2 else b, 0.62 if i % 2 else 0.78)
                 for i in range(int(beats))]
-    # hold — and walk into the next chord instead of teleporting there
+    # hold — and walk into the next chord instead of teleporting there. The pickup is the
+    # NEXT chord's fifth (its dominant), never a chromatic neighbour: a half-step approach
+    # put F under an A-minor bar and B♭ under the Canon's D major, and both were plainly sour.
     if next_root_midi is not None and next_root_midi != root_midi and beats >= 2:
         nb = next_root_midi - 12
-        approach = nb - 1 if nb > b else nb + 1
+        approach = nb + 7 if nb + 7 < b + 10 else nb - 5
         return [(0.0, float(beats) - 0.5, b, 0.72), (float(beats) - 0.5, 0.5, approach, 0.6)]
     return [(0.0, float(beats), b, 0.72)]
 
@@ -1297,6 +1314,18 @@ def action_selftest():
                            "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
     ck("an unknown style is refused WITH the list", True, (nostyle[-1] or "")[:50],
        bool(nostyle[-1]) and "dance" in (nostyle[-1] or ""))
+
+    # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
+    # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.
+    tone = synth_note(554.37, 1.0, "cguitar")  # C#5 — the worst integer-period offender
+    spec = np.abs(np.fft.rfft(tone * np.hanning(len(tone)), 8 * len(tone)))
+    lo, hi = int(400 * 8 * len(tone) / SR), int(700 * 8 * len(tone) / SR)
+    peak_hz = (lo + int(np.argmax(spec[lo:hi]))) * SR / (8 * len(tone))
+    ck("the KS string lands within 1.5Hz of the written pitch", True,
+       f"peak={peak_hz:.2f}Hz want=554.37Hz", abs(peak_hz - 554.37) < 1.5)
+    # And the bass pickup is the next chord's fifth, never a chromatic neighbour.
+    walk = _bass_line("hold", 62, 4.0, 57, 4)  # D -> A: the Canon join that exposed it
+    ck("the walk into A major is E (its fifth), not B♭", 52, walk[-1][2], walk[-1][2] == 52)
 
     # The kit is a kit, not a lone kick: 4 bars in, the 4th bar rolls down the toms (두구두구)
     # and every 4-bar group opens on a crash (쨍).
