@@ -425,7 +425,7 @@ impl ToolDispatcher {
             "EXECUTE" => {
                 if !step.get("path").is_some_and(|v: &serde_json::Value| v.is_string()) {
                     return Some(format!(
-                        "[Step {}] EXECUTE에 path 필수 (예: system/modules/kakao-talk/index.mjs).",
+                        "[Step {}] EXECUTE에 path 필수 (예: system/modules/<name>/index.mjs).",
                         step_num
                     ));
                 }
