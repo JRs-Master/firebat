@@ -179,7 +179,22 @@ async function main(data) {
         else if ('tradingVolume' in row) { row.volume = num(row.tradingVolume); delete row.tradingVolume; }
       }
     }
-    console.log(JSON.stringify({ success: true, data: { action, name: meta?.name, result: res.result } }));
+    // Identity echo — a call that named one instrument answers with Toss's own name for it
+    // FIRST (rows carry {symbol, name} — measured live 2026-08-17), so a symbol that drifted
+    // from the conversation's lookup exposes itself where the caller reads.
+    const identity = identityOf(data, res.result);
+    console.log(JSON.stringify({ success: true, data: { ...(identity ? { identity } : {}), action, name: meta?.name, result: res.result } }));
+}
+
+/** "symbol = name", read off the reply itself. Only speaks when the call named exactly one
+ * symbol and a reply row carries its name — a list where no row matches stays silent. */
+function identityOf(data, result) {
+  const raw = typeof data?.symbol === 'string' ? data.symbol : typeof data?.symbols === 'string' ? data.symbols : '';
+  const wanted = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (wanted.length !== 1) return null;
+  const rows = Array.isArray(result) ? result : Array.isArray(result?.stocks) ? result.stocks : Array.isArray(result?.prices) ? result.prices : null;
+  const row = rows?.find(r => r && typeof r === 'object' && r.symbol === wanted[0] && typeof r.name === 'string' && r.name.trim());
+  return row ? `${wanted[0]} = ${row.name.trim()}` : null;
 }
 
 

@@ -476,6 +476,31 @@ function candleParams(action, data) {
   return { apiId, params };
 }
 
+/** "code = name", read off the reply itself. When rows carry their own `stk_cd`, the row that
+ * matches the requested code speaks — a list where no row matches stays silent rather than
+ * naming a neighbor. */
+function identityOf(code, result) {
+  if (!code || typeof code !== 'string') return null;
+  const bare = code.replace(/^A/, '');
+  const nameIn = o =>
+    o && typeof o === 'object' && typeof o.stk_nm === 'string' && o.stk_nm.trim()
+      ? o.stk_nm.trim()
+      : null;
+  let nm = nameIn(result);
+  if (!nm) {
+    for (const v of Object.values(result || {})) {
+      if (!Array.isArray(v) || v.length === 0) continue;
+      const rowsHaveCode = v.some(r => r && typeof r === 'object' && typeof r.stk_cd === 'string');
+      const row = rowsHaveCode
+        ? v.find(r => r && typeof r.stk_cd === 'string' && r.stk_cd.replace(/^A/, '') === bare)
+        : v[0];
+      nm = nameIn(row);
+      if (nm) break;
+    }
+  }
+  return nm ? `${bare} = ${nm}` : null;
+}
+
 async function main(data) {
 
     const action = data?.action;
@@ -538,7 +563,11 @@ async function main(data) {
     // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
     const rc = result?.return_code;
     const ok = rc === undefined || rc === null || rc === 0;
-    const output = { success: ok, data: { apiId, name: meta?.name, ...result } };
+    // Identity echo — a call that named an instrument by an opaque code answers with the venue's
+    // own name for that code FIRST, so a code that drifted from the conversation's lookup exposes
+    // itself where the caller reads. The name comes from the reply, never from a table of ours.
+    const identity = ok ? identityOf(params?.stk_cd, result) : null;
+    const output = { success: ok, data: { ...(identity ? { identity } : {}), apiId, name: meta?.name, ...result } };
     // Echo the caller's id and the request that went out — the ledger matches on the first and
     // the response schema is read off the second later, since it is not documented anywhere.
     if (action === 'place_order' || action === 'cancel_order') {

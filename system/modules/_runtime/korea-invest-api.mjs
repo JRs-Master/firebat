@@ -494,6 +494,32 @@ function neutralRows(result) {
   return arrays.length === 1 ? { field: arrays[0][0], rows: arrays[0][1] } : { field: null, rows: [] };
 }
 
+/** "code = name", read off the reply itself — never a table of ours. KIS names the instrument
+ * under different keys per endpoint; the first present one speaks. Replies that carry no name
+ * (008 시세 등) stay silent — echoing is the venue's testimony, not our guess. */
+const IDENTITY_NAME_KEYS = ['hts_kor_isnm', 'prdt_abrv_name', 'prdt_name', 'kor_item_shtn_name'];
+function identityOf(code, result) {
+  if (!code || typeof code !== 'string' || !code.trim()) return null;
+  const nameIn = o => {
+    if (!o || typeof o !== 'object') return null;
+    for (const k of IDENTITY_NAME_KEYS) {
+      const v = o[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  };
+  let nm = nameIn(result) || nameIn(result?.output) || nameIn(result?.output1);
+  if (!nm) {
+    for (const v of Object.values(result || {})) {
+      if (Array.isArray(v) && v.length > 0) {
+        nm = nameIn(v[0]);
+        if (nm) break;
+      }
+    }
+  }
+  return nm ? `${code.trim()} = ${nm}` : null;
+}
+
 async function main(data) {
 
     const action = data?.action;
@@ -536,7 +562,9 @@ async function main(data) {
       const trId = pickTrId(meta, isMock, mapped.hint);
       const result = await ctx.call(mapped.apiId, trId, mapped.query || {}, mapped.body || {});
       const ok = result?.rt_cd === undefined || result.rt_cd === null || result.rt_cd === '0';
-      const out = { success: ok, data: { action, apiId: mapped.apiId, trId, ...result } };
+      const neutralCode = mapped.query?.FID_INPUT_ISCD || mapped.body?.PDNO;
+      const identity = ok ? identityOf(neutralCode, result) : null;
+      const out = { success: ok, data: { ...(identity ? { identity } : {}), action, apiId: mapped.apiId, trId, ...result } };
       if (!ok) out.error = result?.msg1 || `한투 API 오류 (rt_cd=${result?.rt_cd})`;
       if (action === 'place_order' || action === 'cancel_order') {
         // The ledger matches on the caller's id, and the response schema is read off the request
@@ -588,7 +616,9 @@ async function main(data) {
     // return_code — stops the AI fabricating over a failure it never saw).
     const rtCd = result?.rt_cd;
     const ok = rtCd === undefined || rtCd === null || rtCd === '0';
-    const output = { success: ok, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
+    const rawCode = query?.FID_INPUT_ISCD || body?.PDNO;
+    const identity = ok ? identityOf(rawCode, result) : null;
+    const output = { success: ok, data: { ...(identity ? { identity } : {}), apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
     if (!ok) output.error = result?.msg1 || `한투 API 오류 (rt_cd=${rtCd})`;
     console.log(JSON.stringify(output));
 }
