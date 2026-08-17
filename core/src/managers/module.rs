@@ -112,7 +112,8 @@ const ALIAS_MAX_CHARS: usize = 20;
 /// could swap two and the compiler would agree.
 #[derive(Debug, Clone, Default)]
 pub struct StreamNotify {
-    /// `"telegram"` for a chat message, `"module:<name>"` to run a module. None = SSE only.
+    /// `"module:<name>"` to run a module on the frames. None = SSE only.
+    /// (Legacy `"telegram"` is read as `module:telegram` at the sink.)
     pub to: Option<String>,
     /// Action name for a `module:` sink (default `on_stream_event`).
     pub action: Option<String>,
@@ -131,8 +132,8 @@ pub struct StreamWatchMeta {
     pub stream: String,
     #[serde(default)]
     pub args: serde_json::Value,
-    /// Where realtime frames go besides the event bus: `"telegram"` for a chat message, or
-    /// `"module:<name>"` to run a module on them. Absent = SSE only.
+    /// Where realtime frames go besides the event bus: `"module:<name>"` runs that module on
+    /// them. Absent = SSE only. (Legacy `"telegram"` is read as `module:telegram` at the sink.)
     #[serde(default)]
     pub notify: Option<String>,
     /// Action name for a `module:` sink (default `on_stream_event`).
@@ -2189,7 +2190,7 @@ impl ModuleManager {
             return Vec::new();
         };
         let mut out: Vec<String> = Vec::new();
-        let mut push = |f: &str, out: &mut Vec<String>| {
+        let push = |f: &str, out: &mut Vec<String>| {
             if f.ends_with(".json") && !f.contains("..") && !f.contains('/') && !out.iter().any(|x| x == f) {
                 out.push(f.to_string());
             }

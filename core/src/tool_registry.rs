@@ -819,14 +819,14 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "stream_watch_start".to_string(),
-            description: "Start a persistent realtime watch declared in a module's config `ws.streams`. Events go to the event bus under the returned topic, and with notify:'telegram' to Telegram as well. To show them live in chat, render live_feed (events) or live_chart (numeric tick, valueField dot-path) with that topic. Survives restarts until stream_watch_stop.".to_string(),
+            description: "Start a persistent realtime watch declared in a module's config `ws.streams`. Events go to the event bus under the returned topic; notify:'module:<name>' also hands each frame batch to that module. To show them live in chat, render live_feed (events) or live_chart (numeric tick, valueField dot-path) with that topic. Survives restarts until stream_watch_stop.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "module": {"type": "string", "description": "module name, exactly as the module index gives it"},
                     "stream": {"type": "string", "description": "stream key declared under the module's ws.streams"},
                     "args": {"type": "object", "description": "stream template params (e.g. {seq})"},
-                    "notify": {"type": "string", "description": "Where frames go besides the event bus. 'telegram' sends a chat message; 'module:<name>' runs that module on the frames (it must be enabled). Omit or 'none' = event bus only."},
+                    "notify": {"type": "string", "description": "Where frames go besides the event bus. 'module:<name>' runs that module on the frames (it must be enabled and declare the sink action). Omit or 'none' = event bus only."},
                     "notifyAction": {"type": "string", "description": "Action to call for a module: sink (default on_stream_event)."},
                     "notifyMinIntervalMs": {"type": "integer", "description": "Floor between two sink runs for this watch. Frames arriving inside the window are coalesced into the next run instead of starting a process each — set this for tick streams (e.g. 3000)."},
                     "notifyJob": {"type": "string", "description": "A scheduled job to run the instant a batch of frames has been handled, instead of waiting for its next scheduled time. Use it when an event has to reach something the sink cannot do itself — placing an order, for instance: the sink can run a module but cannot use what the module returns, so the work belongs in a pipeline that is already registered. Fires after the module sink, so the job reads what it just recorded, and runs under the cron context like any scheduled fire."},
@@ -3075,7 +3075,7 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "module": {"type": "string", "description": "Only this module's accounts (e.g. kiwoom-trade)."},
+                "module": {"type": "string", "description": "Only this module's accounts."},
                 "mode": {"type": "string", "description": "real or mock."},
                 "market": {"type": "string", "description": "Only accounts that serve this market (kr / us …)."}
             }

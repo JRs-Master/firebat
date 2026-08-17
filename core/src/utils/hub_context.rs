@@ -308,8 +308,28 @@ pub fn active_full_tools() -> bool {
 
 /// hub 핵심 사이드바 sysmod — admin 의 per-hub allowed_sysmods 와 무관하게 항상 허용.
 /// hub 가 admin 사이드바 경험(메모·캘린더)을 가지려면 필수이고, 데이터는 owner-scope 라 격리됨.
-/// 외부 데이터 도구(law-search/yfinance/kakao 등)는 per-hub allowed_sysmods 로 제어.
-pub const CORE_SYSMODS: &[&str] = &["notes", "calendar"];
+/// 외부 데이터 도구는 per-hub allowed_sysmods 로 제어.
+///
+/// 어느 모듈이 "핵심"이냐는 정책이지 코드가 아니다(v3 — 정책은 설정으로): 부팅이
+/// `VK_HUB_CORE_SYSMODS`(쉼표 구분)를 읽어 `set_core_sysmods` 로 주입하고, 키 부재 = 이 기본값.
+/// 키가 있되 비어 있으면 "핵심 없음"이라는 명시적 선택이다.
+pub const DEFAULT_CORE_SYSMODS: &[&str] = &["notes", "calendar"];
+
+/// 부팅 주입분 — 첫 set 만 이긴다. 미주입 = DEFAULT_CORE_SYSMODS.
+static CORE_SYSMODS_SETTING: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// Boot-time injection — main reads the vault key and hands the parsed list here once.
+pub fn set_core_sysmods(list: Vec<String>) {
+    let _ = CORE_SYSMODS_SETTING.set(list);
+}
+
+/// Is this module always reachable from a hub, regardless of its allowlist?
+pub fn is_core_sysmod(module: &str) -> bool {
+    match CORE_SYSMODS_SETTING.get() {
+        Some(list) => list.iter().any(|s| s == module),
+        None => DEFAULT_CORE_SYSMODS.contains(&module),
+    }
+}
 
 /// MCP server 의 sysmod handler 에서 호출 — hub context 가 활성이고 sysmod 가 미허용이면 true.
 /// admin 호출 (Guard 미설정) = false (정공 허용). 핵심 sysmod(notes/calendar)는 항상 허용.
@@ -349,8 +369,7 @@ pub fn permits_tool(name: &str, allowed_sysmods: &[String]) -> bool {
         // 비교 전 underscore → dash 복원 — 안 하면 다단어 sysmod(kma-weather/naver-search/law-search 등)가
         // allowed_sysmods(대시 보유)와 영영 안 맞아 허용돼도 무조건 차단된다. (is_tool_visible 의 dash join 과 일관.)
         let module = sysmod.replace('_', "-");
-        return CORE_SYSMODS.contains(&module.as_str())
-            || allowed_sysmods.iter().any(|s| s == &module);
+        return is_core_sysmod(&module) || allowed_sysmods.iter().any(|s| s == &module);
     }
     // ③deny / admin / 배경실행 — list_/get_ 접두어라 is_hub_readonly_tool 에 잡히는 admin 조회까지 우선 차단.
     if is_hub_denied_tool(name) {
@@ -900,7 +919,7 @@ mod tests {
 
     // is_sysmod_blocked_for_hub 의 static 의존 없이 로직만 검증하는 헬퍼.
     fn is_sysmod_blocked_for_hub_with(allowed: &[String], name: &str) -> bool {
-        !CORE_SYSMODS.contains(&name) && !allowed.iter().any(|s| s == name)
+        !DEFAULT_CORE_SYSMODS.contains(&name) && !allowed.iter().any(|s| s == name)
     }
 
     #[test]

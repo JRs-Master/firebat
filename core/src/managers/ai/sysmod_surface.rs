@@ -185,7 +185,7 @@ pub fn exec_parameters() -> serde_json::Value {
         "properties": {
             "module": {
                 "type": "string",
-                "description": "Module name as search_module_actions spelled it (kakao-map, korea-invest-trade)."
+                "description": "Module name exactly as search_module_actions returned it."
             },
             "action": {
                 "type": "string",

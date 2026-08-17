@@ -380,6 +380,17 @@ async fn main() -> Result<()> {
     // here — every creation site then emits without knowing it does, which is the point: a card
     // born in a new place would otherwise be invisible until its poll came round.
     firebat_core::utils::pending_tools::set_event_sink(event_manager.clone());
+    // Which sysmods a hub reaches without an explicit grant is policy, so it lives in the vault
+    // (comma-separated), not in code. Key absent = built-in default (notes,calendar); key present
+    // but empty = explicitly none.
+    if let Some(raw) = vault.get_secret(firebat_core::vault_keys::VK_HUB_CORE_SYSMODS) {
+        let list: Vec<String> = raw
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        firebat_core::utils::hub_context::set_core_sysmods(list);
+    }
     let capability_manager = Arc::new(CapabilityManager::new(
         storage.clone(),
         vault.clone(),
@@ -512,9 +523,15 @@ async fn main() -> Result<()> {
                 if let (Some(agg), Some(cfg)) = (&tick_agg_sink, &meta.tick1s) {
                     agg.ingest(&meta.module, meta.mock, cfg, &frame);
                 }
-                if let Some(module) = meta
+                // Legacy alias: a stored watch may still say notify:"telegram" — read it as the
+                // module it names. The bespoke telegram branch (infra formatting a chat message)
+                // retired with v3; a module that wants frames declares its sink action like any
+                // other, and this sink only ever runs the named module.
+                let notify = meta
                     .notify
                     .as_deref()
+                    .map(|n| if n == "telegram" { "module:telegram" } else { n });
+                if let Some(module) = notify
                     .and_then(|n| n.strip_prefix("module:"))
                     .filter(|m| !m.is_empty())
                 {
@@ -599,26 +616,6 @@ async fn main() -> Result<()> {
                         }
                     });
                     return;
-                }
-                if meta.notify.as_deref() == Some("telegram") {
-                    let mm = mm.clone();
-                    let label = meta
-                        .label
-                        .clone()
-                        .unwrap_or_else(|| format!("{}/{}", meta.module, meta.stream));
-                    let compact: String = frame.to_string().chars().take(600).collect();
-                    tokio::spawn(async move {
-                        let text = format!("[Firebat 감시] {label}\n{compact}");
-                        if let Err(e) = mm
-                            .run(
-                                "telegram",
-                                &serde_json::json!({"action": "send-message", "text": text}),
-                            )
-                            .await
-                        {
-                            tracing::warn!(target: "ws_stream", error = %e, "watch telegram notify failed");
-                        }
-                    });
                 }
             }
         }));

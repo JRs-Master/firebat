@@ -28,6 +28,7 @@ export const VK_SYSTEM_LIBRARY_PARSE_PROVIDER = "system:library:parse-provider";
 export const VK_SYSTEM_RETENTION_ENABLED = "system:retention:enabled";
 export const VK_SYSTEM_RETENTION_DAYS = "system:retention:days";
 export const VK_SYSTEM_MEMORY_AUTO_SAVE = "system:memory:auto-save";
+export const VK_HUB_CORE_SYSMODS = "system:hub:core-sysmods";
 
 export const AUTH_SESSION_PREFIX = "auth:session:";
 export const USER_SECRET_PREFIX = "user:";

@@ -240,7 +240,7 @@ CORE_BIBLE 제2장의 26개 포트와 짝을 이루는 infra 어댑터. **운영
 ### 23. WS Stream Adapter (`infra/src/adapters/ws_stream.rs`)
 - `IWsStreamPort` 구현 (`WsStreamAdapter`) — WS **상시 연결 실시간 감시** (키움 조건검색 편입/이탈, 시세 REG 등).
 - watch 당 tokio task: LOGIN → preFrames → subscribe(초기 스냅샷도 sink) → REAL 프레임 수신 `select!{cancel|next}`. 끊기면 백오프 5s→60s 재연결+재구독, stop = unsubscribe(CNSRCLR) best-effort.
-- sink = main.rs 배선: `EventManager.emit`(topic `ws-stream:{watchId}`) → `/api/events` SSE(라이브 컴포넌트 live_feed/live_chart) + `notify:"telegram"` 이면 telegram sysmod 발송. watch 메타는 vault `system:ws-watches` 영속 → **재부팅 자동 복원**(`restore_streams`). 수명 = 명시 `stream_watch_stop` 까지(라이브 *컴포넌트*의 뷰포트 수명 룰과 별개).
+- sink = main.rs 배선: `EventManager.emit`(topic `ws-stream:{watchId}`) → `/api/events` SSE(라이브 컴포넌트 live_feed/live_chart) + `notify:"module:<name>"` 이면 그 모듈을 프레임 배치로 실행(디바운스 coalesce, `notifyAction` 기본 `on_stream_event`). 옛 `notify:"telegram"` 은 읽기 시 `module:telegram` 으로 정규화 — 벤더 특례 없음(v3). watch 메타는 vault `system:ws-watches` 영속 → **재부팅 자동 복원**(`restore_streams`). 수명 = 명시 `stream_watch_stop` 까지(라이브 *컴포넌트*의 뷰포트 수명 룰과 별개).
 
 ### 24. Timeseries Store Adapter (`infra/src/adapters/timeseries.rs`)
 - `ITimeseriesStorePort` 구현 (`SqliteTimeseriesAdapter`, rusqlite `data/timeseries.db`) — 시계열 **영구 store** (range-coverage 캐시).
