@@ -217,7 +217,7 @@ fn a_component_that_takes_data_publishes_the_injection_vocabulary() {
         ("key_value", "items"),
         ("live_stock_chart", "data"),
     ];
-    for def in components() {
+    for def in components().iter() {
         let published = published_props_schema(def);
         let Some(props) = published.get("properties").and_then(|p| p.as_object()) else {
             continue;
@@ -497,7 +497,7 @@ fn every_module_declaration_names_something_that_exists() {
 //
 //   system/modules/*/actions.json        the big brokers' action catalog (actionCatalog.file)
 //   system/modules/*/cron-*.json         cron jobs a module registers when enabled
-//   core/src/managers/ai/components.json the render catalog — where every component's FORM lives
+//   system/components.json               the render catalog — where every component's FORM lives
 //   language/{ko,en}.json                every user-visible string
 //
 // Runtime state (cron-jobs.json, auth.json, plan-store.json, pending-tools.json, mcp-servers.json,
@@ -994,8 +994,8 @@ fn every_declared_cron_job_parses_as_the_pipeline_the_scheduler_runs() {
 /// schema is a component the model must guess at.
 #[test]
 fn every_render_component_carries_a_props_form() {
-    let path = repo_root().join("core/src/managers/ai/components.json");
-    let raw = fs::read_to_string(&path).expect("the render catalog is baked into the binary");
+    let path = repo_root().join("system/components.json");
+    let raw = fs::read_to_string(&path).expect("the render catalog file exists on the pull channel");
     let catalog: Vec<Value> = serde_json::from_str(&raw).expect("catalog parses");
     let mut problems = Vec::new();
     for c in &catalog {

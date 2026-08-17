@@ -966,13 +966,16 @@ impl AiManager {
                     // `guide` = this component's authoring manual, delivered at the moment the
                     // model asks for the component instead of riding the system prompt on every
                     // turn (2026-08-09 diet). Absent for most components.
-                    Some(c) => Ok(serde_json::json!({
-                        "name": c.name,
-                        "description": c.description,
-                        "propsSchema":
-                            crate::managers::ai::component_registry::published_props_schema(c),
-                        "guide": c.guide,
-                    })),
+                    Some(c) => {
+                        let props_schema =
+                            crate::managers::ai::component_registry::published_props_schema(&c);
+                        Ok(serde_json::json!({
+                            "name": c.name,
+                            "description": c.description,
+                            "propsSchema": props_schema,
+                            "guide": c.guide,
+                        }))
+                    }
                     None => {
                         let close = crate::managers::ai::component_search_index::query(
                             embedder,

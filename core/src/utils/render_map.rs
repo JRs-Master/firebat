@@ -11,50 +11,74 @@
 //! gemini) resolving a pending tool call, and `ai.rs`.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// The one entry that is NOT a component: `render_alert` is the old name for `render_callout`,
 /// whose renderer is still `AlertComp` on the frontend. An alias has to be declared because
 /// nothing derives it — but it is one line, not thirty.
 const ALIASES: &[(&str, &str)] = &[("render_alert", "Alert")];
 
+/// Both maps under the catalog fingerprint they were derived from.
+///
+/// The catalog reloads when its file changes, so these maps rebuild on the same trigger. Their
+/// strings are leaked to keep every consumer's `&'static` signature (the CLI adapters store the
+/// keys); a rebuild leaks a couple of KB and happens as often as a human edits the declaration
+/// file — bounded by hands, not by traffic.
+struct Maps {
+    fingerprint: String,
+    forward: &'static HashMap<&'static str, &'static str>,
+    inverse: &'static HashMap<&'static str, &'static str>,
+}
+
+fn maps() -> (&'static HashMap<&'static str, &'static str>, &'static HashMap<&'static str, &'static str>) {
+    static CACHE: OnceLock<Mutex<Option<Maps>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    let fp = crate::managers::ai::component_registry::fingerprint();
+    let mut guard = match cache.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if let Some(m) = guard.as_ref() {
+        if m.fingerprint == fp {
+            return (m.forward, m.inverse);
+        }
+    }
+    let mut forward: HashMap<&'static str, &'static str> = HashMap::new();
+    for c in crate::managers::ai::component_registry::components().iter() {
+        let key: &'static str = Box::leak(format!("render_{}", c.name).into_boxed_str());
+        let val: &'static str = Box::leak(c.component_type.clone().into_boxed_str());
+        forward.insert(key, val);
+    }
+    for (alias, component_type) in ALIASES {
+        forward.insert(*alias, *component_type);
+    }
+    // Canonical names first, aliases only where they answer for nothing — HashMap iteration
+    // order is arbitrary, so "whichever came last" is not an answer.
+    let mut inverse: HashMap<&'static str, &'static str> = HashMap::new();
+    let alias_names: Vec<&str> = ALIASES.iter().map(|(a, _)| *a).collect();
+    for (tool, component_type) in &forward {
+        if !alias_names.contains(tool) {
+            inverse.insert(*component_type, *tool);
+        }
+    }
+    for (alias, component_type) in ALIASES {
+        inverse.entry(*component_type).or_insert(*alias);
+    }
+    let forward: &'static HashMap<&'static str, &'static str> = Box::leak(Box::new(forward));
+    let inverse: &'static HashMap<&'static str, &'static str> = Box::leak(Box::new(inverse));
+    *guard = Some(Maps { fingerprint: fp, forward, inverse });
+    (forward, inverse)
+}
+
 /// `render_*` tool name → component type (PascalCase), one entry per catalog component.
 pub fn render_tool_map() -> &'static HashMap<&'static str, &'static str> {
-    static MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-    MAP.get_or_init(|| {
-        let mut m = HashMap::new();
-        for c in crate::managers::ai::component_registry::components() {
-            // The catalog is 'static, so its component types borrow directly; only the
-            // `render_`-prefixed key is new, and it is created once per process.
-            let key: &'static str = Box::leak(format!("render_{}", c.name).into_boxed_str());
-            m.insert(key, c.component_type.as_str());
-        }
-        for (alias, component_type) in ALIASES {
-            m.insert(*alias, *component_type);
-        }
-        m
-    })
+    maps().0
 }
 
 /// `Component → render_<tool>` — used where a result names the component and the caller needs the
 /// tool name back. Components sharing a type (the alias) collapse; the canonical name wins.
 pub fn render_tool_inverse_map() -> &'static HashMap<&'static str, &'static str> {
-    static INV: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-    INV.get_or_init(|| {
-        // Canonical names first, aliases only where they answer for nothing — HashMap iteration
-        // order is arbitrary, so "whichever came last" is not an answer.
-        let mut inv: HashMap<&'static str, &'static str> = HashMap::new();
-        let aliases: Vec<&str> = ALIASES.iter().map(|(a, _)| *a).collect();
-        for (tool, component_type) in render_tool_map() {
-            if !aliases.contains(tool) {
-                inv.insert(*component_type, *tool);
-            }
-        }
-        for (alias, component_type) in ALIASES {
-            inv.entry(*component_type).or_insert(*alias);
-        }
-        inv
-    })
+    maps().1
 }
 
 /// Tolerant lookup — the model may write the name three ways:
@@ -84,7 +108,7 @@ mod tests {
     #[test]
     fn render_map_covers_every_catalog_component() {
         let map = render_tool_map();
-        for c in crate::managers::ai::component_registry::components() {
+        for c in crate::managers::ai::component_registry::components().iter() {
             let key = format!("render_{}", c.name);
             assert_eq!(
                 map.get(key.as_str()),

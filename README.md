@@ -527,7 +527,7 @@ rsync -a .next/static/     /opt/firebat/frontend/.next/static/
 systemctl restart firebat firebat-frontend
 ```
 
-- **system/-only change** (module config/code, prompts, skills, templates) = `git pull` + `systemctl restart firebat`. No build, no rsync — the dir is symlinked. (`components.json` is the exception: Rust `include_str!`-embeds it, so it needs a Rust rebuild.)
+- **system/-only change** (module config/code, prompts, skills, templates, `components.json`) = `git pull` + `systemctl restart firebat`. No build, no rsync — the dir is symlinked. (`components.json` moved to this channel 2026-08-17; the catalog and its search index re-read it by fingerprint, so even the restart is only for boot-time surfaces.)
 - **What triggers a Rust rebuild**: anything under `core/` `infra/` `proto/` `Cargo.*`. Module `.mjs`/`.py`/config/prompts are read at runtime (no rebuild).
 - **Module `packages` after deploy**: a module that declares python `packages` (yfinance, sing, …) installs them from its settings screen — 설정 > 모듈 > (모듈) > 패키지 상태 > [설치]. One click per new module, survives restarts.
 

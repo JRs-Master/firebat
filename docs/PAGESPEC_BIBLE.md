@@ -84,7 +84,7 @@ middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layou
 페이지용 컴포넌트. `save_page`로 DB에 저장 → `app/(user)/[slug]/page.tsx`가 렌더.
 채팅에서는 본문 안 ` ```firebat-render ` fence(제3장 제3항)로 직접 렌더.
 
-> 채팅 render 레지스트리(`core/src/managers/ai/components.json`) 기준 **42 컴포넌트**:
+> 채팅 render 레지스트리(`system/components.json`) 기준 **42 컴포넌트**:
 > - 기본·시각화 27: stock_chart · chart · table · badge · callout · progress · header · text · list · divider · countdown · image · card · grid · metric · timeline · compare · key_value · plan_card · status_badge · diagram · math · code · slideshow · lottie · network · map
 > - 퀴즈 2: quiz · quiz_group
 > - 인터랙티브 6 (2026-06-16): form(모듈 바인딩) · button · slider · tabs · accordion · carousel (children/items = grid 미러 `{type,props}`)
@@ -302,7 +302,7 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 ### 제2항. render_* ↔ 컴포넌트 단일 매핑 (v0.1, 2026-04-21)
 
-> ⚠️ 아래는 옛 TS 시절 예시 — 현재 코어는 Rust (core/src). 개념 참고용. 28→1 통합 후 채팅 시각화는 단일 `render` 도구가 `core/src/managers/ai/components.json` schema 로 직접 검증하며, 컴포넌트 매핑·정규화도 Rust core 안에서 처리.
+> ⚠️ 아래는 옛 TS 시절 예시 — 현재 코어는 Rust (core/src). 개념 참고용. 28→1 통합 후 채팅 시각화는 단일 `render` 도구가 `system/components.json` schema 로 직접 검증하며, 컴포넌트 매핑·정규화도 Rust core 안에서 처리.
 
 `lib/render-map.ts` 가 단일 source. 이전엔 4군데 (ai-manager / cli-gemini / cli-claude-code / cli-codex) 에 동일 매핑 hardcode → 모두 import 통합.
 

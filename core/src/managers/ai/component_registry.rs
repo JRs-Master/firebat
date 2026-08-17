@@ -1,17 +1,17 @@
 //! Component Registry — render() 디스패처 컴포넌트 카탈로그.
 //!
-//! 옛 TS `infra/llm/component-registry.ts` (641 LOC + COMPONENTS 26개) Rust 1:1 port.
+//! AI 는 `search_components(query)` 로 관련 컴포넌트를 찾고, fence/`render` 로 실제 렌더링.
+//! component 정의 = `name + componentType + description + semanticText + propsSchema (+guide)`.
 //!
-//! AI 는 `search_components(query)` 로 관련 컴포넌트를 찾고, `render(name, props)` 로 실제 렌더링.
-//! 26개 component 정의 — `name + componentType + description + semanticText + propsSchema`.
-//!
-//! 데이터는 `components.json` (build 시 옛 TS COMPONENTS 에서 추출) 을 include_str! 로 embed,
-//! 첫 호출 시 OnceLock + parse 로 lazy init. 모든 컴포넌트는 `Vec<ComponentDef>` 로 노출.
+//! The declaration lives at `system/components.json` — the pull channel, next to module configs —
+//! and is re-read when its fingerprint (size:mtime) moves. It used to be `include_str!`, which
+//! made every schema fix a Rust deploy: the one surface whose whole point is "fix the dialect in
+//! the declaration" was the one surface that needed a binary to change. A module edit is a pull;
+//! a component edit is now the same.
 
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
-
-const COMPONENTS_JSON: &str = include_str!("components.json");
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// 1개 component 정의 — 옛 TS `ComponentDef` 1:1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,15 +39,79 @@ pub struct ComponentDef {
     pub guide: Option<String>,
 }
 
-/// component 정의 전체 (components.json — 개수의 진실은 loads_all_components 테스트)
-/// + 인터랙티브 6 (form/button/slider/tabs/accordion/carousel).
-/// 첫 호출 시 lazy init. 이후 cached.
-pub fn components() -> &'static Vec<ComponentDef> {
-    static CACHE: OnceLock<Vec<ComponentDef>> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        serde_json::from_str(COMPONENTS_JSON)
-            .expect("components.json 파싱 실패 — build 시 추출된 데이터 형식 깨짐")
-    })
+/// Where the declaration file lives. cwd-relative like every module path (the server runs at the
+/// workspace root); the manifest fallback is for `cargo test`, whose cwd is the crate dir.
+/// Resolved per call, not cached — a server that boots before its first `git pull` must find the
+/// file once it lands, not remember the miss.
+fn components_path() -> PathBuf {
+    let local = PathBuf::from("system/components.json");
+    if local.exists() {
+        return local;
+    }
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../system/components.json"))
+}
+
+/// `size:mtime_ms` of the declaration file — the same rebuild trigger the module catalog uses,
+/// scoped to one file, so the cost per call is a single stat. `absent` is its own state: a
+/// missing file must read as "missing", never as an empty catalog that happens to be fine.
+pub fn fingerprint() -> String {
+    match std::fs::metadata(components_path()) {
+        Ok(md) => {
+            let mtime = md
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
+            format!("{}:{}", md.len(), mtime)
+        }
+        Err(_) => "absent".to_string(),
+    }
+}
+
+/// component 정의 전체 — 지문이 움직였을 때만 재파싱한 스냅샷.
+///
+/// A bad edit degrades to the LAST GOOD snapshot plus an error log, never to an empty catalog:
+/// the file is hand-edited on the declaration channel now, and one broken comma must not blank
+/// every render surface until someone notices. The failed fingerprint is remembered so the
+/// broken file is re-read (and re-logged) once per change, not once per call.
+pub fn components() -> Arc<Vec<ComponentDef>> {
+    static SNAP: OnceLock<Mutex<Option<(String, Arc<Vec<ComponentDef>>)>>> = OnceLock::new();
+    let snap = SNAP.get_or_init(|| Mutex::new(None));
+    let fp = fingerprint();
+    if let Ok(guard) = snap.lock() {
+        if let Some((cached_fp, comps)) = guard.as_ref() {
+            if *cached_fp == fp {
+                return comps.clone();
+            }
+        }
+    }
+    let parsed: Result<Vec<ComponentDef>, String> = std::fs::read_to_string(components_path())
+        .map_err(|e| e.to_string())
+        .and_then(|raw| serde_json::from_str(&raw).map_err(|e| e.to_string()));
+    let mut guard = match snap.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    match parsed {
+        Ok(defs) => {
+            let arc = Arc::new(defs);
+            *guard = Some((fp, arc.clone()));
+            arc
+        }
+        Err(err) => {
+            tracing::error!(
+                target: "component_registry",
+                "system/components.json unreadable ({err}) — serving the previous snapshot"
+            );
+            let kept = guard
+                .as_ref()
+                .map(|(_, comps)| comps.clone())
+                .unwrap_or_else(|| Arc::new(Vec::new()));
+            *guard = Some((fp, kept.clone()));
+            kept
+        }
+    }
 }
 
 /// A component's props schema AS PUBLISHED — the catalog's own text plus the data-injection
@@ -163,21 +227,25 @@ fn row_props(
     out
 }
 
-/// `name` 으로 컴포넌트 lookup. 옛 TS `COMPONENTS.find(c => c.name === name)` 1:1.
-pub fn find_component(name: &str) -> Option<&'static ComponentDef> {
-    components()
+/// `name` 으로 컴포넌트 lookup — owned, because the snapshot it comes from can be replaced by the
+/// next declaration edit (`&'static` died with `include_str!`). A def tops out around one guide,
+/// a few KB, cloned once per render block or schema fetch.
+pub fn find_component(name: &str) -> Option<ComponentDef> {
+    let comps = components();
+    comps
         .iter()
         .find(|c| c.name == name)
         // …or by the React type the render tool puts in its own output. The registry key is
         // `header` and the tool emits `Header`, so feeding the tool's output back through the
         // fence — which is exactly what a model does when told "emit these as a fence" — found
         // nothing and dropped the block. Accepting both closes the round trip.
-        .or_else(|| components().iter().find(|c| c.component_type == name))
+        .or_else(|| comps.iter().find(|c| c.component_type == name))
+        .cloned()
 }
 
 /// 모든 컴포넌트 이름 목록. 디버깅·logging 용.
-pub fn component_names() -> Vec<&'static str> {
-    components().iter().map(|c| c.name.as_str()).collect()
+pub fn component_names() -> Vec<String> {
+    components().iter().map(|c| c.name.clone()).collect()
 }
 
 /// schema 의 `"type"` 가 주어진 type 이름(예: "object" / "array" / "null")을 허용하는지 판정.
@@ -218,7 +286,7 @@ pub fn merged_props_schema(names: &[&str]) -> serde_json::Value {
     let mut owners: Vec<String> = Vec::new();
     for name in names {
         let Some(def) = find_component(name) else { continue };
-        let published = published_props_schema(def);
+        let published = published_props_schema(&def);
         let Some(p) = published.get("properties").and_then(|v| v.as_object()) else {
             continue;
         };
@@ -608,13 +676,21 @@ mod tests {
     #[test]
     fn loads_all_components() {
         let comps = components();
-        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6 + sentence + vocab + passage + concept + listening(LC) + live_feed/live_chart(WS 2b) + live_stock_chart(S7) + function_plot = 44.
-        assert_eq!(comps.len(), 44, "components.json 의 44개 컴포넌트 모두 설정되어야");
+        // A floor, not an exact count: the catalog lives on the pull channel now, where adding a
+        // component runs no Rust CI — an equality here would turn that routine edit into a red X
+        // on the next unrelated Rust commit (the exact trap the audit rules warn about). What this
+        // must catch is the catalog going missing or losing a slab: 44 components as of
+        // 2026-08-17.
+        assert!(
+            comps.len() >= 44,
+            "component catalog shrank to {} — components.json missing or truncated",
+            comps.len()
+        );
     }
 
     #[test]
     fn each_component_has_required_fields() {
-        for c in components() {
+        for c in components().iter() {
             assert!(!c.name.is_empty(), "name 비어있음");
             assert!(!c.component_type.is_empty(), "{} component_type 비어있음", c.name);
             assert!(!c.description.is_empty(), "{} description 비어있음", c.name);
@@ -640,7 +716,7 @@ mod tests {
             "map guide lost the coordinate rule"
         );
         // A guide is on-demand material: it must never be empty when present.
-        for c in components() {
+        for c in components().iter() {
             if let Some(g) = &c.guide {
                 assert!(!g.trim().is_empty(), "{} has an empty guide", c.name);
             }
@@ -712,10 +788,9 @@ mod tests {
         // component quietly disappearing should. So it is checked against the registry itself.
         assert_eq!(names.len(), components().len());
         assert!(names.len() >= 39, "레지스트리가 줄었다 — 컴포넌트가 사라졌는지 확인");
-        assert!(names.contains(&"stock_chart"));
-        assert!(names.contains(&"table"));
-        assert!(names.contains(&"network"));
-        assert!(names.contains(&"map"));
+        for expect in ["stock_chart", "table", "network", "map"] {
+            assert!(names.iter().any(|n| n == expect), "{expect} missing");
+        }
     }
 
     use crate::managers::module::validate_value;

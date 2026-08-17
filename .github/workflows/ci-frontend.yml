@@ -19,7 +19,7 @@ on:
       - 'next.config.mjs'
       - 'tsconfig.json'
       - 'proxy.ts'
-      - 'core/src/managers/ai/components.json'
+      - 'system/components.json'
       - 'scripts/check-component-join.mjs'
       - '.github/workflows/ci-frontend.yml'
   pull_request:
@@ -33,7 +33,7 @@ on:
       - 'next.config.mjs'
       - 'tsconfig.json'
       - 'proxy.ts'
-      - 'core/src/managers/ai/components.json'
+      - 'system/components.json'
       - 'scripts/check-component-join.mjs'
       - '.github/workflows/ci-frontend.yml'
   workflow_dispatch:

@@ -13,9 +13,9 @@
 
 use serde::Serialize;
 use std::sync::Arc;
-use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, OnceCell};
 
-use crate::managers::ai::component_registry::{components, ComponentDef};
+use crate::managers::ai::component_registry::{components, fingerprint, ComponentDef};
 use crate::managers::ai::semantic_catalog::{CatalogEntry, SemanticCatalog};
 use crate::ports::{IEmbedderCachePort, IEmbedderPort, InfraResult};
 
@@ -57,14 +57,17 @@ fn component_entries() -> Vec<CatalogEntry> {
 
 pub struct ComponentSearchIndex {
     catalog: SemanticCatalog,
-    built: OnceCell<()>,
+    /// Catalog fingerprint the entries were built from — `None` until the first query. The index
+    /// follows the declaration file: a new row lands in search the moment the file changes, and
+    /// the semantic-catalog hash cache means only changed entries re-embed (E5, local).
+    built_fp: Mutex<Option<String>>,
 }
 
 impl ComponentSearchIndex {
     pub fn new(embedder: Arc<dyn IEmbedderPort>, cache_port: Arc<dyn IEmbedderCachePort>) -> Self {
         Self {
             catalog: SemanticCatalog::new("component", embedder, cache_port),
-            built: OnceCell::new(),
+            built_fp: Mutex::new(None),
         }
     }
 
@@ -82,12 +85,16 @@ impl ComponentSearchIndex {
         if user_query.trim().is_empty() {
             return Ok(Vec::new());
         }
-        // 컴포넌트 정의는 바이너리 embed(components.json) = 정적 — 프로세스당 1회 빌드.
-        self.built
-            .get_or_init(|| async {
+        // Rebuild when the declaration file's fingerprint moves — the lock is held across the
+        // rebuild so concurrent queries wait for one build instead of racing three.
+        {
+            let mut built = self.built_fp.lock().await;
+            let fp = fingerprint();
+            if built.as_deref() != Some(fp.as_str()) {
                 self.catalog.set_entries(component_entries()).await;
-            })
-            .await;
+                *built = Some(fp);
+            }
+        }
         let limit = opts.limit.unwrap_or(5);
         let hits = self.catalog.query(user_query, limit, None).await?;
         Ok(hits

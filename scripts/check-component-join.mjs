@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 
 const registry = JSON.parse(
-  readFileSync('core/src/managers/ai/components.json', 'utf-8'),
+  readFileSync('system/components.json', 'utf-8'),
 );
 const comps = Array.isArray(registry) ? registry : registry.components;
 const wanted = new Map(comps.map(c => [c.componentType, c.name]));
@@ -31,7 +31,7 @@ for (const [, from, to] of aliasBlock.matchAll(/(\w+):\s*'(\w+)'/g)) {
 const missing = [...wanted].filter(([type]) => !cases.has(type));
 if (missing.length) {
   for (const [type, name] of missing) {
-    console.error(`::error file=core/src/managers/ai/components.json::component '${name}' declares componentType '${type}' but the page renderer has no case for it — it will render as nothing`);
+    console.error(`::error file=system/components.json::component '${name}' declares componentType '${type}' but the page renderer has no case for it — it will render as nothing`);
   }
   process.exit(1);
 }
