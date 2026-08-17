@@ -70,6 +70,26 @@ pub fn action_calls(rows: &[serde_json::Value]) -> HashMap<String, serde_json::V
     out
 }
 
+/// `param → issuer` out of a config's `paramSource` declaration.
+///
+/// Which action mints which opaque id used to live as a table inside one module's code (tago's
+/// `ID_SOURCE`) — right behavior, wrong home: the next module would have had to reinvent it, and
+/// the framework's own refusals (a missing required param, a grounding rejection) could not name
+/// the issuer at all. Declared, both readers speak from the same rows.
+///
+/// The value is free text naming the issuing action(s) — one id, two alternatives, a format note
+/// ("express-terminals-arr (a bare number like 010)"). The framework carries it into the refusal
+/// verbatim and never interprets it; only the module knows what its own issuers are called.
+pub fn param_source(config: &serde_json::Value) -> Vec<(String, String)> {
+    let Some(obj) = config.get("paramSource").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+    obj.iter()
+        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+        .filter(|(k, s)| !k.is_empty() && !s.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +114,20 @@ mod tests {
         let inline = json!({ "actionCatalog": [{ "id": "a" }] });
         assert_eq!(catalog_file(&inline), None);
         assert_eq!(inline_catalog_rows(&inline).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn param_source_reads_only_named_issuers() {
+        let config = json!({ "paramSource": {
+            "nodeId": "bus-stop-search or bus-stop-nearby",
+            "empty": "",
+            "notText": 3
+        } });
+        let rows = param_source(&config);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "nodeId");
+        // Absent declaration = no rows, not an error — the pointer is opt-in.
+        assert!(param_source(&json!({})).is_empty());
     }
 
     #[test]

@@ -94,8 +94,12 @@ jobs:
       # `cargo test -p firebat-core` appears nowhere in this file's history. Eight assertions had
       # gone stale unnoticed, and every test written for core — including the ones guarding the
       # hub boundary and the owner grammar — was decoration.
+      # --lib AND --tests: core/tests/ holds the declaration audits (module_config_audit's four
+      # directions, KNOWN_KEYS typo net, cron reachability, dialect_replay). With --lib alone they
+      # compiled everywhere and ran nowhere — schedulesFrom was missing from KNOWN_KEYS for a full
+      # deploy cycle and nothing went red. A net that never runs is decoration (2026-08-17).
       - name: cargo test (core)
-        run: cargo test -p firebat-core --lib
+        run: cargo test -p firebat-core --lib --tests
       - name: cargo test (infra)
         run: cargo test -p firebat-infra --tests
 

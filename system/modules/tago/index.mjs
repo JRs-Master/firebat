@@ -16,6 +16,8 @@
  * instead of a one-element array.
  */
 
+import { readFileSync } from 'node:fs';
+
 const HOST = 'https://apis.data.go.kr/1613000';
 const TIMEOUT = 20000;
 
@@ -102,27 +104,21 @@ const CITY_CODE_SOURCES = {
  * Where an id comes from. An empty result is the failure mode across all of TAGO — a wrong-but
  * well-formed id answers 200 with zero rows — so a zero-row response names the action that mints
  * the ids it was given instead of reading as "nothing runs here".
+ *
+ * The rows live in config.json (`paramSource`) — the standard slot the framework ALSO reads, to
+ * name the issuer from validation and grounding refusals. This table used to be inline here,
+ * which made it a per-module invention the next module would have re-invented; now it is one
+ * declaration with two readers, and this one only adds the empty-result angle the framework
+ * cannot see (a wrong id and absent data answer identically).
  */
-const ID_SOURCE = {
-  cityCode: 'the city-codes action, reading the list for THIS service',
-  nodeId: 'bus-stop-search or bus-stop-nearby',
-  nodeid: 'bus-stop-search or bus-stop-nearby',
-  routeId: 'bus-route-search',
-  depTmnCd: 'express-terminals-arr (a bare number like 010)',
-  arrTmnCd: 'express-destinations (a bare number like 700)',
-  depTerminalId: 'express-terminals or suburbs-terminals (a prefixed id like NAEK010)',
-  arrTerminalId: 'express-terminals or suburbs-terminals (a prefixed id like NAEK300)',
-  depPlaceId: 'train-stations',
-  arrPlaceId: 'train-stations',
-  subwayStationId: 'subway-stations',
-  depAirportId: 'airports',
-  arrAirportId: 'airports',
-  airlineId: 'airlines',
-  depNodeId: 'ports',
-  busGradeId: 'express-grades or suburbs-grades',
-  trainGradeCode: 'train-grades',
-  providerName: 'scooter-providers',
-};
+const ID_SOURCE = (() => {
+  try {
+    const cfg = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf-8'));
+    return cfg.paramSource ?? {};
+  } catch {
+    return {};
+  }
+})();
 
 let raw = '';
 process.stdin.setEncoding('utf-8');

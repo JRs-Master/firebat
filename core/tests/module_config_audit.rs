@@ -34,8 +34,8 @@ const KNOWN_KEYS: &[&str] = &[
     "secrets", "accounts", "credentialScope", "accountFrom",
     // behaviour declarations
     "actionCatalog", "cacheInputs", "autoCacheWhole", "grounding", "requiresApproval", "uiOnly",
-    "timeseries", "ws", "pageBinding", "recall", "schedules", "settings_fields", "editorSchema",
-    "unsupportedActions", "notify", "notifyJob",
+    "timeseries", "ws", "pageBinding", "recall", "schedules", "schedulesFrom", "settings_fields",
+    "editorSchema", "unsupportedActions", "notify", "notifyJob", "paramSource",
 ];
 
 /// Field types the settings UI can render — READ OUT OF THE RENDERER, not listed here. A
@@ -761,11 +761,18 @@ fn every_declared_param_is_read_by_the_module() {
         // Names core fills in before the module sees them.
         let expanded: BTreeSet<String> = cache_key_siblings(&config);
 
+        // Names the shared dialect reads INDIRECTLY: a `_call.by` axis is consumed as
+        // `data[call.by]`, so the axis name never appears in code as a literal — the declaration
+        // itself is the reader contract. Without this, enabling the audit flagged korea-invest's
+        // eight axes as unread the first time it ever ran (2026-08-17).
+        let by_axes: BTreeSet<String> = call_by_axes(&dir, &config);
+
         let unread: Vec<&str> = props
             .keys()
             .map(|s| s.as_str())
             .filter(|k| *k != "action")
             .filter(|k| !expanded.contains(*k))
+            .filter(|k| !by_axes.contains(*k))
             .filter(|k| !mentions_word(&src, k))
             .collect();
         if !unread.is_empty() {
@@ -779,6 +786,39 @@ fn every_declared_param_is_read_by_the_module() {
     }
     assert!(audited >= 25, "only {audited} modules audited — the path drifted");
     assert!(problems.is_empty(), "{} problem(s):\n  {}", problems.len(), problems.join("\n  "));
+}
+
+/// Every `_call.by` axis name in a module's action rows (file or inline). These params are read
+/// by the shared dialect (`data[call.by]`), never as a literal in module code.
+fn call_by_axes(dir: &Path, config: &Value) -> BTreeSet<String> {
+    let rows: Vec<Value> = if let Some(file) =
+        config.get("actionCatalog").and_then(|c| c.get("file")).and_then(|v| v.as_str())
+    {
+        fs::read_to_string(dir.join(file))
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+            .and_then(|v| {
+                v.as_array().cloned().or_else(|| {
+                    v.get("actions").and_then(|a| a.as_array()).cloned()
+                })
+            })
+            .unwrap_or_default()
+    } else {
+        config
+            .get("actionCatalog")
+            .and_then(|v| {
+                v.as_array().cloned().or_else(|| {
+                    v.get("actions").and_then(|a| a.as_array()).cloned()
+                })
+            })
+            .unwrap_or_default()
+    };
+    rows.iter()
+        .filter_map(|r| r.get("_call"))
+        .filter_map(|c| c.get("by"))
+        .filter_map(|b| b.as_str())
+        .map(str::to_string)
+        .collect()
 }
 
 /// `<param>CacheKey` / `Limit` / `Range` for every `cacheInputs` entry — core expands these into

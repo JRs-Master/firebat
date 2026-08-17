@@ -39,6 +39,10 @@ pub struct GroundedParam {
     /// gated). `^Q?[0-9]{6}$` gates only stock codes; 4-digit index codes don't match → pass.
     /// `None` = gate every token (kiwoom `stk_cd` is never overloaded).
     pub pattern: Option<regex::Regex>,
+    /// The issuing action, when the module also declares this param in `paramSource` — attached
+    /// here at parse time so a rejection can point at the issuer as structure, not only via the
+    /// `resolveHint` prose.
+    pub source: Option<String>,
 }
 
 /// Parse `config.grounding` into requirements.
@@ -50,10 +54,15 @@ pub fn parse_grounding(config: &serde_json::Value) -> Vec<GroundedParam> {
     let Some(obj) = config.get("grounding").and_then(|v| v.as_object()) else {
         return Vec::new();
     };
+    let sources = crate::utils::action_decl::param_source(config);
     obj.iter()
         .filter(|(param, _)| !param.is_empty())
         .map(|(param, spec)| GroundedParam {
             param: param.clone(),
+            source: sources
+                .iter()
+                .find(|(p, _)| p == param)
+                .map(|(_, s)| s.clone()),
             hint: spec
                 .get("resolveHint")
                 .and_then(|v| v.as_str())
@@ -267,9 +276,14 @@ pub fn check_grounding(
                 } else {
                     gp.hint.clone()
                 };
+                let issuer = gp
+                    .source
+                    .as_deref()
+                    .map(|s| format!(" `{}` is issued by {s}.", gp.param))
+                    .unwrap_or_default();
                 return Err(format!(
-                    "Ungrounded value: '{}' = '{}' was never resolved in this conversation. {}",
-                    gp.param, token, hint
+                    "Ungrounded value: '{}' = '{}' was never resolved in this conversation. {}{}",
+                    gp.param, token, hint, issuer
                 ));
             }
         }

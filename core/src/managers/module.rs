@@ -851,6 +851,21 @@ impl ModuleManager {
                             break;
                         }
                     }
+                    // A failing param whose ISSUER the module declared gets that issuer named —
+                    // the structural form of tago's ID_SOURCE table, which lived as module code
+                    // and would have been reinvented per module. `paramSource` is the
+                    // declaration; this is its reader on the validation path (grounding names
+                    // it on the resolve path).
+                    for (param, source) in crate::utils::action_decl::param_source(config) {
+                        if detail.contains(&format!("/{param}"))
+                            || detail.contains(&format!("'{param}'"))
+                        {
+                            msg.push_str(&format!(
+                                " `{param}` is issued by {source} — call that first and take `{param}` from its result."
+                            ));
+                            break;
+                        }
+                    }
                     // A JSON-LOOKING string that does not parse is almost always a hand-typed
                     // serialization broken mid-stream (escape slip or output truncation) — the
                     // generic "search→schema" hint sends the model back up the ladder when the
