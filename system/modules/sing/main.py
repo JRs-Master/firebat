@@ -55,31 +55,31 @@ def note_freq(name):
 
 
 def parse_score(score):
-    """Normalize {bpm, notes[], chords?, style?} -> (spb, events, chords, style, err).
+    """Normalize {bpm, notes[], chords?, style?, band?} -> (spb, events, chords, style, band, err).
 
     An event is one SUNG syllable: consecutive '-' notes extend the previous syllable across
     pitches (a melisma) — for the MVP the extension keeps the first pitch's duration math simple:
     each event carries a list of (freq, beats) segments.
     """
     if not isinstance(score, dict):
-        return None, None, None, None, "score 가 객체가 아닙니다"
+        return None, None, None, None, None, "score 가 객체가 아닙니다"
     bpm = float(score.get("bpm") or 0)
     if not (20 <= bpm <= 300):
-        return None, None, None, None, f"bpm {bpm} 은 20~300 이어야 합니다"
+        return None, None, None, None, None, f"bpm {bpm} 은 20~300 이어야 합니다"
     spb = 60.0 / bpm
     notes = score.get("notes")
     if not isinstance(notes, list) or not notes:
-        return None, None, None, None, "notes 가 비었습니다"
+        return None, None, None, None, None, "notes 가 비었습니다"
     events = []
     for n in notes:
         if not isinstance(n, dict):
-            return None, None, None, None, "notes 항목이 객체가 아닙니다"
+            return None, None, None, None, None, "notes 항목이 객체가 아닙니다"
         freq = note_freq(n.get("note"))
         beats = float(n.get("beats") or 1)
         if freq is None:
-            return None, None, None, None, f"음이름을 읽을 수 없습니다: {n.get('note')!r}"
+            return None, None, None, None, None, f"음이름을 읽을 수 없습니다: {n.get('note')!r}"
         if beats <= 0 or beats > 16:
-            return None, None, None, None, f"beats {beats} 가 이상합니다 (0 < beats <= 16)"
+            return None, None, None, None, None, f"beats {beats} 가 이상합니다 (0 < beats <= 16)"
         syl = str(n.get("syl") or "").strip()
         if syl == "-" and events:
             events[-1]["segments"].append((freq, beats))
@@ -92,7 +92,20 @@ def parse_score(score):
         if root and beats > 0:
             chords.append((root, beats, str(c.get("quality") or "").strip()))
     style = str(score.get("style") or "trot").strip().lower()
-    return spb, events, chords, style, None
+    # band = per-part instrument override. An unknown name is refused WITH the full library in
+    # the message — the error is the discovery surface here, nobody browses the module source.
+    band = {}
+    for part, name in (score.get("band") or {}).items() if isinstance(score.get("band"), dict) else []:
+        part = str(part).strip().lower()
+        name = str(name).strip().lower()
+        if part not in ("melody", "chord", "bass"):
+            return None, None, None, None, None, \
+                f"band 의 파트 {part!r} 를 모릅니다 — melody | chord | bass 만 받습니다"
+        if name not in PATCHES:
+            return None, None, None, None, None, \
+                f"악기 {name!r} 가 라이브러리에 없습니다 — 가능한 악기: {', '.join(sorted(PATCHES))}"
+        band[part] = name
+    return spb, events, chords, style, band, None
 
 
 # ── synthesis (the rhythm section) ─────────────────────────────────────────────────────────────
@@ -124,6 +137,52 @@ def hat(dur=0.06):
     return np.diff(noise, prepend=0.0) * _env(n, 0.02) * 0.6  # differentiation ≈ high-pass
 
 
+def ohat(dur=0.30):
+    """Open hat — the same metal, left ringing."""
+    n = int(SR * dur)
+    rng = np.random.default_rng(17)
+    return np.diff(rng.standard_normal(n), prepend=0.0) * _env(n, 0.10) * 0.5
+
+
+def tom(freq0, dur=0.32, seed=5):
+    """A tom is a kick that starts higher and keeps more of its skin — three sizes make 두구두구."""
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    freq = freq0 * np.exp(-t * 7.0) + freq0 * 0.55
+    body = np.sin(2 * np.pi * np.cumsum(freq) / SR) * _env(n, 0.12)
+    skin = np.random.default_rng(seed).standard_normal(n) * _env(n, 0.012) * 0.25
+    return body * 0.9 + skin
+
+
+def crash(dur=1.2):
+    """쨍 — wideband metal that rings. Two differentiations stack the energy where cymbals live."""
+    n = int(SR * dur)
+    rng = np.random.default_rng(13)
+    noise = rng.standard_normal(n)
+    bright = np.diff(noise, prepend=0.0)
+    sheen = np.diff(bright, prepend=0.0)
+    return (bright * 0.7 + sheen * 0.45) * _env(n, 0.38) * 0.35
+
+
+def pluck_ks(freq, dur, damp=0.996):
+    """Karplus-Strong plucked string — a noise burst run through its own reflection. This is the
+    one acoustic instrument the numpy backend can be honest about: the algorithm IS the physics
+    (a wave bouncing on a string), so an acoustic guitar lives here while a saxophone cannot.
+    Iterates per string period, not per sample — a few hundred numpy ops for seconds of audio."""
+    n = max(1, int(SR * dur))
+    period = max(2, int(round(SR / max(20.0, freq))))
+    rng = np.random.default_rng(int(freq) + 3)
+    prev = rng.standard_normal(period)
+    out = np.empty(n)
+    filled = 0
+    while filled < n:
+        prev = 0.5 * (prev + np.roll(prev, 1)) * damp
+        take = min(period, n - filled)
+        out[filled:filled + take] = prev[:take]
+        filled += take
+    return out
+
+
 # ── the synth backend ─────────────────────────────────────────────────────────────────────────
 #
 # What separates an instrument from a beep is mostly that its BRIGHTNESS falls while the note
@@ -142,15 +201,75 @@ def hat(dur=0.06):
 # cannot — its identity is reed noise and body formants no harmonic recipe reaches. That is the
 # soundfont backend's half, and the two are a division of labour rather than a choice.
 
+# The instrument library. One row per instrument, and the row carries everything the two
+# renderers need — synthesis recipe for the numpy backend, `gm` program for the .mid — so an
+# instrument added here reaches both outputs without being declared twice.
+#
+#   harm     = integer-harmonic amplitudes (1f, 2f, 3f ...)
+#   partials = float (ratio, amp) pairs instead — bells and marimbas are OUT of tune with their
+#              own fundamental, and that inharmonicity IS the timbre
+#   odd      = keep odd harmonics only (a square wave — the 8-bit lead)
+#   hdecay/hslope = how fast brightness falls · detune = 2nd osc spread · noise = attack transient
+#   breath   = CONTINUOUS noise under the tone (a flute is half air)
+#   vib      = (rate Hz, depth as fraction of f0) — an e-violin without vibrato is a test tone
+#   shape    = tanh drive: the electric-guitar move, harmonics born from clipping
+#   engine   = "ks" → Karplus-Strong pluck (acoustic string), recipe fields ignored
+#   atk/rel/gain as before · gm = General MIDI program for the .mid
 PATCHES = {
-    # harm = harmonic amplitudes · hdecay/hslope = how fast brightness falls · detune = 2nd osc
-    # offset (× f0) · noise = attack transient level · atk/rel = amplitude envelope seconds
-    "melody": {"harm": [1.0, 0.55, 0.30, 0.16, 0.08], "hdecay": 1.6, "hslope": 1.35,
-               "detune": 0.004, "noise": 0.06, "atk": 0.012, "rel": 0.10, "gain": 0.34},
-    "chord":  {"harm": [1.0, 0.40, 0.16, 0.07], "hdecay": 0.9, "hslope": 1.2,
-               "detune": 0.010, "noise": 0.0, "atk": 0.035, "rel": 0.22, "gain": 0.15},
-    "bass":   {"harm": [1.0, 0.62, 0.28, 0.12], "hdecay": 2.4, "hslope": 1.5,
-               "detune": 0.0, "noise": 0.03, "atk": 0.006, "rel": 0.09, "gain": 0.50},
+    # the original trio — names kept because arrangement events fall back to their part name
+    "melody":     {"harm": [1.0, 0.55, 0.30, 0.16, 0.08], "hdecay": 1.6, "hslope": 1.35,
+                   "detune": 0.004, "noise": 0.06, "atk": 0.012, "rel": 0.10, "gain": 0.34, "gm": 65},
+    "chord":      {"harm": [1.0, 0.40, 0.16, 0.07], "hdecay": 0.9, "hslope": 1.2,
+                   "detune": 0.010, "noise": 0.0, "atk": 0.035, "rel": 0.22, "gain": 0.15, "gm": 4},
+    "bass":       {"harm": [1.0, 0.62, 0.28, 0.12], "hdecay": 2.4, "hslope": 1.5,
+                   "detune": 0.0, "noise": 0.03, "atk": 0.006, "rel": 0.09, "gain": 0.50, "gm": 33},
+    # keys / reeds
+    "piano":      {"harm": [1.0, 0.52, 0.34, 0.20, 0.13, 0.08], "hdecay": 3.0, "hslope": 1.1,
+                   "detune": 0.002, "noise": 0.05, "atk": 0.004, "rel": 0.14, "gain": 0.32, "gm": 0},
+    "epiano":     {"harm": [1.0, 0.30, 0.55, 0.10, 0.16], "hdecay": 2.2, "hslope": 1.2,
+                   "detune": 0.003, "noise": 0.02, "atk": 0.005, "rel": 0.18, "gain": 0.28, "gm": 4},
+    "organ":      {"harm": [1.0, 0.85, 0.55, 0.45, 0.28, 0.18], "hdecay": 0.12, "hslope": 0.8,
+                   "detune": 0.006, "noise": 0.0, "atk": 0.02, "rel": 0.06, "gain": 0.20, "gm": 19},
+    "accordion":  {"harm": [1.0, 0.72, 0.65, 0.40, 0.33, 0.22, 0.14], "hdecay": 0.18, "hslope": 0.7,
+                   "detune": 0.012, "noise": 0.03, "atk": 0.045, "rel": 0.09, "gain": 0.20, "gm": 21},
+    # guitars — the acoustic one is a physical model, the electric ones are clipping
+    "aguitar":    {"engine": "ks", "damp": 0.9955, "atk": 0.002, "rel": 0.08, "gain": 0.34, "gm": 25},
+    "eguitar":    {"harm": [1.0, 0.58, 0.36, 0.22, 0.12, 0.07], "hdecay": 2.6, "hslope": 1.15,
+                   "detune": 0.002, "noise": 0.04, "shape": 1.8, "atk": 0.003, "rel": 0.10,
+                   "gain": 0.30, "gm": 27},
+    "dguitar":    {"harm": [1.0, 0.62, 0.45, 0.30, 0.20, 0.12], "hdecay": 0.7, "hslope": 0.8,
+                   "detune": 0.004, "noise": 0.06, "shape": 5.5, "atk": 0.004, "rel": 0.09,
+                   "gain": 0.26, "gm": 30},
+    # bowed / sustained
+    "eviolin":    {"harm": [1.0, 0.62, 0.44, 0.32, 0.24, 0.17, 0.12, 0.08], "hdecay": 0.35,
+                   "hslope": 0.9, "detune": 0.004, "noise": 0.02, "vib": (5.5, 0.007),
+                   "atk": 0.09, "rel": 0.12, "gain": 0.26, "gm": 40},
+    "strings":    {"harm": [1.0, 0.45, 0.25, 0.12, 0.06], "hdecay": 0.35, "hslope": 1.1,
+                   "detune": 0.016, "noise": 0.0, "vib": (5.0, 0.004), "atk": 0.22, "rel": 0.45,
+                   "gain": 0.13, "gm": 48},
+    "brass":      {"harm": [1.0, 0.78, 0.62, 0.45, 0.30, 0.18], "hdecay": 0.9, "hslope": 0.85,
+                   "detune": 0.003, "noise": 0.09, "atk": 0.035, "rel": 0.08, "gain": 0.28, "gm": 61},
+    "flute":      {"harm": [1.0, 0.22, 0.09, 0.04], "hdecay": 0.4, "hslope": 1.0,
+                   "detune": 0.0, "noise": 0.0, "breath": 0.10, "vib": (5.2, 0.004),
+                   "atk": 0.06, "rel": 0.10, "gain": 0.26, "gm": 73},
+    # mallets & bells — inharmonic partials, long ring
+    "marimba":    {"partials": [(1.0, 1.0), (3.98, 0.42), (9.10, 0.14)], "hdecay": 4.5,
+                   "hslope": 0.6, "detune": 0.0, "noise": 0.05, "atk": 0.002, "rel": 0.10,
+                   "gain": 0.30, "gm": 12},
+    "bell":       {"partials": [(1.0, 1.0), (2.76, 0.62), (5.40, 0.36), (8.93, 0.19)],
+                   "hdecay": 1.1, "hslope": 0.5, "detune": 0.001, "noise": 0.02, "atk": 0.002,
+                   "rel": 0.25, "gain": 0.24, "gm": 14},
+    "musicbox":   {"partials": [(1.0, 1.0), (3.01, 0.35), (5.85, 0.15)], "hdecay": 2.8,
+                   "hslope": 0.6, "detune": 0.0, "noise": 0.01, "atk": 0.001, "rel": 0.15,
+                   "gain": 0.24, "gm": 10},
+    # synths proper
+    "synthlead":  {"harm": [1.0 / k for k in range(1, 9)], "hdecay": 0.5, "hslope": 0.9,
+                   "detune": 0.007, "noise": 0.0, "atk": 0.01, "rel": 0.08, "gain": 0.26, "gm": 81},
+    "squarelead": {"harm": [1.0, 0.0, 0.33, 0.0, 0.20, 0.0, 0.14], "hdecay": 0.4, "hslope": 0.9,
+                   "detune": 0.003, "noise": 0.0, "atk": 0.004, "rel": 0.06, "gain": 0.24, "gm": 80},
+    "synthbass":  {"harm": [1.0, 0.70, 0.45, 0.28, 0.16, 0.09], "hdecay": 1.6, "hslope": 1.1,
+                   "detune": 0.005, "noise": 0.02, "shape": 1.5, "atk": 0.005, "rel": 0.08,
+                   "gain": 0.46, "gm": 38},
 }
 
 
@@ -159,47 +278,100 @@ def synth_note(freq, dur, patch="bass", vel=0.8):
     p = PATCHES.get(patch, PATCHES["bass"])
     n = max(1, int(SR * dur))
     t = np.arange(n) / SR
-    x = np.zeros(n)
-    # Velocity opens the timbre: the upper harmonics are the ones it reaches.
-    bright = 0.55 + 0.45 * float(np.clip(vel, 0.0, 1.0))
-    for k, amp in enumerate(p["harm"], start=1):
-        f = freq * k
-        if f > SR * 0.45:  # past Nyquist — this harmonic would alias back as a wrong pitch
-            break
-        a = amp * (bright ** (k - 1))
-        if a < 0.005:
-            continue
-        # The brightness sweep, as a per-harmonic decay instead of a filter recursion.
-        env_k = np.exp(-t * p["hdecay"] * (k ** p["hslope"]))
-        wave = np.sin(2 * np.pi * f * t)
-        if p["detune"]:
-            wave = 0.5 * (wave + np.sin(2 * np.pi * (f + p["detune"] * freq * k) * t))
-        x += a * env_k * wave
-    if p["noise"]:
-        m = min(n, int(SR * 0.012))
-        if m > 1:
-            # Fixed seed: the same score has to render the same bytes.
-            burst = np.random.default_rng(int(freq)).standard_normal(m)
-            burst = np.convolve(burst, np.ones(8) / 8.0, "same")
-            x[:m] += burst * p["noise"] * np.linspace(1.0, 0.0, m)
+    if p.get("engine") == "ks":
+        x = pluck_ks(freq, dur, p.get("damp", 0.996))
+    else:
+        x = np.zeros(n)
+        # Velocity opens the timbre: the upper harmonics are the ones it reaches.
+        bright = 0.55 + 0.45 * float(np.clip(vel, 0.0, 1.0))
+        # One phase ramp, shared by every partial — this is what lets vibrato bend the whole
+        # note as one instrument instead of detuning each harmonic separately.
+        if p.get("vib"):
+            rate, depth = p["vib"]
+            # Vibrato that starts immediately sounds like a siren; players ease in.
+            onset = np.minimum(1.0, t / 0.18)
+            inst = freq * (1.0 + depth * onset * np.sin(2 * np.pi * rate * t))
+            ph = 2 * np.pi * np.cumsum(inst) / SR
+        else:
+            ph = 2 * np.pi * freq * t
+        partials = p.get("partials") or [(float(k), a) for k, a in enumerate(p.get("harm", []), 1)]
+        for i, (ratio, amp) in enumerate(partials):
+            if amp <= 0.0:
+                continue
+            f = freq * ratio
+            if f > SR * 0.45:  # past Nyquist — would alias back as a wrong pitch
+                continue
+            a = amp * (bright ** i)
+            if a < 0.005:
+                continue
+            # The brightness sweep, as a per-partial decay instead of a filter recursion.
+            env_k = np.exp(-t * p["hdecay"] * (ratio ** p["hslope"]))
+            wave = np.sin(ratio * ph)
+            if p.get("detune"):
+                wave = 0.5 * (wave + np.sin(ratio * ph * (1.0 + p["detune"])))
+            x += a * env_k * wave
+        if p.get("noise"):
+            m = min(n, int(SR * 0.012))
+            if m > 1:
+                # Fixed seed: the same score has to render the same bytes.
+                burst = np.random.default_rng(int(freq)).standard_normal(m)
+                burst = np.convolve(burst, np.ones(8) / 8.0, "same")
+                x[:m] += burst * p["noise"] * np.linspace(1.0, 0.0, m)
+        if p.get("breath"):
+            air = np.random.default_rng(int(freq) + 1).standard_normal(n)
+            air = np.convolve(air, np.ones(24) / 24.0, "same")
+            x += air * p["breath"]
+        if p.get("shape"):
+            # Clip BEFORE the amplitude envelope: distortion is in the string, decay is in the amp.
+            drive = float(p["shape"])
+            peak = float(np.max(np.abs(x))) or 1.0
+            x = np.tanh(drive * (x / peak)) / math.tanh(drive)
     env = np.ones(n)
-    a = min(n, int(SR * p["atk"]))
+    a = min(n, int(SR * p.get("atk", 0.01)))
     if a > 1:
         env[:a] = np.linspace(0, 1, a)
-    r = min(max(0, n - a), int(SR * min(p["rel"], dur * 0.35)))
+    r = min(max(0, n - a), int(SR * min(p.get("rel", 0.1), dur * 0.35)))
     if r > 1:
         env[-r:] = np.linspace(1, 0, r)
     peak = float(np.max(np.abs(x))) or 1.0
-    return x * env * (p["gain"] / peak)
+    return x * env * (p.get("gain", 0.3) / peak)
 
 
-# Per-style one-bar (4 beats) pattern: (instrument, beat offset).
+# Per-style one-bar (4 beats) groove: (instrument, beat offset, velocity). The kit speaks
+# Korean: kick 쿵 · snare 덕 · hat 칙 (ohat rings) · toms 두구두구 · crash 쨍.
 DRUM_PATTERNS = {
-    "trot":   [("kick", 0.0), ("hat", 0.5), ("snare", 1.0), ("hat", 1.5),
-               ("kick", 2.0), ("hat", 2.5), ("snare", 3.0), ("hat", 3.5)],
-    "ballad": [("kick", 0.0), ("hat", 1.0), ("snare", 2.0), ("hat", 3.0)],
-    "march":  [("kick", 0.0), ("kick", 1.0), ("snare", 2.0), ("kick", 3.0), ("snare", 3.5)],
+    "trot":   [("kick", 0.0, 0.9), ("hat", 0.5, 0.45), ("snare", 1.0, 0.8), ("hat", 1.5, 0.45),
+               ("kick", 2.0, 0.85), ("hat", 2.5, 0.45), ("snare", 3.0, 0.8), ("ohat", 3.5, 0.55)],
+    "ballad": [("kick", 0.0, 0.75), ("hat", 0.5, 0.3), ("hat", 1.0, 0.35), ("hat", 1.5, 0.3),
+               ("snare", 2.0, 0.6), ("hat", 2.5, 0.3), ("kick", 3.0, 0.5), ("hat", 3.5, 0.3)],
+    "march":  [("kick", 0.0, 0.9), ("snare", 0.5, 0.4), ("snare", 1.0, 0.7), ("kick", 2.0, 0.85),
+               ("snare", 2.5, 0.4), ("snare", 3.0, 0.7), ("snare", 3.5, 0.45), ("snare", 3.75, 0.5)],
     "none":   [],
+}
+
+# 쿵덕 for three bars, 두구두구 on the fourth, 쨍 on the downbeat after: every 4th bar keeps its
+# groove up to the fill start and rolls down the toms; every 4-bar group opens on a crash.
+# (start beat, [hits]) — velocities rise through the roll because a drummer leans into a fill.
+DRUM_FILLS = {
+    "trot":   (2.0, [("snare", 2.0, 0.55), ("tom_hi", 2.25, 0.5), ("tom_hi", 2.5, 0.55),
+                     ("tom_mid", 2.75, 0.6), ("tom_mid", 3.0, 0.7), ("tom_lo", 3.25, 0.8),
+                     ("tom_lo", 3.5, 0.9), ("tom_lo", 3.75, 0.95)]),
+    "ballad": (3.0, [("tom_hi", 3.0, 0.4), ("tom_mid", 3.25, 0.5), ("tom_lo", 3.5, 0.6),
+                     ("tom_lo", 3.75, 0.7)]),
+    "march":  (3.0, [("snare", 3.0, 0.5), ("snare", 3.25, 0.6), ("snare", 3.5, 0.75),
+                     ("snare", 3.75, 0.9)]),
+}
+
+# GM percussion notes (channel 10) — the .mid side of the kit, one map for every drum name.
+DRUM_NOTE = {"kick": 36, "snare": 38, "hat": 42, "ohat": 46,
+             "tom_lo": 45, "tom_mid": 47, "tom_hi": 50, "crash": 49}
+
+# Which band a style hires — part → instrument name in PATCHES. The score's own `band` field
+# overrides per part, so any instrument in the library can front any style.
+STYLE_BAND = {
+    "trot":   {"melody": "melody", "chord": "accordion", "bass": "bass"},
+    "ballad": {"melody": "piano", "chord": "strings", "bass": "bass"},
+    "march":  {"melody": "brass", "chord": "organ", "bass": "bass"},
 }
 
 
@@ -213,9 +385,6 @@ DRUM_PATTERNS = {
 # `program` is a General MIDI program number so the meaning survives the trip to any synth; the
 # numpy renderer maps it onto the timbre it has. Drums carry a name instead, since they are a kit
 # and not a pitch.
-
-GM_PROGRAM = {"melody": 65, "chord": 4, "bass": 33}  # alto sax / e.piano / finger bass
-
 
 def midi_number(name):
     """'G4' -> 67. None if unreadable — same spelling rules as `note_freq`."""
@@ -247,9 +416,15 @@ def chord_voicing(root_midi, quality=""):
     return [root_midi + s for s in semis]
 
 
-def build_arrangement(events, chords, style, total_beats):
-    """Score -> flat list of {beat, beats, part, pitch|drum, program}. Beats, not samples: the
-    renderers turn them into whatever they count in (samples here, ticks in the MIDI writer)."""
+def build_arrangement(events, chords, style, total_beats, band=None):
+    """Score -> flat list of {beat, beats, part, patch, pitch|drum, program, vel}. Beats, not
+    samples: the renderers turn them into whatever they count in (samples here, MIDI ticks there).
+    `band` = per-part instrument override ({part: PATCHES name}) on top of the style's own."""
+    hire = dict(STYLE_BAND.get(style, STYLE_BAND["trot"]))
+    for part, name in (band or {}).items():
+        if part in hire and name in PATCHES:
+            hire[part] = name
+    prog = {part: PATCHES[name].get("gm", 0) for part, name in hire.items()}
     out = []
     # Melody — the notes the voice sings, also given to an instrument. Without this an
     # instrumental render (no vocalPath) had rhythm and bass and no tune at all.
@@ -257,27 +432,37 @@ def build_arrangement(events, chords, style, total_beats):
     for ev in events:
         for freq, beats in ev["segments"]:
             m = int(round(69 + 12 * math.log2(freq / 440.0)))
-            out.append({"beat": beat, "beats": beats, "part": "melody",
-                        "pitch": m, "program": GM_PROGRAM["melody"]})
+            out.append({"beat": beat, "beats": beats, "part": "melody", "patch": hire["melody"],
+                        "pitch": m, "program": prog["melody"]})
             beat += beats
     pos = 0.0
     for root, beats, quality in chords:
         rm = int(round(69 + 12 * math.log2(root / 440.0)))
         for p in chord_voicing(rm, quality):
-            out.append({"beat": pos, "beats": beats, "part": "chord",
-                        "pitch": p, "program": GM_PROGRAM["chord"]})
+            out.append({"beat": pos, "beats": beats, "part": "chord", "patch": hire["chord"],
+                        "pitch": p, "program": prog["chord"]})
         # An octave below the written root — a root written at C3 plays bass at C2.
-        out.append({"beat": pos, "beats": beats, "part": "bass",
-                    "pitch": rm - 12, "program": GM_PROGRAM["bass"]})
+        out.append({"beat": pos, "beats": beats, "part": "bass", "patch": hire["bass"],
+                    "pitch": rm - 12, "program": prog["bass"]})
         pos += beats
         if pos >= total_beats:
             break
-    bar = 0.0
+    base = DRUM_PATTERNS.get(style, DRUM_PATTERNS["trot"])
+    fill = DRUM_FILLS.get(style if style in DRUM_FILLS else "trot")
+    bar, bar_i = 0.0, 0
     while bar < total_beats:
-        for inst, off in DRUM_PATTERNS.get(style, DRUM_PATTERNS["trot"]):
+        hits = list(base)
+        if hits and fill and bar_i % 4 == 3:
+            start, roll = fill
+            hits = [h for h in hits if h[1] < start] + roll
+        if hits and bar_i % 4 == 0:
+            hits = [("crash", 0.0, 0.85 if bar_i == 0 else 0.7)] + hits
+        for inst, off, vel in hits:
             if bar + off < total_beats:
-                out.append({"beat": bar + off, "beats": 0.25, "part": "drum", "drum": inst})
+                out.append({"beat": bar + off, "beats": 0.25, "part": "drum",
+                            "drum": inst, "vel": vel})
         bar += 4.0
+        bar_i += 1
     out.sort(key=lambda e: (e["beat"], e["part"]))
     return out
 
@@ -286,15 +471,18 @@ def render_arrangement(arr, spb, total_beats):
     """The numpy backend — every part of `arr` mixed into one float array."""
     n_total = int(SR * spb * total_beats) + int(SR * 0.5)
     out = np.zeros(n_total)
-    hits = {"kick": kick(), "snare": snare(), "hat": hat()}
+    hits = {"kick": kick(), "snare": snare(), "hat": hat(), "ohat": ohat(),
+            "tom_hi": tom(210.0, seed=5), "tom_mid": tom(150.0, seed=6),
+            "tom_lo": tom(105.0, seed=8), "crash": crash()}
     for e in arr:
         i = int(SR * spb * e["beat"])
         if i >= n_total:
             continue
         if e["part"] == "drum":
-            seg = hits[e["drum"]]
+            seg = hits[e["drum"]] * float(e.get("vel", 0.8))
         else:
-            seg = synth_note(freq_of_midi(e["pitch"]), spb * e["beats"], e["part"])
+            seg = synth_note(freq_of_midi(e["pitch"]), spb * e["beats"],
+                             e.get("patch", e["part"]))
         out[i:i + len(seg)] += seg[: max(0, n_total - i)]
     return out
 
@@ -331,17 +519,17 @@ def write_midi(arr, bpm, path):
         marks = []
         for e in rows:
             start = int(round(e["beat"] * tpb))
-            pitch = 36 if part == "drum" and e["drum"] == "kick" else \
-                38 if part == "drum" and e["drum"] == "snare" else \
-                42 if part == "drum" else e["pitch"]
-            marks.append((start, 1, pitch))
-            marks.append((start + max(1, int(round(e["beats"] * tpb))), 0, pitch))
+            pitch = DRUM_NOTE.get(e["drum"], 42) if part == "drum" else e["pitch"]
+            vel = int(round(127 * float(e.get("vel", 0.71))))
+            marks.append((start, 1, pitch, vel))
+            marks.append((start + max(1, int(round(e["beats"] * tpb))), 0, pitch, 0))
         marks.sort(key=lambda m: (m[0], m[1]))
         prev = 0
-        for tick, on, pitch in marks:
+        for tick, on, pitch, vel in marks:
             tr.append(mido.Message("note_on" if on else "note_off", channel=ch,
                                    note=max(0, min(127, pitch)),
-                                   velocity=90 if on else 0, time=tick - prev))
+                                   velocity=max(1, min(127, vel)) if on else 0,
+                                   time=tick - prev))
             prev = tick
     mid.tracks[0].insert(0, mido.MetaMessage("set_tempo",
                                              tempo=mido.bpm2tempo(bpm), time=0))
@@ -698,13 +886,13 @@ def action_render(inp):
             return {"success": False,
                     "error": f"score media must be MIDI for now (.mid/.midi, got .{ext}) — "
                              "hum-to-score is a later slice"}
-    spb, events, chords, style, err = parse_score(score)
+    spb, events, chords, style, band, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
     total_beats = sum(b for ev in events for _, b in ev["segments"])
     chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
-    arr = build_arrangement(events, chords, style, total_beats)
+    arr = build_arrangement(events, chords, style, total_beats, band)
     vocal_path = str(inp.get("vocalPath") or "").strip()
     # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
     # tune, and dropping it was why an instrumental render came out as rhythm and bass only.
@@ -770,7 +958,7 @@ def action_selftest():
                        {"syl": "-", "note": "G4", "beats": 1},
                        {"syl": "다", "note": "C5", "beats": 1}],
              "chords": [{"root": "C3", "beats": 4}]}
-    spb, events, chords, style, err = parse_score(score)
+    spb, events, chords, style, band, err = parse_score(score)
     ck("score parses", None, err, err is None)
     ck("a '-' note extends the previous syllable (melisma)", 3, len(events), len(events) == 3)
 
@@ -811,11 +999,43 @@ def action_selftest():
        next(e["pitch"] for e in arr if e["part"] == "bass"),
        next(e["pitch"] for e in arr if e["part"] == "bass") == midi_number("C2"))
 
-    band = render_arrangement(arr, spb, 4)
-    ck("accompaniment covers the bar", int(SR * spb * 4), len(band),
-       abs(len(band) - SR * spb * 4) <= SR)
+    audio = render_arrangement(arr, spb, 4)
+    ck("accompaniment covers the bar", int(SR * spb * 4), len(audio),
+       abs(len(audio) - SR * spb * 4) <= SR)
     ck("accompaniment is not silence and not NaN", True,
-       bool(np.max(np.abs(band)) > 0.01), np.max(np.abs(band)) > 0.01 and not np.any(np.isnan(band)))
+       bool(np.max(np.abs(audio)) > 0.01), np.max(np.abs(audio)) > 0.01 and not np.any(np.isnan(audio)))
+
+    # The kit is a kit, not a lone kick: 4 bars in, the 4th bar rolls down the toms (두구두구)
+    # and every 4-bar group opens on a crash (쨍).
+    arr16 = build_arrangement(events, [(note_freq("C3"), 4.0, "")] * 4, "trot", 16)
+    dr = [e["drum"] for e in arr16 if e["part"] == "drum"]
+    ck("every 4th bar rolls down the toms", True, any(d.startswith("tom") for d in dr),
+       any(d.startswith("tom") for d in dr))
+    ck("a 4-bar group opens on a crash", True, "crash" in dr, "crash" in dr)
+    ck("drum hits carry velocity", True,
+       all("vel" in e for e in arr16 if e["part"] == "drum"),
+       all("vel" in e for e in arr16 if e["part"] == "drum"))
+
+    # The band changes with the style, and the score can overrule it per part.
+    ballad = build_arrangement(events, chords, "ballad", 4)
+    ck("the ballad band is not the trot band (piano fronts it)", 0,
+       next(e["program"] for e in ballad if e["part"] == "melody"),
+       next(e["program"] for e in ballad if e["part"] == "melody") == 0)
+    egtr = build_arrangement(events, chords, "trot", 4, {"melody": "eguitar"})
+    ck("score.band puts an electric guitar in front of a trot", 27,
+       next(e["program"] for e in egtr if e["part"] == "melody"),
+       next(e["program"] for e in egtr if e["part"] == "melody") == 27)
+    bad = parse_score({"bpm": 120, "notes": [{"syl": "가", "note": "C4", "beats": 1}],
+                       "band": {"melody": "kazoo"}})
+    ck("an unknown instrument is refused WITH the library in the message", True,
+       (bad[5] or "")[:60], bool(bad[5]) and "aguitar" in (bad[5] or ""))
+
+    # Every instrument in the library renders sound, not NaN — the KS string and the vibrato
+    # path included. One sweep so a new patch cannot ship silent.
+    quiet = [name for name in PATCHES
+             if not (lambda s: float(np.max(np.abs(s))) > 0.01 and not np.any(np.isnan(s)))
+             (synth_note(220.0, 0.5, name))]
+    ck("every instrument in the library makes sound (no NaN, no silence)", [], quiet, not quiet)
 
     # The .mid is the point of the arrangement layer — a missing `mido` degrades, never fails.
     mid_path = os.path.join("data", "sing", "selftest.mid")

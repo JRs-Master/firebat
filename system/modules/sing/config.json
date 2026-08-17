@@ -46,7 +46,7 @@
       },
       "score": {
         "type": "object",
-        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats}], style?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style picks the drum pattern: trot | ballad | march | none.",
+        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style picks the drum groove (with tom fills every 4th bar and a crash opening each 4-bar group) AND the default band: trot | ballad | march | none.",
         "properties": {
           "bpm": {
             "type": "number"
@@ -71,6 +71,13 @@
               "string",
               "null"
             ]
+          },
+          "band": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Per-part instrument override {melody?, chord?, bass?} from the module's library — electric/acoustic guitar, e-violin, synth/square leads, synth bass, piano, e-piano, organ, accordion, strings, brass, flute, marimba, bell, music box. An unknown name is refused with the full list in the error, so guessing is safe. Omitted parts keep the style's own band."
           }
         }
       },
