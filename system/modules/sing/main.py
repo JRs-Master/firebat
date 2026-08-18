@@ -724,6 +724,12 @@ def _generic_fill(meter):
 
 # Styles whose drummer actually rolls into the turnaround — a ballad or a carol keeps its
 # soft tom fill, jazz keeps its ride language. The roll is a color, not a metronome rule.
+# How often a style opens a phrase on a crash, and how hard. Every 4 bars at 0.7 was applied
+# to EVERYONE — but a ballad marks sections (8), and a jazz drummer says it on the ride, not
+# the crash. (bar 0 stays the piece's opening accent everywhere.)
+CRASH_STYLE = {"ballad": (8, 0.5), "rnb": (8, 0.5), "jazz": (8, 0.45), "blues": (8, 0.55),
+               "carol": (8, 0.45), "country": (8, 0.55), "hiphop": (8, 0.55)}
+
 ROLL_STYLES = {"trot", "march", "rock", "metal", "punk", "rocknroll", "dance", "pop"}
 
 
@@ -942,18 +948,18 @@ def _kit_bank():
 STYLE_BAND = {
     "trot":      {"melody": "melody", "chord": "accordion", "bass": "bass"},
     "ballad":    {"melody": "piano", "chord": "strings", "bass": "bass"},
-    "march":     {"melody": "brass", "chord": "organ", "bass": "bass"},
+    "march":     {"melody": "brass", "chord": "brass", "bass": "bass"},  # 군악대에 오르간은 없다
     "rock":      {"melody": "eguitar", "chord": "dguitar", "bass": "bass"},
-    "metal":     {"melody": "dguitar", "chord": "dguitar", "bass": "synthbass"},
+    "metal":     {"melody": "dguitar", "chord": "dguitar", "bass": "pickbass"},  # 메탈은 피크 베이스
     "pop":       {"melody": "piano", "chord": "epiano", "bass": "synthbass"},
     "dance":     {"melody": "synthlead", "chord": "strings", "bass": "synthbass"},
     "rnb":       {"melody": "epiano", "chord": "epiano", "bass": "bass"},
     "rocknroll": {"melody": "eguitar", "chord": "eguitar", "bass": "bass"},
     "hiphop":    {"melody": "epiano", "chord": "epiano", "bass": "synthbass"},
     "country":   {"melody": "aguitar", "chord": "aguitar", "bass": "bass"},
-    "funk":      {"melody": "eguitar", "chord": "eguitar", "bass": "synthbass"},
+    "funk":      {"melody": "eguitar", "chord": "eguitar", "bass": "slapbass"},  # 펑크는 슬랩
     "punk":      {"melody": "dguitar", "chord": "dguitar", "bass": "bass"},
-    "jazz":      {"melody": "piano", "chord": "epiano", "bass": "bass"},
+    "jazz":      {"melody": "piano", "chord": "piano", "bass": "uprightbass"},  # 피아노 트리오 + 업라이트
     "blues":     {"melody": "eguitar", "chord": "organ", "bass": "bass"},
     "carol":     {"melody": "bell", "chord": "strings", "bass": "bass"},
     "folk":      {"melody": "aguitar", "chord": "aguitar", "bass": "bass"},
@@ -976,7 +982,7 @@ STYLE_FEEL = {
     "metal":     {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "alt", "swing": 0.0, "gate": 0.7},
-    "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.55, "gate": 0.9},
+    "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
     "rocknroll": {"comp": "quarters", "bass": "alt", "swing": 0.6, "gate": 0.75},
     "hiphop":    {"comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
     "country":   {"comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
@@ -1243,8 +1249,9 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         elif hits and fill and bar_i % 4 == 3:
             start, roll = fill
             hits = [h for h in hits if h[1] < start] + roll
-        if hits and bar_i % 4 == 0:
-            hits = [("crash", 0.0, 0.85 if bar_i == 0 else 0.7)] + hits
+        every, cvel = CRASH_STYLE.get(style, (4, 0.7))
+        if hits and bar_i % every == 0:
+            hits = [("crash", 0.0, 0.85 if bar_i == 0 else cvel)] + hits
         for inst, off, vel in hits:
             if bar + off < total_beats:
                 out.append({"beat": bar + off, "beats": 0.25, "part": "drum",
@@ -2538,6 +2545,16 @@ def action_selftest():
     ck("every 8th bar rolls the snare in 32nds (다다다다)", True, len(rolls), len(rolls) >= 4)
     ck("jazz rides on a ride now, not an open hat", "ride", DRUM_PATTERNS["jazz"][0][0],
        DRUM_PATTERNS["jazz"][0][0] == "ride")
+    jarr = build_arrangement(ev2, ch2 * 4, "jazz", 16, None, {"meter": 4})
+    jb = [e for e in jarr if e["part"] == "bass"]
+    ck("jazz walks on an upright (GM 32), not an electric", 32, jb[0]["program"],
+       bool(jb) and jb[0]["program"] == 32)
+    ballad16 = build_arrangement(ev2, ch2 * 8, "ballad", 32, None, {"meter": 4})
+    rock16 = build_arrangement(ev2, ch2 * 8, "rock", 32, None, {"meter": 4})
+    b_crash = len([e for e in ballad16 if e.get("drum") == "crash"])
+    r_crash = len([e for e in rock16 if e.get("drum") == "crash"])
+    ck("a ballad marks sections (8-bar crash), rock marks phrases (4)", (1, 2),
+       (b_crash, r_crash), b_crash == 1 and r_crash == 2)
     arr9 = build_arrangement(ev2, ch2 * 8, "ballad", 32, None, {"meter": 4})
     soft = [e for e in arr9 if e["part"] == "drum" and e["drum"] == "snare"
             and abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-6]
