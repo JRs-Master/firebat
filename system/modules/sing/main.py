@@ -2020,11 +2020,176 @@ def score_media_kind(path):
     return None
 
 
+def _xk(el, name):
+    return [c for c in el if _strip_ns(c.tag) == name]
+
+
+def _xk1(el, name):
+    k = _xk(el, name)
+    return k[0] if k else None
+
+
+def _xt(el, name, default=None):
+    k = _xk1(el, name) if el is not None else None
+    return k.text if k is not None and k.text is not None else default
+
+
+_XML_ART_GATE = {"staccato": 0.4, "staccatissimo": 0.25, "tenuto": 1.05}
+_XML_ART_VEL = {"accent": 0.12, "strong-accent": 0.18, "marcato": 0.18}
+_XML_UNIT = {"whole": 4.0, "half": 2.0, "quarter": 1.0, "eighth": 0.5, "16th": 0.25}
+
+
+def _measure_flags(meas):
+    """One measure's STRUCTURE marks — repeats, voltas, segno/coda/fine and the jumps. The
+    MusicXML spec carries the jumps machine-readably in <sound> attributes."""
+    f = {"fwd": False, "bwd": 0, "end_start": set(), "end_stop": False, "segno": False,
+         "coda": False, "dacapo": False, "dalsegno": False, "tocoda": False, "fine": False}
+    for el in meas:
+        tag = _strip_ns(el.tag)
+        if tag == "barline":
+            rp = _xk1(el, "repeat")
+            if rp is not None:
+                if rp.get("direction") == "forward":
+                    f["fwd"] = True
+                elif rp.get("direction") == "backward":
+                    f["bwd"] = max(2, int(float(rp.get("times") or 2)))
+            for en in _xk(el, "ending"):
+                if en.get("type") == "start":
+                    for tok in str(en.get("number") or "1").replace(" ", "").split(","):
+                        if tok.isdigit():
+                            f["end_start"].add(int(tok))
+                else:
+                    f["end_stop"] = True
+        sounds = [el] if tag == "sound" else []
+        if tag == "direction":
+            sounds += _xk(el, "sound")
+            dt = _xk1(el, "direction-type")
+            if dt is not None:
+                if _xk1(dt, "segno") is not None:
+                    f["segno"] = True
+                if _xk1(dt, "coda") is not None:
+                    f["coda"] = True
+        for sn in sounds:
+            if sn.get("segno") is not None:
+                f["segno"] = True
+            if sn.get("coda") is not None:
+                f["coda"] = True
+            if sn.get("dacapo") == "yes":
+                f["dacapo"] = True
+            if sn.get("dalsegno") is not None:
+                f["dalsegno"] = True
+            if sn.get("tocoda") is not None:
+                f["tocoda"] = True
+            if sn.get("fine") == "yes":
+                f["fine"] = True
+    return f
+
+
+def _playback_order(flags):
+    """Measure indices in playback order — repeats (times honored), voltas, D.C./D.S. al
+    Fine/Coda. Post-jump convention: repeats are not retaken, the LAST volta plays, fine and
+    to-coda are honored. Without structure marks this is simply range(n)."""
+    n = len(flags)
+    order, i, start, pass_no = [], 0, 0, 1
+    bwd_taken = {}
+    post = seek_coda = False
+    while 0 <= i < n and len(order) < 4096:
+        f = flags[i]
+        if seek_coda:
+            if not f["coda"]:
+                i += 1
+                continue
+            seek_coda = False
+        if f["fwd"] and not post:
+            start = i
+        if f["end_start"]:
+            want = max(f["end_start"]) if post else pass_no
+            if want not in f["end_start"]:
+                j = i
+                while j < n and not flags[j]["end_stop"]:
+                    j += 1
+                i = j + 1
+                continue
+        order.append(i)
+        if f["fine"] and post:
+            break
+        if f["tocoda"] and post:
+            seek_coda = True
+            i += 1
+            continue
+        if f["bwd"] and not post:
+            cnt = bwd_taken.get(i, 0) + 1
+            bwd_taken[i] = cnt
+            if cnt < f["bwd"]:
+                pass_no = cnt + 1
+                i = start
+                continue
+            pass_no = 1
+            start = i + 1
+        if (f["dacapo"] or f["dalsegno"]) and not post:
+            post = True
+            i = 0 if f["dacapo"] else next((j for j, g in enumerate(flags) if g["segno"]), 0)
+            continue
+        i += 1
+    return order
+
+
+def _warp_fn(tempo_events, master):
+    """raw quarter-beats -> beats at the master tempo, piecewise linear. This is how one
+    constant-tempo renderer plays a piece whose tempo CHANGES: time itself is pre-bent."""
+    evs = sorted((t, b) for t, b in tempo_events if b > 0)
+    if not evs or all(abs(b - master) < 1e-9 for _, b in evs):
+        return lambda raw: raw
+    segs, wpos, prev_t, prev_b = [], 0.0, 0.0, master
+    for t, b in evs:
+        if t > prev_t:
+            segs.append((prev_t, wpos, master / prev_b))
+            wpos += (t - prev_t) * (master / prev_b)
+            prev_t = t
+        prev_b = b
+    segs.append((prev_t, wpos, master / prev_b))
+
+    def warp(raw):
+        lo = segs[0]
+        for seg in segs:
+            if seg[0] <= raw:
+                lo = seg
+            else:
+                break
+        return lo[1] + (raw - lo[0]) * lo[2]
+    return warp
+
+
+def _ornament_rows(row, kind):
+    """A trill/mordent/turn written as the little notes it means. Neighbor = a whole tone —
+    keyless but audible; the score's own accidentals stay untouched elsewhere."""
+    beat, dur, pitch = row["beat"], row["beats"], row["pitch"]
+    mk = lambda b, d, pt: dict(row, beat=b, beats=d, pitch=max(0, min(127, pt)))
+    if kind == "trill":
+        step = 0.125
+        n = max(4, min(16, int(dur / step)))
+        d = dur / n
+        return [mk(beat + k * d, d, pitch + (2 if k % 2 else 0)) for k in range(n)]
+    if kind == "mordent":
+        d = min(0.1, dur / 4)
+        return [mk(beat, d, pitch), mk(beat + d, d, pitch - 2),
+                mk(beat + 2 * d, dur - 2 * d, pitch)]
+    if kind == "turn":
+        d = dur / 4
+        return [mk(beat, d, pitch + 2), mk(beat + d, d, pitch),
+                mk(beat + 2 * d, d, pitch - 2), mk(beat + 3 * d, d, pitch)]
+    return [row]
+
+
 def musicxml_to_score(path, lyrics=None, parts_out=None):
-    """MusicXML (.musicxml/.xml/.mxl) -> score. The electronic-score standard says everything
-    a MIDI only implies: exact notes, the lyric under each one, REAL chord symbols (harmony),
-    the meter, and written dynamics — no ML, stdlib XML only. The melody part = the one
-    carrying lyrics, else the busiest."""
+    """MusicXML (.musicxml/.xml/.mxl) -> score. The whole notation plays (사용자: "악보에 있는
+    건 다 구현해줘"): repeats/voltas/D.C./D.S./coda/fine expand the playback order; tempo
+    changes and metronome marks bend time onto one master tempo; 8va and transposing
+    instruments correct the sounding pitch; wedges ramp the dynamics between steps;
+    staccato/accent/tenuto shape gate and weight; grace notes steal their moment; trills,
+    mordents and turns play as the notes they mean; fermatas hold; arpeggios roll; pedal
+    marks become real CC64 downstream. Melody part = the one carrying lyrics, else the
+    busiest; chord symbols come from <harmony>."""
     import xml.etree.ElementTree as ET
     import zipfile
     try:
@@ -2040,27 +2205,16 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                 root = ET.fromstring(z.read(inner[0]))
         else:
             root = ET.parse(path).getroot()
-    except Exception as e:  # noqa: BLE001 — a broken upload should name itself
+    except Exception as e:  # noqa: BLE001 — a broken upload should name itself, not crash
         return None, f"MusicXML parse failed: {e}"
     if _strip_ns(root.tag) == "score-timewise":
         return None, "score-timewise 형은 아직 안 받습니다 — MuseScore 에서 partwise 로 저장하세요"
 
-    def kids(el, name):
-        return [c for c in el if _strip_ns(c.tag) == name]
-
-    def kid(el, name):
-        k = kids(el, name)
-        return k[0] if k else None
-
-    def text_of(el, name, default=None):
-        k = kid(el, name)
-        return k.text if k is not None and k.text is not None else default
-
+    kids, kid, text_of = _xk, _xk1, _xt
     parts = kids(root, "part")
     if not parts:
         return None, "MusicXML 에 part 가 없습니다"
 
-    # part id -> declared GM program (score-part/midi-instrument/midi-program, 1-based).
     prog_of = {}
     pl = kid(root, "part-list")
     for sp in (kids(pl, "score-part") if pl is not None else []):
@@ -2072,17 +2226,27 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
             except ValueError:
                 pass
 
-    bpm, meter = 120.0, None
+    order = _playback_order([_measure_flags(m) for m in kids(parts[0], "measure")])
+
+    meter = None
+    tempo_events = []  # (raw beats, bpm) — collected on part 0's walk
     parsed_parts = []
     for pi, part in enumerate(parts):
         divisions, vel = 1.0, None
         notes, harmonies, pos = [], [], 0.0
-        lead_voice = None  # the reduction follows one voice; other voices still reach parts_out
+        lead_voice = None
         f_prog = prog_of.get(part.get("id"), 0)
         f_part = f"p{pi + 1}"
-        last_onset = 0.0
-        pedal_down = None  # damper state — a {"pedal": True} row spans press to release
-        for meas in kids(part, "measure"):
+        last_onset, stack_n, arp_here = 0.0, 0, False
+        pedal_down = None
+        shift = 0      # octave-shift (8va/8vb), in semitones
+        transpose = 0  # transposing instruments, in semitones
+        graces = []    # pending grace pitches awaiting their host note
+        wedges = []    # (raw pos, "c"|"d"|"stop")
+        dyn_events = []  # (raw pos, vel)
+        measures = kids(part, "measure")
+        for mi_idx in (order if len(order) else range(len(measures))):
+            meas = measures[mi_idx]
             m_base, cur, m_len = pos, 0.0, 0.0
             for el in meas:
                 tag = _strip_ns(el.tag)
@@ -2093,53 +2257,77 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     t = kid(el, "time")
                     if t is not None and meter is None:
                         try:
-                            n = int(text_of(t, "beats") or 0)
-                            meter = n if 2 <= n <= 12 else meter
+                            nnum = int(text_of(t, "beats") or 0)
+                            meter = nnum if 2 <= nnum <= 12 else meter
                         except ValueError:
                             pass
+                    tr_el = kid(el, "transpose")
+                    if tr_el is not None:
+                        transpose = int(float(text_of(tr_el, "chromatic") or 0))                             + 12 * int(float(text_of(tr_el, "octave-change") or 0))
                 elif tag == "direction":
                     snd = kid(el, "sound")
-                    if snd is not None and snd.get("tempo"):
-                        bpm = float(snd.get("tempo"))
+                    if snd is not None and snd.get("tempo") and pi == 0:
+                        tempo_events.append((m_base + cur, float(snd.get("tempo"))))
                     dt = kid(el, "direction-type")
-                    dyn = kid(dt, "dynamics") if dt is not None else None
-                    if dyn is not None and len(dyn):
-                        vel = _XML_DYN.get(_strip_ns(dyn[0].tag), vel)
-                    # Sustain pedal — half of how the piece actually SOUNDS on a piano (월광의
-                    # 그 울림). Press-to-release becomes a pedal row; the .mid gets real CC64,
-                    # the builtin synth holds the notes instead.
-                    ped = kid(dt, "pedal") if dt is not None else None
-                    if ped is not None and parts_out is not None:
-                        ptype = (ped.get("type") or "start").lower()
-                        now = m_base + cur
-                        if ptype in ("start", "resume", "sostenuto"):
-                            if pedal_down is None:
-                                pedal_down = now
-                        elif ptype in ("stop", "discontinue", "change"):
-                            if pedal_down is not None and now > pedal_down:
-                                parts_out.append({"beat": pedal_down,
-                                                  "beats": now - pedal_down,
-                                                  "part": f_part, "pedal": True})
-                            pedal_down = now if ptype == "change" else None
-                elif tag == "sound" and el.get("tempo"):
-                    bpm = float(el.get("tempo"))
+                    if dt is not None:
+                        dyn = kid(dt, "dynamics")
+                        if dyn is not None and len(dyn):
+                            vel = _XML_DYN.get(_strip_ns(dyn[0].tag), vel)
+                            dyn_events.append((m_base + cur, vel))
+                        met = kid(dt, "metronome")
+                        if met is not None and pi == 0 and snd is None:
+                            unit = _XML_UNIT.get((text_of(met, "beat-unit") or "quarter"), 1.0)
+                            if kid(met, "beat-unit-dot") is not None:
+                                unit *= 1.5
+                            try:
+                                pm = float(text_of(met, "per-minute") or 0)
+                                if pm > 0:
+                                    tempo_events.append((m_base + cur, pm * unit))
+                            except ValueError:
+                                pass
+                        wg = kid(dt, "wedge")
+                        if wg is not None:
+                            wt = (wg.get("type") or "").lower()
+                            wedges.append((m_base + cur,
+                                           "c" if wt == "crescendo"
+                                           else "d" if wt == "diminuendo" else "stop"))
+                        osh = kid(dt, "octave-shift")
+                        if osh is not None:
+                            ot = (osh.get("type") or "").lower()
+                            size = int(float(osh.get("size") or 8))
+                            semis = 12 if size <= 8 else 24
+                            # spec: type="down" = 8va bracket, notes SOUND higher
+                            shift = semis if ot == "down" else (-semis if ot == "up" else 0)
+                        ped = kid(dt, "pedal") if dt is not None else None
+                        if ped is not None and parts_out is not None:
+                            ptype = (ped.get("type") or "start").lower()
+                            now = m_base + cur
+                            if ptype in ("start", "resume", "sostenuto"):
+                                if pedal_down is None:
+                                    pedal_down = now
+                            elif ptype in ("stop", "discontinue", "change"):
+                                if pedal_down is not None and now > pedal_down:
+                                    parts_out.append({"beat": pedal_down,
+                                                      "beats": now - pedal_down,
+                                                      "part": f_part, "pedal": True})
+                                pedal_down = now if ptype == "change" else None
+                elif tag == "sound" and el.get("tempo") and pi == 0:
+                    tempo_events.append((m_base + cur, float(el.get("tempo"))))
                 elif tag == "harmony":
                     hr = kid(el, "root")
                     if hr is not None:
                         step = (text_of(hr, "root-step") or "C").strip().upper()
                         alter = int(float(text_of(hr, "root-alter") or 0))
-                        kind = (text_of(el, "kind") or "").strip()
+                        kind_t = (text_of(el, "kind") or "").strip()
                         harmonies.append((m_base + cur, _XML_STEP.get(step, 0) + alter,
-                                          _XML_KIND.get(kind, "")))
+                                          _XML_KIND.get(kind_t, "")))
                 elif tag in ("backup", "forward"):
-                    # Voices rewind INSIDE a bar. Some exports rewind at the bar's end too, so a
-                    # global cursor nets zero per bar (월광 실측: 1,181 rows stacked on beats
-                    # 0-4). The bar keeps its own cursor; its length is the high-water mark.
                     d = float(text_of(el, "duration") or 0) / divisions
                     cur += d if tag == "forward" else -d
                     cur = max(0.0, cur)
                 elif tag == "note":
                     dur = float(text_of(el, "duration") or 0) / divisions
+                    is_grace = kid(el, "grace") is not None
                     if kid(el, "rest") is not None:
                         if notes:
                             notes[-1]["beats"] += dur  # a rest rides the note before it
@@ -2147,61 +2335,139 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         m_len = max(m_len, cur)
                         continue
                     p2 = kid(el, "pitch")
-                    if p2 is None or dur <= 0:
+                    if p2 is None or (dur <= 0 and not is_grace):
                         cur += max(dur, 0.0)
                         m_len = max(m_len, cur)
                         continue
                     step = (text_of(p2, "step") or "C").strip().upper()
                     octave = int(text_of(p2, "octave") or 4)
                     alter = int(float(text_of(p2, "alter") or 0))
-                    midi = 12 * (octave + 1) + _XML_STEP.get(step, 0) + alter
+                    midi = 12 * (octave + 1) + _XML_STEP.get(step, 0) + alter                         + shift + transpose
+                    if is_grace:
+                        graces.append(midi)
+                        continue
+                    nots = kid(el, "notations")
+                    arts = kid(nots, "articulations") if nots is not None else None
+                    gate, vboost = 1.0, 0.0
+                    if arts is not None:
+                        for a in arts:
+                            gate = min(gate, _XML_ART_GATE.get(_strip_ns(a.tag), 1.0))
+                            vboost = max(vboost, _XML_ART_VEL.get(_strip_ns(a.tag), 0.0))
+                    orn = kid(nots, "ornaments") if nots is not None else None
+                    orn_kind = None
+                    if orn is not None:
+                        for o in orn:
+                            ot = _strip_ns(o.tag)
+                            if ot == "trill-mark":
+                                orn_kind = "trill"
+                            elif "mordent" in ot:
+                                orn_kind = "mordent"
+                            elif ot == "turn":
+                                orn_kind = "turn"
+                    fermata = nots is not None and _xk1(nots, "fermata") is not None
+                    if fermata:
+                        dur *= 1.75
+                    arp = nots is not None and _xk1(nots, "arpeggiate") is not None
                     ly = kid(el, "lyric")
                     syl = (text_of(ly, "text") or "").strip() if ly is not None else ""
                     tie = any(t.get("type") == "stop" for t in kids(el, "tie"))
                     is_stack = kid(el, "chord") is not None
+                    if is_stack:
+                        stack_n += 1
+                    else:
+                        stack_n = 0
+                        arp_here = arp
                     onset = last_onset if is_stack else m_base + cur
+                    if is_stack and (arp_here or arp):
+                        onset += stack_n * 0.04  # rolled chord — the arpeggio sign
                     if not is_stack:
                         last_onset = onset
+                    nvel = (vel if vel is not None else 0.65) + vboost
+                    nvel = min(1.0, nvel)
                     if parts_out is not None:
-                        if not (tie and parts_out and parts_out[-1]["part"] == f_part
-                                and parts_out[-1]["pitch"] == midi):
-                            parts_out.append({"beat": onset, "beats": max(0.125, dur),
-                                              "part": f_part,
-                                              "patch": _patch_for_program(f_prog),
-                                              "program": f_prog, "pitch": midi,
-                                              "vel": vel if vel is not None else 0.65,
-                                              "gate": 1.0})
-                        else:
+                        stolen = 0.0
+                        if graces and not is_stack:
+                            take = min(0.1 * len(graces), dur * 0.4)
+                            per = take / len(graces)
+                            for gi, gp in enumerate(graces):
+                                parts_out.append({"beat": onset + gi * per, "beats": per,
+                                                  "part": f_part,
+                                                  "patch": _patch_for_program(f_prog),
+                                                  "program": f_prog, "pitch": gp,
+                                                  "vel": max(0.1, nvel - 0.1), "gate": 0.9})
+                            stolen = take
+                        base_row = {"beat": onset + stolen, "beats": max(0.125, dur - stolen),
+                                    "part": f_part, "patch": _patch_for_program(f_prog),
+                                    "program": f_prog, "pitch": midi, "vel": nvel,
+                                    "gate": gate}
+                        if (tie and parts_out and parts_out[-1]["part"] == f_part
+                                and parts_out[-1].get("pitch") == midi
+                                and not parts_out[-1].get("pedal")):
                             parts_out[-1]["beats"] += dur
+                        elif orn_kind:
+                            parts_out.extend(_ornament_rows(base_row, orn_kind))
+                        else:
+                            parts_out.append(base_row)
+                    graces = [] if not is_stack else graces
                     if is_stack:
-                        continue  # the melody line keeps only the principal of a stack
-                    cur += dur
+                        continue
+                    cur += float(text_of(el, "duration") or 0) / divisions
                     m_len = max(m_len, cur)
                     voice = text_of(el, "voice")
                     if lead_voice is None:
                         lead_voice = voice
                     if voice != lead_voice:
-                        continue  # another voice of the same part — 반주 성부가 멜로디 합계를
-                        # 부풀려 곡 길이를 늘리던 뿌리 (월광: 딴딴딴이 멜로디 뒤에 이어붙었다)
+                        continue
                     if tie and notes and notes[-1]["midi"] == midi:
                         notes[-1]["beats"] += dur
                     else:
-                        notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": vel})
+                        notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": nvel,
+                                      "_at": onset})
             pos = m_base + m_len
         if pedal_down is not None and parts_out is not None and pos > pedal_down:
             parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
                               "part": f_part, "pedal": True})
+        # wedges ramp between the stepped dynamics on either side
+        for wi, (wstart, wkind) in enumerate(wedges):
+            if wkind == "stop":
+                continue
+            wstop = next((t for t, k in wedges[wi + 1:] if k == "stop"), wstart + 4.0)
+            v0 = 0.65
+            for t, v in dyn_events:
+                if t <= wstart:
+                    v0 = v
+            v1 = next((v for t, v in dyn_events if t >= wstop - 0.25),
+                      min(1.0, max(0.1, v0 + (0.15 if wkind == "c" else -0.15))))
+            span = max(1e-9, wstop - wstart)
+            for row in (parts_out or []):
+                if row.get("part") == f_part and not row.get("pedal")                         and wstart <= row["beat"] < wstop:
+                    row["vel"] = round(v0 + (v1 - v0) * (row["beat"] - wstart) / span, 3)
+            for nrow in notes:
+                if wstart <= nrow.get("_at", -1) < wstop:
+                    nrow["vel"] = round(v0 + (v1 - v0) * (nrow["_at"] - wstart) / span, 3)
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
                                  "lyrics": sum(1 for n in notes if n["syl"])})
     if not parsed_parts:
         return None, "MusicXML 에서 음표를 못 읽었습니다"
+
+    master = tempo_events[0][1] if tempo_events else 120.0
+    warp = _warp_fn(tempo_events, master)
+    if parts_out is not None:
+        for row in parts_out:
+            b0, b1 = row["beat"], row["beat"] + row["beats"]
+            row["beat"] = round(warp(b0), 4)
+            row["beats"] = max(0.06, round(warp(b1) - warp(b0), 4))
     best = max(parsed_parts, key=lambda pp: (pp["lyrics"], len(pp["notes"])))
 
     lyr = list(str(lyrics or "").replace(" ", "").replace("\n", ""))
     has_own = best["lyrics"] > 0
     out_notes = []
     for n in best["notes"]:
+        at = n.pop("_at", None)
+        beats = n["beats"]
+        if at is not None:
+            beats = max(0.25, warp(at + beats) - warp(at))
         if has_own:
             syl = n["syl"] or "-"
         elif lyr:
@@ -2209,11 +2475,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
         else:
             syl = "라"
         row = {"syl": syl, "note": _midi_name(n["midi"]),
-               "beats": min(64.0, max(0.25, round(n["beats"] * 4) / 4))}
+               "beats": min(64.0, round(beats * 4) / 4)}
         if n["vel"] is not None:
             row["vel"] = n["vel"]
         out_notes.append(row)
-    score = {"bpm": max(20.0, min(300.0, bpm)), "notes": out_notes}
+    score = {"bpm": max(20.0, min(300.0, master)), "notes": out_notes}
     if meter is not None and meter != 4:
         score["meter"] = meter
     hs = best["harmonies"] or next((pp["harmonies"] for pp in parsed_parts
@@ -2221,8 +2487,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
     if hs:
         chords, total = [], sum(n["beats"] for n in out_notes)
         for i, (at, pc, qual) in enumerate(hs):
-            end = hs[i + 1][0] if i + 1 < len(hs) else total
-            beats = round((end - at) * 4) / 4
+            end = hs[i + 1][0] if i + 1 < len(hs) else max(total, at + 4)
+            b0, b1 = warp(at), warp(end)
+            beats = round((b1 - b0) * 4) / 4
             if beats > 0:
                 chords.append({"root": _midi_name(36 + pc), "beats": beats, "quality": qual})
         if chords:
@@ -2962,6 +3229,85 @@ def action_selftest():
     ck("classic carries its own section doublings unasked", 4,
        len({e["part"] for e in darr3 if e["part"].startswith("double")}),
        len({e["part"] for e in darr3 if e["part"].startswith("double")}) == 4)
+    P = '<score-partwise><part-list/><part id="P1">'
+    E = '</part></score-partwise>'
+
+    def _n(step, octv, dur, extra="", pre=""):
+        return (pre + '<note>' + '<pitch><step>' + step + '</step><octave>' + str(octv)
+                + '</octave></pitch><duration>' + str(dur) + '</duration>' + extra + '</note>')
+
+    rep_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               + _n("C", 4, 4)
+               + '</measure><measure number="2">'
+               '<barline location="left"><ending number="1" type="start"/></barline>'
+               + _n("D", 4, 4)
+               + '<barline location="right"><ending number="1" type="stop"/>'
+               '<repeat direction="backward"/></barline></measure>'
+               '<measure number="3">'
+               '<barline location="left"><ending number="2" type="start"/></barline>'
+               + _n("E", 4, 4)
+               + '<barline location="right"><ending number="2" type="stop"/></barline>'
+               '</measure>' + E)
+    with open("data/sing/selftest-rep.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(rep_doc)
+    rsc, rerr = musicxml_to_score("data/sing/selftest-rep.musicxml")
+    ck("repeats and voltas expand the playback order (1,2,1,3)",
+       ["C4", "D4", "C4", "E4"], [n["note"] for n in (rsc or {}).get("notes", [])],
+       rerr is None and [n["note"] for n in rsc["notes"]] == ["C4", "D4", "C4", "E4"])
+
+    tempo_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                 '<direction><sound tempo="120"/></direction>'
+                 + _n("C", 4, 2)
+                 + '</measure><measure number="2">'
+                 '<direction><sound tempo="60"/></direction>'
+                 + _n("D", 4, 2) + '</measure>' + E)
+    with open("data/sing/selftest-tempo.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(tempo_doc)
+    tsc, terr = musicxml_to_score("data/sing/selftest-tempo.musicxml")
+    ck("a mid-piece tempo change bends time onto one master tempo",
+       (120.0, 2.0, 4.0),
+       (tsc and tsc["bpm"], tsc and tsc["notes"][0]["beats"], tsc and tsc["notes"][1]["beats"]),
+       terr is None and tsc["bpm"] == 120.0 and tsc["notes"][0]["beats"] == 2.0
+       and tsc["notes"][1]["beats"] == 4.0)
+
+    met_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<direction><direction-type><metronome><beat-unit>half</beat-unit>'
+               '<per-minute>60</per-minute></metronome></direction-type></direction>'
+               + _n("C", 4, 2) + '</measure>' + E)
+    with open("data/sing/selftest-met.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(met_doc)
+    msc, merr = musicxml_to_score("data/sing/selftest-met.musicxml")
+    ck("a metronome mark without sound tempo still sets the tempo (half=60 -> 120)",
+       120.0, msc and msc["bpm"], merr is None and msc["bpm"] == 120.0)
+
+    perf_doc = (P + '<measure number="1"><attributes><divisions>4</divisions></attributes>'
+                '<direction><direction-type><octave-shift type="down" size="8"/>'
+                '</direction-type></direction>'
+                + _n("C", 4, 4, extra='<notations><articulations><staccato/></articulations>'
+                                      '</notations>')
+                + '<direction><direction-type><octave-shift type="stop" size="8"/>'
+                '</direction-type></direction>'
+                + _n("G", 4, 2, pre='<grace/>'.join(["", ""]))
+                + '</measure>' + E)
+    perf_doc = perf_doc.replace('<note><pitch><step>G</step>',
+                                '<note><grace/><pitch><step>G</step>', 1)
+    perf_doc = perf_doc.replace('</measure>' + E,
+                                _n("A", 4, 8, extra='<notations><ornaments><trill-mark/>'
+                                                    '</ornaments></notations>')
+                                + '</measure>' + E)
+    with open("data/sing/selftest-perf.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(perf_doc)
+    prows = []
+    psc, perr = musicxml_to_score("data/sing/selftest-perf.musicxml", parts_out=prows)
+    c5 = [r for r in prows if r.get("pitch") == 72]
+    trill = [r for r in prows if r.get("pitch") in (69, 71) and r["beats"] <= 0.5]
+    ck("8va sounds an octave up, staccato shortens the gate",
+       True, (len(c5), c5[0]["gate"] if c5 else None),
+       perr is None and c5 and c5[0]["gate"] == 0.4)
+    ck("a grace note steals its moment, a trill plays as the notes it means",
+       True, (any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows), len(trill)),
+       any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows) and len(trill) >= 4)
+
     xml_doc = (
         '<score-partwise><part-list/><part id="P1"><measure number="1">'
         '<attributes><divisions>2</divisions><time><beats>3</beats>'
@@ -3027,7 +3373,9 @@ def action_selftest():
        score_media_kind("data/sing/selftest-x.bin") == "musicxml"
        and musicxml_to_score("data/sing/selftest-x.bin")[1] is None)
     os.remove("data/sing/selftest-x.bin")
-    for f in ("data/sing/selftest-x.musicxml", "data/sing/selftest-x.mxl"):
+    for f in ("data/sing/selftest-x.musicxml", "data/sing/selftest-x.mxl",
+              "data/sing/selftest-rep.musicxml", "data/sing/selftest-tempo.musicxml",
+              "data/sing/selftest-met.musicxml", "data/sing/selftest-perf.musicxml"):
         if os.path.exists(f):
             os.remove(f)
     low = parse_score(dict(score, chords=[{"root": "C1", "beats": 4}]))

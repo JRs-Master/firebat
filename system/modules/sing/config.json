@@ -159,7 +159,7 @@
           "string",
           "null"
         ],
-        "description": "MIDI or MusicXML (전자악보 — .musicxml/.mxl/.xml, MuseScore's format) to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs and MusicXML bring their own lyrics (MusicXML also brings real chord symbols, meter and dynamics); the parsed score comes back in data.score for correction.",
+        "description": "MIDI or MusicXML (전자악보 — .musicxml/.mxl/.xml, MuseScore's format) to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs and MusicXML bring their own lyrics (MusicXML plays its WHOLE notation: repeats/voltas/D.C./D.S. expand, tempo changes and metronome marks apply, 8va/transposing instruments sound right, wedges ramp dynamics, staccato/accents/graces/trills/fermatas/arpeggios and pedal marks all play); the parsed score comes back in data.score for correction.",
         "collection": "scores"
       },
       "lyrics": {
