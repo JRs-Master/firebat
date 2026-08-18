@@ -1212,11 +1212,11 @@ def resolve_score_media(inp):
             return None, (f"악보 별칭 {raw!r} 이 보관함에 없습니다 — "
                           f"action 'scores' 로 목록({len(shelf)}개)을 확인하세요")
         return _media_to_path(raw)
-    if len(shelf) == 1:
-        return _media_to_path(str(shelf[0]["url"]))
     if shelf:
-        return None, (f"악보가 {len(shelf)}개입니다 — action 'scores' 로 목록을 보고 "
-                      "scoreMediaPath 에 별칭을 주세요")
+        # Same procedure at every shelf size (사용자: "몇 개 되든 안 되든 동일 쿼리 로직") —
+        # no single-item autopick: look the shelf up, pass the alias.
+        return None, (f"scoreMediaPath 가 없습니다 — action 'scores' 로 보관함({len(shelf)}개)을 "
+                      "확인하고 별칭을 주세요")
     return None, None
 
 
@@ -1335,6 +1335,18 @@ def action_render(inp):
         data["midiPath"] = midi_written
     if midi_note:
         data["midiNote"] = midi_note
+    # Consumption-point note — the channel that actually lands. Both live canon turns composed
+    # a fresh score while the user's uploaded MIDI sat on the shelf: the schema said so, the
+    # search row said so, and the model read neither at decision time. This arrives WITH the
+    # render it may have gotten wrong, in the same turn, while correction is still one call away.
+    if not parsed_from and not vocal_path:
+        shelf = score_library()
+        if shelf:
+            data["shelfNote"] = (
+                f"NOTE: {len(shelf)} score(s) are shelved in this module's settings. If the user "
+                "meant an EXISTING piece (an uploaded MIDI) rather than a new composition, call "
+                "action 'scores' and re-render with the alias as scoreMediaPath — the full piece, "
+                "not a summary.")
     # The framework carries the products into media storage (data.media, with urls) — the same
     # declared door every module's files leave through. The wav and its .mid are one product in
     # two forms, so they travel as one array.

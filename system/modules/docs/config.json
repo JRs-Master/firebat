@@ -224,7 +224,7 @@
           "string",
           "null"
         ],
-        "description": "[make_pptx] Master/template .pptx whose theme and layouts the new deck inherits — a media URL, a workspace path, or the ALIAS of a shelved template (see the `masters` action; matching ignores case/spacing). Omitted = the shelf's default .pptx (radio-marked), else its only .pptx, else a plain deck."
+        "description": "[make_pptx] Master/template .pptx whose theme and layouts the new deck inherits — a media URL, a workspace path, or the ALIAS of a shelved template (see the `masters` action; matching ignores case/spacing). Omitted = the shelf's default .pptx (the radio-marked declaration), else a plain deck."
       },
       "maxChars": {
         "type": [

@@ -1743,9 +1743,9 @@ def pick_master(raw, kind):
     for row in of_kind:
         if row.get("default"):
             return str(row["url"]), None
-    if len(of_kind) == 1:
-        return str(of_kind[0]["url"]), None
-    return "", None  # several with no default, or none — build plain
+    # Same procedure at every shelf size — the DECLARED default is the only nameless fallback;
+    # a lone undeclared file is not a silent choice (사용자: 개수로 절차가 갈리면 안 된다).
+    return "", None  # no default declared — build plain
 
 
 def action_make_pptx(inp):

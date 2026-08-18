@@ -130,7 +130,7 @@
           "string",
           "null"
         ],
-        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score (see the `scores` action; matching ignores case/spacing and accepts the filename too). Omitted with exactly one shelved score = that one. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
+        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
       },
       "lyrics": {
         "type": [
