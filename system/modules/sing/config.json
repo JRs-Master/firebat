@@ -145,7 +145,8 @@
           "string",
           "null"
         ],
-        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
+        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction.",
+        "collection": "scores"
       },
       "lyrics": {
         "type": [
@@ -224,7 +225,8 @@
           "string",
           "null"
         ],
-        "description": "[scores] Filter the shelf by substring of alias or filename (case/spacing ignored). Omit for the whole shelf."
+        "description": "[scores] Filter the shelf by substring of alias or filename (case/spacing ignored). Omit for the whole shelf.",
+        "collection": "scores"
       }
     }
   },

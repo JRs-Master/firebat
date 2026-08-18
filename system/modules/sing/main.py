@@ -1688,7 +1688,13 @@ def action_scores(inp=None):
     note = ("pass one alias as render's scoreMediaPath to play it — style/band/drumPattern "
             "may ride in the SAME render call to re-instrument the piece (no need to "
             "compose a score for an existing song)")
-    if q and not rows and shelf:
+    sem = ((inp or {}).get("_collectionMatches") or {}).get("query") or []
+    if q and not rows and sem:
+        rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name"),
+                 "score": r.get("score")} for r in sem]
+        note = ("semantic matches — the spelling differed but the meaning matched (한↔영 포함); "
+                + note)
+    elif q and not rows and shelf:
         # A missed query must not read as an empty shelf: matching is by CHARACTERS, and a
         # Korean request for an English alias ("테이크 파이브" vs "take five") misses every
         # time. The miss carries the whole shelf, so "no match" is a discovery, not a verdict.
@@ -1715,6 +1721,12 @@ def resolve_score_media(inp):
             stem = name.rsplit(".", 1)[0]
             if wanted in (_norm_name(row.get("alias")), _norm_name(name), _norm_name(stem)):
                 return _media_to_path(str(row["url"]))
+        sem = ((inp.get("_collectionMatches") or {}).get("scoreMediaPath") or [])
+        if sem and sem[0].get("url"):
+            # The framework's semantic lane: characters missed ("테이크 파이브" vs "take five")
+            # but meaning matched. Top row only — deterministic, and the shelf error below stays
+            # the floor when the lane is absent (old binary, no embedder, empty shelf).
+            return _media_to_path(str(sem[0]["url"]))
         if "/" not in raw and "." not in raw and shelf:
             return None, (f"악보 별칭 {raw!r} 이 보관함에 없습니다 — "
                           f"action 'scores' 로 목록({len(shelf)}개)을 확인하세요")
@@ -2130,6 +2142,20 @@ def action_selftest():
         ck("the shelf is a first-class action (scores lists aliases)", 2,
            listed["data"]["count"], listed["data"]["count"] == 2
            and listed["data"]["scores"][0]["alias"] == "캐논")
+        sem_rows = [{"alias": "take five", "name": "takefive.mid",
+                     "url": "data/sing/selftest-tf.mid", "score": 0.91}]
+        with open("data/sing/selftest-tf.mid", "wb") as fh:
+            fh.write(b"MThd")
+        semmed = resolve_score_media({"scoreMediaPath": "테이크 파이브",
+                                      "_collectionMatches": {"scoreMediaPath": sem_rows}})
+        ck("the framework's semantic lane resolves a cross-lingual alias", True,
+           semmed[0], semmed[1] is None and semmed[0] == "data/sing/selftest-tf.mid")
+        os.remove("data/sing/selftest-tf.mid")
+        semq = action_scores({"query": "테이크", "_collectionMatches": {"query": sem_rows}})
+        ck("a query miss prefers semantic matches over the full dump", "take five",
+           semq["data"]["scores"][0]["alias"],
+           semq["data"]["scores"][0]["alias"] == "take five"
+           and "semantic" in semq["data"]["note"])
         missed = action_scores({"query": "테이크 파이브"})
         ck("a missed query carries the whole shelf, not an empty verdict", 2,
            missed["data"]["count"], missed["data"]["count"] == 2

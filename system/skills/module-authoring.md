@@ -155,6 +155,7 @@ a broker's `stk_cd` that only exists inside action rows.)
 | fires a dangerous call directly | the row: `"approval": true` |
 | calls a screen-only action | the row: `"uiOnly": true` |
 | retypes big rows instead of passing a key | the param spec: `"cacheInput": true` (nested fields declare it on themselves; the dotted path is derived) |
+| misses a shelf row over spelling (한↔영, spacing) | the param spec: `"collection": "<settings field>"` — the framework ranks that field's rows semantically against the param's value and injects `_collectionMatches.<param>` (top rows + `score`); keep your own character matching as the floor |
 
 **`source` — which action mints which id.** Free text naming the issuing action(s), on the
 param's own spec:
