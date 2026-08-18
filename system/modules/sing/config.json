@@ -216,7 +216,7 @@
           "string",
           "null"
         ],
-        "description": "Style (genre) override when the score comes from MIDI — any style name the score contract accepts; an unknown one is refused with the full list."
+        "description": "Style (genre) override when the score comes from MIDI — any style name the score contract accepts; an unknown one is refused with the full list. ⚠️ scoreMediaPath 가 이미 편곡된 악보(밴드스코어 등)면 style 은 그 편곡을 우리가 만든 반주로 **교체**합니다 — 노래방 MR 처럼 원곡 그대로 연주하려면 style 을 주지 마세요. 사용자가 장르를 직접 말했을 때만 씁니다."
       },
       "band": {
         "type": [

@@ -3372,6 +3372,16 @@ def action_render(inp):
     }
     if faithful and reinst_name:
         data["reInstrument"] = reinst_name
+    if parsed_from and not faithful and len(
+            {r["part"] for r in (locals().get("faithful_rows") or [])}) >= 3:
+        # The file already WAS the arrangement, and a style replaced it with a generated one.
+        # 실측 8/19: a karaoke MR came back as style="ballad" laid over a 6-part band score, and
+        # those generated pads are what the user heard ("와와와왕하는 소리가 깔려있다"). The note
+        # rides the render itself, while re-calling is still one step away.
+        data["arrangeNote"] = (
+            "이 악보는 이미 편곡되어 있는데 style={!r} 로 **재편곡**했습니다 — 들리는 반주는 "
+            "원곡 편곡이 아니라 우리가 만든 것입니다. 노래방 MR 처럼 원곡 그대로를 원하면 "
+            "style·drumPattern 없이 다시 부르세요.".format(style))
     if parsed_from and locals().get("notation_skipped"):
         # Silence is not consent: what the parser could not play is SAID, next to the render.
         data["notationNote"] = ("연주하지 못한 기호: " + ", ".join(
