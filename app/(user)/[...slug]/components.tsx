@@ -1618,7 +1618,9 @@ function ConceptComp({ title, intro, steps, example, misconception, check }: {
 // 음절 태그) 둘 다 읽는다 — sing 이 내는 것이 후자라 글자가 음절 단위로 차오른다.
 
 type KaraokeSyl = { t: number; s: string };
-type KaraokeLine = { t: number; text: string; syls: KaraokeSyl[] };
+/** `timed` = the file carried per-syllable tags. Line-only files (lrclib and most of the web)
+ *  get their characters spread across the line instead — see spreadLine. */
+type KaraokeLine = { t: number; text: string; syls: KaraokeSyl[]; timed: boolean };
 
 /** LRC 텍스트 → 줄 목록. 한 줄에 시간표가 여러 개면(반복 후렴) 그 수만큼 줄이 선다.
  *  `[ti:]` 류 메타 태그는 시:분 모양이 아니라 자연히 걸러진다. */
@@ -1643,24 +1645,50 @@ function parseLrc(text: string): KaraokeLine[] {
     const plain = rest.replace(/<(\d+):(\d+(?:\.\d+)?)>/g, '').trim();
     if (!plain && !syls.length) continue;
     for (const h of heads) {
-      out.push({ t: h, text: plain, syls: syls.length ? syls : [{ t: h, s: plain }] });
+      out.push({
+        t: h, text: plain, timed: syls.length > 0,
+        syls: syls.length ? syls : [{ t: h, s: plain }],
+      });
     }
   }
   return out.sort((a, b) => a.t - b.t);
 }
 
+/** 줄 시간만 있는 가사를 글자 단위로 편다 — 한 줄이 통째로 색이 바뀌는 대신 차오르게.
+ *  실측 8/19 (lrclib 조정석-아로하): 44줄 전부 `[mm:ss.xx]` 뿐, 음절 태그 0. 균등 배분은
+ *  추정이지만 오차가 그 한 줄 안에 갇히고, 노래방 화면의 일은 지금 어디냐를 보이는 것이다.
+ *  공백은 앞 글자에 붙여 한 글자처럼 넘어간다. */
+function spreadLine(line: KaraokeLine, until: number): KaraokeSyl[] {
+  const chars = Array.from(line.text);
+  if (!chars.length) return line.syls;
+  // 끝을 모르면(마지막 줄) 글자당 0.35초로 잡는다 — 보통 한국어 가사의 발음 속도.
+  const span = Math.max(0.6, Math.min((until || 0) - line.t || chars.length * 0.35,
+                                      chars.length * 0.6));
+  const step = span / chars.length;
+  const out: KaraokeSyl[] = [];
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] === ' ' && out.length) { out[out.length - 1].s += ' '; continue; }
+    out.push({ t: line.t + i * step, s: chars[i] });
+  }
+  return out;
+}
+
 /** 무대의 한 줄. 부르는 중이면 이미 지난 음절이 색으로 차오르고(그 순간의 글자가 경계),
  *  대기 줄이면 옅게 미리 선다. 빈 자리는 높이만 지켜 무대가 덜컹거리지 않게 한다. */
-function KaraokeLineRow({ line, active, at, align }: {
-  line?: KaraokeLine; active: boolean; at: number; align: 'left' | 'right';
+function KaraokeLineRow({ line, active, at, align, until }: {
+  line?: KaraokeLine; active: boolean; at: number; align: 'left' | 'right'; until?: number;
 }) {
+  const syls = useMemo(
+    () => (line && active && !line.timed ? spreadLine(line, until ?? 0) : line?.syls ?? []),
+    [line, active, until],
+  );
   if (!line) return <p className="h-[1.9em]" aria-hidden />;
   return (
     <p className={`break-keep leading-snug transition-colors ${align === 'right' ? 'text-right' : 'text-left'} ${
       active ? 'text-[19px] sm:text-[21px] font-extrabold' : 'text-[15px] sm:text-[16px] font-semibold text-slate-400'
     }`}>
       {active
-        ? line.syls.map((sy, k) => (
+        ? syls.map((sy, k) => (
             <span key={k} className={at >= sy.t ? 'text-blue-600' : 'text-slate-800'}>{sy.s}</span>
           ))
         : line.text}
@@ -1729,15 +1757,17 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
   const topIdx = idx % 2 === 0 ? idx : idx + 1;
   const botIdx = idx % 2 === 0 ? idx + 1 : idx;
   const nextT = lines[idx + 1]?.t;
-  // 카운트다운은 **쉼이 길 때만** — 전주와 간주가 그 자리다. 소절과 소절 사이 한 박 숨에도
-  // 3·2·1 이 뜨면 화면이 쉬지 않고 깜빡인다. 기준 = 직전 소절이 끝난 뒤 4초 넘게 비는 구간.
-  const prevEnd = idx >= 0
-    ? Math.max(lines[idx].t, lines[idx].syls[lines[idx].syls.length - 1]?.t ?? lines[idx].t)
+  // 카운트다운은 **아무도 안 부르고 있을 때만** — 전주와 간주가 그 자리다. 실측 8/19: 남은
+  // 시간만 보니 부르는 중인 소절 위로 3 이 떴다(마지막 음절이 3초 안에 있으면 언제나 참).
+  // 그래서 조건은 둘 — 직전 소절이 (마지막 음절 + 여운) 만큼 지나 이미 끝났을 것, 그리고 그
+  // 쉼이 애초에 3초 넘게 길 것. 소절 사이 한 박 숨에는 뜨지 않는다.
+  const TAIL = 1.2; // 마지막 음절이 울리는 시간 — LRC 는 시작만 적지 길이를 안 적는다
+  const sungEnd = idx >= 0
+    ? (lines[idx].syls[lines[idx].syls.length - 1]?.t ?? lines[idx].t) + TAIL
     : 0;
-  const gap = nextT != null ? nextT - (idx >= 0 ? prevEnd : 0) : 0;
   const left = nextT != null ? nextT - at : 0;
-  const countIn = nextT != null && gap >= 4 && left > 0 && left <= 3.0
-    ? Math.ceil(left) : 0;
+  const countIn = nextT != null && at >= sungEnd && nextT - sungEnd >= 3
+    && left > 0 && left <= 3.0 ? Math.ceil(left) : 0;
 
   const canRecord = typeof window !== 'undefined' && !!window.isSecureContext
     && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
@@ -1825,8 +1855,10 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
           <p className="text-center text-[12px] text-slate-400">{note || '가사를 불러오는 중입니다'}</p>
         ) : (
           <>
-            <KaraokeLineRow line={lines[topIdx]} active={topIdx === idx} at={at} align="left" />
-            <KaraokeLineRow line={lines[botIdx]} active={botIdx === idx} at={at} align="right" />
+            <KaraokeLineRow line={lines[topIdx]} active={topIdx === idx} at={at} align="left"
+              until={lines[topIdx + 1]?.t} />
+            <KaraokeLineRow line={lines[botIdx]} active={botIdx === idx} at={at} align="right"
+              until={lines[botIdx + 1]?.t} />
           </>
         )}
         {countIn > 0 && (
@@ -1843,18 +1875,31 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
       <div className="px-3 py-2 border-t border-slate-100">
         <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {/* 가사와 반주가 다른 채보에서 오면 어긋남이 초 단위가 아니라 십수 초다 (실측 아로하:
+              반주 240.0s vs 가사 226.8s, 같은 bpm 99). 0.5초 버튼으로 13초를 맞추게 두지 않는다 —
+              슬라이더로 대충 맞추고 버튼으로 다듬는다. */}
           <span className="text-[11px] text-slate-500">가사 싱크</span>
           <button type="button" onClick={() => setShift((v) => Math.round((v - 0.5) * 10) / 10)}
             className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">−0.5초</button>
-          <span className="px-1.5 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
-            {shift > 0 ? '+' : ''}{shift.toFixed(1)}초
-          </span>
+          <input type="range" min={-20} max={20} step={0.1} value={shift}
+            onChange={(e) => setShift(Number(e.target.value))}
+            aria-label="가사 싱크 (초)"
+            className="w-28 sm:w-40 accent-blue-600" />
           <button type="button" onClick={() => setShift((v) => Math.round((v + 0.5) * 10) / 10)}
             className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+0.5초</button>
+          <span className="px-1 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
+            {shift > 0 ? '+' : ''}{shift.toFixed(1)}초
+          </span>
           {shift !== 0 && (
             <button type="button" onClick={() => setShift(0)}
               className="px-2 py-1 text-[11px] rounded-md text-slate-400 hover:text-slate-600">되돌리기</button>
           )}
+          <span className="flex items-center gap-1.5 pl-1">
+            <a href={audioUrl} download className="text-[11px] text-slate-500 hover:text-slate-700">MR 저장</a>
+            {lrcUrl && (
+              <a href={lrcUrl} download className="text-[11px] text-slate-500 hover:text-slate-700">가사 저장</a>
+            )}
+          </span>
           {record !== false && (
             <span className="ml-auto flex items-center gap-1.5">
               {!canRecord ? (
