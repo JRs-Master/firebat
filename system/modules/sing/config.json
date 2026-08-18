@@ -176,8 +176,22 @@
           "string",
           "null"
         ],
-        "description": "[render] Lyrics source for karaoke: a rhythm-lyric lead sheet (MusicXML whose lyrics ride slash/unpitched notes), a karaoke MIDI, or a ready-made .lrc file - media URL, workspace path, or shelf ALIAS (same matching as scoreMediaPath). Emits a synced .lrc beside the audio (data.lrcPath + media). Two-track karaoke = accompaniment score in scoreMediaPath + the lyric file here. A .lrc passes through with its own line spacing, re-stamped by lrcOffset.",
+        "description": "[render, lyrics] Lyrics source for karaoke: a rhythm-lyric lead sheet (MusicXML whose lyrics ride slash/unpitched notes), a karaoke MIDI, or a ready-made .lrc file - media URL, workspace path, or shelf ALIAS (same matching as scoreMediaPath). Emits a synced .lrc beside the audio (data.lrcPath + media). Two-track karaoke = accompaniment score in scoreMediaPath + the lyric file here. A .lrc passes through with its own line spacing, re-stamped by lrcOffset.",
         "collection": "scores"
+      },
+      "lyricsQuery": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render, lyrics] Fetch synced lyrics from the internet (lrclib, the open successor of the old Winamp lyric plugins) by '가수 곡명', e.g. '조정석 아로하'. render attaches the find as the .lrc and reports the pick in data.lrcSource (a miss is a note, the audio still renders); the lyrics action just downloads and returns the path. Ignored when lyricsMediaPath is set."
+      },
+      "durationSec": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "[lyrics] Target recording length in seconds — picks the right version when a song exists in several cuts."
       },
       "lrc": {
         "type": "boolean",
@@ -188,7 +202,7 @@
           "number",
           "null"
         ],
-        "description": "[render] Shift every LRC timestamp by this many seconds (+0.5 = half a second later, negative = earlier, clamped at 0). Aligns lyrics to a recording whose intro length differs from the score."
+        "description": "[render, lyrics] Shift every LRC timestamp by this many seconds (+0.5 = half a second later, negative = earlier, clamped at 0). Aligns lyrics to a recording whose intro length differs from the score."
       },
       "lyrics": {
         "type": [
@@ -324,11 +338,12 @@
     {
       "id": "render",
       "name": "곡 렌더 (악보 → 노래·연주)",
-      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다.",
+      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다. 가사는 lyricsQuery('가수 곡명')로 인터넷(lrclib)에서 자동으로 찾아 붙일 수도 있습니다.",
       "params": [
         "score",
         "scoreMediaPath",
         "lyricsMediaPath",
+        "lyricsQuery",
         "lrc",
         "lrcOffset",
         "vocal",
@@ -366,6 +381,22 @@
       "description": "보관함의 악보 목록·검색 (별칭·파일명) — render 전에 이걸 먼저 거칩니다. 기존 곡이면 별칭을 scoreMediaPath 로 넘기고 악기·스타일은 같은 호출의 band/style 로 함께 지정합니다(재작곡 불필요). 없으면 새로 작곡합니다.",
       "params": [
         "query"
+      ]
+    },
+    {
+      "id": "lyrics",
+      "name": "가사 검색·싱크 조정 (인터넷 LRC)",
+      "description": "곡명·가수(lyricsQuery)로 lrclib 에서 싱크 가사(.lrc)를 내려받거나, 기존 가사 파일(lyricsMediaPath)을 lrcOffset 으로 전체 밀고 당겨 다시 찍습니다 — 오디오 재렌더 없이 가사만. 반환 path 를 render 의 lyricsMediaPath 로 쓰면 됩니다.",
+      "params": [
+        "lyricsQuery",
+        "lyricsMediaPath",
+        "lrcOffset",
+        "durationSec"
+      ],
+      "aliases": [
+        "가사",
+        "LRC",
+        "싱크"
       ]
     },
     {

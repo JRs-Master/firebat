@@ -2833,6 +2833,80 @@ def read_lrc_text(path):
         return b.decode("cp949", "replace")
 
 
+def _lrclib_search(query):
+    """lrclib.net — the open synced-lyrics well (the modern heir of the Winamp lyric
+    plugins). No key, one GET."""
+    import urllib.parse
+    import urllib.request
+    url = "https://lrclib.net/api/search?" + urllib.parse.urlencode({"q": str(query)})
+    req = urllib.request.Request(url, headers={"User-Agent": "firebat-sing/0.1"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _rank_lrc(rows, duration=None):
+    """Synced entries only; closest duration first when a target is known — the version
+    question (the same song exists in several cuts) is a duration question."""
+    synced = [r for r in rows if isinstance(r, dict) and r.get("syncedLyrics")]
+    if duration:
+        synced.sort(key=lambda r: abs(float(r.get("duration") or 0) - float(duration)))
+    return synced
+
+
+def _fetch_lrc(query, duration=None):
+    """query -> (path, meta, err), cached by query slug: the same karaoke re-renders
+    offline, and '가사 밀어줘' never waits on the network twice."""
+    os.makedirs("data/sing/lrc", exist_ok=True)
+    slug = _slug_name(query) or "lyrics"
+    path = f"data/sing/lrc/{slug}.lrc"
+    meta_p = f"data/sing/lrc/{slug}.json"
+    if os.path.isfile(path) and os.path.isfile(meta_p):
+        try:
+            return path, json.load(open(meta_p, encoding="utf-8")), None
+        except ValueError:
+            pass
+    try:
+        rows = _lrclib_search(query)
+    except Exception as e:  # URLError/timeout/bad JSON — the caller's note says the next move
+        return None, None, f"lrclib 검색 실패: {e} — lyricsMediaPath 로 직접 주셔도 됩니다"
+    best = (_rank_lrc(rows, duration) or [None])[0]
+    if not best:
+        return None, None, (f"lrclib 에 {query!r} 의 싱크 가사가 없습니다 — 표기를 바꿔 보거나 "
+                            ".lrc 를 lyricsMediaPath 로 직접 주세요")
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(str(best["syncedLyrics"]).strip() + "\n")
+    meta = {"artist": best.get("artistName"), "track": best.get("trackName"),
+            "duration": best.get("duration"), "source": "lrclib"}
+    with open(meta_p, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(meta, fh, ensure_ascii=False)
+    return path, meta, None
+
+
+def lrc_from_file(lpath, offset, title=None):
+    """A lyrics FILE -> finished .lrc text: MusicXML/MIDI parse to syllable timing; a
+    ready-made .lrc keeps its own lines (they carry word spacing our scores do not) and is
+    re-stamped only. Shared by render's lane and the lyrics action — one reader, two doors."""
+    head = open(lpath, "rb").read(64)
+    kind = score_media_kind(lpath)
+    if kind == "midi":
+        sc, e = midi_to_score(lpath)
+    elif kind:
+        sc, e = musicxml_to_score(lpath)
+    elif head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"["):
+        return shift_lrc(read_lrc_text(lpath), offset), None
+    else:
+        return None, (f"lyricsMediaPath 를 읽을 수 없습니다: {lpath} — MusicXML/MIDI 악보나 "
+                      ".lrc 텍스트만 받습니다")
+    if e:
+        return None, f"lyricsMediaPath parse: {e}"
+    rows = sc.pop("_lyrics", None) if isinstance(sc, dict) else None
+    if not rows:
+        return None, ("lyricsMediaPath 악보에 가사가 없습니다 — lyric 이 달린 악보(리듬-가사 "
+                      "리드시트, 노래방 MIDI)나 .lrc 파일을 주세요")
+    return build_lrc(rows, 60.0 / float(sc.get("bpm") or 120.0),
+                     offset=offset, title=title), None
+
+
 def score_library():
     """The module's own score shelf — the `scores` files-setting, as [{url, name, alias}]."""
     try:
@@ -2997,6 +3071,52 @@ def write_wav(path, x):
     sf.write(path, x, SR, subtype="PCM_16")
 
 
+def action_lyrics(inp):
+    """Fetch synced lyrics from the internet (lyricsQuery -> lrclib) or re-stamp an existing
+    lyrics file (lyricsMediaPath + lrcOffset) — no audio render: "가사 0.5초 밀어줘" must not
+    cost minutes of synthesis. The product ships through the same media door as the render."""
+    try:
+        offset = float(inp.get("lrcOffset") or 0.0)
+    except (TypeError, ValueError):
+        return {"success": False, "error": "lrcOffset must be a number of seconds"}
+    q = str(inp.get("lyricsQuery") or "").strip()
+    src = str(inp.get("lyricsMediaPath") or "").strip()
+    meta = None
+    if src:
+        lpath, lerr = resolve_score_media(inp, key="lyricsMediaPath")
+        if lerr:
+            return {"success": False, "error": lerr}
+        text, err = lrc_from_file(lpath, offset, title=src)
+        if err:
+            return {"success": False, "error": err}
+        base = _slug_name(src) or "lyrics"
+    elif q:
+        lpath, meta, err = _fetch_lrc(q, duration=inp.get("durationSec"))
+        if err:
+            return {"success": False, "error": err}
+        text = shift_lrc(read_lrc_text(lpath), offset)
+        base = _slug_name(q) or "lyrics"
+    else:
+        return {"success": False, "error": (
+            "lyricsQuery('가수 곡명') 또는 lyricsMediaPath(가사 악보 · .lrc · 별칭) 를 주세요")}
+    tag = f"-{offset:+.2f}s" if offset else ""
+    out = f"data/sing/lrc/{base}{tag}.lrc"
+    os.makedirs("data/sing/lrc", exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    data = {"path": out, "offsetSec": offset,
+            "lrcLines": sum(1 for ln in text.splitlines()
+                            if ln[:1] == "[" and ln[1:2].isdigit()),
+            "_mediaImport": {"path": out, "contentType": "application/x-lrc",
+                             "filenameHint": base + tag},
+            "note": ("render 의 lyricsMediaPath 에 이 path 를 넘기면 반주와 함께 나갑니다 — "
+                     "타이밍이 밀리면 lrcOffset 로 전체를 밀고 당깁니다(+ = 늦게)")}
+    if meta:
+        data["identity"] = (f"{meta.get('artist')} - {meta.get('track')} "
+                            f"({int(meta.get('duration') or 0)}s, lrclib)")
+    return {"success": True, "data": data}
+
+
 def action_render(inp):
     score = inp.get("score")
     parsed_from = None
@@ -3073,9 +3193,10 @@ def action_render(inp):
     # ── LRC lane: lyricsMediaPath = lyric score (rhythm-lyric lead sheet, karaoke MIDI) or a
     # ready-made .lrc; lrc:true reads the main score's own syllables. Built BEFORE the render
     # so a bad lyrics input refuses in milliseconds, not after minutes of synthesis.
-    lrc_text = None
+    lrc_text, lrc_meta, lrc_miss = None, None, None
     lyr_src = str(inp.get("lyricsMediaPath") or "").strip()
-    if lyr_src or inp.get("lrc"):
+    lyr_q = str(inp.get("lyricsQuery") or "").strip()
+    if lyr_src or lyr_q or inp.get("lrc"):
         try:
             lrc_offset = float(inp.get("lrcOffset") or 0.0)
         except (TypeError, ValueError):
@@ -3084,31 +3205,20 @@ def action_render(inp):
             lpath, lerr = resolve_score_media(inp, key="lyricsMediaPath")
             if lerr:
                 return {"success": False, "error": lerr}
-            head = open(lpath, "rb").read(64)
-            kind2 = score_media_kind(lpath)
-            sc2, e2 = None, None
-            if kind2 == "midi":
-                sc2, e2 = midi_to_score(lpath)
-            elif kind2:
-                sc2, e2 = musicxml_to_score(lpath)
-            elif head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"["):
-                # A ready-made .lrc keeps its own lines (they carry the word spacing our
-                # scores do not) — only the clock is re-stamped (전체 땡기기).
-                lrc_text = shift_lrc(read_lrc_text(lpath), lrc_offset)
+            lrc_text, lerr = lrc_from_file(lpath, lrc_offset, title=lyr_src)
+            if lerr:
+                return {"success": False, "error": lerr}
+        elif lyr_q:
+            # The Winamp move: synced lyrics fetched by name while the MR renders. A miss is
+            # a NOTE, not a failure — the track is still worth having; the real accident
+            # would be the WRONG song's lyrics attached silently, so the pick is reported
+            # (data.lrcSource) for the ear to veto.
+            hint = sum(b for ev in events for _, b in ev["segments"]) * spb
+            lpath, lrc_meta, ferr = _fetch_lrc(lyr_q, duration=hint if hint > 30 else None)
+            if ferr:
+                lrc_miss = ferr
             else:
-                return {"success": False, "error": (
-                    f"lyricsMediaPath 를 읽을 수 없습니다: {lpath} — MusicXML/MIDI 악보나 "
-                    ".lrc 텍스트만 받습니다")}
-            if e2:
-                return {"success": False, "error": f"lyricsMediaPath parse: {e2}"}
-            if lrc_text is None:
-                rows2 = sc2.pop("_lyrics", None) if isinstance(sc2, dict) else None
-                if not rows2:
-                    return {"success": False, "error": (
-                        "lyricsMediaPath 악보에 가사가 없습니다 — lyric 이 달린 악보(리듬-가사 "
-                        "리드시트, 노래방 MIDI)나 .lrc 파일을 주세요")}
-                lrc_text = build_lrc(rows2, 60.0 / float(sc2.get("bpm") or 120.0),
-                                     offset=lrc_offset, title=lyr_src)
+                lrc_text = shift_lrc(read_lrc_text(lpath), lrc_offset)
         else:
             if not own_lyrics:
                 return {"success": False, "error": (
@@ -3275,6 +3385,11 @@ def action_render(inp):
         data["lrcPath"] = lrc_path
         data["lrcLines"] = sum(1 for ln in lrc_text.splitlines()
                                if ln[:1] == "[" and ln[1:2].isdigit())
+        if lrc_meta:
+            data["lrcSource"] = (f"{lrc_meta.get('artist')} - {lrc_meta.get('track')} "
+                                 f"({lrc_meta.get('duration')}s, lrclib)")
+    if lrc_miss:
+        data["lrcNote"] = lrc_miss
     # Consumption-point note — the channel that actually lands. Both live canon turns composed
     # a fresh score while the user's uploaded MIDI sat on the shelf: the schema said so, the
     # search row said so, and the model read neither at decision time. This arrives WITH the
@@ -3925,6 +4040,39 @@ def action_selftest():
        0.044, arp_top[0]["beat"] if arp_top else None,
        aerr is None and bool(arp_top) and abs(arp_top[0]["beat"] - 0.044) < 0.002)
 
+    rk = _rank_lrc([{"trackName": "a"},
+                    {"trackName": "b", "syncedLyrics": "[00:01.00]x", "duration": 250},
+                    {"trackName": "c", "syncedLyrics": "[00:01.00]x", "duration": 227}],
+                   duration=226)
+    ck("lyric search keeps synced entries and picks the closest cut by duration",
+       ("c", 2), (rk[0]["trackName"] if rk else None, len(rk)),
+       len(rk) == 2 and rk[0]["trackName"] == "c")
+    os.makedirs("data/sing/lrc", exist_ok=True)
+    with open("data/sing/lrc/selftest-cached.lrc", "w", encoding="utf-8") as fh:
+        fh.write("[00:01.00]가\n")
+    with open("data/sing/lrc/selftest-cached.json", "w", encoding="utf-8") as fh:
+        fh.write('{"artist": "x", "track": "y", "duration": 1, "source": "lrclib"}')
+    cp, cm, ce = _fetch_lrc("selftest cached")
+    ck("a fetched lyric is cached by query slug — re-renders stay off the network",
+       ("data/sing/lrc/selftest-cached.lrc", "x"),
+       (cp, (cm or {}).get("artist")),
+       ce is None and cp == "data/sing/lrc/selftest-cached.lrc"
+       and (cm or {}).get("artist") == "x")
+    lyx = action_lyrics({"lyricsMediaPath": "data/sing/lrc/selftest-cached.lrc",
+                         "lrcOffset": 1.0})
+    lyd = lyx.get("data") or {}
+    lyt = open(lyd["path"], encoding="utf-8").read() if lyx.get("success") else ""
+    ck("the lyrics action re-stamps without an audio render and ships a media card",
+       True,
+       bool(lyx.get("success") and lyt.startswith("[00:02.00]")
+            and isinstance(lyd.get("_mediaImport"), dict)),
+       bool(lyx.get("success")) and lyt.startswith("[00:02.00]")
+       and isinstance(lyd.get("_mediaImport"), dict) and lyd.get("lrcLines") == 1)
+    for f in ("data/sing/lrc/selftest-cached.lrc", "data/sing/lrc/selftest-cached.json",
+              lyd.get("path")):
+        if f and os.path.isfile(f):
+            os.remove(f)
+
     xml_doc = (
         '<score-partwise><part-list/><part id="P1"><measure number="1">'
         '<attributes><divisions>2</divisions><time><beats>3</beats>'
@@ -4207,9 +4355,11 @@ def main():
         out = action_render(inp)
     elif action == "scores":
         out = action_scores(inp)
+    elif action == "lyrics":
+        out = action_lyrics(inp)
     else:
         out = {"success": False,
-               "error": f"unknown action {action!r} — one of: render, scores, selftest"}
+               "error": f"unknown action {action!r} — one of: render, scores, lyrics, selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False)).encode("utf-8"))
