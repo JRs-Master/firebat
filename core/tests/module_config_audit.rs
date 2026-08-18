@@ -401,10 +401,28 @@ fn every_module_declaration_names_something_that_exists() {
                 .needs
         {
             for m in mods {
-                if !modules_dir().join(&m).join("config.json").is_file() {
+                // Two grains (424f3ba8): "module" or "module:action" — the same split
+                // canon_run_key makes at the gate. Each half must name something real.
+                let (module_half, action_half) = match m.split_once(':') {
+                    Some((mm, aa)) => (mm, Some(aa)),
+                    None => (m.as_str(), None),
+                };
+                let target_path = modules_dir().join(module_half).join("config.json");
+                if !target_path.is_file() {
                     say(format!(
-                        "action `{aid}` needs `{m}`, which is not an installed module — the \
-                         declaration would block the action forever"
+                        "action `{aid}` needs `{m}`, but `{module_half}` is not an installed                          module — the declaration would block the action forever"
+                    ));
+                    continue;
+                }
+                let Some(action) = action_half else { continue };
+                let declares = fs::read_to_string(&target_path)
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+                    .map(|cfg| declared_actions(&cfg).is_none_or(|set| set.contains(action)))
+                    .unwrap_or(false);
+                if !declares {
+                    say(format!(
+                        "action `{aid}` needs `{m}`, but module `{module_half}` does not                          declare action `{action}` — the gate could never be satisfied"
                     ));
                 }
             }
