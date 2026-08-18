@@ -1699,21 +1699,39 @@ def master_shelf():
         return []
 
 
+def _norm_name(x):
+    """Alias comparison key — case and spacing are not identity ("회사 양식" == "회사양식")."""
+    return "".join(str(x or "").split()).casefold()
+
+
+def action_masters(_inp=None):
+    """The template shelf as a first-class action — look it up instead of guessing an alias."""
+    shelf = master_shelf()
+    rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name"),
+             "kind": str(r.get("name", "")).rsplit(".", 1)[-1].lower(),
+             "default": bool(r.get("default"))} for r in shelf]
+    return {"success": True, "action": "masters", "data": {
+        "count": len(rows), "masters": rows,
+        "note": "pass one alias as make_*'s masterMediaPath to build on it"}}
+
+
 def pick_master(raw, kind):
     """Which master file to build on. `raw` = caller's url/path/ALIAS; empty raw falls back to
     the shelf: the kind's default-marked entry, else the only entry of that kind, else none
-    (a plain document is a valid build). An unknown bare alias errs WITH the shelf list."""
+    (a plain document is a valid build). Alias matching ignores case/spacing and tries the
+    filename too; a miss points to the `masters` action instead of dumping the shelf."""
     shelf = master_shelf()
     of_kind = [r for r in shelf if str(r.get("name", "")).lower().endswith("." + kind)]
     if raw:
-        wanted = raw.lower()
+        wanted = _norm_name(raw)
         for row in shelf:
-            if str(row.get("alias") or "").strip().lower() == wanted \
-                    or str(row.get("name") or "").strip().lower() == wanted:
+            name = str(row.get("name") or "")
+            stem = name.rsplit(".", 1)[0]
+            if wanted in (_norm_name(row.get("alias")), _norm_name(name), _norm_name(stem)):
                 return str(row["url"]), None
         if "/" not in raw and "." not in raw and shelf:
-            aliases = ", ".join(str(r.get("alias") or r.get("name")) for r in shelf)
-            return None, f"서식 별칭 {raw!r} 이 보관함에 없습니다 — 보관함: {aliases}"
+            return None, (f"서식 별칭 {raw!r} 이 보관함에 없습니다 — "
+                          f"action 'masters' 로 목록({len(shelf)}개)을 확인하세요")
         return raw, None
     for row in of_kind:
         if row.get("default"):
@@ -3897,8 +3915,13 @@ def action_selftest():
         ck("no name = the kind's default (회사양식)",
            pick_master("", "pptx")[0] == "/user/media/co.pptx")
         miss = pick_master("없는양식", "pptx")
-        ck("a mistyped master alias is refused WITH the shelf",
-           bool(miss[1]) and "회사양식" in (miss[1] or ""))
+        ck("a mistyped master alias points to the masters action",
+           bool(miss[1]) and "masters" in (miss[1] or ""))
+        ck("alias matching ignores spacing (회사 양식 == 회사양식)",
+           pick_master("회사 양식", "pptx")[0] == "/user/media/co.pptx")
+        ck("the shelf is a first-class action (masters lists kinds and defaults)",
+           action_masters()["data"]["count"] == 3
+           and any(m["default"] and m["kind"] == "pptx" for m in action_masters()["data"]["masters"]))
     finally:
         del os.environ["MODULE_MASTERS"]
 
@@ -4789,7 +4812,7 @@ def main():
     handlers = {"read": action_read, "make_pptx": action_make_pptx,
                 "make_hwpx": action_make_hwpx,
                 "make_xlsx": action_make_xlsx, "make_docx": action_make_docx,
-                "make_pdf": action_make_pdf}
+                "make_pdf": action_make_pdf, "masters": action_masters}
     if action == "selftest":
         out = action_selftest()
     elif action in handlers:
@@ -4797,7 +4820,7 @@ def main():
     else:
         out = {"success": False, "action": action,
                "error": f"unknown action {action!r} — one of: read, make_pptx, make_xlsx, "
-                        "make_docx, make_pdf, selftest"}
+                        "make_docx, make_pdf, masters, selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False, default=str)).encode("utf-8"))

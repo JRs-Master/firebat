@@ -40,9 +40,10 @@
         "type": "string",
         "enum": [
           "render",
+          "scores",
           "selftest"
         ],
-        "description": "render = score -> song. Returns data.media with the wav url (put it in a `listening` component's audioUrl) and, with midiOut, the .mid beside it. You cannot recall a real melody from memory: play an existing song from an uploaded MIDI (scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one. selftest = self-checks, no files needed."
+        "description": "render = score -> song. Returns data.media with the wav url (put it in a `listening` component's audioUrl) and, with midiOut, the .mid beside it. scores = list the shelved scores (alias + filename) — check it FIRST when the user refers to an uploaded/shelved piece, then pass the alias as render's scoreMediaPath. You cannot recall a real melody from memory: an existing song plays from a MIDI (scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one. selftest = self-checks, no files needed."
       },
       "vocal": {
         "type": [
@@ -129,7 +130,7 @@
           "string",
           "null"
         ],
-        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a score shelved in the module's 악보 보관함 setting. When the user refers to an EXISTING piece (uploaded or shelved), use THIS instead of composing a score: pass your best guess of its name — a wrong guess is refused WITH the full shelf list, so guessing is safe and costs one round. Omitted with exactly one shelved score = that one. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
+        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score (see the `scores` action; matching ignores case/spacing and accepts the filename too). Omitted with exactly one shelved score = that one. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
       },
       "lyrics": {
         "type": [

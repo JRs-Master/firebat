@@ -1175,30 +1175,45 @@ def _media_to_path(raw):
     return path, None
 
 
+def _norm_name(s):
+    """Alias comparison key — case and spacing are not identity ("캐논 변주곡" == "캐논변주곡")."""
+    return "".join(str(s or "").split()).casefold()
+
+
+def action_scores():
+    """The shelf as a first-class action — the model LOOKS UP what is shelved instead of
+    guessing an alias and fishing the list out of an error (사용자: 낚시는 계단이 아니다)."""
+    shelf = score_library()
+    rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name")} for r in shelf]
+    return {"success": True, "data": {
+        "count": len(rows), "scores": rows,
+        "note": "pass one alias as render's scoreMediaPath to play it"}}
+
+
 def resolve_score_media(inp):
     """scoreMediaPath input = a media URL, a workspace path, or the ALIAS of a shelved score.
 
-    Songs are called by name, so there is no default: with several scores and no name, the
-    error hands over every alias — the error is the discovery surface here too.
+    Matching ignores case and spacing, and tries alias, filename and filename-without-extension.
+    Misses point to the `scores` action rather than dumping the shelf into the error.
     """
     raw = str(inp.get("scoreMediaPath") or "").strip()
     shelf = score_library()
     if raw:
-        wanted = raw.lower()
+        wanted = _norm_name(raw)
         for row in shelf:
-            if str(row.get("alias") or "").strip().lower() == wanted \
-                    or str(row.get("name") or "").strip().lower() == wanted:
+            name = str(row.get("name") or "")
+            stem = name.rsplit(".", 1)[0]
+            if wanted in (_norm_name(row.get("alias")), _norm_name(name), _norm_name(stem)):
                 return _media_to_path(str(row["url"]))
         if "/" not in raw and "." not in raw and shelf:
-            # A bare word that matches nothing is a mistyped alias, not a path — say what exists.
-            aliases = ", ".join(str(r.get("alias") or r.get("name")) for r in shelf)
-            return None, f"악보 별칭 {raw!r} 이 보관함에 없습니다 — 보관함: {aliases}"
+            return None, (f"악보 별칭 {raw!r} 이 보관함에 없습니다 — "
+                          f"action 'scores' 로 목록({len(shelf)}개)을 확인하세요")
         return _media_to_path(raw)
     if len(shelf) == 1:
         return _media_to_path(str(shelf[0]["url"]))
     if shelf:
-        aliases = ", ".join(str(r.get("alias") or r.get("name")) for r in shelf)
-        return None, f"악보가 여러 개입니다 — scoreMediaPath 에 별칭을 주세요: {aliases}"
+        return None, (f"악보가 {len(shelf)}개입니다 — action 'scores' 로 목록을 보고 "
+                      "scoreMediaPath 에 별칭을 주세요")
     return None, None
 
 
@@ -1478,11 +1493,18 @@ def action_selftest():
         {"url": "/user/media/b.mid", "name": "alhambra.mid", "alias": "알함브라"}])
     try:
         miss = resolve_score_media({"scoreMediaPath": "월광"})
-        ck("a mistyped score alias is refused WITH the shelf", True, (miss[1] or "")[:60],
-           bool(miss[1]) and "캐논" in (miss[1] or ""))
+        ck("a mistyped score alias points to the scores action", True, (miss[1] or "")[:60],
+           bool(miss[1]) and "scores" in (miss[1] or ""))
         ambig = resolve_score_media({})
-        ck("several shelved scores and no name = the shelf list, not a guess", True,
-           (ambig[1] or "")[:60], bool(ambig[1]) and "알함브라" in (ambig[1] or ""))
+        ck("several shelved scores and no name points to the scores action", True,
+           (ambig[1] or "")[:60], bool(ambig[1]) and "scores" in (ambig[1] or ""))
+        listed = action_scores()
+        ck("the shelf is a first-class action (scores lists aliases)", 2,
+           listed["data"]["count"], listed["data"]["count"] == 2
+           and listed["data"]["scores"][0]["alias"] == "캐논")
+        spaced = resolve_score_media({"scoreMediaPath": "캐 논"})
+        ck("alias matching ignores spacing and case", True,
+           spaced[1] or "matched", spaced[1] is None or "찾" not in (spaced[1] or ""))
     finally:
         del os.environ["MODULE_SCORES"]
 
@@ -1636,9 +1658,11 @@ def main():
         out = action_selftest()
     elif action == "render":
         out = action_render(inp)
+    elif action == "scores":
+        out = action_scores()
     else:
         out = {"success": False,
-               "error": f"unknown action {action!r} — one of: render, selftest"}
+               "error": f"unknown action {action!r} — one of: render, scores, selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False)).encode("utf-8"))
