@@ -554,6 +554,11 @@ def resolve_instrument(name):
     return None
 
 
+# Styles whose drummer actually rolls into the turnaround — a ballad or a carol keeps its
+# soft tom fill, jazz keeps its ride language. The roll is a color, not a metronome rule.
+ROLL_STYLES = {"trot", "march", "rock", "metal", "punk", "rocknroll", "dance", "pop"}
+
+
 def _snare_roll(meter):
     """다다다다다 — 16ths leaning into 32nds over the bar's back half, velocities rising the
     way a drummer leans into a fill. The style's tom fill alternates with this every 8 bars."""
@@ -957,7 +962,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     bar, bar_i = 0.0, 0
     while bar < total_beats:
         hits = list(base)
-        if hits and bar_i % 8 == 7:
+        if hits and style in ROLL_STYLES and bar_i % 8 == 7:
             # Every 8th bar the tom fill yields to the snare roll — 다다다다다 into the crash.
             start, roll = _snare_roll(meter)
             hits = [h for h in hits if h[1] < start] + roll
@@ -1516,7 +1521,9 @@ def action_scores(inp=None):
             if not q or q in _norm_name(r.get("alias")) or q in _norm_name(r.get("name"))]
     return {"success": True, "data": {
         "count": len(rows), "scores": rows,
-        "note": "pass one alias as render's scoreMediaPath to play it"}}
+        "note": "pass one alias as render's scoreMediaPath to play it — style/band/drumPattern "
+                "may ride in the SAME render call to re-instrument the piece (no need to "
+                "compose a score for an existing song)"}}
 
 
 def resolve_score_media(inp):
@@ -1582,8 +1589,13 @@ def action_render(inp):
             score, err = midi_to_score(media_path, lyrics=inp.get("lyrics"))
             if err:
                 return {"success": False, "error": err}
-            if isinstance(inp.get("style"), str):
-                score["style"] = inp["style"]
+            # Every feel knob rides the top level too: a shelved MIDI plus new instruments is
+            # ONE call. While band lived only inside `score`, composing a fresh score was the
+            # only one-call path to "피아노로" — measured: the model did exactly that (turn 31,
+            # 48s 자작 while the shelf held the real piece and scores had just listed it).
+            for knob in ("style", "band", "drumPattern", "swing", "comp", "bassline"):
+                if inp.get(knob) is not None:
+                    score[knob] = inp[knob]
             parsed_from = media_path
         else:
             return {"success": False,
@@ -1928,6 +1940,10 @@ def action_selftest():
     ck("every 8th bar rolls the snare in 32nds (다다다다)", True, len(rolls), len(rolls) >= 4)
     ck("jazz rides on a ride now, not an open hat", "ride", DRUM_PATTERNS["jazz"][0][0],
        DRUM_PATTERNS["jazz"][0][0] == "ride")
+    arr9 = build_arrangement(ev2, ch2 * 8, "ballad", 32, None, {"meter": 4})
+    soft = [e for e in arr9 if e["part"] == "drum" and e["drum"] == "snare"
+            and abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-6]
+    ck("a ballad keeps its soft fill — no machine-gun roll", 0, len(soft), not soft)
 
     # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
     # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.

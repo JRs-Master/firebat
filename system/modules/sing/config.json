@@ -138,7 +138,7 @@
           "string",
           "null"
         ],
-        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
+        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
       },
       "lyrics": {
         "type": [
@@ -153,6 +153,42 @@
           "null"
         ],
         "description": "Style (genre) override when the score comes from MIDI — any style name the score contract accepts; an unknown one is refused with the full list."
+      },
+      "band": {
+        "type": [
+          "object",
+          "array",
+          "null"
+        ],
+        "description": "[render, with scoreMediaPath] Same contract as score.band — instruments for the shelved/linked piece, one call."
+      },
+      "drumPattern": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "description": "[render, with scoreMediaPath] Same contract as score.drumPattern."
+      },
+      "swing": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "0-1: how late the rhythm section's offbeat eighths lean (0 straight, 1 full shuffle). Omit for the style's default (trot swings lightly). The melody always stays straight."
+      },
+      "comp": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "How the chord part moves: pad (held) | stabs (offbeat strokes) | arp (rippling eighths) | quarters. Omit for the style's default."
+      },
+      "bassline": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "How the bass moves: hold (whole notes + pickup into the next chord) | twobeat (root-fifth alternation) | alt (marching quarters) | walk (quality-aware root-third-fifth quarters — the jazz/blues floor). Omit for the style's default."
       },
       "engine": {
         "type": [
@@ -217,6 +253,11 @@
         "lyrics",
         "style",
         "engine",
+        "band",
+        "drumPattern",
+        "swing",
+        "comp",
+        "bassline",
         "midiOut",
         "midiOutPath",
         "outPath",
@@ -229,7 +270,7 @@
     {
       "id": "scores",
       "name": "악보 보관함 조회",
-      "description": "보관함의 악보 목록·검색 (별칭·파일명) — render 전에 이걸 먼저 거칩니다. 기존 곡이면 별칭을 scoreMediaPath 로 넘기고, 없으면 새로 작곡합니다.",
+      "description": "보관함의 악보 목록·검색 (별칭·파일명) — render 전에 이걸 먼저 거칩니다. 기존 곡이면 별칭을 scoreMediaPath 로 넘기고 악기·스타일은 같은 호출의 band/style 로 함께 지정합니다(재작곡 불필요). 없으면 새로 작곡합니다.",
       "params": [
         "query"
       ]
