@@ -1654,41 +1654,37 @@ function parseLrc(text: string): KaraokeLine[] {
   return out.sort((a, b) => a.t - b.t);
 }
 
-/** 줄 시간만 있는 가사를 글자 단위로 편다 — 한 줄이 통째로 색이 바뀌는 대신 차오르게.
- *  실측 8/19 (lrclib 조정석-아로하): 44줄 전부 `[mm:ss.xx]` 뿐, 음절 태그 0. 균등 배분은
- *  추정이지만 오차가 그 한 줄 안에 갇히고, 노래방 화면의 일은 지금 어디냐를 보이는 것이다.
- *  공백은 앞 글자에 붙여 한 글자처럼 넘어간다. */
-function spreadLine(line: KaraokeLine, until: number): KaraokeSyl[] {
-  const chars = Array.from(line.text);
-  if (!chars.length) return line.syls;
-  // 끝을 모르면(마지막 줄) 글자당 0.35초로 잡는다 — 보통 한국어 가사의 발음 속도.
-  const span = Math.max(0.6, Math.min((until || 0) - line.t || chars.length * 0.35,
-                                      chars.length * 0.6));
-  const step = span / chars.length;
-  const out: KaraokeSyl[] = [];
-  for (let i = 0; i < chars.length; i++) {
-    if (chars[i] === ' ' && out.length) { out[out.length - 1].s += ' '; continue; }
-    out.push({ t: line.t + i * step, s: chars[i] });
-  }
-  return out;
-}
-
 /** 무대의 한 줄. 부르는 중이면 이미 지난 음절이 색으로 차오르고(그 순간의 글자가 경계),
  *  대기 줄이면 옅게 미리 선다. 빈 자리는 높이만 지켜 무대가 덜컹거리지 않게 한다. */
 function KaraokeLineRow({ line, active, at, align, until }: {
   line?: KaraokeLine; active: boolean; at: number; align: 'left' | 'right'; until?: number;
 }) {
-  const syls = useMemo(
-    () => (line && active && !line.timed ? spreadLine(line, until ?? 0) : line?.syls ?? []),
-    [line, active, until],
-  );
   if (!line) return <p className="h-[1.9em]" aria-hidden />;
+  const size = active
+    ? 'text-[19px] sm:text-[21px] font-extrabold'
+    : 'text-[15px] sm:text-[16px] font-semibold text-slate-400';
+  // 파일이 음절 시계를 들고 왔을 때만 글자가 차오른다. 줄 시간뿐이면(lrclib 등) **어느 글자냐를
+  // 지어내지 않는다** — 노래방은 정확해야 하고, 균등 배분은 그럴듯할 뿐 틀린 자리를 짚는다
+  // (사용자 확정 8/19). 대신 줄 전체를 밝히고, 그 줄의 시간이 얼마나 갔는지만 막대로 말한다.
+  if (active && !line.timed) {
+    const span = Math.max(0.5, (until ?? 0) - line.t || 4);
+    const pct = Math.max(0, Math.min(1, (at - line.t) / span));
+    return (
+      <span className={`block ${align === 'right' ? 'text-right' : 'text-left'}`}>
+        <span className={`inline-block break-keep leading-snug text-blue-600 ${size}`}>
+          {line.text}
+          <span className="mt-0.5 block h-[3px] rounded-full bg-blue-100" aria-hidden>
+            <span className="block h-full rounded-full bg-blue-500"
+              style={{ width: `${(pct * 100).toFixed(1)}%` }} />
+          </span>
+        </span>
+      </span>
+    );
+  }
   return (
-    <p className={`break-keep leading-snug transition-colors ${align === 'right' ? 'text-right' : 'text-left'} ${
-      active ? 'text-[19px] sm:text-[21px] font-extrabold' : 'text-[15px] sm:text-[16px] font-semibold text-slate-400'
-    }`}>
+    <p className={`break-keep leading-snug transition-colors ${align === 'right' ? 'text-right' : 'text-left'} ${size}`}>
       {active
-        ? syls.map((sy, k) => (
+        ? line.syls.map((sy, k) => (
             <span key={k} className={at >= sy.t ? 'text-blue-600' : 'text-slate-800'}>{sy.s}</span>
           ))
         : line.text}
@@ -1734,13 +1730,18 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
     const tick = () => { setCur(a.currentTime); rafRef.current = requestAnimationFrame(tick); };
     const start = () => { if (rafRef.current == null) rafRef.current = requestAnimationFrame(tick); };
     const stop = () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } setCur(a.currentTime); };
+    // Seeking mid-song fires `seeked`, not `play` — stopping there and waiting for a play event
+    // froze the lyrics for the rest of the track (실측 8/19: "싱크가 실시간으로 안 된다").
+    const resync = () => { setCur(a.currentTime); if (!a.paused && !a.ended) start(); else stop(); };
     a.addEventListener('play', start);
+    a.addEventListener('playing', start);
     a.addEventListener('pause', stop);
-    a.addEventListener('seeked', stop);
+    a.addEventListener('seeked', resync);
     a.addEventListener('ended', stop);
     return () => {
-      a.removeEventListener('play', start); a.removeEventListener('pause', stop);
-      a.removeEventListener('seeked', stop); a.removeEventListener('ended', stop);
+      a.removeEventListener('play', start); a.removeEventListener('playing', start);
+      a.removeEventListener('pause', stop); a.removeEventListener('seeked', resync);
+      a.removeEventListener('ended', stop);
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
   }, [audioUrl]);
