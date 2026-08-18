@@ -2016,7 +2016,8 @@ def midi_to_score(path, lyrics=None):
 
     # Syllables: file lyric events matched to note starts, else the caller's string, else 라.
     file_lyrics = lyric_by_track[melody["idx"]]
-    notes = []
+    spb_m = 60.0 / bpm
+    notes, lyric_rows = [], []
     if file_lyrics:
         li = 0
         for s in seq:
@@ -2024,12 +2025,18 @@ def midi_to_score(path, lyrics=None):
             while li < len(file_lyrics) and file_lyrics[li][0] <= s["tick"] + tpb // 8:
                 syl = file_lyrics[li][1]
                 li += 1
+            if syl != "-":
+                lyric_rows.append({"t": round(warp(s["tick"] / tpb) * spb_m, 3),
+                                   "d": round(s["beats"] * spb_m, 3), "syl": syl})
             notes.append({"syl": syl if notes or syl != "-" else "라",
                           "note": s["note"], "beats": s["beats"], "vel": s.get("vel")})
     else:
         syls = [ch for ch in str(lyrics or "") if not ch.isspace()]
         for i, s in enumerate(seq):
             syl = syls[i] if i < len(syls) else ("-" if syls else "라")
+            if i < len(syls):
+                lyric_rows.append({"t": round(warp(s["tick"] / tpb) * spb_m, 3),
+                                   "d": round(s["beats"] * spb_m, 3), "syl": syl})
             notes.append({"syl": syl, "note": s["note"], "beats": s["beats"], "vel": s.get("vel")})
 
     # Chords off the lowest track (if any candidate besides the melody).
@@ -2049,6 +2056,8 @@ def midi_to_score(path, lyrics=None):
             w += 2
 
     score = {"bpm": bpm, "notes": notes}
+    if lyric_rows:
+        score["_lyrics"] = lyric_rows
     if meter is not None and meter != 4:
         score["meter"] = meter
     if chords:
@@ -2435,12 +2444,32 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         onset = last_onset if st else m_base + cur
                         if not st:
                             last_onset = onset
-                        if dname and parts_out is not None:
-                            dv = vel_by_staff.get(_xt(el, "staff", "1") or "1",
-                                                  vel_by_staff.get("1"))
+                        uly = kid(el, "lyric")
+                        usyl = (text_of(uly, "text") or "").strip() if uly is not None else ""
+                        u_staff = _xt(el, "staff", "1") or "1"
+                        uv = vel_by_staff.get(u_staff, vel_by_staff.get("1"))
+                        if usyl:
+                            # A rhythm-lyric lead sheet (실측 아로하: 가사 344개가 슬래시 음표에
+                            # 얹혀 멜로디 음고가 없다): the slash carries WHEN, the lyric carries
+                            # WHAT. The display pitch keeps the row nominally renderable; the
+                            # real product is timing + syllable, which the LRC lane reads.
+                            uvoice = text_of(el, "voice")
+                            if lead_voice is None:
+                                lead_voice = uvoice
+                            already = st and notes and notes[-1].get("_at") == onset
+                            if uvoice == lead_voice and not already:
+                                d_step = (text_of(unp, "display-step") or "B").strip().upper()
+                                d_oct = int(text_of(unp, "display-octave") or 4)
+                                nom = (12 * (d_oct + 1) + _XML_STEP.get(d_step, 0)
+                                       + shift + transpose)
+                                notes.append({"midi": nom, "beats": dur, "syl": usyl,
+                                              "vel": uv if uv is not None else 0.65,
+                                              "_at": onset, "_st": u_staff, "_sung": dur,
+                                              "_unp": True})
+                        elif dname and parts_out is not None:
                             parts_out.append({"beat": onset, "beats": 0.25, "part": "drum",
                                               "drum": dname,
-                                              "vel": dv if dv is not None else 0.7})
+                                              "vel": uv if uv is not None else 0.7})
                         elif parts_out is not None:
                             skip_mark("드럼(매핑 없음)")
                         if not st:
@@ -2545,9 +2574,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         continue
                     if tie and notes and notes[-1]["midi"] == midi:
                         notes[-1]["beats"] += dur
+                        notes[-1]["_sung"] = notes[-1].get("_sung", 0.0) + dur
                     else:
                         notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": nvel,
-                                      "_at": onset, "_st": n_staff})
+                                      "_at": onset, "_st": n_staff, "_sung": dur})
             pos = m_base + m_len
         if pedal_down is not None and parts_out is not None and pos > pedal_down:
             parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
@@ -2575,7 +2605,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     nrow["vel"] = round(v0 + (v1 - v0) * (nrow["_at"] - wstart) / span, 3)
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
-                                 "lyrics": sum(1 for n in notes if n["syl"])})
+                                 "lyrics": sum(1 for n in notes if n["syl"]),
+                                 "unp": sum(1 for n in notes if n.get("_unp"))})
     if not parsed_parts:
         return None, "MusicXML 에서 음표를 못 읽었습니다"
 
@@ -2590,10 +2621,15 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
 
     lyr = list(str(lyrics or "").replace(" ", "").replace("\n", ""))
     has_own = best["lyrics"] > 0
-    out_notes = []
+    has_caller = bool(lyr)
+    lyric_only = bool(best.get("unp")) and best["unp"] == len(best["notes"])
+    spb_m = 60.0 / max(20.0, min(300.0, master))
+    out_notes, lyric_rows = [], []
     for n in best["notes"]:
         at = n.pop("_at", None)
+        sung = n.pop("_sung", n["beats"])
         n.pop("_st", None)
+        n.pop("_unp", None)
         beats = n["beats"]
         if at is not None:
             beats = max(0.25, warp(at + beats) - warp(at))
@@ -2603,12 +2639,22 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
             syl = lyr.pop(0) if lyr else "-"
         else:
             syl = "라"
+        if at is not None and syl != "-" and (has_own or has_caller):
+            # The LRC lane: absolute seconds on the warped clock, sung length only (a rest
+            # extends the row's beats for playback but is silence to a lyric line).
+            lyric_rows.append({"t": round(warp(at) * spb_m, 3),
+                               "d": round(max(0.0, warp(at + sung) - warp(at)) * spb_m, 3),
+                               "syl": syl})
         row = {"syl": syl, "note": _midi_name(n["midi"]),
                "beats": min(64.0, round(beats * 4) / 4)}
         if n["vel"] is not None:
             row["vel"] = n["vel"]
         out_notes.append(row)
     score = {"bpm": max(20.0, min(300.0, master)), "notes": out_notes}
+    if lyric_rows:
+        score["_lyrics"] = lyric_rows
+    if lyric_only:
+        score["_unpitchedMelody"] = True
     if skipped:
         score["_notation_skipped"] = skipped
     if meter is not None and meter != 4:
@@ -2650,6 +2696,62 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
         if chords:
             score["chords"] = chords
     return score, None
+
+
+def _lrc_ts(t):
+    t = max(0.0, t)
+    m = int(t // 60)
+    return f"{m:02d}:{t - 60 * m:05.2f}"
+
+
+def build_lrc(lyric_rows, spb, offset=0.0, title=None):
+    """Enhanced LRC (a line tag plus per-syllable <..> tags) from parsed syllable rows.
+
+    Lines break on musical gaps (~a beat of silence between sung notes). Korean scores carry
+    no word boundaries (실측 아로하: syllabic 전부 single, 공백 0), so syllables join bare —
+    timing is the product here; pretty spacing belongs to imported .lrc files."""
+    gap = max(0.45, spb * 0.9)
+    lines, cur = [], []
+    for r in lyric_rows:
+        if cur and r["t"] - (cur[-1]["t"] + cur[-1]["d"]) >= gap:
+            lines.append(cur)
+            cur = []
+        cur.append(r)
+    if cur:
+        lines.append(cur)
+    out = []
+    if title:
+        out.append(f"[ti:{title}]")
+    for line in lines:
+        head = _lrc_ts(line[0]["t"] + offset)
+        body = "".join(f"<{_lrc_ts(r['t'] + offset)}>{r['syl']}" for r in line)
+        out.append(f"[{head}]{body}")
+    return "\n".join(out) + "\n"
+
+
+def shift_lrc(text, offset):
+    """Re-stamp every [mm:ss.xx] / <mm:ss.xx> tag by offset seconds — the 전체 땡기기: MP3
+    versions differ by intro/outro length, the body timing holds. Metadata tags ([ti:] etc.)
+    have no digit:digit shape, so they pass untouched."""
+    import re as _re
+
+    def _sub(m):
+        t = max(0.0, int(m.group(2)) * 60 + float(m.group(3)) + offset)
+        mm = int(t // 60)
+        return f"{m.group(1)}{mm:02d}:{t - 60 * mm:05.2f}{m.group(4)}"
+
+    return _re.sub(r"([\[<])(\d+):(\d+(?:\.\d+)?)([\]>])", _sub, text)
+
+
+def read_lrc_text(path):
+    """Korean LRC files in the wild are as often CP949 as UTF-8 — decode both, emit UTF-8."""
+    b = open(path, "rb").read()
+    if b.startswith(b"\xef\xbb\xbf"):
+        b = b[3:]
+    try:
+        return b.decode("utf-8")
+    except UnicodeDecodeError:
+        return b.decode("cp949", "replace")
 
 
 def score_library():
@@ -2709,13 +2811,14 @@ def action_scores(inp=None):
     return {"success": True, "data": {"count": len(rows), "scores": rows, "note": note}}
 
 
-def resolve_score_media(inp):
+def resolve_score_media(inp, key="scoreMediaPath"):
     """scoreMediaPath input = a media URL, a workspace path, or the ALIAS of a shelved score.
 
     Matching ignores case and spacing, and tries alias, filename and filename-without-extension.
     Misses point to the `scores` action rather than dumping the shelf into the error.
+    `key` widens the same lane to lyricsMediaPath — one shelf, one matching, two doors.
     """
-    raw = str(inp.get("scoreMediaPath") or "").strip()
+    raw = str(inp.get(key) or "").strip()
     shelf = score_library()
     if raw:
         wanted = _norm_name(raw)
@@ -2724,7 +2827,7 @@ def resolve_score_media(inp):
             stem = name.rsplit(".", 1)[0]
             if wanted in (_norm_name(row.get("alias")), _norm_name(name), _norm_name(stem)):
                 return _media_to_path(str(row["url"]))
-        sem = ((inp.get("_collectionMatches") or {}).get("scoreMediaPath") or [])
+        sem = ((inp.get("_collectionMatches") or {}).get(key) or [])
         if sem and sem[0].get("url"):
             # The framework's semantic lane: characters missed ("테이크 파이브" vs "take five")
             # but meaning matched. Top row only — deterministic, and the shelf error below stays
@@ -2818,6 +2921,7 @@ def write_wav(path, x):
 def action_render(inp):
     score = inp.get("score")
     parsed_from = None
+    own_lyrics = None
     if not score:
         # No inline score — the uploaded one (input path or the module's own setting) steps in.
         media_path, err = resolve_score_media(inp)
@@ -2843,6 +2947,12 @@ def action_render(inp):
                 return {"success": False, "error": err}
             notation_skipped = score.pop("_notation_skipped", None) \
                 if isinstance(score, dict) else None
+            own_lyrics = score.pop("_lyrics", None) if isinstance(score, dict) else None
+            if isinstance(score, dict) and score.pop("_unpitchedMelody", False):
+                return {"success": False, "error": (
+                    "리듬-가사 리드시트입니다 — 슬래시 리듬에 가사만 있고 멜로디 음고가 없어 "
+                    "연주할 수 없습니다. 반주 악보(밴드스코어)를 scoreMediaPath 로 주고, 이 "
+                    "파일을 lyricsMediaPath 로 주면 오디오와 함께 가사 타이밍(.lrc)이 나옵니다")}
             # A file score with no chord symbols still deserves harmony when RE-ARRANGED:
             # read it off the faithful rows (lowest pitch per 2-beat window — the MIDI
             # recipe, source-agnostic). 실측: 한 파트 두 성부인 월광은 파트 단위 파생이
@@ -2881,6 +2991,52 @@ def action_render(inp):
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
+    # ── LRC lane: lyricsMediaPath = lyric score (rhythm-lyric lead sheet, karaoke MIDI) or a
+    # ready-made .lrc; lrc:true reads the main score's own syllables. Built BEFORE the render
+    # so a bad lyrics input refuses in milliseconds, not after minutes of synthesis.
+    lrc_text = None
+    lyr_src = str(inp.get("lyricsMediaPath") or "").strip()
+    if lyr_src or inp.get("lrc"):
+        try:
+            lrc_offset = float(inp.get("lrcOffset") or 0.0)
+        except (TypeError, ValueError):
+            return {"success": False, "error": "lrcOffset must be a number of seconds"}
+        if lyr_src:
+            lpath, lerr = resolve_score_media(inp, key="lyricsMediaPath")
+            if lerr:
+                return {"success": False, "error": lerr}
+            head = open(lpath, "rb").read(64)
+            kind2 = score_media_kind(lpath)
+            sc2, e2 = None, None
+            if kind2 == "midi":
+                sc2, e2 = midi_to_score(lpath)
+            elif kind2:
+                sc2, e2 = musicxml_to_score(lpath)
+            elif head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"["):
+                # A ready-made .lrc keeps its own lines (they carry the word spacing our
+                # scores do not) — only the clock is re-stamped (전체 땡기기).
+                lrc_text = shift_lrc(read_lrc_text(lpath), lrc_offset)
+            else:
+                return {"success": False, "error": (
+                    f"lyricsMediaPath 를 읽을 수 없습니다: {lpath} — MusicXML/MIDI 악보나 "
+                    ".lrc 텍스트만 받습니다")}
+            if e2:
+                return {"success": False, "error": f"lyricsMediaPath parse: {e2}"}
+            if lrc_text is None:
+                rows2 = sc2.pop("_lyrics", None) if isinstance(sc2, dict) else None
+                if not rows2:
+                    return {"success": False, "error": (
+                        "lyricsMediaPath 악보에 가사가 없습니다 — lyric 이 달린 악보(리듬-가사 "
+                        "리드시트, 노래방 MIDI)나 .lrc 파일을 주세요")}
+                lrc_text = build_lrc(rows2, 60.0 / float(sc2.get("bpm") or 120.0),
+                                     offset=lrc_offset, title=lyr_src)
+        else:
+            if not own_lyrics:
+                return {"success": False, "error": (
+                    "lrc:true 인데 이 악보에는 가사가 없습니다 — 가사 악보나 .lrc 파일을 "
+                    "lyricsMediaPath 로 주세요")}
+            lrc_text = build_lrc(own_lyrics, spb, offset=lrc_offset,
+                                 title=str(inp.get("scoreMediaPath") or "") or None)
     # ── faithful mode: "그대로 연주해줘" plays the FILE — every part, its own instrument, its
     # own dynamics — instead of reducing it to one line plus a style's backing. 실측 (월광):
     # the reduction buried the tune in its own accompaniment (따다단만 들린다). Any style/band/
@@ -2979,6 +3135,11 @@ def action_render(inp):
         mix = add_room(mix, send)
     out_path = _out_path_for(inp.get("outPath"), score, engine_used, len(mix),
                              base=inp.get("scoreMediaPath"))
+    lrc_path = None
+    if lrc_text:
+        lrc_path = out_path.rsplit(".", 1)[0] + ".lrc"
+        with open(lrc_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(lrc_text)
     # ── ② movements: even FLAC crosses the ~50MB media door near the 9-10 minute mark. A piece
     # that long ships as several flacs in one _mediaImport array (the door is already plural),
     # cut on bar lines. Lossless and playable everywhere — ogg is free but Safari will not play
@@ -3027,6 +3188,10 @@ def action_render(inp):
         data["midiPath"] = midi_written
     if midi_note:
         data["midiNote"] = midi_note
+    if lrc_path:
+        data["lrcPath"] = lrc_path
+        data["lrcLines"] = sum(1 for ln in lrc_text.splitlines()
+                               if ln[:1] == "[" and ln[1:2].isdigit())
     # Consumption-point note — the channel that actually lands. Both live canon turns composed
     # a fresh score while the user's uploaded MIDI sat on the shelf: the schema said so, the
     # search row said so, and the model read neither at decision time. This arrives WITH the
@@ -3052,6 +3217,9 @@ def action_render(inp):
         imports = [{"path": out_path, "contentType": audio_type, "filenameHint": stem}]
     if midi_written:
         imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": stem})
+    if lrc_path:
+        imports.append({"path": lrc_path, "contentType": "application/x-lrc",
+                        "filenameHint": stem})
     data["_mediaImport"] = imports if len(imports) > 1 else imports[0]
     if parsed_from:
         # The caller composed nothing — show what the MIDI became so the bridge (TTS lyric
@@ -3578,6 +3746,58 @@ def action_selftest():
        and abs(wrows[1]["beats"] - 4.0) < 1e-6)
     os.remove("data/sing/selftest-warp.mid")
 
+    lyr_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<note><unpitched><display-step>F</display-step>'
+               '<display-octave>4</display-octave></unpitched><duration>1</duration>'
+               '<lyric><syllabic>single</syllabic><text>아</text></lyric></note>'
+               '<note><unpitched><display-step>F</display-step>'
+               '<display-octave>4</display-octave></unpitched><duration>1</duration>'
+               '<lyric><text>로</text></lyric></note>'
+               '<note><rest/><duration>2</duration></note>'
+               '<note><unpitched><display-step>G</display-step>'
+               '<display-octave>4</display-octave></unpitched><duration>1</duration>'
+               '<lyric><text>하</text></lyric></note>'
+               '</measure>' + E)
+    with open("data/sing/selftest-lyr.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(lyr_doc)
+    lsc, lerr = musicxml_to_score("data/sing/selftest-lyr.musicxml")
+    lrows = (lsc or {}).get("_lyrics") or []
+    ck("a rhythm-lyric lead sheet parses: unpitched+lyric = the song line",
+       (True, 3, 0.5),
+       (bool((lsc or {}).get("_unpitchedMelody")), len(lrows),
+        lrows[1]["t"] if len(lrows) > 1 else None),
+       lerr is None and (lsc or {}).get("_unpitchedMelody") is True and len(lrows) == 3
+       and lrows[1]["t"] == 0.5)
+    lrc = build_lrc(lrows, 0.5)
+    llines = [ln for ln in lrc.splitlines() if ln[:1] == "["]
+    ck("LRC lines break on the musical gap, syllables carry their own clock",
+       2, len(llines),
+       len(llines) == 2 and llines[0].startswith("[00:00.00]<00:00.00>아<00:00.50>로")
+       and llines[1].startswith("[00:02.00]"))
+    ck("an imported .lrc re-stamps by offset and clamps at zero",
+       "[00:01.50]가<00:02.00>사", shift_lrc("[00:00.50]가<00:01.00>사", 1.0),
+       shift_lrc("[00:00.50]가<00:01.00>사", 1.0) == "[00:01.50]가<00:02.00>사"
+       and shift_lrc("[00:00.50]가", -2.0) == "[00:00.00]가"
+       and shift_lrc("[ti:아로하]", 3.0) == "[ti:아로하]")
+    lref = action_render({"scoreMediaPath": "data/sing/selftest-lyr.musicxml"})
+    ck("playing a lyric-only sheet is refused TOWARD the lyrics lane",
+       False, lref.get("success"),
+       lref.get("success") is False and "lyricsMediaPath" in str(lref.get("error")))
+    ltrk = action_render({"score": {"bpm": 120, "notes": [
+        {"syl": "라", "note": "C4", "beats": 1.0}]},
+        "lyricsMediaPath": "data/sing/selftest-lyr.musicxml"})
+    ldat = ltrk.get("data") or {}
+    lok = bool(ltrk.get("success") and ldat.get("lrcPath")
+               and os.path.isfile(ldat["lrcPath"]))
+    ck("two-track: audio from one score, .lrc from the lyric sheet, one call",
+       True, lok,
+       lok and isinstance(ldat.get("_mediaImport"), list)
+       and any(str(i.get("path", "")).endswith(".lrc") for i in ldat["_mediaImport"])
+       and ldat.get("lrcLines") == 2)
+    for pth in (ldat.get("outPath"), ldat.get("lrcPath")):
+        if pth and os.path.isfile(pth):
+            os.remove(pth)
+
     xml_doc = (
         '<score-partwise><part-list/><part id="P1"><measure number="1">'
         '<attributes><divisions>2</divisions><time><beats>3</beats>'
@@ -3645,7 +3865,8 @@ def action_selftest():
     os.remove("data/sing/selftest-x.bin")
     for f in ("data/sing/selftest-x.musicxml", "data/sing/selftest-x.mxl",
               "data/sing/selftest-rep.musicxml", "data/sing/selftest-tempo.musicxml",
-              "data/sing/selftest-met.musicxml", "data/sing/selftest-perf.musicxml"):
+              "data/sing/selftest-met.musicxml", "data/sing/selftest-perf.musicxml",
+              "data/sing/selftest-lyr.musicxml"):
         if os.path.exists(f):
             os.remove(f)
     low = parse_score(dict(score, chords=[{"root": "C1", "beats": 4}]))

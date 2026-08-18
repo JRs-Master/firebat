@@ -169,6 +169,25 @@
         "description": "MIDI or MusicXML (전자악보 — .musicxml/.mxl/.xml, MuseScore's format) to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs and MusicXML bring their own lyrics (MusicXML plays its WHOLE notation: repeats/voltas/D.C./D.S. expand, tempo changes and metronome marks apply, 8va/transposing instruments sound right, wedges ramp dynamics, staccato/accents/graces/trills/fermatas/arpeggios and pedal marks all play); the parsed score comes back in data.score for correction.",
         "collection": "scores"
       },
+      "lyricsMediaPath": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render] Lyrics source for karaoke: a rhythm-lyric lead sheet (MusicXML whose lyrics ride slash/unpitched notes), a karaoke MIDI, or a ready-made .lrc file - media URL, workspace path, or shelf ALIAS (same matching as scoreMediaPath). Emits a synced .lrc beside the audio (data.lrcPath + media). Two-track karaoke = accompaniment score in scoreMediaPath + the lyric file here. A .lrc passes through with its own line spacing, re-stamped by lrcOffset.",
+        "collection": "scores"
+      },
+      "lrc": {
+        "type": "boolean",
+        "description": "[render] Emit an .lrc from the MAIN score's own lyrics (karaoke MIDI / vocal score with syllables). lyricsMediaPath implies this - set lrc only when the melody score itself carries the words."
+      },
+      "lrcOffset": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "[render] Shift every LRC timestamp by this many seconds (+0.5 = half a second later, negative = earlier, clamped at 0). Aligns lyrics to a recording whose intro length differs from the score."
+      },
       "lyrics": {
         "type": [
           "string",
@@ -294,7 +313,7 @@
     {
       "key": "scores",
       "type": "files",
-      "accept": "audio/*,.mid,.midi,.musicxml,.mxl,.xml",
+      "accept": "audio/*,.mid,.midi,.musicxml,.mxl,.xml,.lrc",
       "label": "악보 보관함 (MIDI · 오디오)",
       "description": "악보를 여러 개 올려 두고 별칭으로 부릅니다 — \"캐논 기타버전으로 연주해줘\"처럼요. 파일은 미디어 보관함에 저장되고 여기에는 목록만 남습니다."
     }
@@ -307,6 +326,9 @@
       "params": [
         "score",
         "scoreMediaPath",
+        "lyricsMediaPath",
+        "lrc",
+        "lrcOffset",
         "vocal",
         "lyrics",
         "style",
