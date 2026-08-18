@@ -290,6 +290,9 @@ fn ext_from_hint_for_opaque(hint: Option<&str>, binary: &[u8]) -> Option<&'stati
         "musicxml" if binary.iter().take(16).any(|b| *b == b'<') => Some("musicxml"),
         "xml" if binary.iter().take(16).any(|b| *b == b'<') => Some("xml"),
         "mid" | "midi" if binary.starts_with(b"MThd") => Some("mid"),
+        // LRC is plain text whose only signature is its timestamp/metadata tags — the same
+        // take-16 leniency the XML rows get (BOM or a blank line may precede the first tag).
+        "lrc" if binary.iter().take(16).any(|b| *b == b'[') => Some("lrc"),
         _ => None,
     }
 }
@@ -1755,6 +1758,14 @@ mod tests {
         assert_eq!(
             super::ext_from_hint_for_opaque(Some("score.musicxml"), b"<?xml version"),
             Some("musicxml")
+        );
+        assert_eq!(
+            super::ext_from_hint_for_opaque(Some("aloha.lrc"), "[00:39.39]oh~".as_bytes()),
+            Some("lrc")
+        );
+        assert_eq!(
+            super::ext_from_hint_for_opaque(Some("x.lrc"), b"plain text, no tag"),
+            None
         );
         assert_eq!(super::ext_from_hint_for_opaque(Some("x.mxl"), b"<?xml"), None);
         assert_eq!(super::ext_from_hint_for_opaque(Some("x.exe"), b"MZ\x00"), None);

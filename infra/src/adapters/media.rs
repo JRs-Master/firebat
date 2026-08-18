@@ -106,6 +106,9 @@ impl LocalMediaAdapter {
             // save() reaches here; this map only keeps the stored name honest.
             "application/vnd.recordare.musicxml" => "mxl",
             "application/vnd.recordare.musicxml+xml" => "musicxml",
+            // Karaoke lyric timing (sing's LRC lane) — text, but the extension is the contract
+            // every player keys on, so it must not fall through to ".bin".
+            "application/x-lrc" | "text/lrc" => "lrc",
             "application/pdf" => "pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
