@@ -80,6 +80,7 @@ pub struct ModuleManager {
     /// than a runtime backchannel: today that is TTS. Same post-construction wiring story as
     /// media_intake. None = not wired (tests); a declaration then errs by name.
     tts: Mutex<Option<Arc<dyn crate::ports::ITtsPort>>>,
+    embedder: Mutex<Option<Arc<dyn crate::ports::IEmbedderPort>>>,
     /// Per-module `action id → call` rows, keyed `scope:name` and validated against the module
     /// directory's own fingerprint.
     ///
@@ -217,6 +218,7 @@ impl ModuleManager {
             recall: None,
             media_intake: Mutex::new(None),
             tts: Mutex::new(None),
+            embedder: Mutex::new(None),
             action_calls: Mutex::new(HashMap::new()),
         }
     }
@@ -247,6 +249,11 @@ impl ModuleManager {
     /// Wire the TTS engine `data._prepare` declarations are performed with.
     pub fn set_tts(&self, tts: Arc<dyn crate::ports::ITtsPort>) {
         *self.tts.lock().unwrap() = Some(tts);
+    }
+
+    /// The local embedder, for declared-collection matching (`inject_collection_matches`).
+    pub fn set_embedder(&self, e: Arc<dyn crate::ports::IEmbedderPort>) {
+        *self.embedder.lock().unwrap() = Some(e);
     }
 
     pub fn with_ws_api(mut self, ws_api: Arc<dyn IWsApiPort>) -> Self {
@@ -960,6 +967,15 @@ impl ModuleManager {
             .await;
         let input_data: &serde_json::Value = with_call.as_ref().unwrap_or(input_data);
 
+        // Declared-collection matching — the read half of "모듈은 선언하고 프레임워크가 준다"
+        // for lookups: a param that names a collection gets the framework's semantic ranking of
+        // that collection against its value, injected pre-spawn like `_call` and recall. The
+        // module's own character matching stays the floor (no embedder / no rows = no injection).
+        let with_matches = self
+            .inject_collection_matches(module_name, config.as_ref(), input_data)
+            .await;
+        let input_data: &serde_json::Value = with_matches.as_ref().unwrap_or(input_data);
+
         // WS-only actions (config.json `ws` declarative) — route to the WS transport instead of
         // the sandbox. Common infra + per-module config data = no per-provider WS code in modules
         // (TokenProvider pattern). Undeclared actions fall through to the sandbox as before.
@@ -1565,6 +1581,87 @@ impl ModuleManager {
                 .1;
         }
         Arc::new(crate::utils::action_decl::ActionGates::default())
+    }
+
+    /// Param-axis `"collection": "<settings field>"` — the param's value is matched against
+    /// that settings field's rows by the LOCAL embedder, and the top rows ride the input as
+    /// `_collectionMatches.<param>` (with a `score` each). This is what lets "테이크 파이브"
+    /// find a shelf row spelled "take five": cross-lingual matching the module's character
+    /// normalization cannot do, delivered without a runtime backchannel — the same pre-spawn
+    /// lane as `_call`. Any missing half (embedder, declaration, rows, value) = no injection,
+    /// and the module's own matching still runs; misses stay discoverable, never fatal.
+    async fn inject_collection_matches(
+        &self,
+        module_name: &str,
+        config: Option<&serde_json::Value>,
+        input_data: &serde_json::Value,
+    ) -> Option<serde_json::Value> {
+        let props = config?.get("input")?.get("properties")?.as_object()?;
+        if !props.values().any(|d| d.get("collection").is_some()) {
+            return None;
+        }
+        let embedder = self.embedder.lock().ok()?.clone()?;
+        let settings = self.get_settings(module_name);
+        let mut out: Option<serde_json::Value> = None;
+        for (param, decl) in props {
+            let Some(setting_key) = decl.get("collection").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(query) = input_data.get(param).and_then(|v| v.as_str()) else { continue };
+            if query.trim().is_empty() {
+                continue;
+            }
+            let rows: Vec<serde_json::Value> = match settings.get(setting_key) {
+                Some(serde_json::Value::Array(a)) => a.clone(),
+                Some(serde_json::Value::String(s)) => {
+                    serde_json::from_str(s).unwrap_or_default()
+                }
+                _ => continue,
+            };
+            if rows.is_empty() {
+                continue;
+            }
+            let Ok(qv) = embedder.embed_query(query.trim()).await else { continue };
+            let mut scored: Vec<(f32, serde_json::Value)> = Vec::new();
+            for row in rows.iter().take(500) {
+                let alias = row.get("alias").and_then(|v| v.as_str()).unwrap_or("");
+                let name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let text = format!("{alias} {name}").trim().to_string();
+                if text.is_empty() {
+                    continue;
+                }
+                let Ok(rv) = embedder.embed_passage(&text).await else { continue };
+                let dot: f32 = qv.iter().zip(rv.iter()).map(|(a, b)| a * b).sum();
+                let na: f32 = qv.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let nb: f32 = rv.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let score = if na > 0.0 && nb > 0.0 { dot / na / nb } else { 0.0 };
+                let mut m = row.clone();
+                if let Some(o) = m.as_object_mut() {
+                    o.insert(
+                        "score".to_string(),
+                        serde_json::json!((f64::from(score) * 1000.0).round() / 1000.0),
+                    );
+                }
+                scored.push((score, m));
+            }
+            if scored.is_empty() {
+                continue;
+            }
+            scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            let top: Vec<serde_json::Value> =
+                scored.into_iter().take(8).map(|(_, m)| m).collect();
+            let mut base = out.take().unwrap_or_else(|| input_data.clone());
+            if let Some(o) = base.as_object_mut() {
+                let cm = o
+                    .entry("_collectionMatches".to_string())
+                    .or_insert_with(|| serde_json::json!({}));
+                if let Some(cmo) = cm.as_object_mut() {
+                    cmo.insert(param.clone(), serde_json::Value::Array(top));
+                }
+            }
+            out = Some(base);
+        }
+        out
     }
 
     /// Hand the module the row for the action it was asked to run, as `_call`.

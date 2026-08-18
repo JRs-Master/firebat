@@ -427,6 +427,28 @@ fn every_module_declaration_names_something_that_exists() {
                 }
             }
         }
+        // collection → 존재: a param's `"collection"` names a settings field; a typo here is
+        // not an error at runtime, it is a silently-dead semantic lane (부재는 동의가 아니다).
+        let setting_keys: std::collections::BTreeSet<String> = config
+            .get("settings_fields")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|f| f.get("key").and_then(|k| k.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(props) = config.pointer("/input/properties").and_then(|p| p.as_object()) {
+            for (pname, decl) in props {
+                if let Some(coll) = decl.get("collection").and_then(|v| v.as_str()) {
+                    if !setting_keys.contains(coll) {
+                        say(format!(
+                            "param `{pname}` declares collection `{coll}`, which is not a                              settings field — the semantic-match lane would be silently dead"
+                        ));
+                    }
+                }
+            }
+        }
         if let Some(field) = config.get("accountFrom").and_then(|v| v.as_str()) {
             if !params.contains(field) {
                 say(format!("accountFrom names field `{field}`, which is not declared"));

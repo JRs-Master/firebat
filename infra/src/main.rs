@@ -988,6 +988,9 @@ async fn main() -> Result<()> {
     // engine — the declarative door that retired the sing bridge (a module cannot call managers;
     // it declares, the framework provides). Post-construction setter, same story as media_intake.
     module_manager.set_tts(tts_adapter.clone());
+    // Declared-collection matching (`"collection"` on an input param) rides the LOCAL embedder —
+    // always present, no quota, and cross-lingual (한↔영), which is the whole point of the lane.
+    module_manager.set_embedder(embedder.clone());
 
     // Phase B-17a/c — 정적 도구 dispatch 등록. LLM stub 위에서도 도구 호출 e2e 동작.
     // task_manager 생성 뒤 — run_task(파이프라인)·search_library 가 각각 TaskManager·LibraryManager 의존.
