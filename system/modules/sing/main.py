@@ -125,6 +125,36 @@ def parse_score(score):
             if open_parts:
                 mapped[open_parts.pop(0)] = nm
         raw_band = mapped
+    doubles = None
+    if isinstance(raw_band, dict) and "doubles" in raw_band:
+        rows = raw_band.pop("doubles")
+        if not isinstance(rows, list):
+            return None, None, None, None, None, None,                 'band.doubles 는 [{"part","instrument","octave"(-2~2),"vel"?}, …] 목록입니다'
+        doubles = []
+        for row in rows:
+            if isinstance(row, (list, tuple)):
+                row = {"part": row[0] if len(row) > 0 else None,
+                       "instrument": row[1] if len(row) > 1 else None,
+                       "octave": row[2] if len(row) > 2 else 0}
+            if not isinstance(row, dict):
+                return None, None, None, None, None, None,                     "band.doubles 행은 객체 또는 [파트, 악기, 옥타브] 입니다"
+            dpart = str(row.get("part") or "melody").strip().lower()
+            if dpart not in ("melody", "chord", "bass"):
+                return None, None, None, None, None, None,                     f"doubles 의 파트 {dpart!r} 를 모릅니다 — melody | chord | bass"
+            inst = str(row.get("instrument") or row.get("inst") or "").strip().lower()
+            if resolve_instrument(inst) is None:
+                return None, None, None, None, None, None,                     f"악기 {inst!r} 가 라이브러리에 없습니다 — 모듈 악기: {', '.join(sorted(PATCHES))} / "                     f"GM(사운드폰트): {', '.join(sorted(GM_NAMES))}"
+            try:
+                octv = int(row.get("octave") or 0)
+            except (TypeError, ValueError):
+                return None, None, None, None, None, None, "doubles 의 octave 는 -2~2 정수입니다"
+            if not (-2 <= octv <= 2):
+                return None, None, None, None, None, None, "doubles 의 octave 는 -2~2 정수입니다"
+            try:
+                dvel = max(0.1, min(1.0, float(row.get("vel") or 0.85)))
+            except (TypeError, ValueError):
+                return None, None, None, None, None, None, "doubles 의 vel 은 0~1 숫자입니다"
+            doubles.append((dpart, inst, octv, dvel))
     band = {}
     for part, name in (raw_band or {}).items() if isinstance(raw_band, dict) else []:
         part = str(part).strip().lower()
@@ -212,7 +242,7 @@ def parse_score(score):
         if not (1 <= bars <= 256):
             return None, None, None, None, None, None, "bars 는 1~256 마디입니다"
     feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline,
-            "drums": drum_rows, "bars": bars, "bpm": bpm}
+            "drums": drum_rows, "bars": bars, "bpm": bpm, "doubles": doubles}
     return spb, events, chords, style, band, feel, None
 
 
@@ -760,6 +790,15 @@ DRUM_PATTERNS = {
 
 # Familiar names people actually say → the row that plays them. kpop/jpop are pop grooves here
 # honestly: what makes them THEM is production this synth does not do.
+# Section doublings a style brings on its own — 8할 of "full orchestra" is the same line in
+# unison octaves (flute above, cello below), so classic/orchestra sounds like a SECTION without
+# anyone asking. A score's explicit band.doubles replaces these (선언이 이긴다).
+STYLE_DOUBLES = {
+    "classic": [("melody", "flute", 1, 0.45), ("melody", "cello", -1, 0.55),
+                ("chord", "frenchhorn", 0, 0.4)],
+    "march":   [("melody", "piccolo", 1, 0.5)],
+}
+
 STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
                  "orchestra": "classic", "symphony": "classic",
                  "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad",
@@ -1146,6 +1185,17 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         pos += beats
         if pos >= total_beats:
             break
+    doubles = feel.get("doubles")
+    if doubles is None:
+        doubles = STYLE_DOUBLES.get(style, [])
+    for di, (src_part, inst, octv, dvel) in enumerate(doubles):
+        dpatch, dprog = resolve_instrument(inst)
+        pan = 0.35 if di % 2 == 0 else -0.35
+        for e in [x for x in out if x["part"] == src_part]:
+            out.append({**e, "part": f"double{di + 1}", "double_of": src_part,
+                        "patch": dpatch, "program": dprog,
+                        "pitch": max(0, min(127, e["pitch"] + 12 * octv)),
+                        "vel": e["vel"] * dvel, "pan": pan})
     if meter == 3:
         base = DRUM_PATTERNS_3.get(style, DRUM_PATTERNS_3["trot"])
         fill = DRUM_FILLS_3.get(style if style in DRUM_FILLS_3 else "trot")
@@ -1184,7 +1234,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     if swing > 0:
         shift = swing / 6.0
         for e in out:
-            if e["part"] != "melody" and abs(e["beat"] % 1.0 - 0.5) < 1e-6:
+            if e["part"] != "melody" and e.get("double_of") != "melody"                     and abs(e["beat"] % 1.0 - 0.5) < 1e-6:
                 e["beat"] += shift
     out.sort(key=lambda e: (e["beat"], e["part"]))
     return out
@@ -1212,7 +1262,10 @@ def render_arrangement(arr, spb, total_beats):
         m = min(len(seg), n_total - i)
         seg = seg[:m]
         # Constant-power pan: the band sits on a stage, not a point.
-        theta = (PAN.get(key, 0.0) + 1.0) * np.pi / 4.0
+        pan_v = e.get("pan")
+        if pan_v is None:
+            pan_v = PAN.get(key, 0.0)
+        theta = (pan_v + 1.0) * np.pi / 4.0
         out[i:i + m, 0] += seg * np.cos(theta)
         out[i:i + m, 1] += seg * np.sin(theta)
         send[i:i + m] += seg * SEND.get(key, 0.1)
@@ -1285,7 +1338,8 @@ def write_midi(arr, bpm, path):
     mid = mido.MidiFile(ticks_per_beat=tpb)
     # One track per part: a synth that lets you pick instruments per track can, and the drum
     # channel (9) is fixed by the standard rather than by us.
-    for part in ("melody", "chord", "bass", "drum"):
+    double_parts = sorted({e["part"] for e in arr if e["part"].startswith("double")})
+    for part in ["melody", "chord", "bass", *double_parts, "drum"]:
         rows = [e for e in arr if e["part"] == part]
         if not rows:
             continue
@@ -1295,10 +1349,14 @@ def write_midi(arr, bpm, path):
         if part == "drum":
             ch = 9
         else:
-            ch = {"melody": 0, "chord": 1, "bass": 2}[part]
+            base_ch = {"melody": 0, "chord": 1, "bass": 2}
+            # doubles take 3.. (never 9, the GM drum channel)
+            ch = base_ch.get(part, min(8, 3 + double_parts.index(part) if part in double_parts else 3))
             tr.append(mido.Message("program_change", channel=ch,
                                    program=rows[0]["program"], time=0))
-            pan = PAN.get(part, 0.0)
+            pan = rows[0].get("pan")
+            if pan is None:
+                pan = PAN.get(part, 0.0)
             tr.append(mido.Message("control_change", channel=ch, control=10,
                                    value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
         # (tick, on/off) pairs, then one pass in time order — MIDI deltas are relative, so the
@@ -2344,6 +2402,26 @@ def action_selftest():
        [len(mb), mb[0][1] % bar_n], len(mb) >= 2 and mb[0][0] == 0
        and mb[-1][1] == SR * 60 * 15 and all(a % bar_n == 0 for a, _ in mb)
        and all(mb[i][1] == mb[i + 1][0] for i in range(len(mb) - 1)))
+    dbl = parse_score(dict(score, style="classic",
+                            band={"melody": "violin",
+                                  "doubles": [{"part": "melody", "instrument": "flute",
+                                               "octave": 1}]}))
+    ck("band.doubles parses and validates", None, dbl[6], dbl[6] is None)
+    darr2 = build_arrangement(dbl[1], dbl[2], "classic", 4, dbl[4], dbl[5])
+    d1 = [e for e in darr2 if e["part"] == "double1"]
+    mel1 = [e for e in darr2 if e["part"] == "melody"]
+    ck("a double is the same line an octave up on its own instrument", True,
+       (len(d1), d1[0]["program"] if d1 else None),
+       len(d1) == len(mel1) and bool(d1) and d1[0]["program"] == 73
+       and d1[0]["pitch"] == mel1[0]["pitch"] + 12)
+    darr3 = build_arrangement(dbl[1], dbl[2], "classic", 4, None, dict(dbl[5], doubles=None))
+    ck("classic carries its own section doublings unasked", 3,
+       len({e["part"] for e in darr3 if e["part"].startswith("double")}),
+       len({e["part"] for e in darr3 if e["part"].startswith("double")}) == 3)
+    bad_dbl = parse_score(dict(score, band={"doubles": [{"part": "drums",
+                                                         "instrument": "flute"}]}))[6]
+    ck("a double of a non-part is refused", True, (bad_dbl or "")[:30],
+       bool(bad_dbl) and "melody" in (bad_dbl or ""))
     dyn = parse_score(dict(score, notes=[
         {"syl": "라", "note": "C4", "beats": 1, "vel": 0.3},
         {"syl": "나", "note": "E4", "beats": 1}]))
