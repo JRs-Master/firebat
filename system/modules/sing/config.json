@@ -167,14 +167,14 @@
           "array",
           "null"
         ],
-        "description": "[render, with scoreMediaPath] Same contract as score.band — instruments for the shelved/linked piece, one call. Official GM spellings ('acoustic grand piano') are absorbed — case/spacing ignored."
+        "description": "[render] Instrument override for the piece (works WITH scoreMediaPath — no need to compose a score to pick instruments): {melody?, chord?, bass?}, e.g. {\"melody\":\"piano\"}. Names = the module's own patches (piano, epiano, organ, accordion, aguitar/cguitar/eguitar/dguitar, eviolin, strings, brass, flute, marimba, bell, musicbox, synthlead, squarelead, synthbass, bass) or ANY General MIDI instrument — official spellings like 'acoustic grand piano' are absorbed, case/spacing ignored. A flat list is assigned to melody/chord/bass in order; drum words in it are skipped (drums come from style or drumPattern). Unknown names are refused with the full library."
       },
       "drumPattern": {
         "type": [
           "array",
           "null"
         ],
-        "description": "[render, with scoreMediaPath] Same contract as score.drumPattern."
+        "description": "[render] Custom drum bar loop (works WITH scoreMediaPath): rows of [drumName, beatInBar, velocity 0-1], looped every bar — e.g. [[\"kick\",0,0.9],[\"snare\",1],[\"snare\",3]]. A {\"kick\":[0,2],\"snare\":1} map also reads. Drum names = the full GM kit (kick, snare, rim, clap, hat, ohat, toms, ride, crash, china, splash, cowbell, tamb, congas, bongos, timbales, agogo, cabasa, maracas, guiro, claves, woodblocks, cuica, triangle...); an unknown name is refused with the whole list. Omit to keep the style's own groove — style fills stay either way."
       },
       "swing": {
         "type": [
