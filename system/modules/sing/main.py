@@ -1046,6 +1046,11 @@ def chord_voicing(root_midi, quality=""):
     """Root-position chord above the written root. Trot lives on minor and dominant sevenths, so
     a score that could only say "root" was stuck in major whatever the song actually was."""
     semis = CHORD_QUALITY.get(str(quality or "").strip(), CHORD_QUALITY[""])
+    # Low-interval limit (관현악법 그대로): close-position chords below ~C3 blur into a hum,
+    # so the voicing lifts by octaves until its root clears C3. The bass line still owns the
+    # true low register — one voice down there is pitch, three is mud.
+    while root_midi < 48:
+        root_midi += 12
     return [root_midi + s for s in semis]
 
 
@@ -1078,6 +1083,11 @@ def _bass_line(kind, root_midi, beats, next_root_midi, meter, semis=None):
     floor (root, third, fifth in quarters, a dominant pickup into the next chord — quality-aware,
     so a minor chord walks a minor third) · hold = whole note + pickup."""
     b = root_midi - 12
+    # Register floor (실측: 비발디 사계가 "저주파처럼 웅웅" — the file's roots are already low,
+    # and our octave-down shove landed the hold line at 30-40Hz). A real double bass bottoms
+    # at E1; below that the line is felt as rumble, not heard as pitch.
+    while b < 28:
+        b += 12
     fifth = b + 7
     if kind == "walk":
         s = semis or [0, 4, 7]
@@ -2449,6 +2459,12 @@ def action_selftest():
     ck("classic carries its own section doublings unasked", 4,
        len({e["part"] for e in darr3 if e["part"].startswith("double")}),
        len({e["part"] for e in darr3 if e["part"].startswith("double")}) == 4)
+    low = parse_score(dict(score, chords=[{"root": "C1", "beats": 4}]))
+    arr_low = build_arrangement(low[1], low[2], "none", 4, None, low[5])
+    lb = [e["pitch"] for e in arr_low if e["part"] == "bass"]
+    lc = [e["pitch"] for e in arr_low if e["part"] == "chord"]
+    ck("the bass floors at a real double bass's E1 — no subwoofer hum", True,
+       (min(lb), min(lc)), min(lb) >= 28 and min(lc) >= 48)
     ens = parse_score(dict(score, style="현악"))
     ck("현악 answers to the string orchestra", "strings", ens[3], ens[3] == "strings")
     arr_s = build_arrangement(ens[1], ens[2], "strings", 4, None, ens[5])
