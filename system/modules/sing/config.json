@@ -94,7 +94,7 @@
               "string",
               "null"
             ],
-            "description": "Beats per bar: 4 (default) or 3 — \"4/4\" and \"3/4\" spellings are absorbed."
+            "description": "Beats per bar: 4 (default), 3, or anything 2-12 — \"5/4\", \"6/8\", \"7/8\" spellings are absorbed (the numerator is read). 3 and 4 use each genre's hand-written groove; other meters derive theirs from the bar's grouping (5 = 3+2, 7 = 3+2+2, compound = threes): kick on group heads, backbeat on alternating groups."
           },
           "swing": {
             "type": [

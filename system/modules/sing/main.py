@@ -134,12 +134,13 @@ def parse_score(score):
     raw_meter = score.get("meter")
     if isinstance(raw_meter, str):
         m = raw_meter.strip()
-        raw_meter = {"4/4": 4, "3/4": 3, "3": 3, "4": 4}.get(m)
+        num = m.split("/", 1)[0].strip() if "/" in m else m
+        raw_meter = int(num) if num.isdigit() else None
         if raw_meter is None:
-            return None, None, None, None, None, None,                 f"meter {m!r} 를 모릅니다 — 4, 3, \"4/4\", \"3/4\" 만 받습니다"
+            return None, None, None, None, None, None,                 f"meter {m!r} 를 모릅니다 — 숫자(박수) 또는 \"5/4\"·\"6/8\" 표기(분자를 읽습니다)"
     meter = int(raw_meter or 4)
-    if meter not in (3, 4):
-        return None, None, None, None, None, None, "meter 는 3 또는 4 만 받습니다 (4/4 · 3/4)"
+    if not (2 <= meter <= 12):
+        return None, None, None, None, None, None,             "meter 는 2~12 박입니다 — 3·4 는 장르 관용 그루브, 그 외는 그룹 파생 그루브(5=3+2 등)"
     swing = score.get("swing")
     if swing is not None:
         try:
@@ -645,6 +646,45 @@ def resolve_instrument(name):
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
 
 
+def _meter_groups(meter):
+    """How an odd bar is actually counted: threes lead (5 = 3+2 — Take Five's own grouping),
+    compound meters are all threes (6 = 3+3, 9 = 3+3+3), plain even bars are twos."""
+    if meter % 3 == 0:
+        return [3] * (meter // 3)
+    if meter % 2 == 0:
+        return [2] * (meter // 2)
+    return [3] + [2] * ((meter - 3) // 2)
+
+
+def _generic_pattern(style, meter):
+    """A derived groove for any meter the hand tables don't cover: kick on group heads, the
+    backbeat on alternating groups, eighth hats (a ride for jazz/blues). One rule instead of a
+    table per meter × style — 3/4 and 4/4 keep their idiomatic hand-written rows."""
+    if style in ("folk", "classic", "newage", "none"):
+        return []
+    cym = "ride" if style in ("jazz", "blues") else "hat"
+    hits = [(cym, sub * 0.5, 0.32) for sub in range(meter * 2)]
+    starts, at = [], 0.0
+    for g in _meter_groups(meter):
+        starts.append(at)
+        at += g
+    for i, st in enumerate(starts):
+        hits.append(("kick", st, 0.9 if i == 0 else 0.7))
+        if i % 2 == 1:
+            hits.append(("snare", st, 0.75))
+    return hits
+
+
+def _generic_fill(meter):
+    """The last group rolls down the toms — the same corner-turning gesture at any bar length."""
+    last = _meter_groups(meter)[-1]
+    start = float(meter - last)
+    toms = ["tom_hi", "tom_mid", "tom_lo", "tom_lo"]
+    n = max(2, last * 2)
+    return start, [(toms[min(len(toms) - 1, k * len(toms) // n)], start + k * 0.5,
+                    0.45 + 0.5 * k / max(1, n - 1)) for k in range(n)]
+
+
 # Styles whose drummer actually rolls into the turnaround — a ballad or a carol keeps its
 # soft tom fill, jazz keeps its ride language. The roll is a color, not a metronome rule.
 ROLL_STYLES = {"trot", "march", "rock", "metal", "punk", "rocknroll", "dance", "pop"}
@@ -654,10 +694,7 @@ def _snare_roll(meter):
     """다다다다다 — 16ths leaning into 32nds over the bar's back half, velocities rising the
     way a drummer leans into a fill. The style's tom fill alternates with this every 8 bars."""
     hits = []
-    if meter == 3:
-        steps = [1.5 + i * 0.25 for i in range(2)] + [2.0 + i * 0.125 for i in range(8)]
-    else:
-        steps = [2.0 + i * 0.25 for i in range(4)] + [3.0 + i * 0.125 for i in range(8)]
+    steps = ([meter - 2 + i * 0.25 for i in range(4)] if meter >= 3 else [])         + [meter - 1 + i * 0.125 for i in range(8)]
     lo, hi = 0.45, 0.95
     for k, off in enumerate(steps):
         hits.append(("snare", off, lo + (hi - lo) * k / max(1, len(steps) - 1)))
@@ -1071,13 +1108,20 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         pos += beats
         if pos >= total_beats:
             break
-    patterns = DRUM_PATTERNS_3 if meter == 3 else DRUM_PATTERNS
-    fills = DRUM_FILLS_3 if meter == 3 else DRUM_FILLS
+    if meter == 3:
+        base = DRUM_PATTERNS_3.get(style, DRUM_PATTERNS_3["trot"])
+        fill = DRUM_FILLS_3.get(style if style in DRUM_FILLS_3 else "trot")
+    elif meter == 4:
+        base = DRUM_PATTERNS.get(style, DRUM_PATTERNS["trot"])
+        fill = DRUM_FILLS.get(style if style in DRUM_FILLS else "trot")
+    else:
+        base = _generic_pattern(style, meter)
+        fill = _generic_fill(meter)
     # A score's own drumPattern replaces the style's bar loop; fills and crashes still apply,
     # so a custom groove keeps a drummer (다다다다 included) instead of becoming a metronome.
     custom = feel.get("drums")
-    base = list(custom) if custom else patterns.get(style, patterns["trot"])
-    fill = fills.get(style if style in fills else "trot")
+    if custom:
+        base = list(custom)
     bar, bar_i = 0.0, 0
     while bar < total_beats:
         hits = list(base)
@@ -2181,6 +2225,22 @@ def action_selftest():
     named = _out_path_for(None, dict(score, style="pop"), "sf2", SR * 60, base="캐논 변주곡.mid")
     ck("the default filename reads as the piece, not a hash", True, named,
        "캐논-변주곡" in named and "-pop-" in named and named.endswith(".wav"))
+    five = parse_score(dict(score, meter="5/4", style="jazz"))
+    ck("5/4 reads the numerator and parses", 5, (five[5] or {}).get("meter"),
+       five[6] is None and five[5]["meter"] == 5)
+    arr5 = build_arrangement(five[1], five[2] * 3, "jazz", 15, None, five[5])
+    d5 = [e for e in arr5 if e["part"] == "drum" and e["beat"] < 5]
+    kicks5 = sorted(e["beat"] for e in d5 if e["drum"] == "kick")
+    ck("an odd bar kicks on its group heads (5 = 3+2)", [0.0, 3.0], kicks5,
+       kicks5 == [0.0, 3.0])
+    ck("jazz in five rides a ride", True, sorted({e["drum"] for e in d5}),
+       any(e["drum"] == "ride" for e in d5))
+    ck("meter groups: compound is threes, odd leads with three",
+       ([3, 3], [3, 2], [3, 2, 2]), (_meter_groups(6), _meter_groups(5), _meter_groups(7)),
+       (_meter_groups(6), _meter_groups(5), _meter_groups(7)) == ([3, 3], [3, 2], [3, 2, 2]))
+    bad_meter = parse_score(dict(score, meter=13))[6]
+    ck("a 13-beat bar is refused with the range", True, (bad_meter or "")[:20],
+       bool(bad_meter) and "2~12" in bad_meter)
     ck("a short piece is one movement", 1, len(_movement_bounds(SR * 60, 0.5, 4)),
        len(_movement_bounds(SR * 60, 0.5, 4)) == 1)
     mb = _movement_bounds(SR * 60 * 15, 0.5, 4)
