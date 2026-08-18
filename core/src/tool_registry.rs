@@ -1257,13 +1257,60 @@ fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
 /// directly (no manager dependency). For building apps/pages via the standard steps
 /// (requirements→design→refine→implement); the engine enforces the order via the advance gate.
 /// Independent of plan mode — app builds go through PB regardless of on/off (the prompt triggers it).
+/// What already MAKES this, asked of the action catalog — the ladder the model skipped.
+///
+/// 실측 (2026-08-19, 전문 판독): "아로하 노래방 만들어줘" opened a build card twice. The model
+/// never searched: the resident skills index matched `page-and-build` ("페이지 만들어줘, 앱·게임
+/// 제작") and its manual says builds go through the staged flow, while `sing` — which renders the
+/// backing track AND the synced lyrics — is only reachable BEHIND a search. The resident surface
+/// spoke and the module could not. So the entrance into the build asks on the model's behalf and
+/// hands the answer back; the same query returned sing/render 0.540 with the unrelated runner-up
+/// at 0.402, and the subject word ("아로하") is dropped by the catalog itself.
+///
+/// This REPORTS, never refuses: "build me a karaoke page that plays the track" is a real build,
+/// and it wants exactly this module as its data source. The accident is a build card raised for a
+/// deliverable a module already produces in one call.
+async fn existing_capabilities(tools: &Arc<ToolManager>, request: &str) -> Option<serde_json::Value> {
+    if request.trim().is_empty() || !tools.has_handler("search_module_actions") {
+        return None;
+    }
+    let found = tools
+        .dispatch(
+            "search_module_actions",
+            &serde_json::json!({ "query": request, "limit": 4 }),
+        )
+        .await
+        .ok()?;
+    let rows: Vec<serde_json::Value> = found
+        .get("actions")?
+        .as_array()?
+        .iter()
+        .filter(|r| r.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) >= 0.45)
+        .map(|r| {
+            serde_json::json!({
+                "module": r.get("module"),
+                "action": r.get("action"),
+                "name": r.get("name"),
+            })
+        })
+        .collect();
+    if rows.is_empty() {
+        return None;
+    }
+    Some(serde_json::json!({
+        "existingCapabilities": rows,
+        "note": "These module actions already cover this request. If the user wants the ARTIFACT                  (a track, a document, an image, a file), cancel_build and call the module — one                  call, no staged flow. Keep building only when they want a durable SCREEN to                  operate, and then use these actions as its data source.",
+    }))
+}
+
 fn register_build_tools(tools: &Arc<ToolManager>) {
     use crate::utils::build_session::{self, BuildMode, BuildStep, BuildTier};
 
+    let catalog = Arc::downgrade(tools);
     tools.register_tool(
         ToolDefinition {
             name: "start_build".to_string(),
-            description: "Start a multi-step build of an app or page (requirements → design → refine → implement) — returns a session and the requirements instruction. Use it for any multi-step build regardless of plan mode; a simple one-off page needs only save_page. To MODIFY a published page, pass targetSlug — the flow becomes change-scope → apply and the existing spec is edited rather than rebuilt.".to_string(),
+            description: "Start a multi-step build of an app or page (requirements → design → refine → implement) — returns a session and the requirements instruction. Use it for any multi-step build regardless of plan mode; a simple one-off page needs only save_page. A build is a durable SCREEN the user operates; a deliverable an existing module produces (a track, a document, an image, a data file) is not a build, and the response says so when one matches. To MODIFY a published page, pass targetSlug — the flow becomes change-scope → apply and the existing spec is edited rather than rebuilt.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1275,7 +1322,9 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
             }),
             source: "core".to_string(),
         },
-        move |args| async move {
+        move |args| {
+            let catalog = catalog.clone();
+            async move {
             let request = args.get("request").and_then(|v| v.as_str()).unwrap_or("");
             // scope key — prefer hub (hubOwner=inst:sid, visitor isolation), else convId.
             // Injected by ai.rs (FC dispatch) · inject_hub_owner (MCP) — not set by the AI directly (not in the schema).
@@ -1290,16 +1339,27 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
                 .filter(|s| !s.is_empty());
             let mode = if target.is_some() { BuildMode::Modify } else { BuildMode::Create };
             let id = build_session::create_session(scope, request, mode, target);
-            Ok(serde_json::json!({
-                "success": true,
-                "data": {
-                    "sessionId": id,
-                    "mode": if mode == BuildMode::Modify { "modify" } else { "create" },
-                    "targetSlug": target,
-                    "step": BuildStep::Requirements.key(),
-                    "stepPrompt": build_session::step_prompt(BuildStep::Requirements, None, mode)
+            let mut data = serde_json::json!({
+                "sessionId": id,
+                "mode": if mode == BuildMode::Modify { "modify" } else { "create" },
+                "targetSlug": target,
+                "step": BuildStep::Requirements.key(),
+                "stepPrompt": build_session::step_prompt(BuildStep::Requirements, None, mode)
+            });
+            // Only for a NEW build: a modify request already names the page it edits.
+            if mode == BuildMode::Create {
+                if let Some(tm) = catalog.upgrade() {
+                    if let Some(hint) = existing_capabilities(&tm, request).await {
+                        if let (Some(d), Some(h)) = (data.as_object_mut(), hint.as_object()) {
+                            for (k, v) in h {
+                                d.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
                 }
-            }))
+            }
+            Ok(serde_json::json!({ "success": true, "data": data }))
+            }
         },
     );
 
