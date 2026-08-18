@@ -1658,6 +1658,23 @@ def resolve_score_media(inp):
 # ── file IO + top-level actions ────────────────────────────────────────────────────────────────
 
 
+def _out_path_for(requested, score, engine_used, n_samples):
+    """Media import caps a file at ~50MB, and a full piece as 16-bit wav crosses it (실측:
+    353s = 62MB, import refused with mediaExportError, and the model's rational recovery was
+    a 42-second piece). FLAC is the same audio at ~60% under the cap — so length changes the
+    CONTAINER, never the length. The engine also salts the default name: a builtin re-render
+    of the same score must not overwrite the sf2 take (실측: it did, and the sf2 take died)."""
+    big = n_samples * 4 > 48 * 1024 * 1024
+    path = str(requested or "").strip()
+    if not path:
+        h = hashlib.sha1((json.dumps(score, sort_keys=True) + ":" + engine_used)
+                         .encode()).hexdigest()[:12]
+        return f"data/sing/out-{h}." + ("flac" if big else "wav")
+    if big and path.lower().endswith(".wav"):
+        return path[:-4] + ".flac"
+    return path
+
+
 def read_wav_mono(path):
     import soundfile as sf
     data, sr = sf.read(path, dtype="float64", always_2d=True)
@@ -1668,6 +1685,7 @@ def read_wav_mono(path):
 
 
 def write_wav(path, x):
+    # soundfile picks the container from the extension — .wav and .flac both PCM_16.
     import soundfile as sf
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     peak = np.max(np.abs(x)) or 1.0
@@ -1774,10 +1792,7 @@ def action_render(inp):
         send += v * 0.18
     if np.any(send):
         mix = add_room(mix, send)
-    out_path = str(inp.get("outPath") or "").strip()
-    if not out_path:
-        h = hashlib.sha1(json.dumps(score, sort_keys=True).encode()).hexdigest()[:12]
-        out_path = f"data/sing/out-{h}.wav"
+    out_path = _out_path_for(inp.get("outPath"), score, engine_used, len(mix))
     write_wav(out_path, mix)
     # The .mid beside the wav — same arrangement, played by whatever the listener owns. Our one
     # tone generator is the ceiling on the wav; it is not a ceiling on this.
@@ -1821,7 +1836,8 @@ def action_render(inp):
     # declared door every module's files leave through. The wav and its .mid are one product in
     # two forms, so they travel as one array.
     stem = os.path.basename(out_path).rsplit(".", 1)[0]
-    imports = [{"path": out_path, "contentType": "audio/wav", "filenameHint": stem}]
+    audio_type = "audio/flac" if out_path.lower().endswith(".flac") else "audio/wav"
+    imports = [{"path": out_path, "contentType": audio_type, "filenameHint": stem}]
     if midi_written:
         imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": stem})
     data["_mediaImport"] = imports if len(imports) > 1 else imports[0]
@@ -2077,6 +2093,16 @@ def action_selftest():
        solo.get("success") and (solo.get("data") or {}).get("parts") == ["drum"])
     if os.path.exists("data/sing/selftest-solo.wav"):
         os.remove("data/sing/selftest-solo.wav")
+    small = _out_path_for(None, score, "builtin", SR * 60)
+    huge = _out_path_for(None, score, "builtin", SR * 400)
+    ck("an hour under the cap stays wav, a full piece goes flac", (".wav", ".flac"),
+       (small[-4:], huge[-5:]), small.endswith(".wav") and huge.endswith(".flac"))
+    ck("the engine salts the default name (no cross-engine overwrite)", True,
+       _out_path_for(None, score, "sf2", SR * 60) != small,
+       _out_path_for(None, score, "sf2", SR * 60) != small)
+    forced = _out_path_for("data/sing/x.wav", score, "sf2", SR * 400)
+    ck("an explicit .wav over the cap is re-containered, same stem", "data/sing/x.flac",
+       forced, forced == "data/sing/x.flac")
 
     # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
     # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.
