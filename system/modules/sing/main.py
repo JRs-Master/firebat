@@ -880,7 +880,7 @@ def sf2_backend():
     """The OS synth, if the OS has one: `apt install fluidsynth fluid-soundfont-gm`.
 
     Both halves come from apt and both are FOUND, not configured — the engine on PATH, the GM
-    font at the distro's standard sf2 directory (default.sf2 = the alternatives symlink, so the
+    font at the distro's standard sf2 directory (default-GM.sf2 = the alternatives symlink, so the
     admin can retarget it without touching us). Returns (fluidsynth_bin, font_path, why_not);
     why_not names the missing half so a forced engine:"sf2" fails with the next move.
     """
@@ -894,7 +894,7 @@ def sf2_backend():
             continue
         sf2s = [n for n in names if n.lower().endswith(".sf2")]
         if sf2s:
-            pref = [n for n in sf2s if n.lower() == "default.sf2"]
+            pref = [n for n in sf2s if n.lower().startswith("default")]
             font = os.path.join(d, (pref or sf2s)[0])
             break
     if not binp:
