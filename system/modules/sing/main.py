@@ -257,9 +257,13 @@ def pluck_ks(freq, dur, damp=0.996, mellow=False):
 #   engine   = "ks" → Karplus-Strong pluck (acoustic string), recipe fields ignored
 #   atk/rel/gain as before · gm = General MIDI program for the .mid
 PATCHES = {
-    # the original trio — names kept because arrangement events fall back to their part name
-    "melody":     {"harm": [1.0, 0.55, 0.30, 0.16, 0.08], "hdecay": 1.6, "hslope": 1.35,
-                   "detune": 0.004, "noise": 0.06, "atk": 0.012, "rel": 0.10, "gain": 0.34, "gm": 65},
+    # the original trio — names kept because arrangement events fall back to their part name.
+    # "melody" is the trot lead standing in for a horn: it used to be a plain decaying synth,
+    # which on short notes reads as 뿅뿅 (실측·사용자). A horn SUSTAINS — slow brightness fall,
+    # vibrato easing in, a little breath — so now it sings held notes instead of chirping them.
+    "melody":     {"harm": [1.0, 0.62, 0.48, 0.34, 0.22, 0.12], "hdecay": 0.5, "hslope": 0.9,
+                   "detune": 0.004, "noise": 0.07, "breath": 0.04, "vib": (5.3, 0.006),
+                   "atk": 0.05, "rel": 0.09, "gain": 0.30, "gm": 65},
     "chord":      {"harm": [1.0, 0.40, 0.16, 0.07], "hdecay": 0.9, "hslope": 1.2,
                    "detune": 0.010, "noise": 0.0, "atk": 0.035, "rel": 0.22, "gain": 0.15, "gm": 4},
     "bass":       {"harm": [1.0, 0.62, 0.28, 0.12], "hdecay": 2.4, "hslope": 1.5,
@@ -390,8 +394,10 @@ def synth_note(freq, dur, patch="bass", vel=0.8):
 # purpose (they are "none" with their own bands and comping).
 _HATS8 = [("hat", o / 2.0, 0.4 if o % 2 else 0.45) for o in range(8)]
 DRUM_PATTERNS = {
+    # 쿵짝 쿵짜자 쿵짝 — the 네박자: beat 3 carries the 짜-자 double before the last 짝.
     "trot":      [("kick", 0.0, 0.9), ("hat", 0.5, 0.45), ("snare", 1.0, 0.8), ("hat", 1.5, 0.45),
-                  ("kick", 2.0, 0.85), ("hat", 2.5, 0.45), ("snare", 3.0, 0.8), ("ohat", 3.5, 0.55)],
+                  ("kick", 2.0, 0.85), ("snare", 2.5, 0.45), ("snare", 2.75, 0.5),
+                  ("snare", 3.0, 0.8), ("ohat", 3.5, 0.55)],
     "ballad":    [("kick", 0.0, 0.75), ("hat", 0.5, 0.3), ("hat", 1.0, 0.35), ("hat", 1.5, 0.3),
                   ("snare", 2.0, 0.6), ("hat", 2.5, 0.3), ("kick", 3.0, 0.5), ("hat", 3.5, 0.3)],
     "march":     [("kick", 0.0, 0.9), ("snare", 0.5, 0.4), ("snare", 1.0, 0.7), ("kick", 2.0, 0.85),
@@ -413,6 +419,22 @@ DRUM_PATTERNS = {
     "hiphop":    [("hat", o / 2.0, 0.35) for o in range(8)] +
                  [("kick", 0.0, 0.9), ("kick", 1.75, 0.6), ("kick", 2.5, 0.75),
                   ("snare", 1.0, 0.85), ("snare", 3.0, 0.85)],
+    "country":   [("kick", 0.0, 0.85), ("hat", 0.5, 0.35), ("snare", 1.0, 0.6), ("hat", 1.5, 0.35),
+                  ("kick", 2.0, 0.8), ("hat", 2.5, 0.35), ("snare", 3.0, 0.6), ("hat", 3.5, 0.35)],
+    "funk":      [("hat", o / 4.0, 0.42 if o % 4 == 0 else 0.28) for o in range(16)] +
+                 [("kick", 0.0, 0.95), ("kick", 1.75, 0.65), ("kick", 2.5, 0.75),
+                  ("snare", 1.0, 0.85), ("snare", 3.0, 0.85)],
+    "punk":      _HATS8 + [("kick", 0.0, 0.95), ("kick", 2.0, 0.95),
+                           ("snare", 1.0, 0.9), ("snare", 3.0, 0.9)],
+    "jazz":      [("ohat", 0.0, 0.5), ("ohat", 1.0, 0.55), ("ohat", 1.5, 0.3),
+                  ("ohat", 2.0, 0.5), ("ohat", 3.0, 0.55), ("ohat", 3.5, 0.3),
+                  ("hat", 1.0, 0.35), ("hat", 3.0, 0.35),
+                  ("kick", 0.0, 0.3), ("kick", 2.0, 0.3)],
+    "blues":     _HATS8 + [("kick", 0.0, 0.85), ("kick", 2.0, 0.8),
+                           ("snare", 1.0, 0.75), ("snare", 3.0, 0.75)],
+    "carol":     [("hat", o / 2.0, 0.32) for o in range(8)] +
+                 [("kick", 0.0, 0.6), ("kick", 2.0, 0.55)],
+    "folk":      [],
     "classic":   [],
     "newage":    [],
     "none":      [],
@@ -422,7 +444,8 @@ DRUM_PATTERNS = {
 # honestly: what makes them THEM is production this synth does not do.
 STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
                  "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad",
-                 "rap": "hiphop", "boombap": "hiphop"}
+                 "rap": "hiphop", "boombap": "hiphop", "swing": "jazz",
+                 "christmas": "carol", "xmas": "carol"}
 
 # 쿵덕 for three bars, 두구두구 on the fourth, 쨍 on the downbeat after: every 4th bar keeps its
 # groove up to the fill start and rolls down the toms; every 4-bar group opens on a crash.
@@ -454,6 +477,13 @@ STYLE_BAND = {
     "rnb":       {"melody": "epiano", "chord": "epiano", "bass": "bass"},
     "rocknroll": {"melody": "eguitar", "chord": "eguitar", "bass": "bass"},
     "hiphop":    {"melody": "epiano", "chord": "epiano", "bass": "synthbass"},
+    "country":   {"melody": "aguitar", "chord": "aguitar", "bass": "bass"},
+    "funk":      {"melody": "eguitar", "chord": "eguitar", "bass": "synthbass"},
+    "punk":      {"melody": "dguitar", "chord": "dguitar", "bass": "bass"},
+    "jazz":      {"melody": "piano", "chord": "epiano", "bass": "bass"},
+    "blues":     {"melody": "eguitar", "chord": "organ", "bass": "bass"},
+    "carol":     {"melody": "bell", "chord": "strings", "bass": "bass"},
+    "folk":      {"melody": "aguitar", "chord": "aguitar", "bass": "bass"},
     "classic":   {"melody": "eviolin", "chord": "strings", "bass": "bass"},
     "newage":    {"melody": "piano", "chord": "strings", "bass": "bass"},
     "none":      {"melody": "melody", "chord": "chord", "bass": "bass"},
@@ -465,22 +495,29 @@ STYLE_BAND = {
 # eighths lean (0 straight, 1 full triplet; drums/comp/bass only — the melody stays straight
 # because the vocal is cut to the written grid). Every knob is score-overridable.
 STYLE_FEEL = {
-    "trot":      {"comp": "stabs", "bass": "twobeat", "swing": 0.3},
-    "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0},
-    "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0},
-    "rock":      {"comp": "eighths", "bass": "alt", "swing": 0.0},
-    "metal":     {"comp": "eighths", "bass": "alt", "swing": 0.0},
-    "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0},
-    "dance":     {"comp": "stabs", "bass": "alt", "swing": 0.0},
-    "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.55},
-    "rocknroll": {"comp": "quarters", "bass": "alt", "swing": 0.6},
-    "hiphop":    {"comp": "pad", "bass": "hold", "swing": 0.45},
-    "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0},
-    "newage":    {"comp": "arp", "bass": "hold", "swing": 0.0},
-    "none":      {"comp": "pad", "bass": "hold", "swing": 0.0},
+    "trot":      {"comp": "stabs", "bass": "twobeat", "swing": 0.3, "gate": 0.8},
+    "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
+    "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
+    "rock":      {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
+    "metal":     {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.7},
+    "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
+    "dance":     {"comp": "stabs", "bass": "alt", "swing": 0.0, "gate": 0.7},
+    "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.55, "gate": 0.9},
+    "rocknroll": {"comp": "quarters", "bass": "alt", "swing": 0.6, "gate": 0.75},
+    "hiphop":    {"comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
+    "country":   {"comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
+    "funk":      {"comp": "stabs", "bass": "alt", "swing": 0.0, "gate": 0.55},
+    "punk":      {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.6},
+    "jazz":      {"comp": "stabs", "bass": "walk", "swing": 0.65, "gate": 0.85},
+    "blues":     {"comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
+    "carol":     {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 0.95},
+    "folk":      {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
+    "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 1.0},
+    "newage":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
+    "none":      {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 0.95},
 }
 COMP_KINDS = ("pad", "stabs", "arp", "quarters", "eighths")
-BASS_KINDS = ("hold", "twobeat", "alt")
+BASS_KINDS = ("hold", "twobeat", "alt", "walk")
 
 # 3/4 grooves — a waltz bar is not a trimmed 4/4 bar, so the tables are their own.
 DRUM_PATTERNS_3 = {
@@ -563,12 +600,26 @@ def _comp_hits(kind, beats, meter):
     return [(0.0, float(beats), 0.6)]  # pad
 
 
-def _bass_line(kind, root_midi, beats, next_root_midi, meter):
+def _bass_line(kind, root_midi, beats, next_root_midi, meter, semis=None):
     """(offset, dur, pitch, vel) for one chord segment. The bass register is root-12 as before.
-    twobeat = root/5th alternation (the 뽕짝 walk) · alt = marching quarters · hold = the old
-    whole note, now with a chromatic approach into the next chord when there is one."""
+    twobeat = root/5th alternation (the 뽕짝 walk) · alt = marching quarters · walk = the jazz
+    floor (root, third, fifth in quarters, a dominant pickup into the next chord — quality-aware,
+    so a minor chord walks a minor third) · hold = whole note + pickup."""
     b = root_midi - 12
     fifth = b + 7
+    if kind == "walk":
+        s = semis or [0, 4, 7]
+        steps = [b, b + (s[1] if len(s) > 1 else 4), b + (s[2] if len(s) > 2 else 7)]
+        out = []
+        n = max(1, int(beats))
+        for i in range(n):
+            last = i == n - 1
+            if last and next_root_midi is not None and next_root_midi != root_midi:
+                nb = next_root_midi - 12
+                out.append((float(i), 0.9, nb + 7 if nb + 7 < b + 10 else nb - 5, 0.64))
+            else:
+                out.append((float(i), 0.9, steps[i % len(steps)], 0.72 if i % 2 == 0 else 0.64))
+        return out
     if kind == "twobeat":
         step = 1.0 if beats <= 2 else 2.0
         out, on_fifth = [], False
@@ -606,6 +657,10 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     swing = float(feel.get("swing") if feel.get("swing") is not None else defaults["swing"])
     comp = feel.get("comp") or defaults["comp"]
     bassline = feel.get("bass") or defaults["bass"]
+    # Articulation: how much of a written note actually SOUNDS. Velocity alone made every
+    # style press notes the same shape — funk clips, a ballad sings through (실측·사용자:
+    # "리듬에 어울리게 안 나오냐").
+    gate = float(defaults.get("gate", 0.9))
     out = []
     # Melody — the notes the voice sings, also given to an instrument. Without this an
     # instrumental render (no vocalPath) had rhythm and bass and no tune at all.
@@ -618,7 +673,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             on_beat = (beat % 1.0) < 1e-6
             vel = 0.82 if on_down else (0.74 if on_beat else 0.64)
             out.append({"beat": beat, "beats": beats, "part": "melody", "patch": hire["melody"],
-                        "pitch": m, "program": prog["melody"], "vel": vel})
+                        "pitch": m, "program": prog["melody"], "vel": vel, "gate": gate})
             beat += beats
     pos = 0.0
     prev_voicing = None
@@ -648,7 +703,8 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         next_rm = None
         if idx + 1 < len(chords):
             next_rm = int(round(69 + 12 * math.log2(chords[idx + 1][0] / 440.0)))
-        for off, dur, pitch, vel in _bass_line(bassline, rm, beats, next_rm, meter):
+        semis = CHORD_QUALITY.get(str(quality or "").strip(), CHORD_QUALITY[""])
+        for off, dur, pitch, vel in _bass_line(bassline, rm, beats, next_rm, meter, semis):
             if pos + off < total_beats:
                 out.append({"beat": pos + off, "beats": dur, "part": "bass",
                             "patch": hire["bass"], "pitch": pitch,
@@ -703,7 +759,8 @@ def render_arrangement(arr, spb, total_beats):
             seg = hits[e["drum"]] * float(e.get("vel", 0.8))
             key = e["drum"]
         else:
-            seg = synth_note(freq_of_midi(e["pitch"]), spb * e["beats"],
+            seg = synth_note(freq_of_midi(e["pitch"]),
+                             spb * e["beats"] * float(e.get("gate", 1.0)),
                              e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)))
             key = e["part"]
         m = min(len(seg), n_total - i)
@@ -785,8 +842,9 @@ def write_midi(arr, bpm, path):
             start = int(round(e["beat"] * tpb))
             pitch = DRUM_NOTE.get(e["drum"], 42) if part == "drum" else e["pitch"]
             vel = int(round(127 * float(e.get("vel", 0.71))))
+            length = e["beats"] * float(e.get("gate", 1.0))
             marks.append((start, 1, pitch, vel))
-            marks.append((start + max(1, int(round(e["beats"] * tpb))), 0, pitch, 0))
+            marks.append((start + max(1, int(round(length * tpb))), 0, pitch, 0))
         marks.sort(key=lambda m: (m[0], m[1]))
         prev = 0
         for tick, on, pitch, vel in marks:
@@ -1317,9 +1375,10 @@ def action_selftest():
     ck("an unknown quality plays major rather than refusing", [0, 4, 7],
        [p - 60 for p in chord_voicing(60, "weird9")],
        [p - 60 for p in chord_voicing(60, "weird9")] == [0, 4, 7])
-    # Brightness falling over the note is what separates an instrument from a beep — measured as
-    # the high-frequency content of the head against the tail.
-    tone = synth_note(220.0, 0.8, "melody")
+    # Brightness falling over the note is what separates an instrument from a beep — measured on
+    # a DECAYING patch (piano). The trot lead moved to the sustained family (vibrato horn), so it
+    # no longer proves this mechanism; the mechanism itself is unchanged.
+    tone = synth_note(220.0, 0.8, "piano")
     head = float(np.mean(np.abs(np.diff(tone[: SR // 8]))))
     tail = float(np.mean(np.abs(np.diff(tone[-(SR // 8):]))))
     ck("the synth note darkens as it decays", True, f"head={head:.4f} tail={tail:.4f}",
@@ -1375,10 +1434,23 @@ def action_selftest():
     dance_kicks = [e["beat"] for e in floor if e["part"] == "drum" and e["drum"] == "kick"]
     ck("dance is four-on-the-floor", [0.0, 1.0, 2.0, 3.0], dance_kicks,
        dance_kicks == [0.0, 1.0, 2.0, 3.0])
-    nostyle = parse_score({"bpm": 120, "style": "polka",
+    nostyle = parse_score({"bpm": 120, "style": "폴카아",
                            "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
     ck("an unknown style is refused WITH the list", True, (nostyle[-1] or "")[:50],
        bool(nostyle[-1]) and "dance" in (nostyle[-1] or ""))
+    # The walking bass knows the chord: C major walks C-E-G, and steps on the next chord's
+    # fifth to get there — the jazz floor, quality-aware.
+    walk = _bass_line("walk", 48, 4.0, 55, 4, [0, 4, 7])
+    ck("the bass walks root-third-fifth into the next chord's fifth",
+       [36, 40, 43, 38], [w[2] for w in walk], [w[2] for w in walk] == [36, 40, 43, 38])
+    # Articulation follows the style: the same written note sounds clipped in funk and sung
+    # through in a ballad — length, not just velocity.
+    fk = build_arrangement(events, chords, "funk", 4)
+    bl = build_arrangement(events, chords, "ballad", 4)
+    gf = next(e["gate"] for e in fk if e["part"] == "melody")
+    gb = next(e["gate"] for e in bl if e["part"] == "melody")
+    ck("funk clips where a ballad sings through (gate)", True,
+       f"funk={gf} ballad={gb}", gf < 0.7 <= gb)
 
     # vocal:true with no take = a _prepare declaration, not a render — the framework's half
     # of the contract starts from exactly this envelope.

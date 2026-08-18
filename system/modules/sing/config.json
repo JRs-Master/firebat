@@ -53,7 +53,7 @@
       },
       "score": {
         "type": "object",
-        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?, meter?, swing?, comp?, bassline?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style is a genre row (groove + feel + default band): trot | ballad | rock | metal | pop | dance | rnb | rocknroll | march | classic | newage | none, with aliases edm/house/kpop/jpop/waltz — an unknown style is refused with the full list.",
+        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?, meter?, swing?, comp?, bassline?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style is a genre row (groove + feel + default band): trot | ballad | rock | metal | punk | pop | dance | rnb | hiphop | rocknroll | funk | jazz | blues | country | folk | carol | march | classic | newage | none, plus aliases (edm, house, kpop, jpop, waltz, rap, swing, christmas) — an unknown style is refused with the full list.",
         "properties": {
           "bpm": {
             "type": "number"
@@ -112,7 +112,7 @@
               "string",
               "null"
             ],
-            "description": "How the bass moves: hold (whole notes + walk into the next chord) | twobeat (root-fifth alternation) | alt (marching quarters). Omit for the style's default."
+            "description": "How the bass moves: hold (whole notes + pickup into the next chord) | twobeat (root-fifth alternation) | alt (marching quarters) | walk (quality-aware root-third-fifth quarters — the jazz/blues floor). Omit for the style's default."
           }
         }
       },
