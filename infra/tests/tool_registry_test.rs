@@ -401,6 +401,11 @@ const FORMLESS_BY_DESIGN: &[(&str, &str)] = &[
     ("network_request.headers", "an arbitrary header map"),
     ("network_request.body", "an arbitrary request body"),
     ("run_ui_action.args", "per-action screen payload, owned by the module that declares the action"),
+    (
+        "sing.score",
+        "the sing module OWNS the score contract (get_action_schema('sing','render') is its form); \
+         a copy inlined here is the kind that drifted before",
+    ),
     // An open metadata bag: whatever the page wants search engines and cards to carry.
     ("save_page.spec.head.seo", "open SEO bag — the renderer passes unknown keys through"),
     ("save_template.config.spec.head.seo", "open SEO bag"),

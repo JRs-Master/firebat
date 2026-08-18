@@ -266,7 +266,10 @@ fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 "chords": {"type": "array", "items": {"type": "object", "properties": {
                     "root": {"type": "string"}, "beats": {"type": "number"},
                     "quality": {"type": "string"}}}},
-                "band": {"type": "object", "description": "instrument per part, e.g. {\"melody\":\"eguitar\",\"chord\":\"strings\",\"bass\":\"aguitar\"} — library includes piano/epiano/organ/accordion/aguitar/eguitar/dguitar/eviolin/strings/brass/flute/marimba/bell/musicbox/synthlead/squarelead/synthbass"},
+                "band": {"type": "object", "description": "instrument per part — the library includes piano/epiano/organ/accordion/aguitar/cguitar/eguitar/dguitar/eviolin/strings/brass/flute/marimba/bell/musicbox/synthlead/squarelead/synthbass; an unknown name is refused with the full list", "properties": {
+                    "melody": {"type": "string", "description": "instrument name, e.g. eguitar"},
+                    "chord": {"type": "string", "description": "instrument name, e.g. strings"},
+                    "bass": {"type": "string", "description": "instrument name, e.g. aguitar"}}},
                 "score": {"type": "object", "description": "full score object passed to the module as-is (bpm/notes/chords/style/band/meter/swing/comp/bassline) — overrides the top-level shorthand; get_action_schema('sing','render') documents every field"},
                 "scoreMediaPath": {"type": "string", "description": "an uploaded MIDI's media URL (/user/media/<slug>.mid) or workspace path — plays that file as the score (instrumental)"},
                 "lyrics": {"type": "string", "description": "syllables to lay onto a MIDI's notes when the file has no lyric events"},
