@@ -1,0 +1,8 @@
+{
+  "settings": {
+    "scores": {
+      "label": "Score shelf (MIDI · audio)",
+      "description": "Keep several scores here and call them by alias — \"play the Canon on guitar\". Files live in media storage; only the reference list lives here."
+    }
+  }
+}

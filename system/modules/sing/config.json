@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "audio-synthesis",
-  "description": "노래 합성 DSP — 악보(음표+가사 음절)와 말한 목소리 wav 를 받아 음정·박자를 악보대로 재합성하고 반주를 얹어 노래 wav 를 만듭니다. 채팅에서 부르는 표면은 `sing` 코어 도구입니다.",
+  "description": "노래 합성 DSP — 악보(음표+가사 음절)와 말한 목소리 wav 를 받아 음정·박자를 악보대로 재합성하고 반주를 얹어 노래 wav 를 만듭니다. 채팅 표면 = 발견 계단(run_module_action) 하나 — 노래는 vocal:true 선언이면 됩니다.",
   "aliases": [
     "노래",
     "보컬",
@@ -89,9 +89,10 @@
           "meter": {
             "type": [
               "number",
+              "string",
               "null"
             ],
-            "description": "Beats per bar: 4 (default) or 3 (waltz — its own drum grooves)."
+            "description": "Beats per bar: 4 (default) or 3 — \"4/4\" and \"3/4\" spellings are absorbed."
           },
           "swing": {
             "type": [
@@ -128,7 +129,7 @@
           "string",
           "null"
         ],
-        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a score shelved in the module's 악보 보관함 setting. An unknown alias is refused with the full shelf list; omitted with exactly one shelved score = that one. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
+        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a score shelved in the module's 악보 보관함 setting. When the user refers to an EXISTING piece (uploaded or shelved), use THIS instead of composing a score: pass your best guess of its name — a wrong guess is refused WITH the full shelf list, so guessing is safe and costs one round. Omitted with exactly one shelved score = that one. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
       },
       "lyrics": {
         "type": [
@@ -153,7 +154,7 @@
       },
       "midiOut": {
         "type": "boolean",
-        "description": "Also write the arrangement as a .mid beside the wav. The wav is limited by this module's one tone generator; the .mid is not — open it in anything and the parts (melody / chord / bass / drums) arrive on their own tracks."
+        "description": "Also write the arrangement as a .mid beside the wav (data.media then carries both, and the chat shows a download card). Only set this when the user asks for the MIDI file — the wav alone is the normal answer."
       },
       "midiOutPath": {
         "type": "string",

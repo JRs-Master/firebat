@@ -114,7 +114,15 @@ def parse_score(score):
                 f"악기 {name!r} 가 라이브러리에 없습니다 — 가능한 악기: {', '.join(sorted(PATCHES))}"
         band[part] = name
     # feel = how the band plays. Every knob has a style default, so a bare score still grooves.
-    meter = int(score.get("meter") or 4)
+    # meter absorbs the notation people actually write: "4/4" and "3/4" are the same declaration
+    # in the field's native dialect (실측: 모델이 "4/4" 를 썼고 검증이 거부했다 — 흡수가 표준).
+    raw_meter = score.get("meter")
+    if isinstance(raw_meter, str):
+        m = raw_meter.strip()
+        raw_meter = {"4/4": 4, "3/4": 3, "3": 3, "4": 4}.get(m)
+        if raw_meter is None:
+            return None, None, None, None, None, None,                 f"meter {m!r} 를 모릅니다 — 4, 3, \"4/4\", \"3/4\" 만 받습니다"
+    meter = int(raw_meter or 4)
     if meter not in (3, 4):
         return None, None, None, None, None, None, "meter 는 3 또는 4 만 받습니다 (4/4 · 3/4)"
     swing = score.get("swing")
