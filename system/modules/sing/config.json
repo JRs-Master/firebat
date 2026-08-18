@@ -54,7 +54,7 @@
       },
       "score": {
         "type": "object",
-        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?, meter?, swing?, comp?, bassline?, drumPattern?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style is a genre row (groove + feel + default band): trot | ballad | rock | metal | punk | pop | dance | rnb | hiphop | rocknroll | funk | jazz | blues | country | folk | carol | march | classic | newage | none, plus aliases (edm, house, kpop, jpop, waltz, rap, swing, christmas, orchestra, symphony) — an unknown style is refused with the full list.",
+        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?, meter?, swing?, comp?, bassline?, drumPattern?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style is a genre row (groove + feel + default band): trot | ballad | rock | metal | punk | pop | dance | rnb | hiphop | rocknroll | funk | jazz | blues | country | folk | carol | march | classic | strings | newage | none, plus aliases (edm, house, kpop, jpop, waltz, rap, swing, christmas, orchestra, symphony, 관현악, 오케스트라 = classic — full orchestra with winds, horns and dynamics-driven percussion; 현악/stringensemble = strings — string orchestra only) — an unknown style is refused with the full list.",
         "properties": {
           "bpm": {
             "type": "number"

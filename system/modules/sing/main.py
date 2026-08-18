@@ -784,6 +784,7 @@ DRUM_PATTERNS = {
                   ("tamb", 1.5, 0.3), ("tamb", 3.5, 0.3), ("triangle_open", 0.0, 0.25)],
     "folk":      [],
     "classic":   [],
+    "strings":   [],
     "newage":    [],
     "none":      [],
 }
@@ -794,13 +795,20 @@ DRUM_PATTERNS = {
 # unison octaves (flute above, cello below), so classic/orchestra sounds like a SECTION without
 # anyone asking. A score's explicit band.doubles replaces these (선언이 이긴다).
 STYLE_DOUBLES = {
-    "classic": [("melody", "flute", 1, 0.45), ("melody", "cello", -1, 0.55),
-                ("chord", "frenchhorn", 0, 0.4)],
+    # 관현악 (full orchestra): strings + woodwinds (flute above, oboe in unison) + horns on the
+    # pad. Percussion arrives separately, following the dynamics.
+    "classic": [("melody", "flute", 1, 0.45), ("melody", "oboe", 0, 0.35),
+                ("melody", "cello", -1, 0.55), ("chord", "frenchhorn", 0, 0.4)],
+    # 현악 합주 (string orchestra): violins + viola in unison + cello an octave down. No winds,
+    # no percussion — the ensemble IS the color.
+    "strings": [("melody", "viola", 0, 0.45), ("melody", "cello", -1, 0.55)],
     "march":   [("melody", "piccolo", 1, 0.5)],
 }
 
 STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
-                 "orchestra": "classic", "symphony": "classic",
+                 "orchestra": "classic", "symphony": "classic", "관현악": "classic",
+                 "오케스트라": "classic", "현악": "strings", "현악합주": "strings",
+                 "stringorchestra": "strings", "stringensemble": "strings",
                  "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad",
                  "rap": "hiphop", "boombap": "hiphop", "swing": "jazz",
                  "christmas": "carol", "xmas": "carol"}
@@ -947,6 +955,7 @@ STYLE_BAND = {
     "carol":     {"melody": "bell", "chord": "strings", "bass": "bass"},
     "folk":      {"melody": "aguitar", "chord": "aguitar", "bass": "bass"},
     "classic":   {"melody": "violin", "chord": "strings", "bass": "contrabass"},
+    "strings":   {"melody": "violin", "chord": "strings", "bass": "contrabass"},
     "newage":    {"melody": "piano", "chord": "strings", "bass": "bass"},
     "none":      {"melody": "melody", "chord": "chord", "bass": "bass"},
 }
@@ -975,6 +984,7 @@ STYLE_FEEL = {
     "carol":     {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 0.95},
     "folk":      {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 1.0},
+    "strings":   {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "newage":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "none":      {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 0.95},
 }
@@ -2436,9 +2446,16 @@ def action_selftest():
        len(d1) == len(mel1) and bool(d1) and d1[0]["program"] == 73
        and d1[0]["pitch"] == mel1[0]["pitch"] + 12)
     darr3 = build_arrangement(dbl[1], dbl[2], "classic", 4, None, dict(dbl[5], doubles=None))
-    ck("classic carries its own section doublings unasked", 3,
+    ck("classic carries its own section doublings unasked", 4,
        len({e["part"] for e in darr3 if e["part"].startswith("double")}),
-       len({e["part"] for e in darr3 if e["part"].startswith("double")}) == 3)
+       len({e["part"] for e in darr3 if e["part"].startswith("double")}) == 4)
+    ens = parse_score(dict(score, style="현악"))
+    ck("현악 answers to the string orchestra", "strings", ens[3], ens[3] == "strings")
+    arr_s = build_arrangement(ens[1], ens[2], "strings", 4, None, ens[5])
+    ck("a string orchestra is strings only — no percussion, viola and cello doubling", True,
+       sorted({e.get("patch") or e.get("drum") for e in arr_s if e["part"] != "melody"}),
+       not [e for e in arr_s if e["part"] == "drum"]
+       and any(e.get("double_of") == "melody" for e in arr_s))
     loud = [{"syl": "라", "note": "C4", "beats": 1, "vel": 0.9} for _ in range(16)]
     quiet = [{"syl": "라", "note": "C4", "beats": 1, "vel": 0.3} for _ in range(16)]
     fl_l = parse_score(dict(score, style="classic", notes=loud))
