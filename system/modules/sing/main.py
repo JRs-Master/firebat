@@ -1293,7 +1293,8 @@ def render_sf2(arr, spb, binp, font):
         written, note = write_midi(arr, 60.0 / spb, mid_path)
         if not written:
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
-        r = subprocess.run([binp, "-ni", "-g", "0.5", "-r", str(SR), "-F", wav_path, font, mid_path],
+        r = subprocess.run([binp, "-ni", "-R", "0", "-C", "0", "-g", "0.5", "-r", str(SR),
+                            "-F", wav_path, font, mid_path],
                            capture_output=True, timeout=600)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1024:
             tail = (r.stderr or r.stdout or b"")[-300:].decode("utf-8", "replace").strip()
@@ -1675,7 +1676,37 @@ def resolve_score_media(inp):
 # ── file IO + top-level actions ────────────────────────────────────────────────────────────────
 
 
-def _out_path_for(requested, score, engine_used, n_samples):
+def _slug_name(raw):
+    """A filename stem from what the user actually called the piece — alias, file, whatever.
+    Hangul survives (it is a name); path junk and extensions do not."""
+    base = str(raw or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if "." in base:
+        head, ext = base.rsplit(".", 1)
+        if len(ext) <= 4 and head:
+            base = head
+    out = "".join(ch if (ch.isalnum() or ch in "-_") else "-" for ch in base)
+    return "-".join(t for t in out.split("-") if t)[:40]
+
+
+def _movement_bounds(n_samples, spb, meter):
+    """[(start, end)] sample slices, bar-aligned, each expected to fit the media door."""
+    cap = 48 * 1024 * 1024
+    est = int(n_samples * 4 * 0.65)  # conservative flac size guess
+    k = max(1, -(-est // cap))
+    if k == 1:
+        return [(0, n_samples)]
+    bar = max(1, int(SR * spb * meter))
+    bars_total = -(-n_samples // bar)
+    per = max(1, -(-bars_total // k))
+    bounds, i = [], 0
+    while i < n_samples:
+        j = min(n_samples, i + per * bar)
+        bounds.append((i, j))
+        i = j
+    return bounds
+
+
+def _out_path_for(requested, score, engine_used, n_samples, base=None):
     """Media import caps a file at ~50MB, and a full piece as 16-bit wav crosses it (실측:
     353s = 62MB, import refused with mediaExportError, and the model's rational recovery was
     a 42-second piece). FLAC is the same audio at ~60% under the cap — so length changes the
@@ -1685,8 +1716,11 @@ def _out_path_for(requested, score, engine_used, n_samples):
     path = str(requested or "").strip()
     if not path:
         h = hashlib.sha1((json.dumps(score, sort_keys=True) + ":" + engine_used)
-                         .encode()).hexdigest()[:12]
-        return f"data/sing/out-{h}." + ("flac" if big else "wav")
+                         .encode()).hexdigest()[:6]
+        style = str((score or {}).get("style") or "").strip().lower()
+        stem = "-".join(x for x in (_slug_name(base) or "sing",
+                                    style if style and style != "none" else "", h) if x)
+        return f"data/sing/{stem}." + ("flac" if big else "wav")
     if big and path.lower().endswith(".wav"):
         return path[:-4] + ".flac"
     return path
@@ -1791,7 +1825,10 @@ def action_render(inp):
                 engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
             else:
                 engine_used, sf2_font = "sf2", os.path.basename(font)
-                mix, send = stereo * 0.45, np.zeros(len(stereo))
+                # The engine renders DRY (-R 0): its default hall was the "everything pedaled"
+                # wash (실측·사용자). One room, ours, same as the builtin band's.
+                mix = stereo * 0.45
+                send = mix.mean(axis=1) * 0.12
     if mix is None:
         mix, send = render_arrangement(arr, spb, total_beats)
         mix, send = mix * 0.45, send * 0.45
@@ -1809,8 +1846,23 @@ def action_render(inp):
         send += v * 0.18
     if np.any(send):
         mix = add_room(mix, send)
-    out_path = _out_path_for(inp.get("outPath"), score, engine_used, len(mix))
-    write_wav(out_path, mix)
+    out_path = _out_path_for(inp.get("outPath"), score, engine_used, len(mix),
+                             base=inp.get("scoreMediaPath"))
+    # ── ② movements: even FLAC crosses the ~50MB media door near the 9-10 minute mark. A piece
+    # that long ships as several flacs in one _mediaImport array (the door is already plural),
+    # cut on bar lines. Lossless and playable everywhere — ogg is free but Safari will not play
+    # it, so splitting beats transcoding.
+    part_paths = []
+    bounds = _movement_bounds(len(mix), spb, feel["meter"])
+    if len(bounds) > 1:
+        stem0, ext0 = out_path.rsplit(".", 1)
+        for i, (a, b) in enumerate(bounds, 1):
+            pp = f"{stem0}-{i}of{len(bounds)}.{ext0}"
+            write_wav(pp, mix[a:b])
+            part_paths.append(pp)
+        out_path = part_paths[0]
+    else:
+        write_wav(out_path, mix)
     # The .mid beside the wav — same arrangement, played by whatever the listener owns. Our one
     # tone generator is the ceiling on the wav; it is not a ceiling on this.
     midi_out = str(inp.get("midiOutPath") or "").strip()
@@ -1854,7 +1906,12 @@ def action_render(inp):
     # two forms, so they travel as one array.
     stem = os.path.basename(out_path).rsplit(".", 1)[0]
     audio_type = "audio/flac" if out_path.lower().endswith(".flac") else "audio/wav"
-    imports = [{"path": out_path, "contentType": audio_type, "filenameHint": stem}]
+    if part_paths:
+        imports = [{"path": pp, "contentType": audio_type,
+                    "filenameHint": os.path.basename(pp).rsplit(".", 1)[0]} for pp in part_paths]
+        data["movements"] = len(part_paths)
+    else:
+        imports = [{"path": out_path, "contentType": audio_type, "filenameHint": stem}]
     if midi_written:
         imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": stem})
     data["_mediaImport"] = imports if len(imports) > 1 else imports[0]
@@ -2120,6 +2177,17 @@ def action_selftest():
     forced = _out_path_for("data/sing/x.wav", score, "sf2", SR * 400)
     ck("an explicit .wav over the cap is re-containered, same stem", "data/sing/x.flac",
        forced, forced == "data/sing/x.flac")
+    named = _out_path_for(None, dict(score, style="pop"), "sf2", SR * 60, base="캐논 변주곡.mid")
+    ck("the default filename reads as the piece, not a hash", True, named,
+       "캐논-변주곡" in named and "-pop-" in named and named.endswith(".wav"))
+    ck("a short piece is one movement", 1, len(_movement_bounds(SR * 60, 0.5, 4)),
+       len(_movement_bounds(SR * 60, 0.5, 4)) == 1)
+    mb = _movement_bounds(SR * 60 * 15, 0.5, 4)
+    bar_n = int(SR * 0.5 * 4)
+    ck("a 15-minute piece ships as bar-aligned movements", True,
+       [len(mb), mb[0][1] % bar_n], len(mb) >= 2 and mb[0][0] == 0
+       and mb[-1][1] == SR * 60 * 15 and all(a % bar_n == 0 for a, _ in mb)
+       and all(mb[i][1] == mb[i + 1][0] for i in range(len(mb) - 1)))
     s8 = dict(score); s8["drumPattern"] = {"kick": [0, 2], "snare": 1}
     fl8 = parse_score(s8)[5]
     ck("a name->beats map is a drumPattern dialect", 3,
