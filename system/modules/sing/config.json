@@ -280,7 +280,7 @@
           "number",
           "null"
         ],
-        "description": "[render, with scoreMediaPath] 0-1 pianist's voicing: the top line sings out, inner voices step back, the bass supports quietly. '살랑살랑/은은하게/부드럽게' ≈ 0.6-0.8 (pairs well with humanize and pedal). Omit = the score's flat balance, which is what any GM player does — measured on Moonlight, the flat balance reads as gloom because the bass ends up loudest."
+        "description": "[render, with scoreMediaPath] 0-1 pianist's voicing: the top line sings out, inner voices step back, the bass supports quietly. '살랑살랑/은은하게/부드럽게' ≈ 0.6-0.8 (pairs well with humanize and pedal). Omit = the score's own balance, which is what any GM player does and the default here."
       },
       "pedal": {
         "type": [
@@ -338,7 +338,7 @@
     {
       "id": "render",
       "name": "곡 렌더 (악보 → 노래·연주)",
-      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다. 가사는 lyricsQuery('가수 곡명')로 인터넷(lrclib)에서 자동으로 찾아 붙일 수도 있습니다.",
+      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다. 가사는 lyricsQuery('가수 곡명')로 인터넷(lrclib)에서 자동으로 찾아 붙일 수도 있습니다. 취향 노브(style·humanize·voicing·pedal·swing·comp·bassline·drumPattern)는 **사용자가 그 말을 했을 때만** 싣습니다 — 아무 말이 없으면 전부 생략해 악보와 미디 기본값 그대로 연주합니다. 좋게 들리라고 얹는 순간 사용자가 듣는 것은 원곡이 아니라 우리 해석입니다.",
       "params": [
         "score",
         "scoreMediaPath",
