@@ -1389,8 +1389,15 @@ def write_midi(arr, bpm, path):
     mid = mido.MidiFile(ticks_per_beat=tpb)
     # One track per part: a synth that lets you pick instruments per track can, and the drum
     # channel (9) is fixed by the standard rather than by us.
-    double_parts = sorted({e["part"] for e in arr if e["part"].startswith("double")})
-    for part in ["melody", "chord", "bass", *double_parts, "drum"]:
+    seen = []
+    for e in arr:
+        if e["part"] not in seen:
+            seen.append(e["part"])
+    order = [q for q in ("melody", "chord", "bass") if q in seen] \
+        + [q for q in seen if q not in ("melody", "chord", "bass", "drum")] \
+        + (["drum"] if "drum" in seen else [])
+    next_ch = 0
+    for part in order:
         rows = [e for e in arr if e["part"] == part]
         if not rows:
             continue
@@ -1400,9 +1407,10 @@ def write_midi(arr, bpm, path):
         if part == "drum":
             ch = 9
         else:
-            base_ch = {"melody": 0, "chord": 1, "bass": 2}
-            # doubles take 3.. (never 9, the GM drum channel)
-            ch = base_ch.get(part, min(8, 3 + double_parts.index(part) if part in double_parts else 3))
+            ch = min(15, next_ch)
+            next_ch += 1
+            if next_ch == 9:  # the GM drum channel belongs to the kit alone
+                next_ch = 10
             tr.append(mido.Message("program_change", channel=ch,
                                    program=rows[0]["program"], time=0))
             pan = rows[0].get("pan")
@@ -1682,6 +1690,72 @@ def _track_events(track):
     return events
 
 
+def _track_meta(track):
+    """(channel, program) a track plays on — first note_on's channel, first program_change."""
+    ch, prog = None, None
+    for msg in track:
+        if prog is None and msg.type == "program_change":
+            prog = int(msg.program)
+        if ch is None and msg.type == "note_on":
+            ch = int(getattr(msg, "channel", 0))
+        if ch is not None and prog is not None:
+            break
+    return (0 if ch is None else ch), (0 if prog is None else prog)
+
+
+_NOTE_DRUM = {v: k for k, v in DRUM_NOTE.items()}
+
+
+def _patch_for_program(g):
+    """GM program -> the nearest builtin patch (the sf2 engine uses the program itself)."""
+    return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[max(0, min(127, int(g))) // 8])
+
+
+def midi_to_parts(path):
+    """The WHOLE file as playable rows — every track, its own instrument, its own dynamics.
+    This is the faithful mode's source: 실측 (월광), reducing a piano piece to one line left
+    the tune buried in its own accompaniment. Returns (rows, bpm, err)."""
+    import mido
+    try:
+        mf = mido.MidiFile(path)
+    except Exception as e:  # noqa: BLE001
+        return None, None, f"MIDI parse failed: {e}"
+    tpb = mf.ticks_per_beat or 480
+    bpm = 120.0
+    for tr in mf.tracks:
+        for msg in tr:
+            if msg.type == "set_tempo":
+                bpm = round(mido.tempo2bpm(msg.tempo), 1)
+                break
+        else:
+            continue
+        break
+    rows, pidx = [], 0
+    for tr in mf.tracks:
+        ev = _track_events(tr)
+        if not ev:
+            continue
+        ch, prog = _track_meta(tr)
+        if ch == 9:
+            for note, start, dur, vel in ev:
+                name = _NOTE_DRUM.get(note)
+                if name:
+                    rows.append({"beat": start / tpb, "beats": 0.25, "part": "drum",
+                                 "drum": name, "vel": round(vel / 127.0, 3)})
+            continue
+        pidx += 1
+        part = f"p{pidx}"
+        patch = _patch_for_program(prog)
+        for note, start, dur, vel in ev:
+            rows.append({"beat": start / tpb, "beats": max(0.125, dur / tpb), "part": part,
+                         "patch": patch, "program": prog, "pitch": int(note),
+                         "vel": round(vel / 127.0, 3), "gate": 1.0})
+    if not rows:
+        return None, None, "MIDI 에서 음표를 못 읽었습니다"
+    return rows, bpm, None
+
+
+
 def midi_to_score(path, lyrics=None):
     """Karaoke/simple MIDI file -> {bpm, notes[], chords?} or (None, err).
 
@@ -1853,7 +1927,7 @@ def score_media_kind(path):
     return None
 
 
-def musicxml_to_score(path, lyrics=None):
+def musicxml_to_score(path, lyrics=None, parts_out=None):
     """MusicXML (.musicxml/.xml/.mxl) -> score. The electronic-score standard says everything
     a MIDI only implies: exact notes, the lyric under each one, REAL chord symbols (harmony),
     the meter, and written dynamics — no ML, stdlib XML only. The melody part = the one
@@ -1893,11 +1967,25 @@ def musicxml_to_score(path, lyrics=None):
     if not parts:
         return None, "MusicXML 에 part 가 없습니다"
 
+    # part id -> declared GM program (score-part/midi-instrument/midi-program, 1-based).
+    prog_of = {}
+    pl = kid(root, "part-list")
+    for sp in (kids(pl, "score-part") if pl is not None else []):
+        mi = kid(sp, "midi-instrument")
+        mp = text_of(mi, "midi-program") if mi is not None else None
+        if sp.get("id") and mp:
+            try:
+                prog_of[sp.get("id")] = max(0, min(127, int(mp) - 1))
+            except ValueError:
+                pass
+
     bpm, meter = 120.0, None
     parsed_parts = []
-    for part in parts:
+    for pi, part in enumerate(parts):
         divisions, vel = 1.0, None
         notes, harmonies, pos = [], [], 0.0
+        f_prog = prog_of.get(part.get("id"), 0)
+        f_part = f"p{pi + 1}"
         for meas in kids(part, "measure"):
             for el in meas:
                 tag = _strip_ns(el.tag)
@@ -1935,8 +2023,6 @@ def musicxml_to_score(path, lyrics=None):
                     pos += d if tag == "forward" else -d
                 elif tag == "note":
                     dur = float(text_of(el, "duration") or 0) / divisions
-                    if kid(el, "chord") is not None:
-                        continue  # extra chord tone — the first note of the stack leads
                     if kid(el, "rest") is not None:
                         if notes:
                             notes[-1]["beats"] += dur  # a rest rides the note before it
@@ -1953,6 +2039,21 @@ def musicxml_to_score(path, lyrics=None):
                     ly = kid(el, "lyric")
                     syl = (text_of(ly, "text") or "").strip() if ly is not None else ""
                     tie = any(t.get("type") == "stop" for t in kids(el, "tie"))
+                    is_stack = kid(el, "chord") is not None
+                    if parts_out is not None:
+                        onset = pos - dur if is_stack else pos
+                        if not (tie and parts_out and parts_out[-1]["part"] == f_part
+                                and parts_out[-1]["pitch"] == midi):
+                            parts_out.append({"beat": onset, "beats": max(0.125, dur),
+                                              "part": f_part,
+                                              "patch": _patch_for_program(f_prog),
+                                              "program": f_prog, "pitch": midi,
+                                              "vel": vel if vel is not None else 0.65,
+                                              "gate": 1.0})
+                        else:
+                            parts_out[-1]["beats"] += dur
+                    if is_stack:
+                        continue  # the melody line keeps only the principal of a stack
                     if tie and notes and notes[-1]["midi"] == midi:
                         notes[-1]["beats"] += dur
                     else:
@@ -2171,8 +2272,16 @@ def action_render(inp):
                              "alias), or upload one in the module settings (악보 보관함)"}
         kind = score_media_kind(media_path)
         if kind:
-            reader = midi_to_score if kind == "midi" else musicxml_to_score
-            score, err = reader(media_path, lyrics=inp.get("lyrics"))
+            faithful_rows = []
+            if kind == "midi":
+                score, err = midi_to_score(media_path, lyrics=inp.get("lyrics"))
+                if not err:
+                    fr, fb, ferr = midi_to_parts(media_path)
+                    if not ferr:
+                        faithful_rows = fr
+            else:
+                score, err = musicxml_to_score(media_path, lyrics=inp.get("lyrics"),
+                                               parts_out=faithful_rows)
             if err:
                 return {"success": False, "error": err}
             # Every feel knob rides the top level too: a shelved MIDI plus new instruments is
@@ -2191,6 +2300,14 @@ def action_render(inp):
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
+    # ── faithful mode: "그대로 연주해줘" plays the FILE — every part, its own instrument, its
+    # own dynamics — instead of reducing it to one line plus a style's backing. 실측 (월광):
+    # the reduction buried the tune in its own accompaniment (따다단만 들린다). Any style/band/
+    # groove request switches back to the arrangement path: re-instrumenting IS that path's job.
+    wants_arrangement = bool(style != "none" or band or (feel or {}).get("drums")
+                             or inp.get("vocal") or str(inp.get("vocalPath") or "").strip())
+    faithful = (parsed_from is not None and not wants_arrangement
+                and len(locals().get("faithful_rows") or []) > 0)
     # vocal:true with no take yet — ask the framework for one. A declaration, not a call: the
     # framework performs the TTS and runs this action again with vocalPath filled (the old core
     # bridge did this by hand; retiring it removed the last sing vocabulary from core).
@@ -2213,13 +2330,17 @@ def action_render(inp):
     total_beats = sum(b for ev in events for _, b in ev["segments"])
     chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
+    if faithful:
+        total_beats = max(total_beats,
+                          max(r["beat"] + r["beats"] for r in faithful_rows))
     if feel.get("bars"):
         total_beats = max(total_beats, feel["bars"] * feel["meter"])
     if total_beats <= 0:
         return {"success": False,
                 "error": "빈 곡입니다 — notes/chords 를 채우거나, 드럼 솔로면 drumPattern 과 "
                          "bars 를 함께 주세요"}
-    arr = build_arrangement(events, chords, style, total_beats, band, feel)
+    arr = (sorted(faithful_rows, key=lambda r: (r["beat"], r["part"])) if faithful
+           else build_arrangement(events, chords, style, total_beats, band, feel))
     vocal_path = str(inp.get("vocalPath") or "").strip()
     # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
     # tune, and dropping it was why an instrumental render came out as rhythm and bass only.
@@ -2295,6 +2416,7 @@ def action_render(inp):
         "vocal": bool(vocal_path),
         "backend": "pyworld" if (vocal_path and try_pyworld()) else "numpy",
         "engine": engine_used,
+        "mode": "faithful" if faithful else "arranged",
     }
     if sf2_font:
         data["soundfont"] = sf2_font
