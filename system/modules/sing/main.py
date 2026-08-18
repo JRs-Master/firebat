@@ -159,25 +159,42 @@ def parse_score(score):
     drums = score.get("drumPattern")
     drum_rows = None
     if drums is not None:
+        # The shapes people (and models) actually write, all read deterministically:
+        #   [[name, beat, vel?], …]                      the canonical rows
+        #   [{"drum"/"name"/"instrument", "beat"/"at"/"offset"/"pos", "vel"/"velocity"}, …]
+        #   {"kick": [0, 2], "snare": 1}                 a map of name -> beat(s)
+        #   ["kick", [0, 2], …]                          a row whose beat is a LIST fans out
+        # (실측: 두 턴 연속 행 모양 거부가 자작곡 도피의 방아쇠였다 — 거부는 마지막 수단.)
+        if isinstance(drums, dict):
+            flat = []
+            for k, v in drums.items():
+                for b in (v if isinstance(v, (list, tuple)) else [v]):
+                    flat.append([k, b])
+            drums = flat
         if not isinstance(drums, list):
-            return None, None, None, None, None, None,                 "drumPattern 은 [[드럼이름, 마디내박, 세기0~1], …] 목록입니다"
+            return None, None, None, None, None, None,                 "drumPattern 은 [[드럼이름, 마디내박, 세기0~1], …] 목록입니다 — "                 "예: [[\"kick\",0,0.9],[\"snare\",1]]"
         drum_rows = []
         for row in drums:
             if isinstance(row, dict):
-                row = [row.get("drum"), row.get("beat"), row.get("vel")]
+                pick = lambda *ks: next((row[k] for k in ks if row.get(k) is not None), None)
+                row = [pick("drum", "name", "instrument", "inst"),
+                       pick("beat", "at", "offset", "pos", "time"),
+                       pick("vel", "velocity", "v")]
             if not isinstance(row, (list, tuple)) or len(row) < 2:
-                return None, None, None, None, None, None,                     "drumPattern 행은 [드럼이름, 마디내박(, 세기)] 입니다"
+                return None, None, None, None, None, None,                     f"drumPattern 행은 [드럼이름, 마디내박(, 세기)] 입니다 — "                     f"예: [[\"kick\",0,0.9],[\"snare\",1]] (받은 행: {str(row)[:80]})"
             dname = str(row[0] or "").strip().lower()
             if dname not in DRUM_NOTE:
                 return None, None, None, None, None, None,                     f"드럼 {dname!r} 를 모릅니다 — 가능한 드럼: {', '.join(sorted(DRUM_NOTE))}"
-            try:
-                off = float(row[1])
-            except (TypeError, ValueError):
-                return None, None, None, None, None, None, "drumPattern 의 박은 숫자입니다"
-            if not (0.0 <= off < meter):
-                return None, None, None, None, None, None,                     f"drumPattern 박 {off} 가 마디({meter}박) 밖입니다"
-            vel = float(row[2]) if len(row) > 2 and row[2] is not None else 0.7
-            drum_rows.append((dname, off, max(0.0, min(1.0, vel))))
+            offs = row[1] if isinstance(row[1], (list, tuple)) else [row[1]]
+            for off_raw in offs:
+                try:
+                    off = float(off_raw)
+                except (TypeError, ValueError):
+                    return None, None, None, None, None, None,                         f"drumPattern 의 박은 숫자입니다 (받은 값: {str(off_raw)[:40]})"
+                if not (0.0 <= off < meter):
+                    return None, None, None, None, None, None,                         f"drumPattern 박 {off} 가 마디({meter}박) 밖입니다"
+                vel = float(row[2]) if len(row) > 2 and row[2] is not None else 0.7
+                drum_rows.append((dname, off, max(0.0, min(1.0, vel))))
     bars = score.get("bars")
     if bars is not None:
         try:
@@ -2103,6 +2120,18 @@ def action_selftest():
     forced = _out_path_for("data/sing/x.wav", score, "sf2", SR * 400)
     ck("an explicit .wav over the cap is re-containered, same stem", "data/sing/x.flac",
        forced, forced == "data/sing/x.flac")
+    s8 = dict(score); s8["drumPattern"] = {"kick": [0, 2], "snare": 1}
+    fl8 = parse_score(s8)[5]
+    ck("a name->beats map is a drumPattern dialect", 3,
+       len((fl8 or {}).get("drums") or []), fl8 is not None and len(fl8["drums"]) == 3)
+    s9 = dict(score)
+    s9["drumPattern"] = [{"name": "kick", "at": 0, "velocity": 0.9}, ["snare", [1, 3]]]
+    fl9 = parse_score(s9)[5]
+    ck("dict-key aliases and beat lists fan out", 3,
+       len((fl9 or {}).get("drums") or []), fl9 is not None and len(fl9["drums"]) == 3)
+    err10 = parse_score(dict(score, drumPattern=[["kick"]]))[6]
+    ck("a short row is refused WITH an example and the received row", True,
+       (err10 or "")[:50], bool(err10) and "예:" in err10 and "받은 행" in err10)
 
     # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
     # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.
