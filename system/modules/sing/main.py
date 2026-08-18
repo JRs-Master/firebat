@@ -1330,6 +1330,52 @@ def reinstrument(rows, band):
     return rows, inst
 
 
+def assimilate_triplets(arr):
+    """Two-against-three, resolved the way pianists resolve it: when a beat carries a LIVE
+    triplet grid (onsets at +1/3 AND +2/3), a dotted-figure sixteenth written at +3/4 snaps
+    onto the triplet's third note, and the dotted note ahead of it gives up the 1/12 beat.
+
+    실측 (월광 32s·54s 절뚝임): literal 3:1 put the sixteenth 113ms after the triplet note —
+    a mechanical flam the ear reads as 엇박 ("따↓단" vs the recordings' "따→단"). humanize was
+    0, so this was deterministic interpretation, not jitter. Beats with no triplet grid stay
+    literal 3:1 — a French-overture score keeps its dotting."""
+    eps = 0.02
+    thirds, two_thirds = set(), set()
+    for r in arr:
+        if r.get("pedal") or "pitch" not in r:
+            continue
+        k = math.floor(r["beat"] + eps)
+        f = r["beat"] - k
+        if r["beats"] <= 0.5 + eps:
+            if abs(f - 1 / 3) < eps:
+                thirds.add(k)
+            elif abs(f - 2 / 3) < eps:
+                two_thirds.add(k)
+    live = thirds & two_thirds
+    if not live:
+        return 0
+    moved = 0
+    for r in arr:
+        if r.get("pedal") or "pitch" not in r:
+            continue
+        k = math.floor(r["beat"] + eps)
+        if k in live and abs(r["beat"] - k - 0.75) < eps and r["beats"] <= 0.5 + eps:
+            delta = r["beat"] - (k + 2 / 3)
+            r["beat"] = k + 2 / 3
+            r["beats"] += delta  # the release stays where it was written
+            moved += 1
+    if moved:
+        for r in arr:
+            if r.get("pedal") or "pitch" not in r:
+                continue
+            end = r["beat"] + r["beats"]
+            ke = math.floor(end + eps)
+            if ke in live and abs(end - ke - 0.75) < eps and r["beats"] >= 0.5:
+                # the dotted note that led into the moved sixteenth ends with it
+                r["beats"] = max(0.06, r["beats"] - (end - (ke + 2 / 3)))
+    return moved
+
+
 def apply_performance(arr, feel, spb, total_beats):
     """The asked-for performance layer, applied to ANY arr (faithful or arranged).
 
@@ -3089,6 +3135,7 @@ def action_render(inp):
                          "거부합니다. bars/score 를 줄이거나 구간을 나눠 주세요"}
     arr = (sorted(faithful_rows, key=lambda r: (r["beat"], r["part"])) if faithful
            else build_arrangement(events, chords, style, total_beats, band, feel))
+    assim = assimilate_triplets(arr)
     arr = apply_performance(arr, feel, spb, total_beats)
     vocal_path = str(inp.get("vocalPath") or "").strip()
     # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
@@ -3180,6 +3227,9 @@ def action_render(inp):
         # Silence is not consent: what the parser could not play is SAID, next to the render.
         data["notationNote"] = ("연주하지 못한 기호: " + ", ".join(
             f"{k}×{v}" for k, v in notation_skipped.items()) + " — 파서 미구현분입니다")
+    if assim:
+        data["performanceNote"] = (f"셋잇단 동화: 점리듬 16분음표 {assim}개를 같은 박의 "
+                                   "셋잇단 셋째 음(2/3)에 정렬했습니다 — 관례적 2:3 처리")
     if sf2_font:
         data["soundfont"] = sf2_font
     if engine_note:
@@ -3797,6 +3847,25 @@ def action_selftest():
     for pth in (ldat.get("outPath"), ldat.get("lrcPath")):
         if pth and os.path.isfile(pth):
             os.remove(pth)
+
+    def _tri(beat, beats, pitch):
+        return {"beat": beat, "beats": beats, "part": "melody", "patch": "piano",
+                "program": 0, "pitch": pitch, "vel": 0.5, "gate": 1.0}
+
+    tri_rows = [_tri(0.0, 1 / 3, 60), _tri(1 / 3, 1 / 3, 62), _tri(2 / 3, 1 / 3, 64),
+                _tri(0.0, 0.75, 72), _tri(0.75, 0.25, 72)]
+    tri_n = assimilate_triplets(tri_rows)
+    tri_six = next(r for r in tri_rows if r["pitch"] == 72 and r["beat"] > 0)
+    tri_dot = next(r for r in tri_rows if r["pitch"] == 72 and r["beat"] == 0.0)
+    ck("a dotted sixteenth against a live triplet grid joins the third triplet note",
+       (1, True), (tri_n, abs(tri_six["beat"] - 2 / 3) < 1e-9),
+       tri_n == 1 and abs(tri_six["beat"] - 2 / 3) < 1e-9
+       and abs(tri_six["beats"] - 1 / 3) < 1e-9 and abs(tri_dot["beats"] - 2 / 3) < 1e-9)
+    lit_rows = [_tri(0.0, 0.75, 72), _tri(0.75, 0.25, 72), _tri(0.0, 1.0, 48)]
+    lit_n = assimilate_triplets(lit_rows)
+    ck("with no triplet grid the dotting stays literal 3:1",
+       (0, 0.75), (lit_n, lit_rows[1]["beat"]),
+       lit_n == 0 and lit_rows[1]["beat"] == 0.75)
 
     xml_doc = (
         '<score-partwise><part-list/><part id="P1"><measure number="1">'
