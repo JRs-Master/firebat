@@ -146,6 +146,13 @@
         ],
         "description": "Style (genre) override when the score comes from MIDI — any style name the score contract accepts; an unknown one is refused with the full list."
       },
+      "engine": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render] sf2 = system FluidSynth + GM SoundFont — realistic instruments; the server enables it with `apt install fluidsynth fluid-soundfont-gm` and the module finds both on its own. builtin = the module's own synth. Omit = auto: sf2 when installed, else builtin."
+      },
       "outPath": {
         "type": [
           "string",
@@ -201,6 +208,7 @@
         "vocal",
         "lyrics",
         "style",
+        "engine",
         "midiOut",
         "midiOutPath",
         "outPath",

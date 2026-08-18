@@ -843,6 +843,9 @@ def write_midi(arr, bpm, path):
             ch = {"melody": 0, "chord": 1, "bass": 2}[part]
             tr.append(mido.Message("program_change", channel=ch,
                                    program=rows[0]["program"], time=0))
+            pan = PAN.get(part, 0.0)
+            tr.append(mido.Message("control_change", channel=ch, control=10,
+                                   value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
         # (tick, on/off) pairs, then one pass in time order — MIDI deltas are relative, so the
         # note-offs have to be interleaved rather than appended per note.
         marks = []
@@ -866,6 +869,80 @@ def write_midi(arr, bpm, path):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     mid.save(path)
     return path, None
+
+
+# ── SF2 backend (system fluidsynth) ─────────────────────────────────────────────────────────────
+
+SF2_DIRS = ("/usr/share/sounds/sf2", "/usr/local/share/sounds/sf2")
+
+
+def sf2_backend():
+    """The OS synth, if the OS has one: `apt install fluidsynth fluid-soundfont-gm`.
+
+    Both halves come from apt and both are FOUND, not configured — the engine on PATH, the GM
+    font at the distro's standard sf2 directory (default.sf2 = the alternatives symlink, so the
+    admin can retarget it without touching us). Returns (fluidsynth_bin, font_path, why_not);
+    why_not names the missing half so a forced engine:"sf2" fails with the next move.
+    """
+    import shutil
+    binp = shutil.which("fluidsynth")
+    font = None
+    for d in SF2_DIRS:
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        sf2s = [n for n in names if n.lower().endswith(".sf2")]
+        if sf2s:
+            pref = [n for n in sf2s if n.lower() == "default.sf2"]
+            font = os.path.join(d, (pref or sf2s)[0])
+            break
+    if not binp:
+        return None, font, "fluidsynth 미설치 — `apt install fluidsynth fluid-soundfont-gm`"
+    if not font:
+        return binp, None, ("사운드폰트(.sf2)가 없습니다 — "
+                            "`apt install fluid-soundfont-gm` (/usr/share/sounds/sf2)")
+    return binp, font, None
+
+
+def render_sf2(arr, spb, binp, font):
+    """The arrangement through fluidsynth: the same .mid midiOut writes, played on the GM font.
+
+    Returns (stereo, why_not) — any why_not drops the render back to the builtin synth, so a
+    broken font or a killed process degrades the tone, never the turn.
+    """
+    import subprocess
+    os.makedirs("data/sing", exist_ok=True)
+    tag = f"{os.getpid()}-{hashlib.sha1(f'{spb}:{len(arr)}'.encode()).hexdigest()[:8]}"
+    mid_path = f"data/sing/tmp-{tag}.mid"
+    wav_path = f"data/sing/tmp-{tag}.wav"
+    try:
+        written, note = write_midi(arr, 60.0 / spb, mid_path)
+        if not written:
+            return None, note or "mido unavailable — the sf2 engine goes through a .mid"
+        r = subprocess.run([binp, "-ni", "-g", "0.5", "-r", str(SR), "-F", wav_path, font, mid_path],
+                           capture_output=True, timeout=600)
+        if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1024:
+            tail = (r.stderr or r.stdout or b"")[-300:].decode("utf-8", "replace").strip()
+            return None, f"fluidsynth exit {r.returncode}: {tail}"
+        import soundfile as sf
+        data, sr = sf.read(wav_path, dtype="float64", always_2d=True)
+        if data.shape[1] == 1:
+            data = np.repeat(data, 2, axis=1)
+        data = data[:, :2]
+        if sr != SR:
+            data = np.stack([resample_linear(data[:, 0], SR / sr),
+                             resample_linear(data[:, 1], SR / sr)], axis=1)
+        peak = np.max(np.abs(data)) or 1.0
+        return data / peak, None
+    except subprocess.TimeoutExpired:
+        return None, "fluidsynth timed out"
+    finally:
+        for pth in (mid_path, wav_path):
+            try:
+                os.remove(pth)
+            except OSError:
+                pass
 
 
 # ── vocal retune (numpy floor; pyworld when available) ─────────────────────────────────────────
@@ -1294,8 +1371,26 @@ def action_render(inp):
     # tune, and dropping it was why an instrumental render came out as rhythm and bass only.
     if vocal_path:
         arr = [e for e in arr if e["part"] != "melody"]
-    mix, send = render_arrangement(arr, spb, total_beats)
-    mix, send = mix * 0.45, send * 0.45
+    engine = str(inp.get("engine") or "").strip().lower()
+    if engine not in ("", "auto", "sf2", "builtin"):
+        return {"success": False,
+                "error": "engine must be sf2 | builtin (omit = auto: sf2 when installed)"}
+    engine_used, engine_note, sf2_font = "builtin", None, None
+    mix = send = None
+    if engine != "builtin":
+        binp, font, why = sf2_backend()
+        if engine == "sf2" and why:
+            return {"success": False, "error": f"engine:sf2 사용 불가 — {why}"}
+        if not why:
+            stereo, err = render_sf2(arr, spb, binp, font)
+            if stereo is None:
+                engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
+            else:
+                engine_used, sf2_font = "sf2", os.path.basename(font)
+                mix, send = stereo * 0.45, np.zeros(len(stereo))
+    if mix is None:
+        mix, send = render_arrangement(arr, spb, total_beats)
+        mix, send = mix * 0.45, send * 0.45
     if vocal_path:
         if not os.path.isfile(vocal_path):
             return {"success": False,
@@ -1308,7 +1403,8 @@ def action_render(inp):
         mix[:, 0] += v * 0.707  # the singer stands center stage
         mix[:, 1] += v * 0.707
         send += v * 0.18
-    mix = add_room(mix, send)
+    if np.any(send):
+        mix = add_room(mix, send)
     out_path = str(inp.get("outPath") or "").strip()
     if not out_path:
         h = hashlib.sha1(json.dumps(score, sort_keys=True).encode()).hexdigest()[:12]
@@ -1330,7 +1426,12 @@ def action_render(inp):
         "style": style,
         "vocal": bool(vocal_path),
         "backend": "pyworld" if (vocal_path and try_pyworld()) else "numpy",
+        "engine": engine_used,
     }
+    if sf2_font:
+        data["soundfont"] = sf2_font
+    if engine_note:
+        data["engineNote"] = engine_note
     if midi_written:
         data["midiPath"] = midi_written
     if midi_note:
@@ -1522,6 +1623,20 @@ def action_selftest():
            spaced[1] or "matched", spaced[1] is None or "찾" not in (spaced[1] or ""))
     finally:
         del os.environ["MODULE_SCORES"]
+
+    # The sf2 engine is FOUND, not configured — and when a half is missing it names the apt
+    # package instead of failing mute (제1장 ③: 그 순간의 응답이 다음 한 수를 말한다).
+    bogus = action_render({"action": "render", "score": score, "engine": "bogus"})
+    ck("an unknown engine is refused with the choices", True, (bogus.get("error") or "")[:40],
+       not bogus.get("success") and "engine" in (bogus.get("error") or ""))
+    e_bin, e_font, e_why = sf2_backend()
+    ck("sf2_backend answers ready-or-next-move", True,
+       e_why or f"ready: {os.path.basename(e_font)}", bool(e_why) or bool(e_bin and e_font))
+    if e_why:
+        forced = action_render({"action": "render", "score": score, "engine": "sf2"})
+        ck("engine:sf2 forced while unavailable names the missing half", True,
+           (forced.get("error") or "")[:60],
+           not forced.get("success") and e_why[:12] in (forced.get("error") or ""))
 
     # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
     # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.
