@@ -29,12 +29,34 @@ pub fn success_envelope(mut data: Value) -> Value {
     };
     let mut props = decl.get("props").cloned().unwrap_or_else(|| json!({}));
     resolve_media_refs(&mut props, data.get("media"));
+    retire_attach_note(&mut data);
     json!({
         "success": true,
         "data": data,
         "component": decl.get("component").and_then(Value::as_str).unwrap_or_default(),
         "props": props,
     })
+}
+
+/// A carried file's note tells the model to attach it as a markdown link, which is right until a
+/// component draws it — then the answer shows the same file twice, once as a card and once as a
+/// link (실측 8/19: the karaoke stage, and under it the wav and the .lrc as file cards). The card
+/// is the presentation; the note becomes its opposite.
+fn retire_attach_note(data: &mut Value) {
+    const DRAWN: &str = "Already drawn as a component in this answer — do NOT attach it as a link \
+                         or a card again. The url is here only if you need to name the file.";
+    let flip = |rec: &mut Value| {
+        if let Some(obj) = rec.as_object_mut() {
+            if obj.contains_key("note") {
+                obj.insert("note".to_string(), Value::String(DRAWN.to_string()));
+            }
+        }
+    };
+    match data.get_mut("media") {
+        Some(Value::Array(rows)) => rows.iter_mut().for_each(flip),
+        Some(one) => flip(one),
+        None => {}
+    }
 }
 
 /// `{"$media": N}` → the Nth carried file's URL.
@@ -116,6 +138,28 @@ mod tests {
         assert_eq!(env["props"]["lrcUrl"], "/user/media/a.lrc");
         assert!(env["props"]["missing"].is_null(), "an index with no file is null, not a broken url");
         assert_eq!(env["props"]["title"], "아로하");
+    }
+
+    #[test]
+    fn a_drawn_file_is_not_attached_a_second_time() {
+        let env = success_envelope(json!({
+            "media": [
+                { "url": "/user/media/a.wav", "note": "Attach this in your answer as exactly…" },
+                { "url": "/user/media/a.lrc", "note": "Attach this in your answer as exactly…" }
+            ],
+            "_render": { "component": "karaoke", "props": { "audioUrl": { "$media": 0 } } }
+        }));
+        for rec in env["data"]["media"].as_array().unwrap() {
+            assert!(rec["note"].as_str().unwrap().contains("do NOT attach"));
+        }
+    }
+
+    #[test]
+    fn the_attach_note_survives_when_nothing_draws_the_file() {
+        let env = success_envelope(json!({
+            "media": { "url": "/user/media/a.xlsx", "note": "Attach this in your answer as exactly…" }
+        }));
+        assert!(env["data"]["media"]["note"].as_str().unwrap().starts_with("Attach"));
     }
 
     #[test]
