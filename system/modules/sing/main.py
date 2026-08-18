@@ -1293,8 +1293,10 @@ def render_sf2(arr, spb, binp, font):
         written, note = write_midi(arr, 60.0 / spb, mid_path)
         if not written:
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
-        r = subprocess.run([binp, "-ni", "-R", "0", "-C", "0", "-g", "0.5", "-r", str(SR),
-                            "-F", wav_path, font, mid_path],
+        # Stock settings on purpose (사용자: "우리가 임의적으로 하지 말고 미디 기본값으로") —
+        # the reference sound is what any GM player makes of the same .mid, reverb included.
+        r = subprocess.run([binp, "-ni", "-g", "0.5", "-r", str(SR), "-F", wav_path, font,
+                            mid_path],
                            capture_output=True, timeout=600)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1024:
             tail = (r.stderr or r.stdout or b"")[-300:].decode("utf-8", "replace").strip()
@@ -1825,10 +1827,9 @@ def action_render(inp):
                 engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
             else:
                 engine_used, sf2_font = "sf2", os.path.basename(font)
-                # The engine renders DRY (-R 0): its default hall was the "everything pedaled"
-                # wash (실측·사용자). One room, ours, same as the builtin band's.
-                mix = stereo * 0.45
-                send = mix.mean(axis=1) * 0.12
+                # The engine's own space is the MIDI default — we add no room of ours on top.
+                # (The vocal overlay still sends to add_room below: that voice is OUR sound.)
+                mix, send = stereo * 0.45, np.zeros(len(stereo))
     if mix is None:
         mix, send = render_arrangement(arr, spb, total_beats)
         mix, send = mix * 0.45, send * 0.45
