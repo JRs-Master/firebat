@@ -1492,9 +1492,13 @@ def write_midi(arr, bpm, path):
             next_ch += 1
             if next_ch == 9:  # the GM drum channel belongs to the kit alone
                 next_ch = 10
+            # The first row of a part is not always a NOTE: a humanize jitter can nudge the
+            # first note past 0.0 and sort a pedal row (which has no program) to the front —
+            # 실측: 월광 pedal+humanize 가 여기서 KeyError 로 죽었다.
+            first_note = next((e for e in rows if not e.get("pedal")), None)
             tr.append(mido.Message("program_change", channel=ch,
-                                   program=rows[0]["program"], time=0))
-            pan = rows[0].get("pan")
+                                   program=int((first_note or {}).get("program", 0)), time=0))
+            pan = (first_note or {}).get("pan")
             if pan is None:
                 pan = PAN.get(part, 0.0)
             tr.append(mido.Message("control_change", channel=ch, control=10,
@@ -1814,15 +1818,16 @@ def midi_to_parts(path):
     except Exception as e:  # noqa: BLE001
         return None, None, f"MIDI parse failed: {e}"
     tpb = mf.ticks_per_beat or 480
-    bpm = 120.0
+    tempo_events = []
     for tr in mf.tracks:
+        t = 0
         for msg in tr:
+            t += msg.time
             if msg.type == "set_tempo":
-                bpm = round(mido.tempo2bpm(msg.tempo), 1)
-                break
-        else:
-            continue
-        break
+                tempo_events.append((t / tpb, round(mido.tempo2bpm(msg.tempo), 3)))
+    tempo_events.sort()
+    bpm = round(tempo_events[0][1], 1) if tempo_events else 120.0
+    warp = _warp_fn(tempo_events, bpm)
     rows, pidx = [], 0
     for tr in mf.tracks:
         ev = _track_events(tr)
@@ -1833,15 +1838,16 @@ def midi_to_parts(path):
             for note, start, dur, vel in ev:
                 name = _NOTE_DRUM.get(note)
                 if name:
-                    rows.append({"beat": start / tpb, "beats": 0.25, "part": "drum",
+                    rows.append({"beat": warp(start / tpb), "beats": 0.25, "part": "drum",
                                  "drum": name, "vel": round(vel / 127.0, 3)})
             continue
         pidx += 1
         part = f"p{pidx}"
         patch = _patch_for_program(prog)
         for note, start, dur, vel in ev:
-            rows.append({"beat": start / tpb, "beats": max(0.125, dur / tpb), "part": part,
-                         "patch": patch, "program": prog, "pitch": int(note),
+            b0 = warp(start / tpb)
+            rows.append({"beat": b0, "beats": max(0.125, warp((start + dur) / tpb) - b0),
+                         "part": part, "patch": patch, "program": prog, "pitch": int(note),
                          "vel": round(vel / 127.0, 3), "gate": 1.0})
     if not rows:
         return None, None, "MIDI 에서 음표를 못 읽었습니다"
@@ -1865,15 +1871,18 @@ def midi_to_score(path, lyrics=None):
         return None, f"MIDI parse failed: {e}"
     tpb = mf.ticks_per_beat or 480
 
-    bpm = 120.0
+    # The WHOLE tempo map, not the first mark (실측 구멍: a ballad's rit. drifted ever further
+    # behind its own file). Same warp as MusicXML: time bends onto one master tempo.
+    tempo_events = []
     for tr in mf.tracks:
+        t = 0
         for msg in tr:
+            t += msg.time
             if msg.type == "set_tempo":
-                bpm = round(mido.tempo2bpm(msg.tempo), 1)
-                break
-        else:
-            continue
-        break
+                tempo_events.append((t / tpb, round(mido.tempo2bpm(msg.tempo), 3)))
+    tempo_events.sort()
+    bpm = round(tempo_events[0][1], 1) if tempo_events else 120.0
+    warp = _warp_fn(tempo_events, bpm)
 
     # The file's own meter (실측: Take Five parsed as 4/4 — the 5 was in the file, unread).
     meter = None
@@ -1934,7 +1943,8 @@ def midi_to_score(path, lyrics=None):
         span = (mel[i + 1][1] - start) if i + 1 < len(mel) else dur
         # Real performances hold notes for bars (pedal, pads — 실측: 34.5·37 박). A recorded
         # length is a fact to absorb, not a typo to refuse: clamp to the score cap.
-        beats = min(64.0, max(0.25, round(span / tpb * 4) / 4))
+        w_span = warp((start + span) / tpb) - warp(start / tpb)
+        beats = min(64.0, max(0.25, round(w_span * 4) / 4))
         # The recorded dynamics ARE the score (실측: 짐노페디가 우리 일률 곡선 때문에 다
         # 세게 나왔다 — pp 를 mf 로 덮어 쓰고 있었다). 0-1 scale, our vel language.
         seq.append({"note": _midi_name(note), "beats": beats, "tick": start,
@@ -2215,16 +2225,26 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
     if not parts:
         return None, "MusicXML 에 part 가 없습니다"
 
-    prog_of = {}
+    prog_of, unp_of = {}, {}
     pl = kid(root, "part-list")
     for sp in (kids(pl, "score-part") if pl is not None else []):
-        mi = kid(sp, "midi-instrument")
-        mp = text_of(mi, "midi-program") if mi is not None else None
-        if sp.get("id") and mp:
-            try:
-                prog_of[sp.get("id")] = max(0, min(127, int(mp) - 1))
-            except ValueError:
-                pass
+        for mi2 in kids(sp, "midi-instrument"):
+            mp = text_of(mi2, "midi-program")
+            mu = text_of(mi2, "midi-unpitched")
+            if mp and sp.get("id") and sp.get("id") not in prog_of:
+                try:
+                    prog_of[sp.get("id")] = max(0, min(127, int(mp) - 1))
+                except ValueError:
+                    pass
+            if mu and mi2.get("id"):
+                try:
+                    unp_of[mi2.get("id")] = int(mu) - 1  # spec: 1-based MIDI note
+                except ValueError:
+                    pass
+    skipped = {}
+
+    def skip_mark(what):
+        skipped[what] = skipped.get(what, 0) + 1
 
     order = _playback_order([_measure_flags(m) for m in kids(parts[0], "measure")])
 
@@ -2285,6 +2305,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                                     tempo_events.append((m_base + cur, pm * unit))
                             except ValueError:
                                 pass
+                        wd = kid(dt, "words")
+                        if wd is not None and wd.text:
+                            import re as _re
+                            if _re.search(r"\b(rit|rall|accel)", wd.text.lower()):
+                                skip_mark(f"문자 템포({wd.text.strip()[:12]})")
                         wg = kid(dt, "wedge")
                         if wg is not None:
                             wt = (wg.get("type") or "").lower()
@@ -2328,6 +2353,27 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                 elif tag == "note":
                     dur = float(text_of(el, "duration") or 0) / divisions
                     is_grace = kid(el, "grace") is not None
+                    unp = kid(el, "unpitched")
+                    if unp is not None:
+                        # A drum staff writes unpitched notes; the score-part's midi-unpitched
+                        # map says which GM drum each one IS (밴드스코어의 드럼 채보).
+                        inst = kid(el, "instrument")
+                        nn = unp_of.get(inst.get("id")) if inst is not None else None
+                        dname = _NOTE_DRUM.get(nn) if nn is not None else None
+                        st = kid(el, "chord") is not None
+                        onset = last_onset if st else m_base + cur
+                        if not st:
+                            last_onset = onset
+                        if dname and parts_out is not None:
+                            parts_out.append({"beat": onset, "beats": 0.25, "part": "drum",
+                                              "drum": dname,
+                                              "vel": vel if vel is not None else 0.7})
+                        elif parts_out is not None:
+                            skip_mark("드럼(매핑 없음)")
+                        if not st:
+                            cur += dur
+                            m_len = max(m_len, cur)
+                        continue
                     if kid(el, "rest") is not None:
                         if notes:
                             notes[-1]["beats"] += dur  # a rest rides the note before it
@@ -2364,6 +2410,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                                 orn_kind = "mordent"
                             elif ot == "turn":
                                 orn_kind = "turn"
+                            elif ot == "tremolo":
+                                skip_mark("트레몰로")
+                    if nots is not None and (_xk1(nots, "glissando") is not None
+                                             or _xk1(nots, "slide") is not None):
+                        skip_mark("글리산도")
                     fermata = nots is not None and _xk1(nots, "fermata") is not None
                     if fermata:
                         dur *= 1.75
@@ -2480,6 +2531,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
             row["vel"] = n["vel"]
         out_notes.append(row)
     score = {"bpm": max(20.0, min(300.0, master)), "notes": out_notes}
+    if skipped:
+        score["_notation_skipped"] = skipped
     if meter is not None and meter != 4:
         score["meter"] = meter
     hs = best["harmonies"] or next((pp["harmonies"] for pp in parsed_parts
@@ -2686,6 +2739,8 @@ def action_render(inp):
                                                parts_out=faithful_rows)
             if err:
                 return {"success": False, "error": err}
+            notation_skipped = score.pop("_notation_skipped", None) \
+                if isinstance(score, dict) else None
             # Every feel knob rides the top level too: a shelved MIDI plus new instruments is
             # ONE call. While band lived only inside `score`, composing a fresh score was the
             # only one-call path to "피아노로" — measured: the model did exactly that (turn 31,
@@ -2832,6 +2887,10 @@ def action_render(inp):
         "engine": engine_used,
         "mode": "faithful" if faithful else "arranged",
     }
+    if parsed_from and locals().get("notation_skipped"):
+        # Silence is not consent: what the parser could not play is SAID, next to the render.
+        data["notationNote"] = ("연주하지 못한 기호: " + ", ".join(
+            f"{k}×{v}" for k, v in notation_skipped.items()) + " — 파서 미구현분입니다")
     if sf2_font:
         data["soundfont"] = sf2_font
     if engine_note:
@@ -3141,7 +3200,15 @@ def action_selftest():
                           "score": {"bpm": 120, "bars": 2, "style": "rock",
                                     "drumPattern": [["kick", 0.0, 0.9], ["snare", 1.0],
                                                     ["conga_open", 2.5, 0.6]]}})
-    dry = apply_performance([{"beat": 0.0, "beats": 2.0, "part": "p1", "patch": "piano",
+    pfirst = [{"beat": 0.0, "beats": 4.0, "part": "p1", "pedal": True},
+              {"beat": 0.01, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
+               "pitch": 60, "vel": 0.5, "gate": 1.0}]
+    ok_pf, _ = write_midi(pfirst, 120, "data/sing/selftest-pf.mid")
+    ck("a pedal row sorted first cannot crash the .mid writer (월광 실측)", True,
+       bool(ok_pf), bool(ok_pf))
+    if ok_pf and os.path.exists("data/sing/selftest-pf.mid"):
+        os.remove("data/sing/selftest-pf.mid")
+        dry = apply_performance([{"beat": 0.0, "beats": 2.0, "part": "p1", "patch": "piano",
                               "program": 0, "pitch": 60, "vel": 0.5, "gate": 1.0},
                              {"beat": 0.0, "beats": 4.0, "part": "p1", "pedal": True}],
                             {"meter": 4, "pedal": False}, 0.5, 4)
@@ -3307,6 +3374,50 @@ def action_selftest():
     ck("a grace note steals its moment, a trill plays as the notes it means",
        True, (any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows), len(trill)),
        any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows) and len(trill) >= 4)
+
+    drum_doc = ('<score-partwise><part-list><score-part id="P1">'
+                '<midi-instrument id="P1-I36"><midi-unpitched>39</midi-unpitched>'
+                '</midi-instrument></score-part></part-list><part id="P1">'
+                '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                '<note><unpitched><display-step>C</display-step>'
+                '<display-octave>5</display-octave></unpitched>'
+                '<instrument id="P1-I36"/><duration>1</duration></note>'
+                '<note><unpitched/><duration>1</duration></note>'
+                '<note><pitch><step>C</step><octave>4</octave></pitch>'
+                '<duration>2</duration>'
+                '<notations><glissando type="start"/></notations></note>'
+                '</measure></part></score-partwise>')
+    with open("data/sing/selftest-drum.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(drum_doc)
+    drows = []
+    dsc, derr = musicxml_to_score("data/sing/selftest-drum.musicxml", parts_out=drows)
+    hit = [r for r in drows if r.get("drum")]
+    ck("a band score's drum staff plays (midi-unpitched -> the kit)", "snare",
+       hit[0]["drum"] if hit else None,
+       derr is None and hit and hit[0]["drum"] == "snare")
+    ck("what the parser cannot play is SAID, not swallowed", True,
+       (dsc or {}).get("_notation_skipped"),
+       bool((dsc or {}).get("_notation_skipped"))
+       and any("글리산도" in k for k in dsc["_notation_skipped"]))
+    os.remove("data/sing/selftest-drum.musicxml")
+
+    import mido as _mido
+    _mf = _mido.MidiFile(ticks_per_beat=480)
+    _tr = _mido.MidiTrack(); _mf.tracks.append(_tr)
+    _tr.append(_mido.MetaMessage("set_tempo", tempo=_mido.bpm2tempo(120), time=0))
+    _tr.append(_mido.Message("note_on", note=60, velocity=80, time=0))
+    _tr.append(_mido.Message("note_off", note=60, velocity=0, time=960))
+    _tr.append(_mido.MetaMessage("set_tempo", tempo=_mido.bpm2tempo(60), time=0))
+    _tr.append(_mido.Message("note_on", note=62, velocity=80, time=0))
+    _tr.append(_mido.Message("note_off", note=62, velocity=0, time=960))
+    _mf.save("data/sing/selftest-warp.mid")
+    wrows, wbpm, werr = midi_to_parts("data/sing/selftest-warp.mid")
+    ck("a MIDI tempo map bends time like MusicXML does (2 beats @60 = 4 @120)",
+       (120.0, 2.0, 4.0),
+       (wbpm, wrows[0]["beats"] if wrows else None, wrows[1]["beats"] if wrows else None),
+       werr is None and wbpm == 120.0 and abs(wrows[0]["beats"] - 2.0) < 1e-6
+       and abs(wrows[1]["beats"] - 4.0) < 1e-6)
+    os.remove("data/sing/selftest-warp.mid")
 
     xml_doc = (
         '<score-partwise><part-list/><part id="P1"><measure number="1">'
