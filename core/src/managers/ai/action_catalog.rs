@@ -630,10 +630,7 @@ fn params_from_input(config: &serde_json::Value) -> serde_json::Value {
     else {
         return serde_json::Value::Object(m);
     };
-    for (k, v) in props {
-        if k == "action" {
-            continue;
-        }
+    let doc_of = |v: &serde_json::Value| -> String {
         let desc = v.get("description").and_then(|d| d.as_str()).unwrap_or("");
         let enum_hint = v
             .get("enum")
@@ -648,10 +645,27 @@ fn params_from_input(config: &serde_json::Value) -> serde_json::Value {
                 }
             })
             .unwrap_or_default();
-        m.insert(
-            k.clone(),
-            serde_json::Value::String(format!("{}{}", desc, enum_hint).trim().to_string()),
-        );
+        format!("{}{}", desc, enum_hint).trim().to_string()
+    };
+    for (k, v) in props {
+        if k == "action" {
+            continue;
+        }
+        m.insert(k.clone(), serde_json::Value::String(doc_of(v)));
+        // One level into an object property: its inner contract is real signature information,
+        // and this surface is the ONLY place a model can read it. Measured 2026-08-18: the row
+        // shape of sing's `score.drumPattern` lived in a nested description this map never
+        // carried, and three live turns in a row guessed it wrong — the model was asked to
+        // satisfy a contract it could not see. Children without a description stay silent
+        // (structure alone says nothing worth a row).
+        if let Some(children) = v.get("properties").and_then(|p| p.as_object()) {
+            for (ck, cv) in children {
+                let doc = doc_of(cv);
+                if !doc.is_empty() {
+                    m.insert(format!("{k}.{ck}"), serde_json::Value::String(doc));
+                }
+            }
+        }
     }
     serde_json::Value::Object(m)
 }
@@ -703,6 +717,15 @@ fn fill_param_docs_from_input(
                 .cloned()
                 .unwrap_or_else(|| serde_json::Value::String(String::new()));
             m.insert(name.to_string(), doc);
+            // The selection stays the row's, but a selected object param carries its documented
+            // children ("score" brings "score.band") — the nested contract rides the same
+            // surface instead of being a pointer to text the model can never fetch.
+            let prefix = format!("{name}.");
+            for (dk, dv) in derived_map {
+                if dk.starts_with(&prefix) && !m.contains_key(dk) {
+                    m.insert(dk.clone(), dv.clone());
+                }
+            }
         }
         extra["params"] = serde_json::Value::Object(m);
         return;
@@ -2204,6 +2227,49 @@ mod display_vs_document_tests {
 
     /// The executor validates a `query` OBJECT; the docs name the leaf by its path. The schema
     /// response has to show the shape the call is made in.
+    #[test]
+    fn an_object_params_documented_children_reach_the_surface() {
+        // Measured 2026-08-18: sing's `score.drumPattern` row shape lived in a nested
+        // description this surface never carried — three live turns guessed it wrong. The
+        // schema surface is the only place a model can read an inner contract.
+        let cfg = serde_json::json!({ "input": { "properties": {
+            "action": { "enum": ["render"] },
+            "score": { "type": "object", "description": "the song",
+                       "properties": {
+                           "drumPattern": { "description": "rows of [name, beat, vel]" },
+                           "bpm": { "type": "number" } } },
+            "vocal": { "type": "boolean", "description": "sing it" }
+        }}});
+        let m = params_from_input(&cfg);
+        assert_eq!(m["score"], "the song");
+        assert_eq!(m["score.drumPattern"], "rows of [name, beat, vel]");
+        assert_eq!(m["vocal"], "sing it");
+        assert!(
+            m.get("score.bpm").is_none(),
+            "a child with no description has nothing to say — structure alone is not a row"
+        );
+    }
+
+    #[test]
+    fn a_listed_object_param_brings_its_children_along() {
+        let cfg = serde_json::json!({ "input": { "properties": {
+            "action": { "enum": ["render"] },
+            "score": { "type": "object", "description": "the song",
+                       "properties": {
+                           "band": { "description": "who plays which part" } } },
+            "outPath": { "description": "where the wav lands" }
+        }}});
+        let mut extra = serde_json::json!({ "params": ["score"] });
+        fill_param_docs_from_input(&mut extra, &cfg, "render");
+        let params = extra["params"].as_object().expect("params map");
+        assert_eq!(params["score"], "the song");
+        assert_eq!(params["score.band"], "who plays which part", "the child rides the surface");
+        assert!(
+            params.get("outPath").is_none(),
+            "the selection is still the row's — unlisted params do not tag along"
+        );
+    }
+
     #[test]
     fn dotted_param_paths_are_rendered_as_the_nesting_they_are() {
         let flat = serde_json::json!({
