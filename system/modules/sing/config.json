@@ -130,6 +130,20 @@
               "null"
             ],
             "description": "Bar count when the piece is longer than its notes/chords — with drumPattern and NO notes this makes a drum solo."
+          },
+          "humanize": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "0-1 human feel: deterministic micro timing/velocity jitter and chord rolls. '사람처럼' ≈ 0.5-0.7. Omit = exact grid."
+          },
+          "pedal": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "true = sustain pedal, re-pressed each bar, when the score has no pedal marks of its own (piano wash — 월광 어법). Scores WITH <pedal> marks always play them as real CC64."
           }
         }
       },
@@ -205,6 +219,27 @@
         ],
         "description": "[render] sf2 = system FluidSynth + GM SoundFont — realistic instruments; the server enables it with `apt install fluidsynth fluid-soundfont-gm` and the module finds both on its own. builtin = the module's own synth. Omit = auto: sf2 when installed, else builtin."
       },
+      "bpm": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "[render, with scoreMediaPath] Override the file's tempo (quarter-note BPM, 20-300). '템포 빠르게' = a higher number."
+      },
+      "humanize": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "0-1 human feel: deterministic micro timing/velocity jitter and chord rolls. '사람처럼' ≈ 0.5-0.7. Omit = exact grid."
+      },
+      "pedal": {
+        "type": [
+          "boolean",
+          "null"
+        ],
+        "description": "true = sustain pedal, re-pressed each bar, when the score has no pedal marks of its own (piano wash — 월광 어법). Scores WITH <pedal> marks always play them as real CC64."
+      },
       "outPath": {
         "type": [
           "string",
@@ -262,6 +297,9 @@
         "lyrics",
         "style",
         "engine",
+        "bpm",
+        "humanize",
+        "pedal",
         "band",
         "drumPattern",
         "swing",

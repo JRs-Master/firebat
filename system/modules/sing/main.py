@@ -233,6 +233,17 @@ def parse_score(score):
                     return None, None, None, None, None, None,                         f"drumPattern 박 {off} 가 마디({meter}박) 밖입니다"
                 vel = float(row[2]) if len(row) > 2 and row[2] is not None else 0.7
                 drum_rows.append((dname, off, max(0.0, min(1.0, vel))))
+    humanize = score.get("humanize")
+    if humanize is not None:
+        try:
+            humanize = float(humanize)
+        except (TypeError, ValueError):
+            return None, None, None, None, None, None, "humanize 는 0~1 숫자입니다"
+        if not (0.0 <= humanize <= 1.0):
+            return None, None, None, None, None, None, "humanize 는 0~1 사이여야 합니다"
+    pedal = score.get("pedal")
+    if pedal is not None and not isinstance(pedal, bool):
+        return None, None, None, None, None, None, "pedal 은 true/false 입니다"
     bars = score.get("bars")
     if bars is not None:
         try:
@@ -242,7 +253,8 @@ def parse_score(score):
         if not (1 <= bars <= 256):
             return None, None, None, None, None, None, "bars 는 1~256 마디입니다"
     feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline,
-            "drums": drum_rows, "bars": bars, "bpm": bpm, "doubles": doubles}
+            "drums": drum_rows, "bars": bars, "bpm": bpm, "doubles": doubles,
+            "humanize": humanize, "pedal": pedal}
     return spb, events, chords, style, band, feel, None
 
 
@@ -1291,6 +1303,44 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     return out
 
 
+def apply_performance(arr, feel, spb, total_beats):
+    """The asked-for performance layer, applied to ANY arr (faithful or arranged).
+
+    pedal:true — when the score carries no pedal marks of its own, generate the pianist's
+    default: press at每 bar, release at the barline (re-pedal — the standard way to keep the
+    wash without smearing harmonies; 월광's own marks are famously absent from transcriptions).
+    humanize 0-1 — deterministic micro jitter: timing (~12ms at 1.0), velocity (~7%), and
+    chord-stack rolls (~10ms per voice). 사람처럼, but the same request renders the same bytes.
+    """
+    meter = int((feel or {}).get("meter") or 4)
+    if (feel or {}).get("pedal") and not any(e.get("pedal") for e in arr):
+        pitched_parts = {e["part"] for e in arr if "pitch" in e and not e.get("pedal")}
+        bar = 0.0
+        while bar < total_beats:
+            span = min(float(meter), total_beats - bar)
+            for part in pitched_parts:
+                arr.append({"beat": bar, "beats": span, "part": part, "pedal": True})
+            bar += meter
+    amount = float((feel or {}).get("humanize") or 0.0)
+    if amount > 0:
+        rng = np.random.default_rng(1729 + len(arr))
+        jt = 0.012 * amount / spb
+        stacks = {}
+        for e in sorted((x for x in arr if not x.get("pedal")),
+                        key=lambda x: (x["beat"], x.get("pitch", 0))):
+            scale = 0.4 if e["part"] == "drum" else 1.0
+            key = (e["part"], round(e["beat"], 3))
+            k = stacks.get(key, 0)
+            stacks[key] = k + 1
+            roll = (k * 0.010 / spb) * amount if e["part"] != "drum" else 0.0
+            e["beat"] = max(0.0, e["beat"] + float(rng.normal(0, jt)) * scale + roll)
+            e["vel"] = float(min(1.0, max(0.08,
+                                          e.get("vel", 0.7)
+                                          * (1 + float(rng.normal(0, 0.07)) * amount))))
+        arr.sort(key=lambda x: (x["beat"], x["part"]))
+    return arr
+
+
 def render_arrangement(arr, spb, total_beats):
     """The numpy backend — (stereo (n,2) array, mono reverb-send bus). The band is panned onto
     a stage and each voice contributes to one shared room (add_room applies it at the end)."""
@@ -1300,7 +1350,15 @@ def render_arrangement(arr, spb, total_beats):
     out = np.zeros((n_total, 2), dtype=np.float32)
     send = np.zeros(n_total, dtype=np.float32)
     hits = _kit_bank()
+    # Damper realization for the synth that has no pedal: a note inside a pedal span rings
+    # until the release (the .mid says the same thing with CC64 instead).
+    pedal_spans = {}
     for e in arr:
+        if e.get("pedal"):
+            pedal_spans.setdefault(e["part"], []).append((e["beat"], e["beat"] + e["beats"]))
+    for e in arr:
+        if e.get("pedal"):
+            continue
         i = int(SR * spb * e["beat"])
         if i >= n_total:
             continue
@@ -1308,8 +1366,13 @@ def render_arrangement(arr, spb, total_beats):
             seg = hits[e["drum"]] * float(e.get("vel", 0.8))
             key = e["drum"]
         else:
+            held = e["beats"]
+            for a, b in pedal_spans.get(e["part"], ()):  # noqa: B007
+                if a <= e["beat"] < b:
+                    held = max(held, b - e["beat"])
+                    break
             seg = synth_note(freq_of_midi(e["pitch"]),
-                             spb * e["beats"] * float(e.get("gate", 1.0)),
+                             spb * held * float(e.get("gate", 1.0)),
                              e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)))
             key = e["part"]
         m = min(len(seg), n_total - i)
@@ -1404,7 +1467,8 @@ def write_midi(arr, bpm, path):
     # channel (9) is fixed by the standard rather than by us.
     seen = []
     for e in arr:
-        if e["part"] not in seen:
+        if e["part"] not in seen and not (e.get("pedal") and not any(
+                x["part"] == e["part"] and not x.get("pedal") for x in arr)):
             seen.append(e["part"])
     order = [q for q in ("melody", "chord", "bass") if q in seen] \
         + [q for q in seen if q not in ("melody", "chord", "bass", "drum")] \
@@ -1431,10 +1495,17 @@ def write_midi(arr, bpm, path):
                 pan = PAN.get(part, 0.0)
             tr.append(mido.Message("control_change", channel=ch, control=10,
                                    value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
-        # (tick, on/off) pairs, then one pass in time order — MIDI deltas are relative, so the
-        # note-offs have to be interleaved rather than appended per note.
+        # (tick, kind) marks in one time-ordered pass — MIDI deltas are relative, so note-offs
+        # and pedal changes have to be interleaved rather than appended per event. kind: 0 =
+        # note_off, 1 = note_on, 2 = CC64 (sustain — fluidsynth and every GM synth honor it).
         marks = []
         for e in rows:
+            if e.get("pedal"):
+                start = int(round(e["beat"] * tpb))
+                end = start + max(1, int(round(e["beats"] * tpb)))
+                marks.append((start, 2, 127, 0))
+                marks.append((end, 2, 0, 0))
+                continue
             start = int(round(e["beat"] * tpb))
             pitch = DRUM_NOTE.get(e["drum"], 42) if part == "drum" else e["pitch"]
             vel = int(round(127 * float(e.get("vel", 0.71))))
@@ -1443,11 +1514,15 @@ def write_midi(arr, bpm, path):
             marks.append((start + max(1, int(round(length * tpb))), 0, pitch, 0))
         marks.sort(key=lambda m: (m[0], m[1]))
         prev = 0
-        for tick, on, pitch, vel in marks:
-            tr.append(mido.Message("note_on" if on else "note_off", channel=ch,
-                                   note=max(0, min(127, pitch)),
-                                   velocity=max(1, min(127, vel)) if on else 0,
-                                   time=tick - prev))
+        for tick, kind, a, b in marks:
+            if kind == 2:
+                tr.append(mido.Message("control_change", channel=ch, control=64, value=a,
+                                       time=tick - prev))
+            else:
+                tr.append(mido.Message("note_on" if kind == 1 else "note_off", channel=ch,
+                                       note=max(0, min(127, a)),
+                                       velocity=max(1, min(127, b)) if kind == 1 else 0,
+                                       time=tick - prev))
             prev = tick
     mid.tracks[0].insert(0, mido.MetaMessage("set_tempo",
                                              tempo=mido.bpm2tempo(bpm), time=0))
@@ -2002,6 +2077,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
         f_prog = prog_of.get(part.get("id"), 0)
         f_part = f"p{pi + 1}"
         last_onset = 0.0
+        pedal_down = None  # damper state — a {"pedal": True} row spans press to release
         for meas in kids(part, "measure"):
             m_base, cur, m_len = pos, 0.0, 0.0
             for el in meas:
@@ -2025,6 +2101,22 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     dyn = kid(dt, "dynamics") if dt is not None else None
                     if dyn is not None and len(dyn):
                         vel = _XML_DYN.get(_strip_ns(dyn[0].tag), vel)
+                    # Sustain pedal — half of how the piece actually SOUNDS on a piano (월광의
+                    # 그 울림). Press-to-release becomes a pedal row; the .mid gets real CC64,
+                    # the builtin synth holds the notes instead.
+                    ped = kid(dt, "pedal") if dt is not None else None
+                    if ped is not None and parts_out is not None:
+                        ptype = (ped.get("type") or "start").lower()
+                        now = m_base + cur
+                        if ptype in ("start", "resume", "sostenuto"):
+                            if pedal_down is None:
+                                pedal_down = now
+                        elif ptype in ("stop", "discontinue", "change"):
+                            if pedal_down is not None and now > pedal_down:
+                                parts_out.append({"beat": pedal_down,
+                                                  "beats": now - pedal_down,
+                                                  "part": f_part, "pedal": True})
+                            pedal_down = now if ptype == "change" else None
                 elif tag == "sound" and el.get("tempo"):
                     bpm = float(el.get("tempo"))
                 elif tag == "harmony":
@@ -2092,6 +2184,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     else:
                         notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": vel})
             pos = m_base + m_len
+        if pedal_down is not None and parts_out is not None and pos > pedal_down:
+            parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
+                              "part": f_part, "pedal": True})
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
                                  "lyrics": sum(1 for n in notes if n["syl"])})
@@ -2324,7 +2419,8 @@ def action_render(inp):
             # ONE call. While band lived only inside `score`, composing a fresh score was the
             # only one-call path to "피아노로" — measured: the model did exactly that (turn 31,
             # 48s 자작 while the shelf held the real piece and scores had just listed it).
-            for knob in ("style", "band", "drumPattern", "swing", "comp", "bassline"):
+            for knob in ("style", "band", "drumPattern", "swing", "comp", "bassline",
+                         "bpm", "humanize", "pedal"):
                 if inp.get(knob) is not None:
                     score[knob] = inp[knob]
             parsed_from = media_path
@@ -2385,6 +2481,7 @@ def action_render(inp):
                          "거부합니다. bars/score 를 줄이거나 구간을 나눠 주세요"}
     arr = (sorted(faithful_rows, key=lambda r: (r["beat"], r["part"])) if faithful
            else build_arrangement(events, chords, style, total_beats, band, feel))
+    arr = apply_performance(arr, feel, spb, total_beats)
     vocal_path = str(inp.get("vocalPath") or "").strip()
     # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
     # tune, and dropping it was why an instrumental render came out as rhythm and bass only.
@@ -2773,6 +2870,24 @@ def action_selftest():
                           "score": {"bpm": 120, "bars": 2, "style": "rock",
                                     "drumPattern": [["kick", 0.0, 0.9], ["snare", 1.0],
                                                     ["conga_open", 2.5, 0.6]]}})
+    perf = parse_score(dict(score, pedal=True, humanize=0.5))
+    ck("pedal/humanize are legal performance knobs", None, perf[6], perf[6] is None)
+    parr = build_arrangement(perf[1], perf[2], "none", 4, None, perf[5])
+    parr = apply_performance(parr, perf[5], 0.5, 4)
+    ck("pedal:true lays a bar-long damper span per pitched part", True,
+       len([e for e in parr if e.get("pedal")]),
+       any(e.get("pedal") and e["beats"] == 4.0 for e in parr))
+    h1 = apply_performance(build_arrangement(perf[1], perf[2], "none", 4, None, perf[5]),
+                           perf[5], 0.5, 4)
+    h2 = apply_performance(build_arrangement(perf[1], perf[2], "none", 4, None, perf[5]),
+                           perf[5], 0.5, 4)
+    ck("humanize is deterministic — same ask, same bytes",
+       True, h1 == h2, h1 == h2)
+    ck("...and actually moves off the grid", True,
+       any(abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-9
+           for e in h1 if not e.get("pedal")),
+       any(abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-9
+           for e in h1 if not e.get("pedal")))
     huge_len = action_render({"action": "render",
                               "score": {"bpm": 20, "bars": 256,
                                         "drumPattern": [["kick", 0.0]]}})
