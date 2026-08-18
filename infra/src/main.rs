@@ -984,6 +984,10 @@ async fn main() -> Result<()> {
     // ITtsPort — tts 도구 + MediaService 보이스 샘플 미리듣기 공유 인스턴스.
     let tts_adapter: Arc<dyn firebat_core::ports::ITtsPort> =
         Arc::new(firebat_infra::tts::TtsAdapter::new(vault.clone()));
+    // A module's `data._prepare = {service:"tts", ...}` declaration is performed with the same
+    // engine — the declarative door that retired the sing bridge (a module cannot call managers;
+    // it declares, the framework provides). Post-construction setter, same story as media_intake.
+    module_manager.set_tts(tts_adapter.clone());
 
     // Phase B-17a/c — 정적 도구 dispatch 등록. LLM stub 위에서도 도구 호출 e2e 동작.
     // task_manager 생성 뒤 — run_task(파이프라인)·search_library 가 각각 TaskManager·LibraryManager 의존.

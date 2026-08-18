@@ -48,16 +48,6 @@ const STANDING: &[(&str, &str, &str)] = &[
         "schedule_task desc steers date-recording to sysmod_calendar — routing-disambiguation policy line, revisit with R4",
     ),
     (
-        "core/src/tool_registry.rs",
-        "notes",
-        "the sing tool's score parameter — musical notes, same spelling as the module",
-    ),
-    (
-        "core/src/tool_registry.rs",
-        "sing",
-        "platform-service tool name (same class as tts/image_gen — chapter 10 keeps these)",
-    ),
-    (
         "core/src/utils/hub_context.rs",
         "calendar",
         "DEFAULT_CORE_SYSMODS — the built-in fallback of the vault setting (system:hub:core-sysmods)",

@@ -257,12 +257,13 @@ async fn registered_tool_count() {
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
     // memory_file: 5 (memory_save/read/list/delete/grep) +
     // skill_file: 4 (get/list/save/delete_skill — search_skills 는 AiManager 시맨틱 판) + tts: 1 +
-    // sing: 1 (compose-and-sing — TTS take retuned to a score over a synthesized band) +
+    // (sing tool retired 2026-08-18 — the sing MODULE self-serves via _prepare/_mediaImport
+    //  declarations and is reached through run_module_action like every other module) +
     // stream_watch: 3 (start/stop/list — 실시간 감시) +
     // accounts: 1 (list_accounts — every registered account, across modules) +
-    // tool_schema: 1 (get_tool_schema — the contract for a tool that publishes an open schema) = 69
-    assert_eq!(stats.total, 69);
-    assert_eq!(stats.by_source.get("core").copied(), Some(69));
+    // tool_schema: 1 (get_tool_schema — the contract for a tool that publishes an open schema) = 68
+    assert_eq!(stats.total, 68);
+    assert_eq!(stats.by_source.get("core").copied(), Some(68));
 }
 
 #[tokio::test]
@@ -401,11 +402,6 @@ const FORMLESS_BY_DESIGN: &[(&str, &str)] = &[
     ("network_request.headers", "an arbitrary header map"),
     ("network_request.body", "an arbitrary request body"),
     ("run_ui_action.args", "per-action screen payload, owned by the module that declares the action"),
-    (
-        "sing.score",
-        "the sing module OWNS the score contract (get_action_schema('sing','render') is its form); \
-         a copy inlined here is the kind that drifted before",
-    ),
     // An open metadata bag: whatever the page wants search engines and cards to carry.
     ("save_page.spec.head.seo", "open SEO bag — the renderer passes unknown keys through"),
     ("save_template.config.spec.head.seo", "open SEO bag"),

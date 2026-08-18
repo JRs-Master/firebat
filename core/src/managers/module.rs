@@ -76,6 +76,10 @@ pub struct ModuleManager {
     /// (set_media_intake, not a builder). None = not wired (tests); the declaration then reports
     /// it went nowhere.
     media_intake: Mutex<Option<Arc<dyn crate::managers::media::IMediaIntakePort>>>,
+    /// A platform service a module can ask for THROUGH a declaration (`data._prepare`) rather
+    /// than a runtime backchannel: today that is TTS. Same post-construction wiring story as
+    /// media_intake. None = not wired (tests); a declaration then errs by name.
+    tts: Mutex<Option<Arc<dyn crate::ports::ITtsPort>>>,
     /// Per-module `action id → call` rows, keyed `scope:name` and validated against the module
     /// directory's own fingerprint.
     ///
@@ -212,6 +216,7 @@ impl ModuleManager {
             sysmod_cache: None,
             recall: None,
             media_intake: Mutex::new(None),
+            tts: Mutex::new(None),
             action_calls: Mutex::new(HashMap::new()),
         }
     }
@@ -237,6 +242,11 @@ impl ModuleManager {
     /// Post-construction (`&self`) because MediaManager is built after this manager.
     pub fn set_media_intake(&self, intake: Arc<dyn crate::managers::media::IMediaIntakePort>) {
         *self.media_intake.lock().unwrap() = Some(intake);
+    }
+
+    /// Wire the TTS engine `data._prepare` declarations are performed with.
+    pub fn set_tts(&self, tts: Arc<dyn crate::ports::ITtsPort>) {
+        *self.tts.lock().unwrap() = Some(tts);
     }
 
     pub fn with_ws_api(mut self, ws_api: Arc<dyn IWsApiPort>) -> Self {
@@ -1157,6 +1167,23 @@ impl ModuleManager {
             }
         }
 
+        // A module may need a platform artifact it cannot make itself (a TTS take of its
+        // lyrics). It declares `data._prepare` instead of calling anybody: the framework
+        // performs the service, drops the artifact path into the input slot the module named,
+        // and runs the module once more. One round only — a prepare that names an
+        // already-filled slot is a loop, and is refused as a module bug.
+        if result.success {
+            let prep = result
+                .data
+                .as_object_mut()
+                .and_then(|o| o.remove("_prepare"));
+            if let Some(decl) = prep {
+                return self
+                    .run_prepared(module_name, input_data, decl, skip_auto_cache, keep_full_rows)
+                    .await;
+            }
+        }
+
         // Anything the module asked to be remembered, written under the module's own scope.
         // After the output check, because a module whose data failed validation has not earned
         // the right to teach anybody anything.
@@ -1174,6 +1201,114 @@ impl ModuleManager {
         Ok(result)
     }
 
+    /// Perform a `data._prepare` declaration and run the module once more with the artifact.
+    ///
+    /// `{service: "tts", text, style?, voice?, into: "<input slot>"}` — the framework's half is
+    /// the service call and the file; what to ask for and where it lands is the module's. The
+    /// service names are the platform's own mechanisms (chapter-10 residents), never modules.
+    async fn run_prepared(
+        &self,
+        module_name: &str,
+        input_data: &serde_json::Value,
+        decl: serde_json::Value,
+        skip_auto_cache: bool,
+        keep_full_rows: bool,
+    ) -> InfraResult<ModuleOutput> {
+        let service = decl.get("service").and_then(|v| v.as_str()).unwrap_or("");
+        let into = decl.get("into").and_then(|v| v.as_str()).unwrap_or("");
+        if into.is_empty() {
+            return Err("_prepare.into missing — name the input slot the artifact should land in"
+                .to_string());
+        }
+        if input_data
+            .get(into)
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty())
+        {
+            return Err(format!(
+                "_prepare loop: input slot {into:?} is already filled — a prepared run must not \
+                 ask again"
+            ));
+        }
+        let artifact = match service {
+            "tts" => {
+                let tts = self.tts.lock().unwrap().clone().ok_or_else(|| {
+                    "_prepare.service tts declared but no TTS engine is wired".to_string()
+                })?;
+                let text = decl
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .unwrap_or("")
+                    .to_string();
+                if text.is_empty() {
+                    return Err("_prepare tts needs `text`".to_string());
+                }
+                if text.chars().count() > 2000 {
+                    return Err(format!(
+                        "_prepare tts text too long ({} chars > 2000)",
+                        text.chars().count()
+                    ));
+                }
+                let (provider, model) = tts.effective_config();
+                if provider == "browser" {
+                    return Err("_prepare tts needs a server TTS (OpenAI or Gemini key) — \
+                                browser TTS cannot produce a file"
+                        .to_string());
+                }
+                let req = crate::ports::TtsRequest {
+                    provider,
+                    model,
+                    text: text.clone(),
+                    voice: decl
+                        .get("voice")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    speakers: Vec::new(),
+                    style: decl
+                        .get("style")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from),
+                    align: false,
+                    wav: true, // modules read via libsndfile — mp3 does not decode there
+                };
+                let take = tts.synthesize(&req).await?;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                text.hash(&mut hasher);
+                req.style.hash(&mut hasher);
+                let path = format!("data/{module_name}/prep-{:016x}.wav", hasher.finish());
+                if let Some(dir) = std::path::Path::new(&path).parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                std::fs::write(&path, &take.audio)
+                    .map_err(|e| format!("_prepare tts artifact write failed: {e}"))?;
+                path
+            }
+            other => {
+                return Err(format!(
+                    "_prepare.service {other:?} unknown — the framework provides: tts"
+                ));
+            }
+        };
+        let mut augmented = input_data.clone();
+        if let Some(obj) = augmented.as_object_mut() {
+            obj.insert(into.to_string(), serde_json::Value::String(artifact.clone()));
+        }
+        let rerun = Box::pin(self.run_impl_opts(
+            module_name,
+            &augmented,
+            skip_auto_cache,
+            keep_full_rows,
+        ))
+        .await;
+        // The artifact was scratch either way — the module consumed it during the rerun.
+        let _ = std::fs::remove_file(&artifact);
+        rerun
+    }
+
     /// `data._mediaImport = {path, contentType?, filenameHint?}` → media store → `data.media`.
     ///
     /// Failure never fails the module run — the work product exists on disk either way — but it
@@ -1183,6 +1318,50 @@ impl ModuleManager {
     async fn export_declared_media(&self, module_name: &str, result: &mut ModuleOutput) {
         let Some(obj) = result.data.as_object_mut() else { return };
         let Some(decl) = obj.remove("_mediaImport") else { return };
+
+        // One product can leave in two forms (a song's wav and its .mid): an array imports each
+        // in order and `data.media` comes back as an array in the same order. Each item runs
+        // through the SAME single-file body below via a synthetic envelope — one body, no fork.
+        if let serde_json::Value::Array(items) = decl {
+            let mut medias: Vec<serde_json::Value> = Vec::new();
+            let mut errors: Vec<String> = Vec::new();
+            for item in items {
+                if !item.is_object() {
+                    errors.push("_mediaImport array items must be objects".to_string());
+                    continue;
+                }
+                let mut one = ModuleOutput {
+                    protocol_version: crate::ports::MODULE_PROTOCOL_VERSION.to_string(),
+                    success: true,
+                    data: serde_json::json!({ "_mediaImport": item }),
+                    error: None,
+                    error_key: None,
+                    error_params: None,
+                    stderr: None,
+                    exit_code: None,
+                    remember: None,
+                };
+                Box::pin(self.export_declared_media(module_name, &mut one)).await;
+                if let Some(o) = one.data.as_object_mut() {
+                    if let Some(m) = o.remove("media") {
+                        medias.push(m);
+                    }
+                    if let Some(e) = o.remove("mediaExportError") {
+                        errors.push(e.as_str().unwrap_or_default().to_string());
+                    }
+                }
+            }
+            if !medias.is_empty() {
+                obj.insert("media".to_string(), serde_json::Value::Array(medias));
+            }
+            if !errors.is_empty() {
+                obj.insert(
+                    "mediaExportError".to_string(),
+                    serde_json::Value::String(errors.join(" | ")),
+                );
+            }
+            return;
+        }
 
         let fail = |obj: &mut serde_json::Map<String, serde_json::Value>, msg: String| {
             tracing::warn!(module = module_name, error = %msg, "[ModuleManager] media export failed");
