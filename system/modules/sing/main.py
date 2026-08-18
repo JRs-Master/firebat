@@ -1228,6 +1228,27 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                             "drum": inst, "vel": vel})
         bar += float(meter)
         bar_i += 1
+    # Orchestral percussion is punctuation, not groove (사용자: "북도 치고 심벌즈도") — the
+    # bass drum and cymbal mark the LOUD phrases and stay silent through the quiet ones,
+    # which is exactly what the carried dynamics now let us read. A pp piece (짐노페디) keeps
+    # its silence; a forte group opens on a crash the way the hall expects.
+    if style == "classic" and not custom:
+        mel_rows = [e for e in out if e["part"] == "melody"]
+        grp_len = float(meter * 4)
+        g = 0.0
+        while g < total_beats:
+            grp = [e for e in mel_rows if g <= e["beat"] < g + grp_len]
+            if grp:
+                avg = sum(e["vel"] for e in grp) / len(grp)
+                if avg >= 0.72:
+                    out.append({"beat": g, "beats": 0.25, "part": "drum", "drum": "crash",
+                                "vel": min(0.9, avg)})
+                    out.append({"beat": g, "beats": 0.25, "part": "drum", "drum": "kick2",
+                                "vel": round(avg * 0.85, 3)})
+                elif avg >= 0.6:
+                    out.append({"beat": g, "beats": 0.25, "part": "drum", "drum": "kick2",
+                                "vel": 0.4})
+            g += grp_len
     # Swing — the offbeat eighths of the rhythm section lean late. The melody stays straight:
     # the vocal is cut to the written grid, and a straight voice over a shuffling band is the
     # trot sound anyway.
@@ -2418,6 +2439,18 @@ def action_selftest():
     ck("classic carries its own section doublings unasked", 3,
        len({e["part"] for e in darr3 if e["part"].startswith("double")}),
        len({e["part"] for e in darr3 if e["part"].startswith("double")}) == 3)
+    loud = [{"syl": "라", "note": "C4", "beats": 1, "vel": 0.9} for _ in range(16)]
+    quiet = [{"syl": "라", "note": "C4", "beats": 1, "vel": 0.3} for _ in range(16)]
+    fl_l = parse_score(dict(score, style="classic", notes=loud))
+    fl_q = parse_score(dict(score, style="classic", notes=quiet))
+    arr_l = build_arrangement(fl_l[1], fl_l[2] * 4, "classic", 16, None, fl_l[5])
+    arr_q = build_arrangement(fl_q[1], fl_q[2] * 4, "classic", 16, None, fl_q[5])
+    ck("orchestral percussion follows the dynamics — forte crashes", True,
+       sorted({e["drum"] for e in arr_l if e["part"] == "drum"}),
+       any(e.get("drum") == "crash" for e in arr_l))
+    ck("...and pp stays silent (짐노페디 무사)", 0,
+       len([e for e in arr_q if e["part"] == "drum"]),
+       not [e for e in arr_q if e["part"] == "drum"])
     bad_dbl = parse_score(dict(score, band={"doubles": [{"part": "drums",
                                                          "instrument": "flute"}]}))[6]
     ck("a double of a non-part is refused", True, (bad_dbl or "")[:30],
