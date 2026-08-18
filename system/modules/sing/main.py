@@ -349,9 +349,13 @@ def synth_note(freq, dur, patch="bass", vel=0.8):
                 continue
             # The brightness sweep, as a per-partial decay instead of a filter recursion.
             env_k = np.exp(-t * p["hdecay"] * (ratio ** p["hslope"]))
-            wave = np.sin(ratio * ph)
             if p.get("detune"):
-                wave = 0.5 * (wave + np.sin(ratio * ph * (1.0 + p["detune"])))
+                # Symmetric spread (±d/2): a one-sided detune dragged the pitch center up by
+                # half the spread — organ and synthlead measured +15 cents sharp (FFT sweep).
+                half = p["detune"] / 2.0
+                wave = 0.5 * (np.sin(ratio * ph * (1.0 - half)) + np.sin(ratio * ph * (1.0 + half)))
+            else:
+                wave = np.sin(ratio * ph)
             x += a * env_k * wave
         if p.get("noise"):
             m = min(n, int(SR * 0.012))
@@ -1371,6 +1375,26 @@ def action_selftest():
     peak_hz = (lo + int(np.argmax(spec[lo:hi]))) * SR / (8 * len(tone))
     ck("the KS string lands within 1.5Hz of the written pitch", True,
        f"peak={peak_hz:.2f}Hz want=554.37Hz", abs(peak_hz - 554.37) < 1.5)
+    # And EVERY instrument's center lands within 8 cents — a one-sided detune once dragged
+    # organ/synthlead +15 cents sharp, which no other net could see (valid values, no NaN).
+    # Center = energy centroid of the band around the fundamental, NOT the FFT argmax: a
+    # detuned pair has two lobes and the ear hears their middle, which argmax never lands on.
+    off_pitch = []
+    for name in PATCHES:
+        t220 = synth_note(220.0, 0.8, name)
+        sp = np.abs(np.fft.rfft(t220 * np.hanning(len(t220)), 8 * len(t220))) ** 2
+        res = SR / (8 * len(t220))
+        a, b = int(200.0 / res), int(242.0 / res)  # ±~160 cents around 220
+        band = sp[a:b]
+        if float(band.sum()) <= 0:
+            off_pitch.append(f"{name}:silent")
+            continue
+        centroid = float((np.arange(a, b) * band).sum() / band.sum()) * res
+        cents = 1200.0 * math.log2(centroid / 220.0)
+        if abs(cents) >= 8.0:
+            off_pitch.append(f"{name}:{cents:+.1f}c")
+    ck("every instrument centers within 8 cents of the written pitch", [], off_pitch,
+       not off_pitch)
     # And the bass pickup is the next chord's fifth, never a chromatic neighbour.
     walk = _bass_line("hold", 62, 4.0, 57, 4)  # D -> A: the Canon join that exposed it
     ck("the walk into A major is E (its fifth), not B♭", 52, walk[-1][2], walk[-1][2] == 52)
