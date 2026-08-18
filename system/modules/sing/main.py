@@ -92,7 +92,9 @@ def parse_score(score):
         beats = float(c.get("beats") or 4) if isinstance(c, dict) else 0
         if root and beats > 0:
             chords.append((root, beats, str(c.get("quality") or "").strip()))
-    style = str(score.get("style") or "trot").strip().lower()
+    # No style asked = no opinion imposed: "none" plays the notes plainly (no drums, held
+    # chords) instead of dressing every unlabeled score as a trot (실측: 알함브라가 뽕짝이 됐다).
+    style = str(score.get("style") or "none").strip().lower()
     style = STYLE_ALIASES.get(style, style)
     if style not in DRUM_PATTERNS:
         return None, None, None, None, None, None, \
@@ -1306,6 +1308,9 @@ def action_selftest():
     edm = parse_score({"bpm": 124, "style": "edm",
                        "notes": [{"syl": "라", "note": "C4", "beats": 4}]})
     ck("aliases resolve (edm plays the dance row)", "dance", edm[3], edm[3] == "dance")
+    plain = parse_score({"bpm": 100, "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
+    ck("no style asked = none (plain), not a trot by surprise", "none", plain[3],
+       plain[3] == "none")
     floor = build_arrangement(events, [(note_freq("C3"), 4.0, "")], "dance", 4)
     dance_kicks = [e["beat"] for e in floor if e["part"] == "drum" and e["drum"] == "kick"]
     ck("dance is four-on-the-floor", [0.0, 1.0, 2.0, 3.0], dance_kicks,

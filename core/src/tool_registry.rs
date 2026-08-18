@@ -306,12 +306,15 @@ fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
                 if score.is_null() && args.get("notes").is_some() {
-                    score = serde_json::json!({
-                        "bpm": args.get("bpm").cloned().unwrap_or(serde_json::json!(100)),
-                        "style": args.get("style").cloned().unwrap_or(serde_json::json!("trot")),
-                        "notes": args.get("notes").cloned().unwrap_or(serde_json::json!([])),
-                        "chords": args.get("chords").cloned().unwrap_or(serde_json::json!([])),
-                    });
+                    // Only what the caller actually said — defaults are the MODULE's to decide
+                    // (one home for policy; a default copied here is the kind that drifts).
+                    let mut s = serde_json::Map::new();
+                    for key in ["bpm", "style", "notes", "chords"] {
+                        if let Some(v) = args.get(key) {
+                            s.insert(key.to_string(), v.clone());
+                        }
+                    }
+                    score = serde_json::Value::Object(s);
                 }
                 if let Some(band) = args.get("band").filter(|v| v.is_object()) {
                     if score.is_object() && score.get("band").is_none() {
