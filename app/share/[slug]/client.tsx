@@ -1,6 +1,7 @@
 'use client';
 
-import { Ghost } from 'lucide-react';
+import { Ghost, Music } from 'lucide-react';
+import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, FileCard } from '../../../lib/file-card';
 import ReactMarkdown from 'react-markdown';
 import { CodeComp } from '@/app/components/CodeBlock';
 import remarkGfm from 'remark-gfm';
@@ -57,6 +58,39 @@ function ShareMarkdownTableBox(props: any) {
   );
 }
 
+// 미디어 링크 → 카드 승격, admin MdMediaLink 의 공유판. 채팅에선 플레이어가 뜨던 flac/wav 가
+// 공유에선 맨 다운로드 링크로 떨어졌다(실측 2026-08-18) — 같은 답변은 같은 얼굴이어야 한다.
+// 공유 페이지엔 인증 API 가 없으니 이름은 모델이 링크에 붙인 텍스트에서, 없으면 주소의 슬러그에서.
+const SHARE_MEDIA_LINK_RE = /^\/(?:user|system)\/(?:hub\/[^?#]+\/)?media\/([^/?#]+)\.([a-z0-9]+)(?:[?#].*)?$/i;
+
+function ShareMediaLink({ href, children, ...props }: any) {
+  const m = typeof href === 'string' ? href.match(SHARE_MEDIA_LINK_RE) : null;
+  const ext = m?.[2]?.toLowerCase() ?? '';
+  if (m && (FILE_CARD_EXTS[ext] || AUDIO_PLAYER_EXTS.has(ext))) {
+    const text = (Array.isArray(children) ? children : [children])
+      .filter((c: any) => typeof c === 'string').join('').trim();
+    const name = (text || (() => { try { return decodeURIComponent(m[1]); } catch { return m[1]; } })())
+      .replace(new RegExp(`\.${ext}$`, 'i'), '');
+    if (AUDIO_PLAYER_EXTS.has(ext)) {
+      return (
+        <span className="not-prose my-1.5 flex items-center gap-2.5 max-w-md px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500"><Music size={16} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
+            <audio controls preload="none" src={href} className="mt-1 w-full h-8" />
+          </span>
+        </span>
+      );
+    }
+    return <FileCard href={href} name={name} ext={ext} />;
+  }
+  return (
+    <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" href={href} {...props}>
+      {children}
+    </a>
+  );
+}
+
 const mdComponents = {
   h1: (props: any) => <h1 className="text-[18px] sm:text-[19px] font-extrabold text-slate-800 mt-5 mb-2" {...props} />,
   h2: (props: any) => <h2 className="text-[16px] sm:text-[17px] font-bold text-slate-800 mt-4 mb-1.5" {...props} />,
@@ -67,7 +101,7 @@ const mdComponents = {
   ol: (props: any) => <ol className="list-decimal list-outside ml-5 mb-2 space-y-1" {...props} />,
   li: (props: any) => <li className="pl-0.5" {...props} />,
   strong: (props: any) => <strong className="font-bold text-slate-900" {...props} />,
-  a: (props: any) => <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />,
+  a: (props: any) => <ShareMediaLink {...props} />,
   hr: () => <hr className="border-slate-200 my-3" />, // 미정의 시 브라우저 기본 hr(진한 inset)이라 어드민과 톤 맞춤(light)
   code: ({ className, children, ...props }: any) => {
     // react-markdown v10 은 inline prop 미제공 → language- 클래스/줄바꿈으로 블록 판별(인라인 코드가 블록 카드로 떨어지던 버그)
