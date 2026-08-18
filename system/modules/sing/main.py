@@ -1685,11 +1685,19 @@ def action_scores(inp=None):
     q = _norm_name((inp or {}).get("query"))
     rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name")} for r in shelf
             if not q or q in _norm_name(r.get("alias")) or q in _norm_name(r.get("name"))]
-    return {"success": True, "data": {
-        "count": len(rows), "scores": rows,
-        "note": "pass one alias as render's scoreMediaPath to play it — style/band/drumPattern "
-                "may ride in the SAME render call to re-instrument the piece (no need to "
-                "compose a score for an existing song)"}}
+    note = ("pass one alias as render's scoreMediaPath to play it — style/band/drumPattern "
+            "may ride in the SAME render call to re-instrument the piece (no need to "
+            "compose a score for an existing song)")
+    if q and not rows and shelf:
+        # A missed query must not read as an empty shelf: matching is by CHARACTERS, and a
+        # Korean request for an English alias ("테이크 파이브" vs "take five") misses every
+        # time. The miss carries the whole shelf, so "no match" is a discovery, not a verdict.
+        rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name")}
+                for r in shelf][:50]
+        note = ("no match for that query — matching is by characters, and Korean/English "
+                "spellings differ. The WHOLE shelf is listed above; if the user means one of "
+                "these (any language), " + note)
+    return {"success": True, "data": {"count": len(rows), "scores": rows, "note": note}}
 
 
 def resolve_score_media(inp):
@@ -2122,6 +2130,10 @@ def action_selftest():
         ck("the shelf is a first-class action (scores lists aliases)", 2,
            listed["data"]["count"], listed["data"]["count"] == 2
            and listed["data"]["scores"][0]["alias"] == "캐논")
+        missed = action_scores({"query": "테이크 파이브"})
+        ck("a missed query carries the whole shelf, not an empty verdict", 2,
+           missed["data"]["count"], missed["data"]["count"] == 2
+           and "no match" in missed["data"]["note"])
         spaced = resolve_score_media({"scoreMediaPath": "캐 논"})
         ck("alias matching ignores spacing and case", True,
            spaced[1] or "matched", spaced[1] is None or "찾" not in (spaced[1] or ""))
