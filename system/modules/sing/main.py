@@ -1998,9 +1998,12 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
     for pi, part in enumerate(parts):
         divisions, vel = 1.0, None
         notes, harmonies, pos = [], [], 0.0
+        lead_voice = None  # the reduction follows one voice; other voices still reach parts_out
         f_prog = prog_of.get(part.get("id"), 0)
         f_part = f"p{pi + 1}"
+        last_onset = 0.0
         for meas in kids(part, "measure"):
+            m_base, cur, m_len = pos, 0.0, 0.0
             for el in meas:
                 tag = _strip_ns(el.tag)
                 if tag == "attributes":
@@ -2030,21 +2033,27 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         step = (text_of(hr, "root-step") or "C").strip().upper()
                         alter = int(float(text_of(hr, "root-alter") or 0))
                         kind = (text_of(el, "kind") or "").strip()
-                        harmonies.append((pos, _XML_STEP.get(step, 0) + alter,
+                        harmonies.append((m_base + cur, _XML_STEP.get(step, 0) + alter,
                                           _XML_KIND.get(kind, "")))
                 elif tag in ("backup", "forward"):
+                    # Voices rewind INSIDE a bar. Some exports rewind at the bar's end too, so a
+                    # global cursor nets zero per bar (월광 실측: 1,181 rows stacked on beats
+                    # 0-4). The bar keeps its own cursor; its length is the high-water mark.
                     d = float(text_of(el, "duration") or 0) / divisions
-                    pos += d if tag == "forward" else -d
+                    cur += d if tag == "forward" else -d
+                    cur = max(0.0, cur)
                 elif tag == "note":
                     dur = float(text_of(el, "duration") or 0) / divisions
                     if kid(el, "rest") is not None:
                         if notes:
                             notes[-1]["beats"] += dur  # a rest rides the note before it
-                        pos += dur
+                        cur += dur
+                        m_len = max(m_len, cur)
                         continue
                     p2 = kid(el, "pitch")
                     if p2 is None or dur <= 0:
-                        pos += max(dur, 0.0)
+                        cur += max(dur, 0.0)
+                        m_len = max(m_len, cur)
                         continue
                     step = (text_of(p2, "step") or "C").strip().upper()
                     octave = int(text_of(p2, "octave") or 4)
@@ -2054,8 +2063,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     syl = (text_of(ly, "text") or "").strip() if ly is not None else ""
                     tie = any(t.get("type") == "stop" for t in kids(el, "tie"))
                     is_stack = kid(el, "chord") is not None
+                    onset = last_onset if is_stack else m_base + cur
+                    if not is_stack:
+                        last_onset = onset
                     if parts_out is not None:
-                        onset = pos - dur if is_stack else pos
                         if not (tie and parts_out and parts_out[-1]["part"] == f_part
                                 and parts_out[-1]["pitch"] == midi):
                             parts_out.append({"beat": onset, "beats": max(0.125, dur),
@@ -2068,11 +2079,19 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                             parts_out[-1]["beats"] += dur
                     if is_stack:
                         continue  # the melody line keeps only the principal of a stack
+                    cur += dur
+                    m_len = max(m_len, cur)
+                    voice = text_of(el, "voice")
+                    if lead_voice is None:
+                        lead_voice = voice
+                    if voice != lead_voice:
+                        continue  # another voice of the same part — 반주 성부가 멜로디 합계를
+                        # 부풀려 곡 길이를 늘리던 뿌리 (월광: 딴딴딴이 멜로디 뒤에 이어붙었다)
                     if tie and notes and notes[-1]["midi"] == midi:
                         notes[-1]["beats"] += dur
                     else:
                         notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": vel})
-                    pos += dur
+            pos = m_base + m_len
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
                                  "lyrics": sum(1 for n in notes if n["syl"])})
@@ -2348,8 +2367,10 @@ def action_render(inp):
     chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
     if faithful:
-        total_beats = max(total_beats,
-                          max(r["beat"] + r["beats"] for r in faithful_rows))
+        # The rows' own end, REPLACING the melody sum: a multi-voice part (월광 실측) made the
+        # naive sum 2-3x the real length — a 15-minute canvas around 6 minutes of music, split
+        # into "movements" of silence.
+        total_beats = max(r["beat"] + r["beats"] for r in faithful_rows)
     if feel.get("bars"):
         total_beats = max(total_beats, feel["bars"] * feel["meter"])
     if total_beats <= 0:
@@ -2850,6 +2871,24 @@ def action_selftest():
         ck("harmony elements become REAL chords, quality included",
            ("A2", "m"), (xsc["chords"][0]["root"], xsc["chords"][0]["quality"]),
            bool(xsc.get("chords")) and xsc["chords"][0]["quality"] == "m")
+    two_voice = xml_doc.replace(
+        '<note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch>'
+        '<duration>4</duration><lyric><text>랑</text></lyric></note>',
+        '<note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch>'
+        '<duration>4</duration><voice>1</voice><lyric><text>랑</text></lyric></note>'
+        '<backup><duration>8</duration></backup>'
+        '<note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration>'
+        '<voice>2</voice></note>'
+        '<note><pitch><step>G</step><octave>2</octave></pitch><duration>4</duration>'
+        '<voice>2</voice></note>')
+    with open("data/sing/selftest-2v.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(two_voice)
+    fparts = []
+    v_sc, v_err = musicxml_to_score("data/sing/selftest-2v.musicxml", parts_out=fparts)
+    ck("the melody reduction follows ONE voice (월광: no more inflated length)", 2,
+       len((v_sc or {}).get("notes") or []), v_err is None and len(v_sc["notes"]) == 2)
+    ck("...while faithful rows keep every voice", 5, len(fparts), len(fparts) == 5)
+    os.remove("data/sing/selftest-2v.musicxml")
     import zipfile as _zf
     with _zf.ZipFile("data/sing/selftest-x.mxl", "w") as z:
         z.writestr("score.xml", xml_doc)
