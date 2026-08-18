@@ -751,6 +751,13 @@ async fn gated_tool_call(
     // Same helper the FC loop uses — the conversation is resolved from the turn token here and
     // read off `ai_opts` there, and after that the rule is one function for both.
     let conv = firebat_core::utils::hub_context::conversation_id_of_token(token);
+    // Captured before `args` moves into the call — the action-scoped run ledger needs it after.
+    let called_action: Option<String> = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
     let result =
         firebat_core::utils::cache_owner::in_conversation(conv.as_deref(), handler.call(args))
             .await;
@@ -760,6 +767,10 @@ async fn gated_tool_call(
         if let Some(m) = target_module.as_deref() {
             if !matches!(v.get("success").and_then(Value::as_bool), Some(false)) {
                 conversation_scope::record_run(&scope, m);
+                if let Some(a) = called_action.as_deref() {
+                    // Mirror of the FC path — `needs: ["module:action"]` gates read this line.
+                    conversation_scope::record_run(&scope, &format!("{m}:{a}"));
+                }
             }
         }
         // Produced-file receipt — the file card's evidence. A CLI model calls its tools inside its

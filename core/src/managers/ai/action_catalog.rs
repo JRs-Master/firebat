@@ -1702,9 +1702,14 @@ impl ModuleActionCatalog {
                 .iter()
                 .filter_map(|v| v.as_str())
                 .map(|m| {
+                    // "module" or "module:action" — the colon form assembles the exact call.
+                    let args = match m.split_once(':') {
+                        Some((pm, pa)) => serde_json::json!({ "module": pm, "action": pa }),
+                        None => serde_json::json!({ "module": m }),
+                    };
                     serde_json::json!({
                         "tool": crate::managers::ai::sysmod_surface::MODULE_EXEC_TOOL,
-                        "arguments": { "module": m },
+                        "arguments": args,
                         "why": format!(
                             "`{module}:{action}` dispatches only after `{m}` has run in this \
                              conversation (30-minute window). Run this first and take the \

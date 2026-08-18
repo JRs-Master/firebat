@@ -189,5 +189,40 @@
       "label": "악보 보관함 (MIDI · 오디오)",
       "description": "악보를 여러 개 올려 두고 별칭으로 부릅니다 — \"캐논 기타버전으로 연주해줘\"처럼요. 파일은 미디어 보관함에 저장되고 여기에는 목록만 남습니다."
     }
+  ],
+  "actionCatalog": [
+    {
+      "id": "render",
+      "name": "곡 렌더 (악보 → 노래·연주)",
+      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다.",
+      "params": [
+        "score",
+        "scoreMediaPath",
+        "vocal",
+        "lyrics",
+        "style",
+        "midiOut",
+        "midiOutPath",
+        "outPath",
+        "vocalPath"
+      ],
+      "needs": [
+        "sing:scores"
+      ]
+    },
+    {
+      "id": "scores",
+      "name": "악보 보관함 조회",
+      "description": "보관함의 악보 목록·검색 (별칭·파일명) — render 전에 이걸 먼저 거칩니다. 기존 곡이면 별칭을 scoreMediaPath 로 넘기고, 없으면 새로 작곡합니다.",
+      "params": [
+        "query"
+      ]
+    },
+    {
+      "id": "selftest",
+      "name": "셀프테스트",
+      "description": "Offline checks over the synth, arrangement and shelf logic. No files, no network.",
+      "params": []
+    }
   ]
 }

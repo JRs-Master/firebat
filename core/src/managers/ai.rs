@@ -4717,6 +4717,19 @@ impl AiManager {
                 if action.success {
                     if let Some(m) = call_module.as_deref() {
                         crate::utils::conversation_scope::record_run(&tool_scope, m);
+                        // Action-scoped ledger line — lets `needs: ["module:action"]` gates
+                        // (consult-the-shelf class) see exactly which action ran.
+                        if let Some(a) = effective_call
+                            .arguments
+                            .get("action")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.trim().is_empty())
+                        {
+                            crate::utils::conversation_scope::record_run(
+                                &tool_scope,
+                                &format!("{m}:{a}"),
+                            );
+                        }
                     }
                 }
                 // Produced-file harvest — the receipt the file card is drawn from. Only a SUCCESS

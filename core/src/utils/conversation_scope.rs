@@ -158,6 +158,16 @@ fn gate_key(module: &str, action: &str) -> String {
     format!("{}:{}", canon_module(module), action.trim())
 }
 
+/// Run-ledger key — `"module"` or `"module:action"`. The colon form lets a `needs` declaration
+/// name a specific ACTION as the prerequisite (`"sing:scores"` — consult the shelf before
+/// rendering), not just a whole module; the module half is canonicalized the same way either way.
+pub fn canon_run_key(key: &str) -> String {
+    match key.split_once(':') {
+        Some((m, a)) => format!("{}:{}", canon_module(m), a.trim()),
+        None => canon_module(key),
+    }
+}
+
 /// The scope key for a turn: the conversation when the caller knows it, else whatever stable
 /// token it does have (an MCP session token). One helper so both paths derive the key the same
 /// way and a conversation reached from either path lands on the same state.
@@ -283,7 +293,7 @@ fn record_run_at(scope_key: &str, module: &str, now: Instant) {
             state.runs_seen.remove(&oldest);
         }
     }
-    state.runs_seen.insert(canon_module(module), now);
+    state.runs_seen.insert(canon_run_key(module), now);
     // Cap AFTER the insert, so the map never rests over the bound — enforcing before it left the
     // final insert at MAX_SCOPES + 1 (caught by the LRU test the first time CI ran it).
     enforce_scope_cap(&mut map, now);
@@ -303,7 +313,7 @@ fn run_ok_at(scope_key: &str, module: &str, now: Instant) -> bool {
     };
     state.last_touch = now;
     evict_runs(&mut state.runs_seen, now);
-    match state.runs_seen.get_mut(&canon_module(module)) {
+    match state.runs_seen.get_mut(&canon_run_key(module)) {
         Some(stamp) => {
             *stamp = now;
             true
@@ -665,6 +675,12 @@ mod tests {
         forget(a);
         forget(b);
         let needs = vec!["stock-lookup".to_string()];
+        // Action-scoped prerequisite: satisfied only by that action's run, not the module's.
+        let act_needs = vec!["sing:scores".to_string()];
+        record_run(a, "sing");
+        assert_eq!(unmet_needs(a, &act_needs).len(), 1, "module run does not satisfy m:a");
+        record_run(a, "sing:scores");
+        assert!(unmet_needs(a, &act_needs).is_empty(), "the action's own run does");
         assert_eq!(unmet_needs(a, &needs), vec!["stock-lookup".to_string()]);
         record_run(a, "stock-lookup");
         assert!(unmet_needs(a, &needs).is_empty(), "ran here — satisfied");
