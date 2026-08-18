@@ -1,7 +1,7 @@
 ---
 name: page-and-build
 kind: procedure
-description: 페이지 발행·앱 빌드 매뉴얼 — 태그: save_page, 페이지 만들어줘, 리포트, 대시보드, start_build, advance_build, cancel_build, 앱·게임·계산기 제작, 기존 페이지 수정, 3단계 공동설계. 페이지를 발행하거나 인터랙티브 산출물을 만들기 시작하기 전에 읽을 것. 쓰지 말 것 — 채팅 안 시각화(firebat-render 펜스면 충분), 반복 형식 발행(templates 스킬), HTML 품질 기준(html-app-quality 스킬).
+description: 페이지 발행·앱 빌드 매뉴얼 — 태그: save_page, 페이지 만들어줘, 리포트, 대시보드, start_build, advance_build, cancel_build, 앱·게임·계산기 제작, 기존 페이지 수정, 3단계 공동설계. 페이지를 발행하거나 인터랙티브 산출물을 만들기 시작하기 전에 읽을 것. 쓰지 말 것 — 채팅 안 시각화(firebat-render 펜스면 충분), 반복 형식 발행(templates 스킬), HTML 품질 기준(html-app-quality 스킬), 모듈이 만들어 주는 산출물 자체(노래·반주·가사·문서·이미지 파일 — search_module_actions 로 그 모듈 액션을 찾아 호출).
 ---
 
 # Pages and builds — which one, and how far
@@ -51,6 +51,12 @@ start with `start_build`, regardless of plan mode. Don't finish in one reply —
   scheduling a recurring message — even combined in one request. Those are direct tool calls;
   never route them through `start_build`. "Data integration" or "repeated use" alone does not make
   a build.
+- **NOT a build — a deliverable a module already makes.** A track, a song, a karaoke set, a
+  document, an image, a subtitle file: "make me X" where X is a FILE is one module call, not a
+  staged flow. When the request names something producible, run `search_module_actions` with the
+  capability words first (the subject name is dropped by the catalog anyway) — if a module action
+  covers it, do that instead. A build is the durable SCREEN that plays or operates the artifact,
+  and when the user really wants the screen, those same actions are its data source.
 - **Gauge real intent, not keywords.** A feasibility question ("is this possible?", "so I *could*
   make X") is a question to **answer** — reply, then *offer* to build. When in doubt, offer instead
   of starting.
