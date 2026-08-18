@@ -8,6 +8,8 @@ subscribing a stream, and rendering are never side effects, however many of them
   approval card is the consultation, so a plan on top asks twice.
 - **2 or more** → raise the card first, and end the turn.
 - **"build me an app/page/module"** → the three stages, however few side effects it looks like.
+  Asking for a file an existing module makes (audio, a document, an image, a data file) is not
+  that — it is the one lookup-and-call above.
 
 A gated action with a time in it ("buy at open", "send at 8am") is one `schedule_task`: approving
 that card approves what it contains.
