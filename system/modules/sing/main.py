@@ -1313,6 +1313,10 @@ def apply_performance(arr, feel, spb, total_beats):
     chord-stack rolls (~10ms per voice). 사람처럼, but the same request renders the same bytes.
     """
     meter = int((feel or {}).get("meter") or 4)
+    if (feel or {}).get("pedal") is False:
+        # "페달 빼고" — even a marked score plays dry. true adds the default where marks are
+        # absent; None (unasked) plays exactly what is written.
+        arr[:] = [e for e in arr if not e.get("pedal")]
     if (feel or {}).get("pedal") and not any(e.get("pedal") for e in arr):
         pitched_parts = {e["part"] for e in arr if "pitch" in e and not e.get("pedal")}
         bar = 0.0
@@ -2870,6 +2874,12 @@ def action_selftest():
                           "score": {"bpm": 120, "bars": 2, "style": "rock",
                                     "drumPattern": [["kick", 0.0, 0.9], ["snare", 1.0],
                                                     ["conga_open", 2.5, 0.6]]}})
+    dry = apply_performance([{"beat": 0.0, "beats": 2.0, "part": "p1", "patch": "piano",
+                              "program": 0, "pitch": 60, "vel": 0.5, "gate": 1.0},
+                             {"beat": 0.0, "beats": 4.0, "part": "p1", "pedal": True}],
+                            {"meter": 4, "pedal": False}, 0.5, 4)
+    ck("pedal:false plays a marked score dry", 0, len([e for e in dry if e.get("pedal")]),
+       not [e for e in dry if e.get("pedal")])
     perf = parse_score(dict(score, pedal=True, humanize=0.5))
     ck("pedal/humanize are legal performance knobs", None, perf[6], perf[6] is None)
     parr = build_arrangement(perf[1], perf[2], "none", 4, None, perf[5])

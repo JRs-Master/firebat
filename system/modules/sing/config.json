@@ -143,7 +143,7 @@
               "boolean",
               "null"
             ],
-            "description": "true = sustain pedal, re-pressed each bar, when the score has no pedal marks of its own (piano wash — 월광 어법). Scores WITH <pedal> marks always play them as real CC64."
+            "description": "Sustain pedal, three states: omit = play exactly what the score writes (marks become real CC64 automatically); true = ALSO pedal bar-by-bar when the score has no marks (월광 어법); false = dry — strip even the written marks."
           }
         }
       },
@@ -238,7 +238,7 @@
           "boolean",
           "null"
         ],
-        "description": "true = sustain pedal, re-pressed each bar, when the score has no pedal marks of its own (piano wash — 월광 어법). Scores WITH <pedal> marks always play them as real CC64."
+        "description": "[render, with scoreMediaPath] Sustain pedal, three states: omit = play exactly what the score writes (marks become real CC64 automatically); true = ALSO pedal bar-by-bar when the score has no marks (월광 어법); false = dry — strip even the written marks."
       },
       "outPath": {
         "type": [
