@@ -96,6 +96,7 @@ const TYPE_ALIAS: Record<string, string> = {
   passage: 'Passage', reading: 'Passage', reading_comprehension: 'Passage',
   concept: 'Concept', explainer: 'Concept', lesson: 'Concept',
   listening: 'Listening', lc: 'Listening',
+  karaoke: 'Karaoke', sing_along: 'Karaoke', singalong: 'Karaoke',
   live_feed: 'LiveFeed', livefeed: 'LiveFeed', live_chart: 'LiveChart', livechart: 'LiveChart',
   live_stock_chart: 'LiveStockChart', livestockchart: 'LiveStockChart',
   function_plot: 'FunctionPlot', functionplot: 'FunctionPlot', fplot: 'FunctionPlot',
@@ -849,6 +850,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
+    case 'Karaoke':       return <KaraokeComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url ?? p.mrUrl} lrcUrl={p.lrcUrl ?? p.lrc_url ?? p.lyricsUrl} lrc={p.lrc ?? p.lyrics} offset={p.offset ?? p.lrcOffset} record={p.record} />;
     case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} image={p.image ?? p.photo ?? p.imageUrl} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} mode={p.mode ?? p.kind} view={p.view} />;
     // module 블록(페이지 전용) — 서버가 채운 _baked render blocks 를 그대로 재귀 렌더.
     // publish = save 시 bake / request = SSR 이 주입(page.tsx). 비어 있으면 조용히 없음.
@@ -1606,6 +1608,285 @@ function ConceptComp({ title, intro, steps, example, misconception, check }: {
       {example && example.problem && example.solution && <ConceptExample problem={example.problem} solution={example.solution} />}
       {misconception && misconception.wrong && misconception.right && <ConceptMisconception wrong={misconception.wrong} right={misconception.right} />}
       {check && check.question && check.answer && <ConceptCheck question={check.question} answer={check.answer} />}
+    </div>
+  );
+}
+
+// ── Karaoke (노래방) — 반주 + LRC 싱크 가사 + 부르면서 녹음 ─────────────────────────────────
+// 스킨은 채팅의 오디오 카드 그대로(흰 카드·slate 테두리·rounded-xl·네이티브 컨트롤): 같은 답변
+// 안에서 두 개가 나란히 서도 한 벌로 보여야 한다. 가사는 표준 LRC 와 enhanced LRC(<mm:ss.xx>
+// 음절 태그) 둘 다 읽는다 — sing 이 내는 것이 후자라 글자가 음절 단위로 차오른다.
+
+type KaraokeSyl = { t: number; s: string };
+type KaraokeLine = { t: number; text: string; syls: KaraokeSyl[] };
+
+/** LRC 텍스트 → 줄 목록. 한 줄에 시간표가 여러 개면(반복 후렴) 그 수만큼 줄이 선다.
+ *  `[ti:]` 류 메타 태그는 시:분 모양이 아니라 자연히 걸러진다. */
+function parseLrc(text: string): KaraokeLine[] {
+  const out: KaraokeLine[] = [];
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const heads: number[] = [];
+    let rest = raw;
+    for (;;) {
+      const m = rest.match(/^\s*\[(\d+):(\d+(?:\.\d+)?)\]/);
+      if (!m) break;
+      heads.push(parseInt(m[1], 10) * 60 + parseFloat(m[2]));
+      rest = rest.slice(m[0].length);
+    }
+    if (!heads.length) continue;
+    const syls: KaraokeSyl[] = [];
+    const re = /<(\d+):(\d+(?:\.\d+)?)>([^<]*)/g;
+    let m2: RegExpExecArray | null;
+    while ((m2 = re.exec(rest))) {
+      if (m2[3]) syls.push({ t: parseInt(m2[1], 10) * 60 + parseFloat(m2[2]), s: m2[3] });
+    }
+    const plain = rest.replace(/<(\d+):(\d+(?:\.\d+)?)>/g, '').trim();
+    if (!plain && !syls.length) continue;
+    for (const h of heads) {
+      out.push({ t: h, text: plain, syls: syls.length ? syls : [{ t: h, s: plain }] });
+    }
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/** 무대의 한 줄. 부르는 중이면 이미 지난 음절이 색으로 차오르고(그 순간의 글자가 경계),
+ *  대기 줄이면 옅게 미리 선다. 빈 자리는 높이만 지켜 무대가 덜컹거리지 않게 한다. */
+function KaraokeLineRow({ line, active, at, align }: {
+  line?: KaraokeLine; active: boolean; at: number; align: 'left' | 'right';
+}) {
+  if (!line) return <p className="h-[1.9em]" aria-hidden />;
+  return (
+    <p className={`break-keep leading-snug transition-colors ${align === 'right' ? 'text-right' : 'text-left'} ${
+      active ? 'text-[19px] sm:text-[21px] font-extrabold' : 'text-[15px] sm:text-[16px] font-semibold text-slate-400'
+    }`}>
+      {active
+        ? line.syls.map((sy, k) => (
+            <span key={k} className={at >= sy.t ? 'text-blue-600' : 'text-slate-800'}>{sy.s}</span>
+          ))
+        : line.text}
+    </p>
+  );
+}
+
+function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
+  title?: string;
+  audioUrl?: string;
+  lrcUrl?: string;
+  lrc?: string;
+  offset?: number;
+  record?: boolean;
+}) {
+  const [lines, setLines] = useState<KaraokeLine[]>(() => (lrc ? parseLrc(lrc) : []));
+  const [note, setNote] = useState<string | null>(null);
+  const [cur, setCur] = useState(0);
+  const [shift, setShift] = useState(Number(offset) || 0);
+  const [recState, setRecState] = useState<'idle' | 'arming' | 'recording'>('idle');
+  const [takes, setTakes] = useState<{ mix: string; voice: string } | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const srcRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (lrc) { setLines(parseLrc(lrc)); return; }
+    if (!lrcUrl) return;
+    let alive = true;
+    fetch(lrcUrl)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((t) => { if (alive) { const ls = parseLrc(t); setLines(ls); if (!ls.length) setNote('가사 파일에서 시간표를 읽지 못했습니다'); } })
+      .catch(() => { if (alive) setNote('가사 파일을 불러오지 못했습니다'); });
+    return () => { alive = false; };
+  }, [lrc, lrcUrl]);
+
+  // 재생 중에는 rAF 로 따라간다 — timeupdate 는 초당 네 번이라 음절이 뚝뚝 끊긴다.
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    const tick = () => { setCur(a.currentTime); rafRef.current = requestAnimationFrame(tick); };
+    const start = () => { if (rafRef.current == null) rafRef.current = requestAnimationFrame(tick); };
+    const stop = () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } setCur(a.currentTime); };
+    a.addEventListener('play', start);
+    a.addEventListener('pause', stop);
+    a.addEventListener('seeked', stop);
+    a.addEventListener('ended', stop);
+    return () => {
+      a.removeEventListener('play', start); a.removeEventListener('pause', stop);
+      a.removeEventListener('seeked', stop); a.removeEventListener('ended', stop);
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [audioUrl]);
+
+  const at = cur - shift; // shift(+) = 가사를 늦게 = 같은 순간에 더 앞 가사를 부른다
+  const idx = useMemo(() => {
+    let i = -1;
+    for (let k = 0; k < lines.length; k++) { if (lines[k].t <= at) i = k; else break; }
+    return i;
+  }, [lines, at]);
+
+  // 노래방 무대 = 두 줄. 한 줄이 불리는 동안 다음 줄이 반대편에 미리 서 있고, 소절이 끝나면
+  // 역할만 바뀐다(끝난 줄이 그다음 줄로 갈아입는다) — 줄 목록을 스크롤하는 자막과는 다른 물건.
+  const topIdx = idx % 2 === 0 ? idx : idx + 1;
+  const botIdx = idx % 2 === 0 ? idx + 1 : idx;
+  const nextT = lines[idx + 1]?.t;
+  // 카운트다운은 **쉼이 길 때만** — 전주와 간주가 그 자리다. 소절과 소절 사이 한 박 숨에도
+  // 3·2·1 이 뜨면 화면이 쉬지 않고 깜빡인다. 기준 = 직전 소절이 끝난 뒤 4초 넘게 비는 구간.
+  const prevEnd = idx >= 0
+    ? Math.max(lines[idx].t, lines[idx].syls[lines[idx].syls.length - 1]?.t ?? lines[idx].t)
+    : 0;
+  const gap = nextT != null ? nextT - (idx >= 0 ? prevEnd : 0) : 0;
+  const left = nextT != null ? nextT - at : 0;
+  const countIn = nextT != null && gap >= 4 && left > 0 && left <= 3.0
+    ? Math.ceil(left) : 0;
+
+  const canRecord = typeof window !== 'undefined' && !!window.isSecureContext
+    && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
+    && typeof MediaRecorder !== 'undefined';
+
+  const startRec = async () => {
+    const a = audioRef.current;
+    if (!a) return;
+    setRecState('arming');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      const Ctor: typeof AudioContext = window.AudioContext
+        || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = ctxRef.current ?? new Ctor();
+      ctxRef.current = ctx;
+      await ctx.resume();
+      // 한 element 당 source 는 한 번만 만들 수 있다 — 재녹음이 두 번째 호출로 죽지 않게 보관.
+      const music = srcRef.current ?? ctx.createMediaElementSource(a);
+      srcRef.current = music;
+      const mic = ctx.createMediaStreamSource(stream);
+      const mixDest = ctx.createMediaStreamDestination();
+      const voiceDest = ctx.createMediaStreamDestination();
+      music.connect(ctx.destination); // 그래프를 타면 스피커 연결은 우리 몫이 된다
+      music.connect(mixDest);
+      mic.connect(mixDest);
+      mic.connect(voiceDest); // 목소리 단독본 — 채점(coach)은 반주가 섞이면 못 한다
+      const mixRec = new MediaRecorder(mixDest.stream);
+      const voiceRec = new MediaRecorder(voiceDest.stream);
+      const mixParts: BlobPart[] = []; const voiceParts: BlobPart[] = [];
+      mixRec.ondataavailable = (e) => { if (e.data.size) mixParts.push(e.data); };
+      voiceRec.ondataavailable = (e) => { if (e.data.size) voiceParts.push(e.data); };
+      let done = 0;
+      const finish = () => {
+        if (++done < 2) return;
+        setTakes({
+          mix: URL.createObjectURL(new Blob(mixParts, { type: mixRec.mimeType || 'audio/webm' })),
+          voice: URL.createObjectURL(new Blob(voiceParts, { type: voiceRec.mimeType || 'audio/webm' })),
+        });
+        setRecState('idle');
+      };
+      mixRec.onstop = finish; voiceRec.onstop = finish;
+      stopRef.current = () => {
+        stopRef.current = null;
+        try { mixRec.stop(); voiceRec.stop(); } catch { /* already stopped */ }
+        stream.getTracks().forEach((t) => t.stop());
+        mic.disconnect(); a.pause();
+      };
+      // 같은 시계에서 출발 — 반주 0초와 첫 프레임이 맞아야 나중에 겹쳐 들을 수 있다.
+      a.currentTime = 0;
+      mixRec.start(); voiceRec.start();
+      await a.play();
+      setRecState('recording');
+    } catch {
+      setRecState('idle');
+      setNote('마이크를 열지 못했습니다 — 브라우저 권한을 확인해 주세요');
+    }
+  };
+
+  useEffect(() => () => { stopRef.current?.(); }, []);
+
+  if (!audioUrl) {
+    return <div className="text-[12px] text-slate-500">audioUrl 이 없습니다</div>;
+  }
+
+  return (
+    <div className="not-prose my-2 w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <style>{`@keyframes karaokeCountIn{from{opacity:.15;transform:scale(1.5)}to{opacity:1;transform:scale(1)}}
+        .karaoke-countin{animation:karaokeCountIn .35s ease-out}
+        @media (prefers-reduced-motion:reduce){.karaoke-countin{animation:none}}`}</style>
+      <div className="flex items-center gap-2.5 px-3 py-2 border-b border-slate-100">
+        <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+            <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4" />
+          </svg>
+        </span>
+        <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700 truncate">{title || '노래방'}</span>
+        {lines.length > 0 && <span className="text-[11px] text-slate-400 tabular-nums">{lines.length}줄</span>}
+      </div>
+
+      <div className="relative h-32 sm:h-36 px-5 py-4 bg-slate-50/60 flex flex-col justify-center gap-1.5">
+        {lines.length === 0 ? (
+          <p className="text-center text-[12px] text-slate-400">{note || '가사를 불러오는 중입니다'}</p>
+        ) : (
+          <>
+            <KaraokeLineRow line={lines[topIdx]} active={topIdx === idx} at={at} align="left" />
+            <KaraokeLineRow line={lines[botIdx]} active={botIdx === idx} at={at} align="right" />
+          </>
+        )}
+        {countIn > 0 && (
+          <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            aria-live="polite" aria-label={`${countIn}초 뒤 시작`}>
+            <span key={countIn}
+              className="text-[44px] sm:text-[52px] font-black text-blue-600/85 tabular-nums karaoke-countin">
+              {countIn}
+            </span>
+          </span>
+        )}
+      </div>
+
+      <div className="px-3 py-2 border-t border-slate-100">
+        <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-slate-500">가사 싱크</span>
+          <button type="button" onClick={() => setShift((v) => Math.round((v - 0.5) * 10) / 10)}
+            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">−0.5초</button>
+          <span className="px-1.5 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
+            {shift > 0 ? '+' : ''}{shift.toFixed(1)}초
+          </span>
+          <button type="button" onClick={() => setShift((v) => Math.round((v + 0.5) * 10) / 10)}
+            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+0.5초</button>
+          {shift !== 0 && (
+            <button type="button" onClick={() => setShift(0)}
+              className="px-2 py-1 text-[11px] rounded-md text-slate-400 hover:text-slate-600">되돌리기</button>
+          )}
+          {record !== false && (
+            <span className="ml-auto flex items-center gap-1.5">
+              {!canRecord ? (
+                <span className="text-[11px] text-slate-400">녹음은 HTTPS 에서만 가능합니다</span>
+              ) : recState === 'recording' ? (
+                <button type="button" onClick={() => stopRef.current?.()}
+                  className="px-2.5 py-1 text-[11px] rounded-md bg-slate-800 text-white hover:bg-slate-700">■ 녹음 정지</button>
+              ) : (
+                <button type="button" disabled={recState === 'arming'} onClick={startRec}
+                  className="px-2.5 py-1 text-[11px] rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                  {recState === 'arming' ? '준비 중…' : '● 부르면서 녹음'}
+                </button>
+              )}
+            </span>
+          )}
+        </div>
+        {note && lines.length > 0 && <p className="mt-1.5 text-[11px] text-slate-400">{note}</p>}
+        {takes && (
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {([['반주와 함께', takes.mix, 'mix'], ['목소리만', takes.voice, 'voice']] as const).map(([label, url, kind]) => (
+              <div key={kind} className="rounded-lg border border-slate-200 p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-600">{label}</span>
+                  <a href={url} download={`${(title || 'karaoke').replace(/\s+/g, '-')}-${kind}.webm`}
+                    className="text-[11px] text-blue-600 hover:text-blue-800">저장</a>
+                </div>
+                <audio controls preload="metadata" src={url} className="mt-1 w-full h-8" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
