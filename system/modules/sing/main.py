@@ -3328,6 +3328,12 @@ def action_render(inp):
     lrc_path = None
     if lrc_text:
         lrc_path = out_path.rsplit(".", 1)[0] + ".lrc"
+        # The lyrics we were GIVEN must not be the file we write: same stem = the source is
+        # overwritten, and the framework deletes imported files that sit under data/ (실측: an
+        # e2e run clobbered its own input). Same name, different file.
+        src_lyr = str(locals().get("lpath") or "")
+        if src_lyr and os.path.abspath(src_lyr) == os.path.abspath(lrc_path):
+            lrc_path = out_path.rsplit(".", 1)[0] + "-sync.lrc"
         with open(lrc_path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(lrc_text)
     # ── ② movements: even FLAC crosses the ~50MB media door near the 9-10 minute mark. A piece
