@@ -1297,10 +1297,7 @@ async fn existing_capabilities(tools: &Arc<ToolManager>, request: &str) -> Optio
     if rows.is_empty() {
         return None;
     }
-    Some(serde_json::json!({
-        "existingCapabilities": rows,
-        "note": "These module actions already cover this request. If the user wants the ARTIFACT                  (a track, a document, an image, a file), cancel_build and call the module — one                  call, no staged flow. Keep building only when they want a durable SCREEN to                  operate, and then use these actions as its data source.",
-    }))
+    Some(serde_json::json!({ "existingCapabilities": rows }))
 }
 
 fn register_build_tools(tools: &Arc<ToolManager>) {
@@ -1310,12 +1307,13 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
     tools.register_tool(
         ToolDefinition {
             name: "start_build".to_string(),
-            description: "Start a multi-step build of an app or page (requirements → design → refine → implement) — returns a session and the requirements instruction. Use it for any multi-step build regardless of plan mode; a simple one-off page needs only save_page. A build is a durable SCREEN the user operates; a deliverable an existing module produces (a track, a document, an image, a data file) is not a build, and the response says so when one matches. To MODIFY a published page, pass targetSlug — the flow becomes change-scope → apply and the existing spec is edited rather than rebuilt.".to_string(),
+            description: "Start a multi-step build of an app or page (requirements → design → refine → implement) — returns a session and the requirements instruction. Use it for any multi-step build regardless of plan mode; a simple one-off page needs only save_page. A build is a durable SCREEN the user operates: when an existing module already produces what was asked for (a track, a document, an image, a data file), this REFUSES and hands you those actions — call one, or come back with confirmedScreen=true once the user has said they want a screen. To MODIFY a published page, pass targetSlug — the flow becomes change-scope → apply and the existing spec is edited rather than rebuilt.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "request": { "type": "string", "description": "the user's build request" },
                     "targetSlug": { "type": "string", "description": "pass ONLY when MODIFYING an existing published page/app — its page slug. Switches the flow to modify mode (change-scope → apply, 2 steps). Omit for a new build." },
+                    "confirmedScreen": { "type": "boolean", "description": "true only after the USER has said they want a durable screen to operate rather than the file itself. It overrides the refusal that fires when an existing module already produces what was asked for — never set it to get past that refusal on your own." },
                     "convId": { "type": "string", "description": "current conversation id (from the [Build tracking] hint). On the CLI path it is NOT auto-injected, so pass it — it keys the build to THIS conversation for cross-turn continuation, so concurrent builds in other conversations/devices never mix up." }
                 },
                 "required": ["request"]
@@ -1338,26 +1336,39 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
                 .map(str::trim)
                 .filter(|s| !s.is_empty());
             let mode = if target.is_some() { BuildMode::Modify } else { BuildMode::Create };
+            // A new build whose product a module already makes does not open a session. Reporting
+            // was not enough: with the hint in hand the model still opened the card and said so
+            // out loud ("기존 노래·가사 기능을 연결하는 T2 앱으로", 실측 8/19 turn 73). So the
+            // default flips — the cheap, reversible path runs unless the USER asked for a screen.
+            // A modify build is exempt: targetSlug already names the page it edits.
+            let confirmed = args
+                .get("confirmedScreen")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if mode == BuildMode::Create && !confirmed {
+                if let Some(tm) = catalog.upgrade() {
+                    if let Some(hint) = existing_capabilities(&tm, request).await {
+                        let mut refusal = serde_json::json!({
+                            "success": false,
+                            "error": "이 요청이 만드는 것은 이미 있는 모듈의 산출물입니다 — 빌드                                       세션을 열지 않았습니다. 아래 액션 중 하나를 부르면 한 번에                                       끝납니다(get_action_schema → run_module_action). 사용자가                                       파일이 아니라 '조작하는 화면'을 원한다고 말했다면, 그때                                       start_build 를 confirmedScreen=true 로 다시 부르세요.",
+                        });
+                        if let (Some(r), Some(h)) = (refusal.as_object_mut(), hint.as_object()) {
+                            for (k, v) in h {
+                                r.insert(k.clone(), v.clone());
+                            }
+                        }
+                        return Ok(refusal);
+                    }
+                }
+            }
             let id = build_session::create_session(scope, request, mode, target);
-            let mut data = serde_json::json!({
+            let data = serde_json::json!({
                 "sessionId": id,
                 "mode": if mode == BuildMode::Modify { "modify" } else { "create" },
                 "targetSlug": target,
                 "step": BuildStep::Requirements.key(),
                 "stepPrompt": build_session::step_prompt(BuildStep::Requirements, None, mode)
             });
-            // Only for a NEW build: a modify request already names the page it edits.
-            if mode == BuildMode::Create {
-                if let Some(tm) = catalog.upgrade() {
-                    if let Some(hint) = existing_capabilities(&tm, request).await {
-                        if let (Some(d), Some(h)) = (data.as_object_mut(), hint.as_object()) {
-                            for (k, v) in h {
-                                d.insert(k.clone(), v.clone());
-                            }
-                        }
-                    }
-                }
-            }
             Ok(serde_json::json!({ "success": true, "data": data }))
             }
         },
