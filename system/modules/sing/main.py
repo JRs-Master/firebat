@@ -1180,11 +1180,14 @@ def _norm_name(s):
     return "".join(str(s or "").split()).casefold()
 
 
-def action_scores():
+def action_scores(inp=None):
     """The shelf as a first-class action — the model LOOKS UP what is shelved instead of
-    guessing an alias and fishing the list out of an error (사용자: 낚시는 계단이 아니다)."""
+    guessing an alias and fishing the list out of an error (사용자: 낚시는 계단이 아니다).
+    `query` filters by normalized substring (alias or filename); omitted = the whole shelf."""
     shelf = score_library()
-    rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name")} for r in shelf]
+    q = _norm_name((inp or {}).get("query"))
+    rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name")} for r in shelf
+            if not q or q in _norm_name(r.get("alias")) or q in _norm_name(r.get("name"))]
     return {"success": True, "data": {
         "count": len(rows), "scores": rows,
         "note": "pass one alias as render's scoreMediaPath to play it"}}
@@ -1659,7 +1662,7 @@ def main():
     elif action == "render":
         out = action_render(inp)
     elif action == "scores":
-        out = action_scores()
+        out = action_scores(inp)
     else:
         out = {"success": False,
                "error": f"unknown action {action!r} — one of: render, scores, selftest"}

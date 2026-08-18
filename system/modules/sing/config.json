@@ -160,6 +160,13 @@
       "midiOutPath": {
         "type": "string",
         "description": "Workspace-relative .mid path. Implies midiOut. Default = the wav path with a .mid extension."
+      },
+      "query": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[scores] Filter the shelf by substring of alias or filename (case/spacing ignored). Omit for the whole shelf."
       }
     }
   },

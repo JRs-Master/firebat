@@ -1704,12 +1704,19 @@ def _norm_name(x):
     return "".join(str(x or "").split()).casefold()
 
 
-def action_masters(_inp=None):
-    """The template shelf as a first-class action — look it up instead of guessing an alias."""
+def action_masters(inp=None):
+    """The template shelf as a first-class action — look it up instead of guessing an alias.
+    `query` filters by normalized substring (alias/filename), `kind` by extension."""
     shelf = master_shelf()
+    q = _norm_name((inp or {}).get("query"))
+    want_kind = str((inp or {}).get("kind") or "").strip().lower().lstrip(".")
     rows = [{"alias": r.get("alias") or r.get("name"), "name": r.get("name"),
              "kind": str(r.get("name", "")).rsplit(".", 1)[-1].lower(),
              "default": bool(r.get("default"))} for r in shelf]
+    if q:
+        rows = [r for r in rows if q in _norm_name(r["alias"]) or q in _norm_name(r["name"])]
+    if want_kind:
+        rows = [r for r in rows if r["kind"] == want_kind]
     return {"success": True, "action": "masters", "data": {
         "count": len(rows), "masters": rows,
         "note": "pass one alias as make_*'s masterMediaPath to build on it"}}

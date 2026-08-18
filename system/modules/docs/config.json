@@ -71,7 +71,10 @@
         "id": "masters",
         "name": "서식 보관함 목록",
         "description": "List the shelved master/template files (alias, kind, per-kind default) — check it when the user names a template, then pass the alias as make_*'s masterMediaPath",
-        "params": []
+        "params": [
+          "query",
+          "kind"
+        ]
       },
       {
         "id": "selftest",
@@ -243,6 +246,20 @@
           "null"
         ],
         "description": "[make_pptx] make_pptx design tokens when no master is given — {accent, heading, body, band} as hex colors. Use the palette you designed the page with; blocks carry meaning, these carry the look. A master .pptx always wins over this."
+      },
+      "query": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[masters] Filter the shelf by substring of alias or filename (case/spacing ignored)."
+      },
+      "kind": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[masters] Filter the shelf by file kind (pptx|xlsx|docx|hwpx|pdf)."
       }
     }
   },
