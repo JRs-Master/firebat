@@ -144,6 +144,13 @@
               "null"
             ],
             "description": "Sustain pedal, three states: omit = play exactly what the score writes (marks become real CC64 automatically); true = ALSO pedal bar-by-bar when the score has no marks (월광 어법); false = dry — strip even the written marks."
+          },
+          "voicing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "0-1 pianist's voicing: the top line sings out, inner voices step back, the bass supports quietly. '살랑살랑/은은하게/부드럽게' ≈ 0.6-0.8 (pairs well with humanize and pedal). Omit = the score's flat balance, which is what any GM player does — measured on Moonlight, the flat balance reads as gloom because the bass ends up loudest."
           }
         }
       },
@@ -233,6 +240,13 @@
         ],
         "description": "0-1 human feel: deterministic micro timing/velocity jitter and chord rolls. '사람처럼' ≈ 0.5-0.7. Omit = exact grid."
       },
+      "voicing": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "[render, with scoreMediaPath] 0-1 pianist's voicing: the top line sings out, inner voices step back, the bass supports quietly. '살랑살랑/은은하게/부드럽게' ≈ 0.6-0.8 (pairs well with humanize and pedal). Omit = the score's flat balance, which is what any GM player does — measured on Moonlight, the flat balance reads as gloom because the bass ends up loudest."
+      },
       "pedal": {
         "type": [
           "boolean",
@@ -299,6 +313,7 @@
         "engine",
         "bpm",
         "humanize",
+        "voicing",
         "pedal",
         "band",
         "drumPattern",

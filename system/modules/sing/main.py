@@ -233,6 +233,14 @@ def parse_score(score):
                     return None, None, None, None, None, None,                         f"drumPattern 박 {off} 가 마디({meter}박) 밖입니다"
                 vel = float(row[2]) if len(row) > 2 and row[2] is not None else 0.7
                 drum_rows.append((dname, off, max(0.0, min(1.0, vel))))
+    voicing = score.get("voicing")
+    if voicing is not None:
+        try:
+            voicing = float(voicing)
+        except (TypeError, ValueError):
+            return None, None, None, None, None, None, "voicing 은 0~1 숫자입니다"
+        if not (0.0 <= voicing <= 1.0):
+            return None, None, None, None, None, None, "voicing 은 0~1 사이여야 합니다"
     humanize = score.get("humanize")
     if humanize is not None:
         try:
@@ -254,7 +262,7 @@ def parse_score(score):
             return None, None, None, None, None, None, "bars 는 1~256 마디입니다"
     feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline,
             "drums": drum_rows, "bars": bars, "bpm": bpm, "doubles": doubles,
-            "humanize": humanize, "pedal": pedal}
+            "humanize": humanize, "pedal": pedal, "voicing": voicing}
     return spb, events, chords, style, band, feel, None
 
 
@@ -1344,6 +1352,27 @@ def apply_performance(arr, feel, spb, total_beats):
             for part in pitched_parts:
                 arr.append({"beat": bar, "beats": span, "part": part, "pedal": True})
             bar += meter
+    # Voicing — the pianist's balance (실측 월광: 저음 0.44 > 반주 0.375 > 멜로디 0.36, 정확히
+    # 거꾸로. 그 소리가 "좌절 절망"이었다). The top line sings, inner voices step back, the
+    # bass supports. A GM player's flat balance stays the default; the knob is the human.
+    v_amt = float((feel or {}).get("voicing") or 0.0)
+    if v_amt > 0:
+        vb = {}
+        for e in arr:
+            if "pitch" in e and not e.get("pedal"):
+                vb.setdefault(int(e["beat"] * 2), []).append(e)
+        for rs in vb.values():
+            if len(rs) < 2:
+                continue
+            top = max(rs, key=lambda r: r["pitch"])
+            low = min(rs, key=lambda r: r["pitch"])
+            for r in rs:
+                if r is top:
+                    r["vel"] = min(1.0, r["vel"] * (1 + 0.18 * v_amt))
+                elif r is low and len(rs) > 2:
+                    r["vel"] = max(0.08, r["vel"] * (1 - 0.30 * v_amt))
+                else:
+                    r["vel"] = max(0.08, r["vel"] * (1 - 0.22 * v_amt))
     amount = float((feel or {}).get("humanize") or 0.0)
     if amount > 0:
         rng = np.random.default_rng(1729 + len(arr))
@@ -2810,7 +2839,7 @@ def action_render(inp):
             # only one-call path to "피아노로" — measured: the model did exactly that (turn 31,
             # 48s 자작 while the shelf held the real piece and scores had just listed it).
             for knob in ("style", "band", "drumPattern", "swing", "comp", "bassline",
-                         "bpm", "humanize", "pedal"):
+                         "bpm", "humanize", "pedal", "voicing"):
                 if inp.get(knob) is not None:
                     score[knob] = inp[knob]
             parsed_from = media_path
@@ -3269,6 +3298,17 @@ def action_selftest():
                           "score": {"bpm": 120, "bars": 2, "style": "rock",
                                     "drumPattern": [["kick", 0.0, 0.9], ["snare", 1.0],
                                                     ["conga_open", 2.5, 0.6]]}})
+    vc = [{"beat": 0.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
+           "pitch": 76, "vel": 0.4, "gate": 1.0},
+          {"beat": 0.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
+           "pitch": 64, "vel": 0.4, "gate": 1.0},
+          {"beat": 0.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
+           "pitch": 40, "vel": 0.44, "gate": 1.0}]
+    vc = apply_performance(vc, {"meter": 4, "voicing": 0.8}, 0.5, 1)
+    by_pitch = {r["pitch"]: r["vel"] for r in vc}
+    ck("voicing puts the top line in front and the bass behind (월광 실측 처방)", True,
+       {k: round(v, 2) for k, v in by_pitch.items()},
+       by_pitch[76] > 0.4 and by_pitch[40] < 0.44 and by_pitch[64] < 0.4)
     pfirst = [{"beat": 0.0, "beats": 4.0, "part": "p1", "pedal": True},
               {"beat": 0.01, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
                "pitch": 60, "vel": 0.5, "gate": 1.0}]
