@@ -1303,6 +1303,25 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     return out
 
 
+def reinstrument(rows, band):
+    """Faithful mode + band = the same performance on another instrument ("월광 기타로") —
+    NOT a collapse into the 3-part arrangement. 실측 (15:15 월광): the model helpfully passed
+    band {melody: piano} and the whole texture fell to ONE melody line ("1/3만 나오는 느낌"
+    — 시간이 아니라 성부가 1/3 이었다). One named instrument dresses every pitched part;
+    real re-arrangement still belongs to style/drums/vocal."""
+    inst = (band or {}).get("melody") or next(iter(band.values()), None) if band else None
+    if not inst:
+        return rows, None
+    resolved = resolve_instrument(inst)
+    if resolved is None:
+        return rows, None
+    patch, prog = resolved
+    for r in rows:
+        if "pitch" in r and not r.get("pedal"):
+            r["patch"], r["program"] = patch, prog
+    return rows, inst
+
+
 def apply_performance(arr, feel, spb, total_beats):
     """The asked-for performance layer, applied to ANY arr (faithful or arranged).
 
@@ -2537,6 +2556,30 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
         score["meter"] = meter
     hs = best["harmonies"] or next((pp["harmonies"] for pp in parsed_parts
                                     if pp["harmonies"]), [])
+    if not hs and len(parsed_parts) > 1:
+        # No chord symbols written — read the harmony off the lowest part, lowest note per
+        # 2-beat window, the exact recipe the MIDI reader has always used. Without this an
+        # arranged render of a symbol-less score was a naked melody (실측: 월광 15:15).
+        low = min((pp for pp in parsed_parts if pp is not best),
+                  key=lambda pp: sum(n["midi"] for n in pp["notes"]) / len(pp["notes"]))
+        buckets = {}
+        for n in low["notes"]:
+            at = n.get("_at")
+            if at is None:
+                continue
+            buckets.setdefault(int(warp(at) // 2), []).append(n["midi"])
+        chords, prev_root = [], None
+        for k in range(min(buckets), max(buckets) + 1) if buckets else []:
+            root = min(buckets[k]) if buckets.get(k) else prev_root
+            if root is None:
+                continue
+            if chords and root == prev_root:
+                chords[-1]["beats"] += 2
+            else:
+                chords.append({"root": _midi_name(root), "beats": 2})
+            prev_root = root
+        if chords:
+            score["chords"] = chords
     if hs:
         chords, total = [], sum(n["beats"] for n in out_notes)
         for i, (at, pc, qual) in enumerate(hs):
@@ -2762,10 +2805,13 @@ def action_render(inp):
     # own dynamics — instead of reducing it to one line plus a style's backing. 실측 (월광):
     # the reduction buried the tune in its own accompaniment (따다단만 들린다). Any style/band/
     # groove request switches back to the arrangement path: re-instrumenting IS that path's job.
-    wants_arrangement = bool(style != "none" or band or (feel or {}).get("drums")
+    wants_arrangement = bool(style != "none" or (feel or {}).get("drums")
                              or inp.get("vocal") or str(inp.get("vocalPath") or "").strip())
     faithful = (parsed_from is not None and not wants_arrangement
                 and len(locals().get("faithful_rows") or []) > 0)
+    reinst_name = None
+    if faithful and band:
+        faithful_rows, reinst_name = reinstrument(faithful_rows, band)
     # vocal:true with no take yet — ask the framework for one. A declaration, not a call: the
     # framework performs the TTS and runs this action again with vocalPath filled (the old core
     # bridge did this by hand; retiring it removed the last sing vocabulary from core).
@@ -2887,6 +2933,8 @@ def action_render(inp):
         "engine": engine_used,
         "mode": "faithful" if faithful else "arranged",
     }
+    if faithful and reinst_name:
+        data["reInstrument"] = reinst_name
     if parsed_from and locals().get("notation_skipped"):
         # Silence is not consent: what the parser could not play is SAID, next to the render.
         data["notationNote"] = ("연주하지 못한 기호: " + ", ".join(
@@ -3375,6 +3423,17 @@ def action_selftest():
        True, (any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows), len(trill)),
        any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows) and len(trill) >= 4)
 
+    tv_rows = []
+    tv_sc, _ = musicxml_to_score("data/sing/selftest-x.musicxml", parts_out=tv_rows)         if os.path.exists("data/sing/selftest-x.musicxml") else (None, None)
+    ri_rows = [{"beat": 0.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
+                "pitch": 60, "vel": 0.5, "gate": 1.0},
+               {"beat": 0.0, "beats": 4.0, "part": "p1", "pedal": True}]
+    ri_out, ri_name = reinstrument(ri_rows, {"melody": "eguitar"})
+    ck("band on a file re-instruments the faithful parts, never collapses them",
+       ("eguitar", 27, True),
+       (ri_name, ri_out[0]["program"], "program" not in ri_out[1]),
+       ri_name == "eguitar" and ri_out[0]["program"] == 27
+       and "program" not in ri_out[1])
     drum_doc = ('<score-partwise><part-list><score-part id="P1">'
                 '<midi-instrument id="P1-I36"><midi-unpitched>39</midi-unpitched>'
                 '</midi-instrument></score-part></part-list><part id="P1">'
