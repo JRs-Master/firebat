@@ -1377,15 +1377,21 @@ def apply_performance(arr, feel, spb, total_beats):
     if amount > 0:
         rng = np.random.default_rng(1729 + len(arr))
         jt = 0.012 * amount / spb
-        stacks = {}
+        # COHERENT drift: every note of the same moment shares ONE offset — a pianist's hands
+        # wobble TOGETHER. Per-note jitter split simultaneous notes apart and the render
+        # limped (실측·사용자: "절뚝거리면서 엇박자"). Stack rolls stay per part.
+        moments, stacks = {}, {}
         for e in sorted((x for x in arr if not x.get("pedal")),
                         key=lambda x: (x["beat"], x.get("pitch", 0))):
-            scale = 0.4 if e["part"] == "drum" else 1.0
-            key = (e["part"], round(e["beat"], 3))
+            mkey = round(e["beat"], 3)
+            if mkey not in moments:
+                off = float(rng.normal(0, jt))
+                moments[mkey] = max(-2.2 * jt, min(2.2 * jt, off))
+            key = (e["part"], mkey)
             k = stacks.get(key, 0)
             stacks[key] = k + 1
             roll = (k * 0.010 / spb) * amount if e["part"] != "drum" else 0.0
-            e["beat"] = max(0.0, e["beat"] + float(rng.normal(0, jt)) * scale + roll)
+            e["beat"] = max(0.0, e["beat"] + moments[mkey] + roll)
             e["vel"] = float(min(1.0, max(0.08,
                                           e.get("vel", 0.7)
                                           * (1 + float(rng.normal(0, 0.07)) * amount))))
@@ -2300,7 +2306,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
     tempo_events = []  # (raw beats, bpm) — collected on part 0's walk
     parsed_parts = []
     for pi, part in enumerate(parts):
-        divisions, vel = 1.0, None
+        divisions = 1.0
+        vel_by_staff = {}  # dynamics are written PER STAFF (실측 월광: pp 는 오른손 보표의
+        # 것인데 문서 순서대로 전 성부에 들러붙어 왼손이 더 커졌다 — 악보가 아니라 우리
+        # 부산물). staff 없는 지시는 "1" 로.
         notes, harmonies, pos = [], [], 0.0
         lead_voice = None
         f_prog = prog_of.get(part.get("id"), 0)
@@ -2333,6 +2342,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     if tr_el is not None:
                         transpose = int(float(text_of(tr_el, "chromatic") or 0))                             + 12 * int(float(text_of(tr_el, "octave-change") or 0))
                 elif tag == "direction":
+                    d_staff = _xt(el, "staff", "1") or "1"
                     snd = kid(el, "sound")
                     if snd is not None and snd.get("tempo") and pi == 0:
                         tempo_events.append((m_base + cur, float(snd.get("tempo"))))
@@ -2340,8 +2350,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     if dt is not None:
                         dyn = kid(dt, "dynamics")
                         if dyn is not None and len(dyn):
-                            vel = _XML_DYN.get(_strip_ns(dyn[0].tag), vel)
-                            dyn_events.append((m_base + cur, vel))
+                            v_new = _XML_DYN.get(_strip_ns(dyn[0].tag),
+                                                 vel_by_staff.get(d_staff))
+                            vel_by_staff[d_staff] = v_new
+                            dyn_events.append((m_base + cur, v_new, d_staff))
                         met = kid(dt, "metronome")
                         if met is not None and pi == 0 and snd is None:
                             unit = _XML_UNIT.get((text_of(met, "beat-unit") or "quarter"), 1.0)
@@ -2363,7 +2375,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                             wt = (wg.get("type") or "").lower()
                             wedges.append((m_base + cur,
                                            "c" if wt == "crescendo"
-                                           else "d" if wt == "diminuendo" else "stop"))
+                                           else "d" if wt == "diminuendo" else "stop",
+                                           d_staff))
                         osh = kid(dt, "octave-shift")
                         if osh is not None:
                             ot = (osh.get("type") or "").lower()
@@ -2413,9 +2426,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         if not st:
                             last_onset = onset
                         if dname and parts_out is not None:
+                            dv = vel_by_staff.get(_xt(el, "staff", "1") or "1",
+                                                  vel_by_staff.get("1"))
                             parts_out.append({"beat": onset, "beats": 0.25, "part": "drum",
                                               "drum": dname,
-                                              "vel": vel if vel is not None else 0.7})
+                                              "vel": dv if dv is not None else 0.7})
                         elif parts_out is not None:
                             skip_mark("드럼(매핑 없음)")
                         if not st:
@@ -2481,8 +2496,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         onset += stack_n * 0.04  # rolled chord — the arpeggio sign
                     if not is_stack:
                         last_onset = onset
-                    nvel = (vel if vel is not None else 0.65) + vboost
-                    nvel = min(1.0, nvel)
+                    n_staff = _xt(el, "staff", "1") or "1"
+                    st_vel = vel_by_staff.get(n_staff, vel_by_staff.get("1"))
+                    nvel = min(1.0, (st_vel if st_vel is not None else 0.65) + vboost)
                     if parts_out is not None:
                         stolen = 0.0
                         if graces and not is_stack:
@@ -2498,7 +2514,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         base_row = {"beat": onset + stolen, "beats": max(0.125, dur - stolen),
                                     "part": f_part, "patch": _patch_for_program(f_prog),
                                     "program": f_prog, "pitch": midi, "vel": nvel,
-                                    "gate": gate}
+                                    "gate": gate, "staff": n_staff}
                         if (tie and parts_out and parts_out[-1]["part"] == f_part
                                 and parts_out[-1].get("pitch") == midi
                                 and not parts_out[-1].get("pedal")):
@@ -2521,28 +2537,31 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         notes[-1]["beats"] += dur
                     else:
                         notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": nvel,
-                                      "_at": onset})
+                                      "_at": onset, "_st": n_staff})
             pos = m_base + m_len
         if pedal_down is not None and parts_out is not None and pos > pedal_down:
             parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
                               "part": f_part, "pedal": True})
         # wedges ramp between the stepped dynamics on either side
-        for wi, (wstart, wkind) in enumerate(wedges):
+        for wi, (wstart, wkind, wstaff) in enumerate(wedges):
             if wkind == "stop":
                 continue
-            wstop = next((t for t, k in wedges[wi + 1:] if k == "stop"), wstart + 4.0)
+            wstop = next((t for t, k, st in wedges[wi + 1:] if k == "stop" and st == wstaff),
+                         wstart + 4.0)
             v0 = 0.65
-            for t, v in dyn_events:
-                if t <= wstart:
+            for t, v, st in dyn_events:
+                if t <= wstart and st == wstaff:
                     v0 = v
-            v1 = next((v for t, v in dyn_events if t >= wstop - 0.25),
+            v1 = next((v for t, v, st in dyn_events
+                       if t >= wstop - 0.25 and st == wstaff),
                       min(1.0, max(0.1, v0 + (0.15 if wkind == "c" else -0.15))))
             span = max(1e-9, wstop - wstart)
             for row in (parts_out or []):
-                if row.get("part") == f_part and not row.get("pedal")                         and wstart <= row["beat"] < wstop:
+                if (row.get("part") == f_part and not row.get("pedal")
+                        and row.get("staff") == wstaff and wstart <= row["beat"] < wstop):
                     row["vel"] = round(v0 + (v1 - v0) * (row["beat"] - wstart) / span, 3)
             for nrow in notes:
-                if wstart <= nrow.get("_at", -1) < wstop:
+                if nrow.get("_st") == wstaff and wstart <= nrow.get("_at", -1) < wstop:
                     nrow["vel"] = round(v0 + (v1 - v0) * (nrow["_at"] - wstart) / span, 3)
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
@@ -2564,6 +2583,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
     out_notes = []
     for n in best["notes"]:
         at = n.pop("_at", None)
+        n.pop("_st", None)
         beats = n["beats"]
         if at is not None:
             beats = max(0.25, warp(at + beats) - warp(at))
@@ -3334,6 +3354,15 @@ def action_selftest():
                            perf[5], 0.5, 4)
     h2 = apply_performance(build_arrangement(perf[1], perf[2], "none", 4, None, perf[5]),
                            perf[5], 0.5, 4)
+    duo = apply_performance(
+        [{"beat": 1.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
+          "pitch": 72, "vel": 0.5, "gate": 1.0},
+         {"beat": 1.0, "beats": 1.0, "part": "p2", "patch": "piano", "program": 0,
+          "pitch": 48, "vel": 0.5, "gate": 1.0}],
+        {"meter": 4, "humanize": 0.7}, 0.5, 2)
+    ck("human hands wobble TOGETHER — same moment, same drift (절뚝임 실측 처방)",
+       True, [round(e["beat"], 4) for e in duo],
+       abs(duo[0]["beat"] - duo[1]["beat"]) < 1e-9 and duo[0]["beat"] != 1.0)
     ck("humanize is deterministic — same ask, same bytes",
        True, h1 == h2, h1 == h2)
     ck("...and actually moves off the grid", True,
