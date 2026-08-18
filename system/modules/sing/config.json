@@ -54,7 +54,7 @@
       },
       "score": {
         "type": "object",
-        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?, meter?, swing?, comp?, bassline?, drumPattern?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style is a genre row (groove + feel + default band): trot | ballad | rock | metal | punk | pop | dance | rnb | hiphop | rocknroll | funk | jazz | blues | country | folk | carol | march | classic | newage | none, plus aliases (edm, house, kpop, jpop, waltz, rap, swing, christmas) — an unknown style is refused with the full list.",
+        "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats, quality?}], style?, band?, meter?, swing?, comp?, bassline?, drumPattern?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style is a genre row (groove + feel + default band): trot | ballad | rock | metal | punk | pop | dance | rnb | hiphop | rocknroll | funk | jazz | blues | country | folk | carol | march | classic | newage | none, plus aliases (edm, house, kpop, jpop, waltz, rap, swing, christmas, orchestra, symphony) — an unknown style is refused with the full list.",
         "properties": {
           "bpm": {
             "type": "number"
@@ -86,7 +86,7 @@
               "array",
               "null"
             ],
-            "description": "Per-part instrument override {melody?, chord?, bass?} — any of the module's own patches (electric/acoustic guitar, e-violin, synth leads, piano, e-piano, organ, accordion, strings, brass, flute, marimba, bell, music box…) OR any General MIDI name (sax, cello, vibraphone, trumpet, harp, sitar, choir…): GM names sound native on the sf2 engine and borrow the nearest builtin timbre otherwise. A flat list works too — assigned to melody/chord/bass in order, drum words skipped (the kit comes from style/drumPattern). Unknown names are refused with the full library."
+            "description": "Per-part instrument override {melody?, chord?, bass?} — any of the module's own patches (electric/acoustic guitar, e-violin, synth leads, piano, e-piano, organ, accordion, strings, brass, flute, marimba, bell, music box…) OR any General MIDI name (sax, cello, vibraphone, trumpet, harp, sitar, choir…): GM names sound native on the sf2 engine and borrow the nearest builtin timbre otherwise. A flat list works too — assigned to melody/chord/bass in order, drum words skipped (the kit comes from style/drumPattern). Unknown names are refused with the full library. Official GM spellings ('acoustic grand piano') are absorbed — case/spacing ignored."
           },
           "meter": {
             "type": [
@@ -123,6 +123,13 @@
               "null"
             ],
             "description": "Custom drum bar loop replacing the style's: rows of [drumName, beatInBar, velocity 0-1] looped every bar (fills and crashes still apply). Drum names = the full GM kit — kick, snare, rim, clap, hat/ohat, toms, ride, crash, china, splash, cowbell, tamb, congas, bongos, timbales, agogo, cabasa, maracas, guiro, claves, woodblocks, cuica, triangle… An unknown name is refused with the whole kit list."
+          },
+          "bars": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Bar count when the piece is longer than its notes/chords — with drumPattern and NO notes this makes a drum solo."
           }
         }
       },
@@ -160,7 +167,7 @@
           "array",
           "null"
         ],
-        "description": "[render, with scoreMediaPath] Same contract as score.band — instruments for the shelved/linked piece, one call."
+        "description": "[render, with scoreMediaPath] Same contract as score.band — instruments for the shelved/linked piece, one call. Official GM spellings ('acoustic grand piano') are absorbed — case/spacing ignored."
       },
       "drumPattern": {
         "type": [

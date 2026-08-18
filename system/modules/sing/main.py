@@ -70,7 +70,10 @@ def parse_score(score):
     spb = 60.0 / bpm
     notes = score.get("notes")
     if not isinstance(notes, list) or not notes:
-        return None, None, None, None, None, None, "notes 가 비었습니다"
+        if score.get("drumPattern"):
+            notes = []  # a drum solo — the kit alone is a legal piece (length from `bars`)
+        else:
+            return None, None, None, None, None, None, "notes 가 비었습니다"
     events = []
     for n in notes:
         if not isinstance(n, dict):
@@ -175,7 +178,16 @@ def parse_score(score):
                 return None, None, None, None, None, None,                     f"drumPattern 박 {off} 가 마디({meter}박) 밖입니다"
             vel = float(row[2]) if len(row) > 2 and row[2] is not None else 0.7
             drum_rows.append((dname, off, max(0.0, min(1.0, vel))))
-    feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline, "drums": drum_rows}
+    bars = score.get("bars")
+    if bars is not None:
+        try:
+            bars = int(bars)
+        except (TypeError, ValueError):
+            return None, None, None, None, None, None, "bars 는 정수입니다"
+        if not (1 <= bars <= 256):
+            return None, None, None, None, None, None, "bars 는 1~256 마디입니다"
+    feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline,
+            "drums": drum_rows, "bars": bars, "bpm": bpm}
     return spb, events, chords, style, band, feel, None
 
 
@@ -537,21 +549,83 @@ FAMILY_FALLBACK = ("piano", "bell", "organ", "aguitar", "bass", "eviolin", "stri
                    "melody", "flute", "synthlead", "strings", "synthlead", "aguitar", "marimba",
                    "synthlead")
 GM_BUILTIN_OVERRIDE = {13: "marimba", 24: "cguitar", 25: "aguitar", 26: "eguitar", 27: "eguitar",
+                       43: "bass",
                        28: "eguitar", 29: "dguitar", 30: "dguitar", 31: "eguitar",
                        38: "synthbass", 39: "synthbass", 45: "cguitar", 46: "cguitar",
                        47: "marimba", 104: "cguitar", 105: "aguitar", 106: "cguitar",
                        107: "cguitar", 108: "musicbox"}
 
 
+# The OFFICIAL GM instrument names, normalized — 실측 (turn at 03:32): the model wrote
+# "acoustic grand piano", the spec's own spelling, and the short-name table refused it. The
+# spec's names are the dialect most worth absorbing.
+GM_OFFICIAL = {
+    "acousticgrandpiano": 0, "brightacousticpiano": 1, "electricgrandpiano": 2,
+    "honkytonkpiano": 3, "electricpiano1": 4, "electricpiano": 4, "electricpiano2": 5,
+    "harpsichord": 6, "clavi": 7,
+    "celesta": 8, "glockenspiel": 9, "musicbox": 10, "vibraphone": 11, "marimba": 12,
+    "xylophone": 13, "tubularbells": 14, "dulcimer": 15,
+    "drawbarorgan": 16, "percussiveorgan": 17, "rockorgan": 18, "churchorgan": 19,
+    "reedorgan": 20, "accordion": 21, "harmonica": 22, "tangoaccordion": 23,
+    "acousticguitarnylon": 24, "acousticguitarsteel": 25, "electricguitarjazz": 26,
+    "electricguitarclean": 27, "electricguitarmuted": 28, "overdrivenguitar": 29,
+    "distortionguitar": 30, "guitarharmonics": 31,
+    "acousticbass": 32, "electricbassfinger": 33, "electricbasspick": 34, "fretlessbass": 35,
+    "slapbass1": 36, "slapbass2": 37, "synthbass1": 38, "synthbass2": 39,
+    "violin": 40, "viola": 41, "cello": 42, "contrabass": 43, "tremolostrings": 44,
+    "pizzicatostrings": 45, "orchestralharp": 46, "timpani": 47,
+    "stringensemble1": 48, "stringensemble": 48, "stringensemble2": 49, "synthstrings1": 50,
+    "synthstrings2": 51, "choiraahs": 52, "voiceoohs": 53, "synthvoice": 54, "orchestrahit": 55,
+    "trumpet": 56, "trombone": 57, "tuba": 58, "mutedtrumpet": 59, "frenchhorn": 60,
+    "brasssection": 61, "synthbrass1": 62, "synthbrass2": 63,
+    "sopranosax": 64, "altosax": 65, "tenorsax": 66, "baritonesax": 67, "oboe": 68,
+    "englishhorn": 69, "bassoon": 70, "clarinet": 71,
+    "piccolo": 72, "flute": 73, "recorder": 74, "panflute": 75, "blownbottle": 76,
+    "shakuhachi": 77, "whistle": 78, "ocarina": 79,
+    "lead1square": 80, "lead2sawtooth": 81, "lead3calliope": 82, "lead4chiff": 83,
+    "lead5charang": 84, "lead6voice": 85, "lead7fifths": 86, "lead8basslead": 87,
+    "pad1newage": 88, "pad2warm": 89, "pad3polysynth": 90, "pad4choir": 91, "pad5bowed": 92,
+    "pad6metallic": 93, "pad7halo": 94, "pad8sweep": 95,
+    "fx1rain": 96, "fx2soundtrack": 97, "fx3crystal": 98, "fx4atmosphere": 99,
+    "fx5brightness": 100, "fx6goblins": 101, "fx7echoes": 102, "fx8scifi": 103,
+    "sitar": 104, "banjo": 105, "shamisen": 106, "koto": 107, "kalimba": 108, "bagpipe": 109,
+    "fiddle": 110, "shanai": 111,
+    "tinklebell": 112, "agogo": 113, "steeldrums": 114, "woodblock": 115, "taikodrum": 116,
+    "melodictom": 117, "synthdrum": 118, "reversecymbal": 119,
+    "guitarfretnoise": 120, "breathnoise": 121, "seashore": 122, "birdtweet": 123,
+    "telephonering": 124, "helicopter": 125, "applause": 126, "gunshot": 127,
+}
+
+
+def _norm_inst(s):
+    """Spelling is not identity: 'acoustic grand piano' == 'AcousticGrandPiano' == our key."""
+    return "".join(ch for ch in str(s or "").lower() if ch.isalnum())
+
+
+_INST_LOOKUP = None
+
+
 def resolve_instrument(name):
-    """Band name -> (builtin patch, GM program). PATCHES first (both engines native), then the
-    GM map (native on sf2, nearest-family on numpy). None = the name is not an instrument."""
-    if name in PATCHES:
-        return name, PATCHES[name].get("gm", 0)
-    if name in GM_NAMES:
-        g = GM_NAMES[name]
-        return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
-    return None
+    """Band name -> (builtin patch, GM program). PATCHES names win (native on both engines),
+    then our short GM names, then the spec's official names — all matched normalized.
+    None = the name is not an instrument."""
+    global _INST_LOOKUP
+    if _INST_LOOKUP is None:
+        lut = {}
+        for k, v in GM_OFFICIAL.items():
+            lut[k] = ("gm", v)
+        for k, v in GM_NAMES.items():
+            lut[_norm_inst(k)] = ("gm", v)
+        for k in PATCHES:
+            lut[_norm_inst(k)] = ("patch", k)
+        _INST_LOOKUP = lut
+    hit = _INST_LOOKUP.get(_norm_inst(name))
+    if hit is None:
+        return None
+    if hit[0] == "patch":
+        return hit[1], PATCHES[hit[1]].get("gm", 0)
+    g = hit[1]
+    return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
 
 
 # Styles whose drummer actually rolls into the turnaround — a ballad or a carol keeps its
@@ -626,6 +700,7 @@ DRUM_PATTERNS = {
 # Familiar names people actually say → the row that plays them. kpop/jpop are pop grooves here
 # honestly: what makes them THEM is production this synth does not do.
 STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
+                 "orchestra": "classic", "symphony": "classic",
                  "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad",
                  "rap": "hiphop", "boombap": "hiphop", "swing": "jazz",
                  "christmas": "carol", "xmas": "carol"}
@@ -634,13 +709,37 @@ STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
 # groove up to the fill start and rolls down the toms; every 4-bar group opens on a crash.
 # (start beat, [hits]) — velocities rise through the roll because a drummer leans into a fill.
 DRUM_FILLS = {
-    "trot":   (2.0, [("snare", 2.0, 0.55), ("tom_hi", 2.25, 0.5), ("tom_hi", 2.5, 0.55),
-                     ("tom_mid", 2.75, 0.6), ("tom_mid", 3.0, 0.7), ("tom_lo", 3.25, 0.8),
-                     ("tom_lo", 3.5, 0.9), ("tom_lo", 3.75, 0.95)]),
-    "ballad": (3.0, [("tom_hi", 3.0, 0.4), ("tom_mid", 3.25, 0.5), ("tom_lo", 3.5, 0.6),
-                     ("tom_lo", 3.75, 0.7)]),
-    "march":  (3.0, [("snare", 3.0, 0.5), ("snare", 3.25, 0.6), ("snare", 3.5, 0.75),
-                     ("snare", 3.75, 0.9)]),
+    "trot":      (2.0, [("snare", 2.0, 0.55), ("tom_hi", 2.25, 0.5), ("tom_hi", 2.5, 0.55),
+                        ("tom_mid", 2.75, 0.6), ("tom_mid", 3.0, 0.7), ("tom_lo", 3.25, 0.8),
+                        ("tom_lo", 3.5, 0.9), ("tom_lo", 3.75, 0.95)]),
+    "ballad":    (3.0, [("tom_hi", 3.0, 0.4), ("tom_mid", 3.25, 0.5), ("tom_lo", 3.5, 0.6),
+                        ("tom_lo", 3.75, 0.7)]),
+    "march":     (3.0, [("snare", 3.0, 0.5), ("snare", 3.25, 0.6), ("snare", 3.5, 0.75),
+                        ("snare", 3.75, 0.9)]),
+    # Each genre turns the corner in its own accent — a rock tom run is not a funk ghost bar,
+    # and lending everyone the trot fill made a rock band 구르다 like a 뽕짝 밴드.
+    "rock":      (3.0, [("snare", 3.0, 0.6), ("tom_hi", 3.25, 0.6), ("tom_mid", 3.5, 0.7),
+                        ("tom_lo", 3.75, 0.85)]),
+    "metal":     (3.0, [("kick", 3.0, 0.8), ("tom_hi", 3.0, 0.6), ("kick", 3.25, 0.8),
+                        ("tom_mid", 3.25, 0.65), ("kick", 3.5, 0.8), ("tom_lo", 3.5, 0.7),
+                        ("kick", 3.75, 0.85), ("tom_lo", 3.75, 0.9)]),
+    "punk":      (3.0, [("snare", 3.0, 0.8), ("snare", 3.25, 0.8), ("snare", 3.5, 0.85),
+                        ("snare", 3.75, 0.9)]),
+    "pop":       (3.0, [("snare", 3.0, 0.55), ("snare", 3.25, 0.5), ("tom_mid", 3.5, 0.6),
+                        ("tom_lo", 3.75, 0.7)]),
+    "dance":     (2.0, [("clap", 2.0, 0.5), ("clap", 2.5, 0.55), ("clap", 3.0, 0.6),
+                        ("clap", 3.25, 0.65), ("clap", 3.5, 0.7), ("clap", 3.75, 0.8)]),
+    "rnb":       (3.25, [("rim", 3.25, 0.35), ("snare", 3.5, 0.4), ("tom_lo", 3.75, 0.5)]),
+    "rocknroll": (3.0, [("snare", 3.0, 0.6), ("snare", 3.5, 0.7), ("snare", 3.75, 0.8)]),
+    "hiphop":    (3.5, [("snare", 3.5, 0.5), ("snare", 3.625, 0.55), ("snare", 3.75, 0.7)]),
+    "country":   (3.0, [("snare", 3.0, 0.5), ("snare", 3.25, 0.55), ("snare", 3.5, 0.65),
+                        ("snare", 3.75, 0.75)]),
+    "funk":      (3.0, [("snare", 3.0, 0.3), ("snare", 3.25, 0.5), ("snare", 3.5, 0.3),
+                        ("tom_lo", 3.75, 0.6)]),
+    "jazz":      (3.0, [("snare", 3.0, 0.4), ("tom_mid", 3.5, 0.45), ("kick", 3.75, 0.35)]),
+    "blues":     (3.0, [("snare", 3.0, 0.55), ("snare", 3.5, 0.65), ("tom_lo", 3.75, 0.7)]),
+    "carol":     (3.0, [("tamb", 3.0, 0.3), ("tamb", 3.25, 0.3), ("tamb", 3.5, 0.35),
+                        ("tamb", 3.75, 0.4)]),
 }
 
 # GM percussion, the WHOLE map (notes 35-81) — every name is legal in patterns and in a score's
@@ -720,7 +819,7 @@ STYLE_BAND = {
     "blues":     {"melody": "eguitar", "chord": "organ", "bass": "bass"},
     "carol":     {"melody": "bell", "chord": "strings", "bass": "bass"},
     "folk":      {"melody": "aguitar", "chord": "aguitar", "bass": "bass"},
-    "classic":   {"melody": "eviolin", "chord": "strings", "bass": "bass"},
+    "classic":   {"melody": "violin", "chord": "strings", "bass": "contrabass"},
     "newage":    {"melody": "piano", "chord": "strings", "bass": "bass"},
     "none":      {"melody": "melody", "chord": "chord", "bass": "bass"},
 }
@@ -901,6 +1000,9 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # style press notes the same shape — funk clips, a ballad sings through (실측·사용자:
     # "리듬에 어울리게 안 나오냐").
     gate = float(defaults.get("gate", 0.9))
+    # A machine-gun roll belongs to uptempo music: a slow piece keeps its soft fill even in a
+    # rolling genre (실측: pop-style 캐논 at a slow bpm rolled, and it fit nothing).
+    bpm = float(feel.get("bpm") or 120.0)
     out = []
     # Melody — the notes the voice sings, also given to an instrument. Without this an
     # instrumental render (no vocalPath) had rhythm and bass and no tune at all.
@@ -962,7 +1064,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     bar, bar_i = 0.0, 0
     while bar < total_beats:
         hits = list(base)
-        if hits and style in ROLL_STYLES and bar_i % 8 == 7:
+        if hits and style in ROLL_STYLES and bpm >= 96 and bar_i % 8 == 7:
             # Every 8th bar the tom fill yields to the snare roll — 다다다다다 into the crash.
             start, roll = _snare_roll(meter)
             hits = [h for h in hits if h[1] < start] + roll
@@ -1626,6 +1728,12 @@ def action_render(inp):
     total_beats = sum(b for ev in events for _, b in ev["segments"])
     chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
+    if feel.get("bars"):
+        total_beats = max(total_beats, feel["bars"] * feel["meter"])
+    if total_beats <= 0:
+        return {"success": False,
+                "error": "빈 곡입니다 — notes/chords 를 채우거나, 드럼 솔로면 drumPattern 과 "
+                         "bars 를 함께 주세요"}
     arr = build_arrangement(events, chords, style, total_beats, band, feel)
     vocal_path = str(inp.get("vocalPath") or "").strip()
     # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
@@ -1944,6 +2052,31 @@ def action_selftest():
     soft = [e for e in arr9 if e["part"] == "drum" and e["drum"] == "snare"
             and abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-6]
     ck("a ballad keeps its soft fill — no machine-gun roll", 0, len(soft), not soft)
+    off_style = parse_score(dict(score, style="orchestra"))[3]
+    ck("orchestra answers to classic", "classic", off_style, off_style == "classic")
+    s7 = dict(score); s7["band"] = {"melody": "Acoustic Grand Piano"}
+    err7 = parse_score(s7)[6]
+    ck("the spec's own instrument spelling is absorbed", None, err7, err7 is None)
+    ck("contrabass degrades to a bass, not a violin", ("bass", 43),
+       resolve_instrument("contrabass"), resolve_instrument("contrabass") == ("bass", 43))
+    drummed = {k for k, v in DRUM_PATTERNS.items() if v}
+    ck("every drummed style owns its fill", sorted(drummed), sorted(DRUM_FILLS),
+       set(DRUM_FILLS) == drummed)
+    slow = build_arrangement(ev2, ch2 * 8, "pop", 32, None, {"meter": 4, "bpm": 70})
+    slow_rolls = [e for e in slow if e["part"] == "drum" and e["drum"] == "snare"
+                  and abs(e["beat"] * 8 - round(e["beat"] * 8)) < 1e-6
+                  and abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-6]
+    ck("a slow piece keeps its soft fill even in a rolling genre", 0, len(slow_rolls),
+       not slow_rolls)
+    solo = action_render({"action": "render", "outPath": "data/sing/selftest-solo.wav",
+                          "score": {"bpm": 120, "bars": 2, "style": "rock",
+                                    "drumPattern": [["kick", 0.0, 0.9], ["snare", 1.0],
+                                                    ["conga_open", 2.5, 0.6]]}})
+    ck("a drum solo renders from drumPattern + bars alone", ["drum"],
+       (solo.get("data") or {}).get("parts"),
+       solo.get("success") and (solo.get("data") or {}).get("parts") == ["drum"])
+    if os.path.exists("data/sing/selftest-solo.wav"):
+        os.remove("data/sing/selftest-solo.wav")
 
     # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
     # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.
