@@ -1690,6 +1690,39 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
     return state["count"]
 
 
+def master_shelf():
+    """The `masters` files-setting — [{url, name, alias, default?}]."""
+    try:
+        rows = json.loads(os.environ.get("MODULE_MASTERS") or "[]")
+        return [r for r in rows if isinstance(r, dict) and r.get("url")]
+    except (ValueError, TypeError):
+        return []
+
+
+def pick_master(raw, kind):
+    """Which master file to build on. `raw` = caller's url/path/ALIAS; empty raw falls back to
+    the shelf: the kind's default-marked entry, else the only entry of that kind, else none
+    (a plain document is a valid build). An unknown bare alias errs WITH the shelf list."""
+    shelf = master_shelf()
+    of_kind = [r for r in shelf if str(r.get("name", "")).lower().endswith("." + kind)]
+    if raw:
+        wanted = raw.lower()
+        for row in shelf:
+            if str(row.get("alias") or "").strip().lower() == wanted \
+                    or str(row.get("name") or "").strip().lower() == wanted:
+                return str(row["url"]), None
+        if "/" not in raw and "." not in raw and shelf:
+            aliases = ", ".join(str(r.get("alias") or r.get("name")) for r in shelf)
+            return None, f"서식 별칭 {raw!r} 이 보관함에 없습니다 — 보관함: {aliases}"
+        return raw, None
+    for row in of_kind:
+        if row.get("default"):
+            return str(row["url"]), None
+    if len(of_kind) == 1:
+        return str(of_kind[0]["url"]), None
+    return "", None  # several with no default, or none — build plain
+
+
 def action_make_pptx(inp):
     notes = []
     blocks = normalize_blocks(inp.get("blocks"), notes)
@@ -1697,8 +1730,9 @@ def action_make_pptx(inp):
     if not blocks and not title:
         return {"success": False, "action": "make_pptx",
                 "error": "blocks (or at least a title) required"}
-    master_raw = str(inp.get("masterMediaPath")
-                     or os.environ.get("MODULE_MASTERPPTXURL") or "").strip()
+    master_raw, shelf_err = pick_master(str(inp.get("masterMediaPath") or "").strip(), "pptx")
+    if shelf_err:
+        return {"success": False, "action": "make_pptx", "error": shelf_err}
     master_path = None
     if master_raw:
         master_path, err = resolve_path(master_raw)
@@ -3852,6 +3886,21 @@ def action_selftest():
     ])
     ck("render-fence dialect is absorbed (name -> type)",
        [b["type"] for b in fence] == ["header", "divider", "table"])
+
+    # The master shelf: alias wins, the kind's default fills silence, misses carry the shelf.
+    os.environ["MODULE_MASTERS"] = json.dumps([
+        {"url": "/user/media/co.pptx", "name": "company.pptx", "alias": "회사양식", "default": True},
+        {"url": "/user/media/b.pptx", "name": "clean.pptx", "alias": "B사"},
+        {"url": "/user/media/f.hwpx", "name": "form.hwpx", "alias": "공문"}])
+    try:
+        ck("named alias picks its master", pick_master("B사", "pptx")[0] == "/user/media/b.pptx")
+        ck("no name = the kind's default (회사양식)",
+           pick_master("", "pptx")[0] == "/user/media/co.pptx")
+        miss = pick_master("없는양식", "pptx")
+        ck("a mistyped master alias is refused WITH the shelf",
+           bool(miss[1]) and "회사양식" in (miss[1] or ""))
+    finally:
+        del os.environ["MODULE_MASTERS"]
 
     # pptx round-trip
     p = f"{OUT_DIR}/selftest.pptx"

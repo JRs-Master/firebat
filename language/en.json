@@ -992,6 +992,8 @@
     "no_preview": "No preview for this format"
   },
   "module_settings": {
-    "file_pick": "Choose file"
+    "file_pick": "Choose file",
+    "files_alias": "Alias (the name you call it in chat)",
+    "files_default": "Use as the default for this kind"
   }
 }

@@ -121,7 +121,7 @@
           "string",
           "null"
         ],
-        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid) or workspace-relative path. Omitted too = the module's own scoreMediaUrl setting (the '악보 올리기' upload). Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
+        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a score shelved in the module's 악보 보관함 setting. An unknown alias is refused with the full shelf list; omitted with exactly one shelved score = that one. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
       },
       "lyrics": {
         "type": [
@@ -167,11 +167,11 @@
   },
   "settings_fields": [
     {
-      "key": "scoreMediaUrl",
-      "type": "file",
+      "key": "scores",
+      "type": "files",
       "accept": "audio/*,.mid,.midi",
-      "label": "악보 올리기 (MIDI · 오디오)",
-      "description": "노래방 MIDI 나 흥얼거림 녹음을 올려 두면, 채팅에서 \"올려 둔 악보로 불러줘\"라고 시킬 수 있습니다. 파일은 미디어 보관함에 저장되고 여기에는 주소만 남습니다."
+      "label": "악보 보관함 (MIDI · 오디오)",
+      "description": "악보를 여러 개 올려 두고 별칭으로 부릅니다 — \"캐논 기타버전으로 연주해줘\"처럼요. 파일은 미디어 보관함에 저장되고 여기에는 목록만 남습니다."
     }
   ]
 }

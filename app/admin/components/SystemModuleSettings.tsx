@@ -18,14 +18,17 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list' | 'structured-list' | 'file';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list' | 'structured-list' | 'file' | 'files';
 interface SelectOption { value: string; label: string }
 interface SettingField {
   key: string;
   label: string;
   type: FieldType;
-  /// file 필드: input accept 문자열 (예: 'audio/*,.mid'). 선언이 곧 필터.
+  /// file/files 필드: input accept 문자열 (예: 'audio/*,.mid'). 선언이 곧 필터.
   accept?: string;
+  /// files 필드 전용: 확장자(종류)별 대표 라디오를 그린다 — "평소엔 회사양식" 류의 상시 선호.
+  /// 이름으로 고르는 게 자연스러운 모듈(sing 악보)은 선언하지 않으면 라디오 자체가 없다.
+  defaultPerKind?: boolean;
   placeholder?: string;
   description?: string;
   defaultValue?: any;
@@ -1071,6 +1074,19 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     onChange={(url) => handleChange(field.key, url)}
                     t={t}
                   />
+                ) : field.type === 'files' ? (
+                  /* 복수 파일 보관함 — 업로드는 미디어 스토리지(문 하나), 설정 값은 참조 목록
+                     JSON. 별칭은 채팅에서 부르는 이름이고, 삭제는 목록에서 참조만 걷는다(원본
+                     blob 은 미디어 보관함 소유). defaultPerKind 선언 시 종류별 대표 라디오. */
+                  <FilesField
+                    label={localize(t, field.label)}
+                    description={localize(t, field.description)}
+                    accept={field.accept || '*/*'}
+                    defaultPerKind={!!field.defaultPerKind}
+                    value={typeof settings[field.key] === 'string' ? settings[field.key] : ''}
+                    onChange={(json) => handleChange(field.key, json)}
+                    t={t}
+                  />
                 ) : field.type === 'widget-list' ? (
                   <WidgetListField
                     label={localize(t, field.label)}
@@ -2032,6 +2048,120 @@ export function PackageStatusSection({ moduleName }: { moduleName: string }) {
         <p className="text-[11px] text-slate-500 italic mt-2">{feedback}</p>
       )}
     </div>
+  );
+}
+
+/** files 필드의 항목 하나 — 설정 값은 이 배열의 JSON 문자열이고, 모듈은 MODULE_<KEY> env 로
+ *  같은 JSON 을 받아 별칭을 해석한다. `default` 는 defaultPerKind 선언 모듈에서만 쓰인다. */
+interface FileEntry { url: string; name: string; alias: string; default?: boolean }
+
+function parseFileEntries(raw: string): FileEntry[] {
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((e) => e && typeof e.url === 'string') : [];
+  } catch { return []; }
+}
+
+const extOf = (name: string) => (name.includes('.') ? name.split('.').pop()!.toLowerCase() : '');
+
+/** files 필드 — 여러 파일을 올려 두고 별칭으로 부르는 보관함. */
+function FilesField({ label, description, accept, defaultPerKind, value, onChange, t }: {
+  label: string; description?: string; accept: string; defaultPerKind: boolean;
+  value: string; onChange: (json: string) => void; t: (k: string) => string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const entries = parseFileEntries(value);
+  const commit = (next: FileEntry[]) => onChange(JSON.stringify(next));
+  const pick = async (f: File) => {
+    setBusy(true); setErr('');
+    try {
+      const dataUrl = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result));
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(f);
+      });
+      const resp = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl, filenameHint: f.name }),
+      });
+      const j = await resp.json();
+      if (!j?.success || !j?.data?.url) throw new Error(j?.error || 'upload failed');
+      // 별칭 기본값 = 확장자 뗀 파일명 — 빈 별칭이 없게만 하는 안전판 (LLM 연결 아님).
+      const alias = f.name.replace(/\.[^.]+$/, '');
+      commit([...entries, { url: j.data.url, name: f.name, alias }]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setAlias = (i: number, alias: string) =>
+    commit(entries.map((e, k) => (k === i ? { ...e, alias } : e)));
+  const setDefault = (i: number) => {
+    // 대표는 같은 종류(확장자) 안에서 하나 — 다른 종류의 대표는 건드리지 않는다.
+    const kind = extOf(entries[i].name);
+    commit(entries.map((e, k) =>
+      extOf(e.name) === kind ? { ...e, default: k === i } : e));
+  };
+  const remove = (i: number) => commit(entries.filter((_, k) => k !== i));
+  return (
+    <>
+      <span className="text-xs sm:text-sm font-bold text-slate-700">{label}</span>
+      <div className="flex flex-col gap-1.5">
+        {entries.map((e, i) => (
+          <div key={`${e.url}-${i}`} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+            {defaultPerKind && (
+              <input
+                type="radio"
+                checked={!!e.default}
+                onChange={() => setDefault(i)}
+                title={t('module_settings.files_default')}
+                className="accent-blue-600 shrink-0"
+              />
+            )}
+            <a href={e.url} target="_blank" rel="noreferrer" className="text-[12px] text-blue-600 hover:underline truncate max-w-[180px] shrink-0" title={e.name}>{e.name}</a>
+            <input
+              type="text"
+              value={e.alias}
+              placeholder={t('module_settings.files_alias')}
+              onChange={(ev) => setAlias(i, ev.target.value)}
+              className="flex-1 min-w-0 px-2 py-1 text-[12px] border border-slate-200 rounded-md focus:outline-none focus:border-blue-400"
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="text-[13px] text-slate-400 hover:text-red-500 shrink-0"
+              aria-label={t('common.delete')}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => inputRef.current?.click()}
+            className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            {busy ? t('common.loading') : t('module_settings.file_pick')}
+          </button>
+        </div>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ''; }}
+      />
+      {err && <p className="text-[11px] text-red-500">{err}</p>}
+      {description && <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{description}</p>}
+    </>
   );
 }
 

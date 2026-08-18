@@ -992,6 +992,8 @@
     "no_preview": "미리보기를 지원하지 않는 형식입니다"
   },
   "module_settings": {
-    "file_pick": "파일 선택"
+    "file_pick": "파일 선택",
+    "files_alias": "별칭 (채팅에서 부르는 이름)",
+    "files_default": "이 종류의 대표 파일로 씁니다"
   }
 }

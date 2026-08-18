@@ -1083,15 +1083,17 @@ def midi_to_score(path, lyrics=None):
     return score, None
 
 
-def resolve_score_media(inp):
-    """scoreMediaPath input, falling back to the module's own scoreMediaUrl setting.
+def score_library():
+    """The module's own score shelf — the `scores` files-setting, as [{url, name, alias}]."""
+    try:
+        rows = json.loads(os.environ.get("MODULE_SCORES") or "[]")
+        return [r for r in rows if isinstance(r, dict) and r.get("url")]
+    except (ValueError, TypeError):
+        return []
 
-    The setting stores a media URL (/user/media/<slug>.<ext>); the sandbox runs at workspace
-    root, so stripping the leading slash (and any scheme+host) yields the readable path.
-    """
-    raw = str(inp.get("scoreMediaPath") or os.environ.get("MODULE_SCOREMEDIAURL") or "").strip()
-    if not raw:
-        return None, None
+
+def _media_to_path(raw):
+    """Media URL (/user/media/<slug>.<ext>) or workspace path -> readable relative path."""
     path = raw
     if "://" in path:
         path = "/" + path.split("://", 1)[1].split("/", 1)[1] if "/" in path.split("://", 1)[1] else ""
@@ -1101,6 +1103,33 @@ def resolve_score_media(inp):
     if not os.path.isfile(path):
         return None, f"score file not found: {path} (workspace-relative)"
     return path, None
+
+
+def resolve_score_media(inp):
+    """scoreMediaPath input = a media URL, a workspace path, or the ALIAS of a shelved score.
+
+    Songs are called by name, so there is no default: with several scores and no name, the
+    error hands over every alias — the error is the discovery surface here too.
+    """
+    raw = str(inp.get("scoreMediaPath") or "").strip()
+    shelf = score_library()
+    if raw:
+        wanted = raw.lower()
+        for row in shelf:
+            if str(row.get("alias") or "").strip().lower() == wanted \
+                    or str(row.get("name") or "").strip().lower() == wanted:
+                return _media_to_path(str(row["url"]))
+        if "/" not in raw and "." not in raw and shelf:
+            # A bare word that matches nothing is a mistyped alias, not a path — say what exists.
+            aliases = ", ".join(str(r.get("alias") or r.get("name")) for r in shelf)
+            return None, f"악보 별칭 {raw!r} 이 보관함에 없습니다 — 보관함: {aliases}"
+        return _media_to_path(raw)
+    if len(shelf) == 1:
+        return _media_to_path(str(shelf[0]["url"]))
+    if shelf:
+        aliases = ", ".join(str(r.get("alias") or r.get("name")) for r in shelf)
+        return None, f"악보가 여러 개입니다 — scoreMediaPath 에 별칭을 주세요: {aliases}"
+    return None, None
 
 
 # ── file IO + top-level actions ────────────────────────────────────────────────────────────────
@@ -1132,8 +1161,8 @@ def action_render(inp):
             return {"success": False, "error": err}
         if not media_path:
             return {"success": False,
-                    "error": "no score: pass `score`, or `scoreMediaPath`, or upload one in the "
-                             "module settings (scoreMediaUrl)"}
+                    "error": "no score: pass `score`, or `scoreMediaPath` (URL, path, or a shelf "
+                             "alias), or upload one in the module settings (악보 보관함)"}
         ext = media_path.rsplit(".", 1)[-1].lower()
         if ext in ("mid", "midi"):
             score, err = midi_to_score(media_path, lyrics=inp.get("lyrics"))
@@ -1319,6 +1348,20 @@ def action_selftest():
                            "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
     ck("an unknown style is refused WITH the list", True, (nostyle[-1] or "")[:50],
        bool(nostyle[-1]) and "dance" in (nostyle[-1] or ""))
+
+    # The score shelf resolves by alias, and its errors carry the shelf — both directions.
+    os.environ["MODULE_SCORES"] = json.dumps([
+        {"url": "/user/media/a.mid", "name": "canon.mid", "alias": "캐논"},
+        {"url": "/user/media/b.mid", "name": "alhambra.mid", "alias": "알함브라"}])
+    try:
+        miss = resolve_score_media({"scoreMediaPath": "월광"})
+        ck("a mistyped score alias is refused WITH the shelf", True, (miss[1] or "")[:60],
+           bool(miss[1]) and "캐논" in (miss[1] or ""))
+        ambig = resolve_score_media({})
+        ck("several shelved scores and no name = the shelf list, not a guess", True,
+           (ambig[1] or "")[:60], bool(ambig[1]) and "알함브라" in (ambig[1] or ""))
+    finally:
+        del os.environ["MODULE_SCORES"]
 
     # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
     # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.

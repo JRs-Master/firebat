@@ -214,7 +214,7 @@
           "string",
           "null"
         ],
-        "description": "[make_pptx] For make_pptx: media URL of a master/template .pptx whose theme and layouts the new deck inherits. Omitted = the module's uploaded master setting, else a plain default deck."
+        "description": "[make_pptx] Master/template .pptx whose theme and layouts the new deck inherits — a media URL, a workspace path, or the ALIAS of a file shelved in the module's 서식 보관함 setting (unknown alias = refused with the shelf list). Omitted = the shelf's default .pptx (radio-marked), else its only .pptx, else a plain deck."
       },
       "maxChars": {
         "type": [
@@ -256,11 +256,12 @@
   },
   "settings_fields": [
     {
-      "key": "masterPptxUrl",
-      "type": "file",
-      "accept": ".pptx",
-      "label": "마스터 PPTX 올리기",
-      "description": "회사 표준 서식(.pptx)을 올려 두면, 채팅에서 만든 발표자료가 그 서식(표지·폰트·로고) 위에 만들어집니다. 파일은 미디어 보관함에 저장되고 여기에는 주소만 남습니다."
+      "key": "masters",
+      "type": "files",
+      "defaultPerKind": true,
+      "accept": ".pptx,.xlsx,.docx,.hwpx,.pdf",
+      "label": "서식 보관함",
+      "description": "회사 양식 등 서식 파일을 여러 개 올려 두는 곳입니다. 종류별로 대표(라디오)를 지정하면 평소엔 그 양식으로 만들고, 별칭을 불러 다른 양식으로 바꿀 수 있습니다 — \"B사 템플릿으로 만들어줘\". 파일은 미디어 보관함에 저장되고 여기에는 목록만 남습니다."
     }
   ]
 }
