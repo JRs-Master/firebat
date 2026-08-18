@@ -2784,6 +2784,27 @@ def action_render(inp):
                 return {"success": False, "error": err}
             notation_skipped = score.pop("_notation_skipped", None) \
                 if isinstance(score, dict) else None
+            # A file score with no chord symbols still deserves harmony when RE-ARRANGED:
+            # read it off the faithful rows (lowest pitch per 2-beat window — the MIDI
+            # recipe, source-agnostic). 실측: 한 파트 두 성부인 월광은 파트 단위 파생이
+            # 못 잡았고, style 재편곡이 멜로디 한 줄로 헐벗었다.
+            if isinstance(score, dict) and not score.get("chords") and faithful_rows:
+                buckets = {}
+                for r in faithful_rows:
+                    if "pitch" in r and not r.get("pedal"):
+                        buckets.setdefault(int(r["beat"] // 2), []).append(r["pitch"])
+                d_chords, prev_root = [], None
+                for k in (range(min(buckets), max(buckets) + 1) if buckets else []):
+                    root = min(buckets[k]) if buckets.get(k) else prev_root
+                    if root is None:
+                        continue
+                    if d_chords and root == prev_root:
+                        d_chords[-1]["beats"] += 2
+                    else:
+                        d_chords.append({"root": _midi_name(root), "beats": 2})
+                    prev_root = root
+                if d_chords:
+                    score["chords"] = d_chords
             # Every feel knob rides the top level too: a shelved MIDI plus new instruments is
             # ONE call. While band lived only inside `score`, composing a fresh score was the
             # only one-call path to "피아노로" — measured: the model did exactly that (turn 31,
