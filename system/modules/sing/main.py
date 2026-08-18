@@ -1182,6 +1182,25 @@ def action_render(inp):
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
+    # vocal:true with no take yet — ask the framework for one. A declaration, not a call: the
+    # framework performs the TTS and runs this action again with vocalPath filled (the old core
+    # bridge did this by hand; retiring it removed the last sing vocabulary from core).
+    if bool(inp.get("vocal")) and not str(inp.get("vocalPath") or "").strip():
+        syls = [ev["syl"] for ev in events if ev["syl"] and ev["syl"] != "-"]
+        if not syls:
+            return {"success": False,
+                    "error": "vocal:true 인데 부를 음절이 없습니다 — notes[].syl 을 채우거나 "
+                             "vocal 없이(연주곡) 부르세요"}
+        if len(syls) > 64:
+            return {"success": False,
+                    "error": f"{len(syls)} 음절 — 노래는 64음절(한 절)까지입니다. "
+                             "연주곡(vocal 없이)은 제한이 없습니다"}
+        return {"success": True, "data": {"_prepare": {
+            "service": "tts",
+            "text": " ".join(syls),
+            "style": "또박또박, 음절 하나하나를 또렷하게, 일정한 속도로 읽어 주세요.",
+            "into": "vocalPath",
+        }}}
     total_beats = sum(b for ev in events for _, b in ev["segments"])
     chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
@@ -1232,6 +1251,14 @@ def action_render(inp):
         data["midiPath"] = midi_written
     if midi_note:
         data["midiNote"] = midi_note
+    # The framework carries the products into media storage (data.media, with urls) — the same
+    # declared door every module's files leave through. The wav and its .mid are one product in
+    # two forms, so they travel as one array.
+    stem = os.path.basename(out_path).rsplit(".", 1)[0]
+    imports = [{"path": out_path, "contentType": "audio/wav", "filenameHint": stem}]
+    if midi_written:
+        imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": stem})
+    data["_mediaImport"] = imports if len(imports) > 1 else imports[0]
     if parsed_from:
         # The caller composed nothing — show what the MIDI became so the bridge (TTS lyric
         # order) and the user can see and correct the parse.
@@ -1352,6 +1379,18 @@ def action_selftest():
                            "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
     ck("an unknown style is refused WITH the list", True, (nostyle[-1] or "")[:50],
        bool(nostyle[-1]) and "dance" in (nostyle[-1] or ""))
+
+    # vocal:true with no take = a _prepare declaration, not a render — the framework's half
+    # of the contract starts from exactly this envelope.
+    prep = action_render({"action": "render", "vocal": True,
+                          "score": {"bpm": 120, "notes": [
+                              {"syl": "가", "note": "C4", "beats": 1},
+                              {"syl": "나", "note": "E4", "beats": 1}]}})
+    decl = (prep.get("data") or {}).get("_prepare") or {}
+    ck("vocal without a take declares _prepare (service/text/into)", True,
+       {k: decl.get(k) for k in ("service", "into")},
+       decl.get("service") == "tts" and decl.get("into") == "vocalPath"
+       and decl.get("text") == "가 나")
 
     # The score shelf resolves by alias, and its errors carry the shelf — both directions.
     os.environ["MODULE_SCORES"] = json.dumps([

@@ -42,7 +42,14 @@
           "render",
           "selftest"
         ],
-        "description": "render = score (+ optional spoken vocal wav) -> song wav on disk. selftest = self-checks, no files needed."
+        "description": "render = score -> song. Returns data.media with the wav url (put it in a `listening` component's audioUrl) and, with midiOut, the .mid beside it. You cannot recall a real melody from memory: play an existing song from an uploaded MIDI (scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one. selftest = self-checks, no files needed."
+      },
+      "vocal": {
+        "type": [
+          "boolean",
+          "null"
+        ],
+        "description": "true = SING the syllables: the framework synthesizes a spoken TTS take of notes[].syl and this module retunes it onto the notes (needs a server TTS key; 64 syllables max — one verse). Omitted/false = instrumental."
       },
       "score": {
         "type": "object",
