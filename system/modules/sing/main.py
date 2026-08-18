@@ -1377,21 +1377,31 @@ def apply_performance(arr, feel, spb, total_beats):
     if amount > 0:
         rng = np.random.default_rng(1729 + len(arr))
         jt = 0.012 * amount / spb
-        # COHERENT drift: every note of the same moment shares ONE offset — a pianist's hands
-        # wobble TOGETHER. Per-note jitter split simultaneous notes apart and the render
-        # limped (실측·사용자: "절뚝거리면서 엇박자"). Stack rolls stay per part.
-        moments, stacks = {}, {}
-        for e in sorted((x for x in arr if not x.get("pedal")),
-                        key=lambda x: (x["beat"], x.get("pitch", 0))):
-            mkey = round(e["beat"], 3)
-            if mkey not in moments:
-                off = float(rng.normal(0, jt))
-                moments[mkey] = max(-2.2 * jt, min(2.2 * jt, off))
-            key = (e["part"], mkey)
-            k = stacks.get(key, 0)
-            stacks[key] = k + 1
-            roll = (k * 0.010 / spb) * amount if e["part"] != "drum" else 0.0
-            e["beat"] = max(0.0, e["beat"] + moments[mkey] + roll)
+        # Rubato is a DRIFT, not noise: adjacent moments carry almost the same offset and the
+        # push-pull happens over phrases (random walk, decayed, clipped). Independent offsets
+        # per moment limped on an even triplet pulse (실측: 간격 438↔473ms 널뜀, "절름발이");
+        # a 20ms bucket also merges ghost moments a few ms apart so voices stay glued.
+        pitched = sorted((x for x in arr if not x.get("pedal")),
+                         key=lambda x: (x["beat"], x.get("pitch", 0)))
+        # One musical instant = one cluster (onsets chained within 0.03 beats), sharing one
+        # offset — fixed buckets split ghost pairs straddling an edge (실측: 5-7ms 유령 간격).
+        uniq = sorted({x["beat"] for x in pitched})
+        cluster_of, anchor = {}, None
+        for b in uniq:
+            if anchor is None or b - anchor > 0.03:
+                anchor = b
+            cluster_of[b] = anchor
+        # No synthetic chord rolls at all: written arpeggio signs already roll in the parser,
+        # and a few-ms smear on unmarked chords reads as a flam, not a pianist (실측 3연속:
+        # 독립 지터 → 순간 널뜀 → 스택 롤, 셋 다 "절름발이"의 얼굴이었다). Humanize is now
+        # ONLY the shared drift and the touch (velocity) — nothing that splits an instant.
+        moments = {}
+        walk = 0.0
+        for a in sorted(set(cluster_of.values())):
+            walk = walk * 0.9 + float(rng.normal(0, jt * 0.45))
+            moments[a] = max(-2.2 * jt, min(2.2 * jt, walk))
+        for e in pitched:
+            e["beat"] = max(0.0, e["beat"] + moments[cluster_of[e["beat"]]])
             e["vel"] = float(min(1.0, max(0.08,
                                           e.get("vel", 0.7)
                                           * (1 + float(rng.normal(0, 0.07)) * amount))))
