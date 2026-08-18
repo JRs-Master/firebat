@@ -7,6 +7,7 @@ pub mod condition;
 pub mod pipeline_resolver;
 pub mod redactor;
 pub mod sanitize;
+pub mod module_envelope;
 pub mod render_map;
 pub mod tool_cache;
 pub mod pending_tools;

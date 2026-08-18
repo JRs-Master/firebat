@@ -1071,7 +1071,7 @@ impl McpToolHandler for SysmodToolHandler {
         match self.module_manager.run(&module_name, &data).await {
             Ok(output) => {
                 if output.success {
-                    Ok(serde_json::json!({ "success": true, "data": output.data }))
+                    Ok(firebat_core::utils::module_envelope::success_envelope(output.data))
                 } else {
                     // i18n lookup — sysmod 의 응답 `{success: false, errorKey: "X.Y", errorParams: {...}}`
                     // → `module.{module_name}.X.Y` 의 i18n 변환. fallback: 옛 raw error string.
@@ -1611,7 +1611,7 @@ impl McpToolHandler for ExecuteHandler {
             .await
         {
             Ok(output) => Ok(if output.success {
-                serde_json::json!({"success": true, "data": output.data})
+                firebat_core::utils::module_envelope::success_envelope(output.data)
             } else {
                 serde_json::json!({"success": false, "error": output.error.unwrap_or_default()})
             }),

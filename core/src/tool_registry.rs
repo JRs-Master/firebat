@@ -632,7 +632,7 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .await
                 {
                     Ok(output) => Ok(if output.success {
-                        serde_json::json!({"success": true, "data": output.data})
+                        crate::utils::module_envelope::success_envelope(output.data)
                     } else {
                         serde_json::json!({"success": false, "error": output.error.unwrap_or_default()})
                     }),
