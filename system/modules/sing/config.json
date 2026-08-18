@@ -145,7 +145,7 @@
           "string",
           "null"
         ],
-        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction.",
+        "description": "MIDI or MusicXML (전자악보 — .musicxml/.mxl/.xml, MuseScore's format) to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid), a workspace path, or the ALIAS of a shelved score. One procedure at any shelf size: check the `scores` action, pass the alias (matching ignores case/spacing and accepts the filename too). Re-instrument in the SAME call with top-level style/band/drumPattern — an existing piece never needs a composed score. Karaoke MIDIs and MusicXML bring their own lyrics (MusicXML also brings real chord symbols, meter and dynamics); the parsed score comes back in data.score for correction.",
         "collection": "scores"
       },
       "lyrics": {
@@ -245,7 +245,7 @@
     {
       "key": "scores",
       "type": "files",
-      "accept": "audio/*,.mid,.midi",
+      "accept": "audio/*,.mid,.midi,.musicxml,.mxl,.xml",
       "label": "악보 보관함 (MIDI · 오디오)",
       "description": "악보를 여러 개 올려 두고 별칭으로 부릅니다 — \"캐논 기타버전으로 연주해줘\"처럼요. 파일은 미디어 보관함에 저장되고 여기에는 목록만 남습니다."
     }

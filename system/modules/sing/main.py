@@ -797,8 +797,11 @@ DRUM_PATTERNS = {
 STYLE_DOUBLES = {
     # 관현악 (full orchestra): strings + woodwinds (flute above, oboe in unison) + horns on the
     # pad. Percussion arrives separately, following the dynamics.
+    # The horn reinforces the BASS an octave up (its classical seat), not the whole pad in
+    # unison — strings-pad + horn-pad on the same mid-low notes was a blanket (실측: "웅웅…
+    # 호른 같기도", "먹먹") and two sustained layers on one voicing is mud, not warmth.
     "classic": [("melody", "flute", 1, 0.45), ("melody", "oboe", 0, 0.35),
-                ("melody", "cello", -1, 0.55), ("chord", "frenchhorn", 0, 0.4)],
+                ("melody", "cello", -1, 0.55), ("bass", "frenchhorn", 1, 0.4)],
     # 현악 합주 (string orchestra): violins + viola in unison + cello an octave down. No winds,
     # no percussion — the ensemble IS the color.
     "strings": [("melody", "viola", 0, 0.45), ("melody", "cello", -1, 0.55)],
@@ -1805,6 +1808,163 @@ def midi_to_score(path, lyrics=None):
     return score, None
 
 
+# ── MusicXML (전자악보) ────────────────────────────────────────────────────────────────────────
+
+_XML_STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
+_XML_KIND = {"major": "", "minor": "m", "dominant": "7", "dominant-seventh": "7",
+             "major-seventh": "maj7", "minor-seventh": "m7", "diminished": "dim",
+             "augmented": "aug", "suspended-second": "sus2", "suspended-fourth": "sus4",
+             "major-sixth": "6", "minor-sixth": "m6", "": ""}
+_XML_DYN = {"ppp": 0.2, "pp": 0.3, "p": 0.45, "mp": 0.55, "mf": 0.65,
+            "f": 0.78, "ff": 0.9, "fff": 0.97}
+
+
+def _strip_ns(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def musicxml_to_score(path, lyrics=None):
+    """MusicXML (.musicxml/.xml/.mxl) -> score. The electronic-score standard says everything
+    a MIDI only implies: exact notes, the lyric under each one, REAL chord symbols (harmony),
+    the meter, and written dynamics — no ML, stdlib XML only. The melody part = the one
+    carrying lyrics, else the busiest."""
+    import xml.etree.ElementTree as ET
+    import zipfile
+    try:
+        if str(path).lower().endswith(".mxl"):
+            with zipfile.ZipFile(path) as z:
+                inner = [n for n in z.namelist()
+                         if n.lower().endswith((".xml", ".musicxml"))
+                         and not n.startswith("META-INF")]
+                if not inner:
+                    return None, "mxl 안에 악보 xml 이 없습니다"
+                root = ET.fromstring(z.read(inner[0]))
+        else:
+            root = ET.parse(path).getroot()
+    except Exception as e:  # noqa: BLE001 — a broken upload should name itself
+        return None, f"MusicXML parse failed: {e}"
+    if _strip_ns(root.tag) == "score-timewise":
+        return None, "score-timewise 형은 아직 안 받습니다 — MuseScore 에서 partwise 로 저장하세요"
+
+    def kids(el, name):
+        return [c for c in el if _strip_ns(c.tag) == name]
+
+    def kid(el, name):
+        k = kids(el, name)
+        return k[0] if k else None
+
+    def text_of(el, name, default=None):
+        k = kid(el, name)
+        return k.text if k is not None and k.text is not None else default
+
+    parts = kids(root, "part")
+    if not parts:
+        return None, "MusicXML 에 part 가 없습니다"
+
+    bpm, meter = 120.0, None
+    parsed_parts = []
+    for part in parts:
+        divisions, vel = 1.0, None
+        notes, harmonies, pos = [], [], 0.0
+        for meas in kids(part, "measure"):
+            for el in meas:
+                tag = _strip_ns(el.tag)
+                if tag == "attributes":
+                    d = text_of(el, "divisions")
+                    if d:
+                        divisions = float(d)
+                    t = kid(el, "time")
+                    if t is not None and meter is None:
+                        try:
+                            n = int(text_of(t, "beats") or 0)
+                            meter = n if 2 <= n <= 12 else meter
+                        except ValueError:
+                            pass
+                elif tag == "direction":
+                    snd = kid(el, "sound")
+                    if snd is not None and snd.get("tempo"):
+                        bpm = float(snd.get("tempo"))
+                    dt = kid(el, "direction-type")
+                    dyn = kid(dt, "dynamics") if dt is not None else None
+                    if dyn is not None and len(dyn):
+                        vel = _XML_DYN.get(_strip_ns(dyn[0].tag), vel)
+                elif tag == "sound" and el.get("tempo"):
+                    bpm = float(el.get("tempo"))
+                elif tag == "harmony":
+                    hr = kid(el, "root")
+                    if hr is not None:
+                        step = (text_of(hr, "root-step") or "C").strip().upper()
+                        alter = int(float(text_of(hr, "root-alter") or 0))
+                        kind = (text_of(el, "kind") or "").strip()
+                        harmonies.append((pos, _XML_STEP.get(step, 0) + alter,
+                                          _XML_KIND.get(kind, "")))
+                elif tag in ("backup", "forward"):
+                    d = float(text_of(el, "duration") or 0) / divisions
+                    pos += d if tag == "forward" else -d
+                elif tag == "note":
+                    dur = float(text_of(el, "duration") or 0) / divisions
+                    if kid(el, "chord") is not None:
+                        continue  # extra chord tone — the first note of the stack leads
+                    if kid(el, "rest") is not None:
+                        if notes:
+                            notes[-1]["beats"] += dur  # a rest rides the note before it
+                        pos += dur
+                        continue
+                    p2 = kid(el, "pitch")
+                    if p2 is None or dur <= 0:
+                        pos += max(dur, 0.0)
+                        continue
+                    step = (text_of(p2, "step") or "C").strip().upper()
+                    octave = int(text_of(p2, "octave") or 4)
+                    alter = int(float(text_of(p2, "alter") or 0))
+                    midi = 12 * (octave + 1) + _XML_STEP.get(step, 0) + alter
+                    ly = kid(el, "lyric")
+                    syl = (text_of(ly, "text") or "").strip() if ly is not None else ""
+                    tie = any(t.get("type") == "stop" for t in kids(el, "tie"))
+                    if tie and notes and notes[-1]["midi"] == midi:
+                        notes[-1]["beats"] += dur
+                    else:
+                        notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": vel})
+                    pos += dur
+        if notes:
+            parsed_parts.append({"notes": notes, "harmonies": harmonies,
+                                 "lyrics": sum(1 for n in notes if n["syl"])})
+    if not parsed_parts:
+        return None, "MusicXML 에서 음표를 못 읽었습니다"
+    best = max(parsed_parts, key=lambda pp: (pp["lyrics"], len(pp["notes"])))
+
+    lyr = list(str(lyrics or "").replace(" ", "").replace("\n", ""))
+    has_own = best["lyrics"] > 0
+    out_notes = []
+    for n in best["notes"]:
+        if has_own:
+            syl = n["syl"] or "-"
+        elif lyr:
+            syl = lyr.pop(0) if lyr else "-"
+        else:
+            syl = "라"
+        row = {"syl": syl, "note": _midi_name(n["midi"]),
+               "beats": min(64.0, max(0.25, round(n["beats"] * 4) / 4))}
+        if n["vel"] is not None:
+            row["vel"] = n["vel"]
+        out_notes.append(row)
+    score = {"bpm": max(20.0, min(300.0, bpm)), "notes": out_notes}
+    if meter is not None and meter != 4:
+        score["meter"] = meter
+    hs = best["harmonies"] or next((pp["harmonies"] for pp in parsed_parts
+                                    if pp["harmonies"]), [])
+    if hs:
+        chords, total = [], sum(n["beats"] for n in out_notes)
+        for i, (at, pc, qual) in enumerate(hs):
+            end = hs[i + 1][0] if i + 1 < len(hs) else total
+            beats = round((end - at) * 4) / 4
+            if beats > 0:
+                chords.append({"root": _midi_name(36 + pc), "beats": beats, "quality": qual})
+        if chords:
+            score["chords"] = chords
+    return score, None
+
+
 def score_library():
     """The module's own score shelf — the `scores` files-setting, as [{url, name, alias}]."""
     try:
@@ -1978,8 +2138,9 @@ def action_render(inp):
                     "error": "no score: pass `score`, or `scoreMediaPath` (URL, path, or a shelf "
                              "alias), or upload one in the module settings (악보 보관함)"}
         ext = media_path.rsplit(".", 1)[-1].lower()
-        if ext in ("mid", "midi"):
-            score, err = midi_to_score(media_path, lyrics=inp.get("lyrics"))
+        if ext in ("mid", "midi", "musicxml", "xml", "mxl"):
+            reader = midi_to_score if ext in ("mid", "midi") else musicxml_to_score
+            score, err = reader(media_path, lyrics=inp.get("lyrics"))
             if err:
                 return {"success": False, "error": err}
             # Every feel knob rides the top level too: a shelved MIDI plus new instruments is
@@ -1992,8 +2153,8 @@ def action_render(inp):
             parsed_from = media_path
         else:
             return {"success": False,
-                    "error": f"score media must be MIDI for now (.mid/.midi, got .{ext}) — "
-                             "hum-to-score is a later slice"}
+                    "error": f"score media must be MIDI or MusicXML (.mid/.midi/.musicxml/"
+                             f".mxl/.xml, got .{ext}) — hum-to-score is a later slice"}
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
@@ -2459,6 +2620,49 @@ def action_selftest():
     ck("classic carries its own section doublings unasked", 4,
        len({e["part"] for e in darr3 if e["part"].startswith("double")}),
        len({e["part"] for e in darr3 if e["part"].startswith("double")}) == 4)
+    xml_doc = (
+        '<score-partwise><part-list/><part id="P1"><measure number="1">'
+        '<attributes><divisions>2</divisions><time><beats>3</beats>'
+        '<beat-type>4</beat-type></time></attributes>'
+        '<direction><direction-type><dynamics><pp/></dynamics></direction-type>'
+        '<sound tempo="80"/></direction>'
+        '<harmony><root><root-step>A</root-step></root><kind>minor</kind></harmony>'
+        '<note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration>'
+        '<lyric><text>사</text></lyric></note>'
+        '<note><chord/><pitch><step>C</step><octave>5</octave></pitch>'
+        '<duration>2</duration></note>'
+        '<note><rest/><duration>2</duration></note>'
+        '<note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch>'
+        '<duration>4</duration><lyric><text>랑</text></lyric></note>'
+        '</measure></part></score-partwise>')
+    with open("data/sing/selftest-x.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(xml_doc)
+    xsc, xerr = musicxml_to_score("data/sing/selftest-x.musicxml")
+    ck("MusicXML parses — the electronic score standard", None, xerr, xerr is None)
+    if xsc:
+        ck("MusicXML carries what MIDI only implies (meter, tempo, dynamics, lyric)",
+           (3, 80.0, 0.3, "사"),
+           (xsc.get("meter"), xsc.get("bpm"), xsc["notes"][0].get("vel"),
+            xsc["notes"][0]["syl"]),
+           xsc.get("meter") == 3 and xsc.get("bpm") == 80.0
+           and xsc["notes"][0].get("vel") == 0.3 and xsc["notes"][0]["syl"] == "사")
+        ck("chord tones stack, rests ride, ties merge — two melody notes remain",
+           [("A4", 2.0), ("A#4", 2.0)],
+           [(n["note"], n["beats"]) for n in xsc["notes"]],
+           len(xsc["notes"]) == 2 and xsc["notes"][0]["beats"] == 2.0
+           and xsc["notes"][1]["note"] in ("A#4", "Bb4"))
+        ck("harmony elements become REAL chords, quality included",
+           ("A2", "m"), (xsc["chords"][0]["root"], xsc["chords"][0]["quality"]),
+           bool(xsc.get("chords")) and xsc["chords"][0]["quality"] == "m")
+    import zipfile as _zf
+    with _zf.ZipFile("data/sing/selftest-x.mxl", "w") as z:
+        z.writestr("score.xml", xml_doc)
+    mxl_sc, mxl_err = musicxml_to_score("data/sing/selftest-x.mxl")
+    ck("a compressed .mxl opens the same door", 2,
+       len((mxl_sc or {}).get("notes") or []), mxl_err is None and len(mxl_sc["notes"]) == 2)
+    for f in ("data/sing/selftest-x.musicxml", "data/sing/selftest-x.mxl"):
+        if os.path.exists(f):
+            os.remove(f)
     low = parse_score(dict(score, chords=[{"root": "C1", "beats": 4}]))
     arr_low = build_arrangement(low[1], low[2], "none", 4, None, low[5])
     lb = [e["pitch"] for e in arr_low if e["part"] == "bass"]
