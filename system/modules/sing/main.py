@@ -102,16 +102,28 @@ def parse_score(score):
             f"(별칭: {', '.join(f'{a}→{b}' for a, b in sorted(STYLE_ALIASES.items()))})"
     # band = per-part instrument override. An unknown name is refused WITH the full library in
     # the message — the error is the discovery surface here, nobody browses the module source.
+    raw_band = score.get("band")
+    if isinstance(raw_band, (list, tuple)):
+        # Dialect (실측: the model wrote ["piano","drums"]): a flat list is assigned to
+        # melody/chord/bass in order. Drum words are skipped, not refused — the kit belongs to
+        # style/drumPattern, and a list that names it means "and drums", which style provides.
+        mapped, open_parts = {}, ["melody", "chord", "bass"]
+        for item in raw_band:
+            nm = str(item or "").strip().lower()
+            if nm in ("drum", "drums", "percussion", "kit", "드럼"):
+                continue
+            if open_parts:
+                mapped[open_parts.pop(0)] = nm
+        raw_band = mapped
     band = {}
-    for part, name in (score.get("band") or {}).items() if isinstance(score.get("band"), dict) else []:
+    for part, name in (raw_band or {}).items() if isinstance(raw_band, dict) else []:
         part = str(part).strip().lower()
         name = str(name).strip().lower()
         if part not in ("melody", "chord", "bass"):
             return None, None, None, None, None, None, \
                 f"band 의 파트 {part!r} 를 모릅니다 — melody | chord | bass 만 받습니다"
-        if name not in PATCHES:
-            return None, None, None, None, None, None, \
-                f"악기 {name!r} 가 라이브러리에 없습니다 — 가능한 악기: {', '.join(sorted(PATCHES))}"
+        if resolve_instrument(name) is None:
+            return None, None, None, None, None, None,                 f"악기 {name!r} 가 라이브러리에 없습니다 — 모듈 악기: {', '.join(sorted(PATCHES))} / "                 f"GM(사운드폰트): {', '.join(sorted(GM_NAMES))}"
         band[part] = name
     # feel = how the band plays. Every knob has a style default, so a bare score still grooves.
     # meter absorbs the notation people actually write: "4/4" and "3/4" are the same declaration
@@ -141,7 +153,29 @@ def parse_score(score):
     if bassline is not None and bassline not in BASS_KINDS:
         return None, None, None, None, None, None, \
             f"bassline {bassline!r} 를 모릅니다 — 가능한 값: {' | '.join(BASS_KINDS)}"
-    feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline}
+    drums = score.get("drumPattern")
+    drum_rows = None
+    if drums is not None:
+        if not isinstance(drums, list):
+            return None, None, None, None, None, None,                 "drumPattern 은 [[드럼이름, 마디내박, 세기0~1], …] 목록입니다"
+        drum_rows = []
+        for row in drums:
+            if isinstance(row, dict):
+                row = [row.get("drum"), row.get("beat"), row.get("vel")]
+            if not isinstance(row, (list, tuple)) or len(row) < 2:
+                return None, None, None, None, None, None,                     "drumPattern 행은 [드럼이름, 마디내박(, 세기)] 입니다"
+            dname = str(row[0] or "").strip().lower()
+            if dname not in DRUM_NOTE:
+                return None, None, None, None, None, None,                     f"드럼 {dname!r} 를 모릅니다 — 가능한 드럼: {', '.join(sorted(DRUM_NOTE))}"
+            try:
+                off = float(row[1])
+            except (TypeError, ValueError):
+                return None, None, None, None, None, None, "drumPattern 의 박은 숫자입니다"
+            if not (0.0 <= off < meter):
+                return None, None, None, None, None, None,                     f"drumPattern 박 {off} 가 마디({meter}박) 밖입니다"
+            vel = float(row[2]) if len(row) > 2 and row[2] is not None else 0.7
+            drum_rows.append((dname, off, max(0.0, min(1.0, vel))))
+    feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline, "drums": drum_rows}
     return spb, events, chords, style, band, feel, None
 
 
@@ -199,6 +233,67 @@ def crash(dur=1.2):
     bright = np.diff(noise, prepend=0.0)
     sheen = np.diff(bright, prepend=0.0)
     return (bright * 0.7 + sheen * 0.45) * _env(n, 0.38) * 0.35
+
+
+def _metal(dur, decay, seed, sheen=0.0, gain=0.5):
+    """Differentiated noise = cymbal metal; `sheen` stacks a second differentiation on top."""
+    n = int(SR * dur)
+    bright = np.diff(np.random.default_rng(seed).standard_normal(n), prepend=0.0)
+    out = bright if not sheen else bright * (1 - sheen) + np.diff(bright, prepend=0.0) * sheen
+    return out * _env(n, decay) * gain
+
+
+def _ping(freq, dur, decay, partials=(), gain=0.5):
+    """A struck resonance — triangle, claves, agogo, the bell of a ride."""
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    x = np.sin(2 * np.pi * freq * t)
+    for ratio, amp in partials:
+        x += amp * np.sin(2 * np.pi * freq * ratio * t)
+    return x * _env(n, decay) * gain
+
+
+def _shaker(dur, seed, decay=0.03, gain=0.4):
+    n = int(SR * dur)
+    hp = np.diff(np.random.default_rng(seed).standard_normal(n), prepend=0.0)
+    return hp * _env(n, decay) * gain
+
+
+def _am_noise(dur, rate, seed, gain=0.4):
+    """Ratchet — noise gated by a fast comb, which is all a guiro scrape is."""
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    gate_wave = (np.sin(2 * np.pi * rate * t) > 0).astype(float)
+    return np.random.default_rng(seed).standard_normal(n) * gate_wave * _env(n, dur * 0.6) * gain
+
+
+def _squeak(f0, f1, dur, gain=0.5):
+    """Cuica — a pitched squeal that slides. Nasal shape from a touch of 2nd harmonic."""
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    freq = f0 + (f1 - f0) * (t / max(t[-1], 1e-9))
+    ph = 2 * np.pi * np.cumsum(freq) / SR
+    return (np.sin(ph) + 0.35 * np.sin(2 * ph)) * _env(n, dur * 0.5) * gain
+
+
+def clap_hit(dur=0.25):
+    """Three hands land ~11ms apart, then the room takes it."""
+    n = int(SR * dur)
+    rng = np.random.default_rng(19)
+    out = np.zeros(n)
+    for k, amp in ((0, 0.8), (int(SR * 0.011), 0.9), (int(SR * 0.023), 1.0)):
+        m = n - k
+        out[k:] += rng.standard_normal(m) * _env(m, 0.012) * amp
+    out += rng.standard_normal(n) * _env(n, 0.05) * 0.35
+    return out * 0.45
+
+
+def cowbell_hit(dur=0.30):
+    """Two detuned square-ish tones — the 8th-note cowbell of every latin chart."""
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    x = np.sign(np.sin(2 * np.pi * 555.0 * t)) + 0.8 * np.sign(np.sin(2 * np.pi * 835.0 * t))
+    return x * _env(n, 0.05) * 0.22
 
 
 def pluck_ks(freq, dur, damp=0.996, mellow=False):
@@ -401,6 +496,79 @@ def synth_note(freq, dur, patch="bass", vel=0.8):
 # A genre here is a ROW — groove + feel + band — not code. classic/newage carry no drums on
 # purpose (they are "none" with their own bands and comping).
 _HATS8 = [("hat", o / 2.0, 0.4 if o % 2 else 0.45) for o in range(8)]
+# The whole General MIDI melodic map — every name is a legal band member. On the sf2 engine
+# these are the font's own instruments; the numpy engine borrows the nearest PATCHES timbre
+# (FAMILY_FALLBACK by GM family of 8, a few programs overridden where the family lies).
+GM_NAMES = {
+    "grandpiano": 0, "brightpiano": 1, "electricgrand": 2, "honkytonk": 3, "rhodes": 4,
+    "epiano2": 5, "harpsichord": 6, "clavinet": 7,
+    "celesta": 8, "glockenspiel": 9, "vibraphone": 11, "vibes": 11, "xylophone": 13,
+    "tubularbells": 14, "dulcimer": 15,
+    "drawbarorgan": 16, "percorgan": 17, "rockorgan": 18, "churchorgan": 19, "reedorgan": 20,
+    "harmonica": 22, "bandoneon": 23,
+    "nylonguitar": 24, "steelguitar": 25, "jazzguitar": 26, "cleanguitar": 27, "mutedguitar": 28,
+    "overdriveguitar": 29, "distortionguitar": 30, "guitarharmonics": 31,
+    "uprightbass": 32, "acousticbass": 32, "fingerbass": 33, "pickbass": 34, "fretlessbass": 35,
+    "slapbass": 36, "slapbass2": 37, "synthbass2": 39,
+    "violin": 40, "viola": 41, "cello": 42, "contrabass": 43, "tremolostrings": 44,
+    "pizzicato": 45, "harp": 46, "timpani": 47,
+    "strings2": 49, "synthstrings": 50, "synthstrings2": 51, "choir": 52, "voice": 53,
+    "synthvoice": 54, "orchestrahit": 55,
+    "trumpet": 56, "trombone": 57, "tuba": 58, "mutedtrumpet": 59, "frenchhorn": 60, "horn": 60,
+    "synthbrass": 62, "synthbrass2": 63,
+    "sopranosax": 64, "altosax": 65, "sax": 65, "tenorsax": 66, "barisax": 67,
+    "oboe": 68, "englishhorn": 69, "bassoon": 70, "clarinet": 71,
+    "piccolo": 72, "recorder": 74, "panflute": 75, "bottle": 76, "shakuhachi": 77,
+    "whistle": 78, "ocarina": 79,
+    "sawlead": 81, "calliope": 82, "chiff": 83, "charang": 84, "voicelead": 85,
+    "fifthslead": 86, "basslead": 87,
+    "newagepad": 88, "warmpad": 89, "polysynth": 90, "choirpad": 91, "bowedpad": 92,
+    "metallicpad": 93, "halopad": 94, "sweeppad": 95,
+    "fxrain": 96, "soundtrack": 97, "crystal": 98, "atmosphere": 99, "brightness": 100,
+    "goblins": 101, "echodrops": 102, "scifi": 103,
+    "sitar": 104, "banjo": 105, "shamisen": 106, "koto": 107, "kalimba": 108, "bagpipe": 109,
+    "fiddle": 110, "shanai": 111,
+    "tinklebell": 112, "agogobell": 113, "steeldrum": 114, "woodblock": 115, "taiko": 116,
+    "melodictom": 117, "synthdrum": 118, "reversecymbal": 119,
+    "fretnoise": 120, "breathnoise": 121, "seashore": 122, "birds": 123, "telephone": 124,
+    "helicopter": 125, "applause": 126, "gunshot": 127,
+}
+FAMILY_FALLBACK = ("piano", "bell", "organ", "aguitar", "bass", "eviolin", "strings", "brass",
+                   "melody", "flute", "synthlead", "strings", "synthlead", "aguitar", "marimba",
+                   "synthlead")
+GM_BUILTIN_OVERRIDE = {13: "marimba", 24: "cguitar", 25: "aguitar", 26: "eguitar", 27: "eguitar",
+                       28: "eguitar", 29: "dguitar", 30: "dguitar", 31: "eguitar",
+                       38: "synthbass", 39: "synthbass", 45: "cguitar", 46: "cguitar",
+                       47: "marimba", 104: "cguitar", 105: "aguitar", 106: "cguitar",
+                       107: "cguitar", 108: "musicbox"}
+
+
+def resolve_instrument(name):
+    """Band name -> (builtin patch, GM program). PATCHES first (both engines native), then the
+    GM map (native on sf2, nearest-family on numpy). None = the name is not an instrument."""
+    if name in PATCHES:
+        return name, PATCHES[name].get("gm", 0)
+    if name in GM_NAMES:
+        g = GM_NAMES[name]
+        return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
+    return None
+
+
+def _snare_roll(meter):
+    """다다다다다 — 16ths leaning into 32nds over the bar's back half, velocities rising the
+    way a drummer leans into a fill. The style's tom fill alternates with this every 8 bars."""
+    hits = []
+    if meter == 3:
+        steps = [1.5 + i * 0.25 for i in range(2)] + [2.0 + i * 0.125 for i in range(8)]
+    else:
+        steps = [2.0 + i * 0.25 for i in range(4)] + [3.0 + i * 0.125 for i in range(8)]
+    lo, hi = 0.45, 0.95
+    for k, off in enumerate(steps):
+        hits.append(("snare", off, lo + (hi - lo) * k / max(1, len(steps) - 1)))
+    start = steps[0]
+    return start, hits
+
+
 DRUM_PATTERNS = {
     # 쿵짝 쿵짜자 쿵짝 — the 네박자: beat 3 carries the 짜-자 double before the last 짝.
     "trot":      [("kick", 0.0, 0.9), ("hat", 0.5, 0.45), ("snare", 1.0, 0.8), ("hat", 1.5, 0.45),
@@ -419,14 +587,15 @@ DRUM_PATTERNS = {
                            ("snare", 1.0, 0.75), ("snare", 3.0, 0.75)],
     "dance":     [("kick", 0.0, 0.95), ("kick", 1.0, 0.95), ("kick", 2.0, 0.95), ("kick", 3.0, 0.95),
                   ("ohat", 0.5, 0.5), ("ohat", 1.5, 0.5), ("ohat", 2.5, 0.5), ("ohat", 3.5, 0.5),
-                  ("snare", 1.0, 0.6), ("snare", 3.0, 0.6)],
+                  ("snare", 1.0, 0.6), ("clap", 1.0, 0.5), ("snare", 3.0, 0.6), ("clap", 3.0, 0.5)],
     "rnb":       [("hat", o / 2.0, 0.3) for o in range(8)] +
                  [("kick", 0.0, 0.8), ("kick", 2.5, 0.6), ("snare", 1.0, 0.7), ("snare", 3.0, 0.7)],
     "rocknroll": _HATS8 + [("kick", 0.0, 0.9), ("kick", 2.0, 0.85),
                            ("snare", 1.0, 0.8), ("snare", 3.0, 0.8)],
     "hiphop":    [("hat", o / 2.0, 0.35) for o in range(8)] +
                  [("kick", 0.0, 0.9), ("kick", 1.75, 0.6), ("kick", 2.5, 0.75),
-                  ("snare", 1.0, 0.85), ("snare", 3.0, 0.85)],
+                  ("snare", 1.0, 0.85), ("clap", 1.0, 0.45),
+                  ("snare", 3.0, 0.85), ("clap", 3.0, 0.45)],
     "country":   [("kick", 0.0, 0.85), ("hat", 0.5, 0.35), ("snare", 1.0, 0.6), ("hat", 1.5, 0.35),
                   ("kick", 2.0, 0.8), ("hat", 2.5, 0.35), ("snare", 3.0, 0.6), ("hat", 3.5, 0.35)],
     "funk":      [("hat", o / 4.0, 0.42 if o % 4 == 0 else 0.28) for o in range(16)] +
@@ -434,14 +603,15 @@ DRUM_PATTERNS = {
                   ("snare", 1.0, 0.85), ("snare", 3.0, 0.85)],
     "punk":      _HATS8 + [("kick", 0.0, 0.95), ("kick", 2.0, 0.95),
                            ("snare", 1.0, 0.9), ("snare", 3.0, 0.9)],
-    "jazz":      [("ohat", 0.0, 0.5), ("ohat", 1.0, 0.55), ("ohat", 1.5, 0.3),
-                  ("ohat", 2.0, 0.5), ("ohat", 3.0, 0.55), ("ohat", 3.5, 0.3),
-                  ("hat", 1.0, 0.35), ("hat", 3.0, 0.35),
+    "jazz":      [("ride", 0.0, 0.5), ("ride", 1.0, 0.55), ("ride", 1.5, 0.3),
+                  ("ride", 2.0, 0.5), ("ride", 3.0, 0.55), ("ride", 3.5, 0.3),
+                  ("hat_pedal", 1.0, 0.4), ("hat_pedal", 3.0, 0.4),
                   ("kick", 0.0, 0.3), ("kick", 2.0, 0.3)],
     "blues":     _HATS8 + [("kick", 0.0, 0.85), ("kick", 2.0, 0.8),
                            ("snare", 1.0, 0.75), ("snare", 3.0, 0.75)],
     "carol":     [("hat", o / 2.0, 0.32) for o in range(8)] +
-                 [("kick", 0.0, 0.6), ("kick", 2.0, 0.55)],
+                 [("kick", 0.0, 0.6), ("kick", 2.0, 0.55),
+                  ("tamb", 1.5, 0.3), ("tamb", 3.5, 0.3), ("triangle_open", 0.0, 0.25)],
     "folk":      [],
     "classic":   [],
     "newage":    [],
@@ -468,9 +638,62 @@ DRUM_FILLS = {
                      ("snare", 3.75, 0.9)]),
 }
 
-# GM percussion notes (channel 10) — the .mid side of the kit, one map for every drum name.
-DRUM_NOTE = {"kick": 36, "snare": 38, "hat": 42, "ohat": 46,
-             "tom_lo": 45, "tom_mid": 47, "tom_hi": 50, "crash": 49}
+# GM percussion, the WHOLE map (notes 35-81) — every name is legal in patterns and in a score's
+# `drumPattern`. The sf2 engine plays the real kit; _kit_bank() below is what the same names
+# sound like when only numpy is in the room.
+DRUM_NOTE = {
+    "kick2": 35, "kick": 36, "rim": 37, "snare": 38, "clap": 39, "snare2": 40,
+    "tom_floor_lo": 41, "hat": 42, "tom_floor_hi": 43, "hat_pedal": 44, "tom_lo": 45,
+    "ohat": 46, "tom_mid": 47, "tom_himid": 48, "crash": 49, "tom_hi": 50,
+    "ride": 51, "china": 52, "ridebell": 53, "tamb": 54, "splash": 55, "cowbell": 56,
+    "crash2": 57, "vibraslap": 58, "ride2": 59,
+    "bongo_hi": 60, "bongo_lo": 61, "conga_mute": 62, "conga_open": 63, "conga_lo": 64,
+    "timbale_hi": 65, "timbale_lo": 66, "agogo_hi": 67, "agogo_lo": 68,
+    "cabasa": 69, "maracas": 70, "whistle_short": 71, "whistle_long": 72,
+    "guiro_short": 73, "guiro_long": 74, "claves": 75, "woodblock_hi": 76, "woodblock_lo": 77,
+    "cuica_mute": 78, "cuica_open": 79, "triangle_mute": 80, "triangle_open": 81,
+}
+
+
+def _kit_bank():
+    """One builtin sample per GM percussion name — coarse stand-ins, honest ones. The bank is
+    rebuilt per render (47 short arrays, trivial) so a fixed seed keeps renders byte-stable."""
+    return {
+        "kick": kick(), "kick2": kick(0.32), "rim": _ping(900.0, 0.05, 0.008, gain=0.4),
+        "snare": snare(), "snare2": snare(0.16), "clap": clap_hit(),
+        "hat": hat(), "hat_pedal": hat(0.04) * 0.8, "ohat": ohat(),
+        "tom_floor_lo": tom(85.0, 0.4, seed=3), "tom_floor_hi": tom(95.0, 0.38, seed=4),
+        "tom_lo": tom(105.0, seed=8), "tom_mid": tom(150.0, seed=6),
+        "tom_himid": tom(175.0, seed=7), "tom_hi": tom(210.0, seed=5),
+        "crash": crash(), "crash2": _metal(1.2, 0.40, 37, sheen=0.5, gain=0.34),
+        "splash": _metal(0.5, 0.18, 31, sheen=0.5, gain=0.34),
+        "china": _metal(1.0, 0.30, 29, sheen=0.65, gain=0.36),
+        "ride": _metal(0.9, 0.35, 23, sheen=0.4, gain=0.20)
+                + _ping(5300.0, 0.9, 0.5, gain=0.10),
+        "ride2": _metal(0.9, 0.30, 41, sheen=0.45, gain=0.18)
+                 + _ping(4900.0, 0.9, 0.45, gain=0.09),
+        "ridebell": _ping(6100.0, 0.5, 0.25, partials=((2.4, 0.4),), gain=0.22)
+                    + _metal(0.5, 0.12, 43, gain=0.08),
+        "tamb": _shaker(0.18, 47, decay=0.06, gain=0.5) + _ping(7600.0, 0.18, 0.05, gain=0.12),
+        "cowbell": cowbell_hit(),
+        "vibraslap": _am_noise(0.8, 28.0, 53, gain=0.3),
+        "bongo_hi": tom(420.0, 0.12, seed=9), "bongo_lo": tom(320.0, 0.14, seed=10),
+        "conga_mute": tom(260.0, 0.10, seed=12), "conga_open": tom(230.0, 0.28, seed=14),
+        "conga_lo": tom(180.0, 0.30, seed=15),
+        "timbale_hi": tom(340.0, 0.18, seed=16), "timbale_lo": tom(270.0, 0.20, seed=18),
+        "agogo_hi": _ping(720.0, 0.25, 0.05, gain=0.25), "agogo_lo": _ping(540.0, 0.28, 0.05, gain=0.25),
+        "cabasa": _shaker(0.09, 59, decay=0.035), "maracas": _shaker(0.07, 61, decay=0.025),
+        "whistle_short": _squeak(2100.0, 2100.0, 0.15, gain=0.25),
+        "whistle_long": _squeak(2050.0, 2150.0, 0.45, gain=0.25),
+        "guiro_short": _am_noise(0.15, 55.0, 67), "guiro_long": _am_noise(0.4, 45.0, 71),
+        "claves": _ping(1700.0, 0.06, 0.012, gain=0.4),
+        "woodblock_hi": _ping(1100.0, 0.08, 0.015, gain=0.4),
+        "woodblock_lo": _ping(800.0, 0.09, 0.018, gain=0.4),
+        "cuica_mute": _squeak(680.0, 420.0, 0.15, gain=0.3),
+        "cuica_open": _squeak(380.0, 700.0, 0.30, gain=0.3),
+        "triangle_mute": _ping(4300.0, 0.10, 0.03, partials=((2.86, 0.5),), gain=0.22),
+        "triangle_open": _ping(4300.0, 1.2, 0.45, partials=((2.86, 0.5), (5.4, 0.25)), gain=0.22),
+    }
 
 # Which band a style hires — part → instrument name in PATCHES. The score's own `band` field
 # overrides per part, so any instrument in the library can front any style.
@@ -656,9 +879,13 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     `feel` = {meter, swing, comp, bass} from parse_score; None = the style's own defaults."""
     hire = dict(STYLE_BAND.get(style, STYLE_BAND["trot"]))
     for part, name in (band or {}).items():
-        if part in hire and name in PATCHES:
+        if part in hire and resolve_instrument(name) is not None:
             hire[part] = name
-    prog = {part: PATCHES[name].get("gm", 0) for part, name in hire.items()}
+    # Two faces per instrument: the GM program (what the .mid and the sf2 engine mean) and the
+    # builtin patch (what numpy can play). PATCHES names are native to both; GM names degrade.
+    patch_of, prog = {}, {}
+    for part, name in hire.items():
+        patch_of[part], prog[part] = resolve_instrument(name)
     defaults = STYLE_FEEL.get(style, STYLE_FEEL["trot"])
     feel = feel or {}
     meter = int(feel.get("meter") or 4)
@@ -680,7 +907,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             on_down = (beat % meter) < 1e-6
             on_beat = (beat % 1.0) < 1e-6
             vel = 0.82 if on_down else (0.74 if on_beat else 0.64)
-            out.append({"beat": beat, "beats": beats, "part": "melody", "patch": hire["melody"],
+            out.append({"beat": beat, "beats": beats, "part": "melody", "patch": patch_of["melody"],
                         "pitch": m, "program": prog["melody"], "vel": vel, "gate": gate})
             beat += beats
     pos = 0.0
@@ -697,7 +924,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                 if pos + off >= total_beats:
                     break
                 out.append({"beat": pos + off, "beats": 0.55, "part": "chord",
-                            "patch": hire["chord"], "pitch": order[slot % len(order)],
+                            "patch": patch_of["chord"], "pitch": order[slot % len(order)],
                             "program": prog["chord"],
                             "vel": 0.58 if slot % 2 == 0 else 0.48})
         else:
@@ -706,7 +933,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                     break
                 for p in voicing:
                     out.append({"beat": pos + off, "beats": dur, "part": "chord",
-                                "patch": hire["chord"], "pitch": p,
+                                "patch": patch_of["chord"], "pitch": p,
                                 "program": prog["chord"], "vel": vel})
         next_rm = None
         if idx + 1 < len(chords):
@@ -715,19 +942,26 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         for off, dur, pitch, vel in _bass_line(bassline, rm, beats, next_rm, meter, semis):
             if pos + off < total_beats:
                 out.append({"beat": pos + off, "beats": dur, "part": "bass",
-                            "patch": hire["bass"], "pitch": pitch,
+                            "patch": patch_of["bass"], "pitch": pitch,
                             "program": prog["bass"], "vel": vel})
         pos += beats
         if pos >= total_beats:
             break
     patterns = DRUM_PATTERNS_3 if meter == 3 else DRUM_PATTERNS
     fills = DRUM_FILLS_3 if meter == 3 else DRUM_FILLS
-    base = patterns.get(style, patterns["trot"])
+    # A score's own drumPattern replaces the style's bar loop; fills and crashes still apply,
+    # so a custom groove keeps a drummer (다다다다 included) instead of becoming a metronome.
+    custom = feel.get("drums")
+    base = list(custom) if custom else patterns.get(style, patterns["trot"])
     fill = fills.get(style if style in fills else "trot")
     bar, bar_i = 0.0, 0
     while bar < total_beats:
         hits = list(base)
-        if hits and fill and bar_i % 4 == 3:
+        if hits and bar_i % 8 == 7:
+            # Every 8th bar the tom fill yields to the snare roll — 다다다다다 into the crash.
+            start, roll = _snare_roll(meter)
+            hits = [h for h in hits if h[1] < start] + roll
+        elif hits and fill and bar_i % 4 == 3:
             start, roll = fill
             hits = [h for h in hits if h[1] < start] + roll
         if hits and bar_i % 4 == 0:
@@ -756,9 +990,7 @@ def render_arrangement(arr, spb, total_beats):
     n_total = int(SR * spb * total_beats) + int(SR * 0.5)
     out = np.zeros((n_total, 2))
     send = np.zeros(n_total)
-    hits = {"kick": kick(), "snare": snare(), "hat": hat(), "ohat": ohat(),
-            "tom_hi": tom(210.0, seed=5), "tom_mid": tom(150.0, seed=6),
-            "tom_lo": tom(105.0, seed=8), "crash": crash()}
+    hits = _kit_bank()
     for e in arr:
         i = int(SR * spb * e["beat"])
         if i >= n_total:
@@ -785,11 +1017,28 @@ def render_arrangement(arr, spb, total_beats):
 # was mono and bone-dry, which doubled the synth-ness of everything: a stage and a little air
 # are half of "sounds like a record".
 PAN = {"melody": 0.0, "chord": -0.25, "bass": 0.0, "vocal": 0.0,
-       "kick": 0.0, "snare": 0.08, "hat": 0.32, "ohat": 0.32,
-       "tom_hi": -0.28, "tom_mid": 0.0, "tom_lo": 0.28, "crash": -0.32}
+       "kick": 0.0, "kick2": 0.0, "snare": 0.08, "snare2": 0.08, "rim": 0.05, "clap": 0.12,
+       "hat": 0.32, "hat_pedal": 0.32, "ohat": 0.32,
+       "tom_hi": -0.28, "tom_himid": -0.15, "tom_mid": 0.0, "tom_lo": 0.28,
+       "tom_floor_hi": 0.32, "tom_floor_lo": 0.36,
+       "crash": -0.32, "crash2": 0.42, "splash": -0.22, "china": -0.45,
+       "ride": 0.38, "ride2": 0.38, "ridebell": 0.38,
+       "tamb": -0.35, "cowbell": -0.22, "vibraslap": -0.30,
+       "bongo_hi": 0.44, "bongo_lo": 0.44, "conga_mute": -0.44, "conga_open": -0.44,
+       "conga_lo": -0.44, "timbale_hi": 0.26, "timbale_lo": 0.26,
+       "agogo_hi": -0.30, "agogo_lo": -0.30, "cabasa": 0.34, "maracas": 0.30,
+       "guiro_short": -0.26, "guiro_long": -0.26, "claves": 0.18,
+       "woodblock_hi": 0.18, "woodblock_lo": 0.18, "cuica_mute": 0.15, "cuica_open": 0.15,
+       "triangle_mute": -0.18, "triangle_open": -0.18,
+       "whistle_short": -0.10, "whistle_long": -0.10}
 SEND = {"melody": 0.22, "chord": 0.16, "bass": 0.04,
-        "kick": 0.05, "snare": 0.14, "hat": 0.08, "ohat": 0.10,
-        "tom_hi": 0.16, "tom_mid": 0.16, "tom_lo": 0.16, "crash": 0.30}
+        "kick": 0.05, "kick2": 0.05, "snare": 0.14, "snare2": 0.14, "rim": 0.08, "clap": 0.16,
+        "hat": 0.08, "hat_pedal": 0.06, "ohat": 0.10,
+        "tom_hi": 0.16, "tom_himid": 0.16, "tom_mid": 0.16, "tom_lo": 0.16,
+        "tom_floor_hi": 0.16, "tom_floor_lo": 0.16,
+        "crash": 0.30, "crash2": 0.30, "splash": 0.26, "china": 0.28,
+        "ride": 0.18, "ride2": 0.18, "ridebell": 0.16,
+        "triangle_mute": 0.20, "triangle_open": 0.28}
 
 
 def _reverb_ir(seconds, seed):
@@ -1637,6 +1886,48 @@ def action_selftest():
         ck("engine:sf2 forced while unavailable names the missing half", True,
            (forced.get("error") or "")[:60],
            not forced.get("success") and e_why[:12] in (forced.get("error") or ""))
+
+    # The whole GM world: any GM name fronts a band (native on sf2, nearest-family on numpy),
+    # the kit is the full percussion map, and a score can write its own bar loop.
+    s2 = dict(score); s2["band"] = {"melody": "cello"}
+    _, ev2, ch2, _, bd2, fl2, err2 = parse_score(s2)
+    ck("a GM name is a legal band member", None, err2, err2 is None)
+    arr2 = build_arrangement(ev2, ch2, "trot", 4, bd2, fl2)
+    mel2 = [e for e in arr2 if e["part"] == "melody"][0]
+    ck("a GM member carries its real program to the .mid", 42, mel2["program"],
+       mel2["program"] == 42)
+    ck("...and a patch the numpy engine can play", True, mel2["patch"], mel2["patch"] in PATCHES)
+    s3 = dict(score); s3["band"] = ["piano", "drums"]
+    _, _, _, _, bd3, _, err3 = parse_score(s3)
+    ck("a flat band list is a dialect, not an error (drums word skipped)",
+       {"melody": "piano"}, bd3, err3 is None and bd3 == {"melody": "piano"})
+    s4 = dict(score); s4["band"] = {"melody": "kazoo9000"}
+    err4 = parse_score(s4)[6]
+    ck("an unknown instrument still refuses with both libraries", True, (err4 or "")[:40],
+       bool(err4) and "GM" in err4)
+    ck("the kit is the whole GM percussion map", 47, len(DRUM_NOTE),
+       len(DRUM_NOTE) == 47 and set(DRUM_NOTE.values()) == set(range(35, 82)))
+    bank = _kit_bank()
+    ck("every kit name has a builtin sample", 0,
+       sum(1 for k in DRUM_NOTE if k not in bank or not len(bank[k])),
+       all(k in bank and len(bank[k]) for k in DRUM_NOTE))
+    s5 = dict(score); s5["drumPattern"] = [["conga_open", 0.0, 0.8], ["clap", 1.0]]
+    _, ev5, ch5, st5, bd5, fl5, err5 = parse_score(s5)
+    arr5 = build_arrangement(ev5, ch5, st5, 4, bd5, fl5) if err5 is None else []
+    ck("a score writes its own bar loop (drumPattern)", True,
+       err5 or sorted({e["drum"] for e in arr5 if e["part"] == "drum"} - {"crash"}),
+       err5 is None and any(e.get("drum") == "conga_open" for e in arr5))
+    s6 = dict(score); s6["drumPattern"] = [["기관총", 0.0]]
+    err6 = parse_score(s6)[6]
+    ck("an unknown drum refuses with the whole kit", True, (err6 or "")[:30],
+       bool(err6) and "conga_open" in (err6 or ""))
+    arr8 = build_arrangement(ev2, ch2 * 8, "pop", 32, None, {"meter": 4})
+    rolls = [e for e in arr8 if e["part"] == "drum" and e["drum"] == "snare"
+             and 28 <= e["beat"] < 32 and abs(e["beat"] * 8 - round(e["beat"] * 8)) < 1e-6
+             and abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-6]
+    ck("every 8th bar rolls the snare in 32nds (다다다다)", True, len(rolls), len(rolls) >= 4)
+    ck("jazz rides on a ride now, not an open hat", "ride", DRUM_PATTERNS["jazz"][0][0],
+       DRUM_PATTERNS["jazz"][0][0] == "ride")
 
     # The plucked string plays IN TUNE — the integer-period detune (up to ~10 cents up high)
     # is exactly what a listener calls 시다, and a tremolo holds the error against the chords.
