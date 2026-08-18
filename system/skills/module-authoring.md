@@ -126,6 +126,33 @@ Declare the axis in `input` and in `required`, or the caller cannot know it exis
 `_call` for every runnable action or none** — a half migration fails only for the actions nobody
 exercised.
 
+## What you hand BACK (the same underscore boundary, outbound)
+
+Your reply is `{success, data}`. Inside `data`, an underscored key is addressed to the framework,
+not to the caller — it is consumed and never reaches the model.
+
+| declare in `data` | the framework then |
+|---|---|
+| `_mediaImport: {path, contentType, filenameHint?}` | carries the file into the media store and leaves `data.media` (url, slug, bytes). An ARRAY imports several in order, and `data.media` comes back in that order |
+| `_render: {component, props}` | draws that component in the answer — see below |
+| `_prepare: {service, …, into}` | performs the service (e.g. `tts`), fills that input field and re-runs your action once |
+
+**`_render` — say what your output IS.** A file is bytes; only your module knows that a backing
+track plus its synced lyric file is a karaoke stage, or that these rows are a candle chart. Say it
+and the card appears; stay silent and the answer is a link the reader has to open.
+
+```jsonc
+"_render": { "component": "karaoke",
+             "props": { "title": "아로하",
+                        "audioUrl": { "$media": 0 },   // the file you imported first
+                        "lrcUrl":   { "$media": 1 } } }
+```
+
+Addresses are not yours to know — the store decides them after you return — so point at your own
+imports BY POSITION with `{"$media": N}`; an index with no file resolves to null rather than to a
+broken address. Pick the component name from `search_components` and match its `propsSchema`
+(`get_component_schema`); an unknown name simply draws nothing.
+
 ## When the model misuses your module — declare the fix, never work around it
 
 A caller LLM will sometimes speak a dialect: pick the wrong action, guess a parameter, invent an

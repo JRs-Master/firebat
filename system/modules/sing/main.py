@@ -3419,6 +3419,17 @@ def action_render(inp):
         imports.append({"path": lrc_path, "contentType": "application/x-lrc",
                         "filenameHint": stem})
     data["_mediaImport"] = imports if len(imports) > 1 else imports[0]
+    if lrc_path:
+        # A backing track plus its synced lyrics IS a karaoke stage — the module is the only one
+        # that knows that, so it declares the component and the framework draws it (`_render`,
+        # the same underscore channel as `_mediaImport`). Addresses are not ours to know: the
+        # files are pointed at by the position we imported them in. 실측 8/19: both files came
+        # back and the answer was two markdown links, because nothing said a component existed.
+        data["_render"] = {"component": "karaoke", "props": {
+            "title": _slug_name(inp.get("scoreMediaPath") or "") or "노래방",
+            "audioUrl": {"$media": 0},
+            "lrcUrl": {"$media": len(imports) - 1},
+        }}
     if parsed_from:
         # The caller composed nothing — show what the MIDI became so the bridge (TTS lyric
         # order) and the user can see and correct the parse.
