@@ -2289,24 +2289,38 @@ def _warp_fn(tempo_events, master):
     return warp
 
 
-def _ornament_rows(row, kind):
-    """A trill/mordent/turn written as the little notes it means. Neighbor = a whole tone —
-    keyless but audible; the score's own accidentals stay untouched elsewhere."""
+def _diatonic_neighbors(fifths, pitch):
+    """Upper/lower neighbor in semitones for this pitch IN THIS KEY — what players and every
+    notation program's playback use. A fixed whole tone was OUR number: in E major (월광's
+    signature) a G# trill alternates with A, a semitone, not A#."""
+    tonic = (7 * (fifths or 0)) % 12
+    scale = {(tonic + step) % 12 for step in (0, 2, 4, 5, 7, 9, 11)}
+    pc = pitch % 12
+    up = 1 if (pc + 1) % 12 in scale else 2
+    down = 1 if (pc - 1) % 12 in scale else 2
+    return up, down
+
+
+def _ornament_rows(row, kind, up=2, down=2):
+    """A trill/mordent/turn written as the little notes it means. Neighbors are diatonic
+    (the caller passes them from the key signature); the mordent direction follows the sign —
+    <mordent> beats DOWN, <inverted-mordent> beats UP (the Pralltriller)."""
     beat, dur, pitch = row["beat"], row["beats"], row["pitch"]
     mk = lambda b, d, pt: dict(row, beat=b, beats=d, pitch=max(0, min(127, pt)))
     if kind == "trill":
         step = 0.125
         n = max(4, min(16, int(dur / step)))
         d = dur / n
-        return [mk(beat + k * d, d, pitch + (2 if k % 2 else 0)) for k in range(n)]
-    if kind == "mordent":
+        return [mk(beat + k * d, d, pitch + (up if k % 2 else 0)) for k in range(n)]
+    if kind in ("mordent", "mordent_up"):
         d = min(0.1, dur / 4)
-        return [mk(beat, d, pitch), mk(beat + d, d, pitch - 2),
+        nb = pitch + up if kind == "mordent_up" else pitch - down
+        return [mk(beat, d, pitch), mk(beat + d, d, nb),
                 mk(beat + 2 * d, dur - 2 * d, pitch)]
     if kind == "turn":
         d = dur / 4
-        return [mk(beat, d, pitch + 2), mk(beat + d, d, pitch),
-                mk(beat + 2 * d, d, pitch - 2), mk(beat + 3 * d, d, pitch)]
+        return [mk(beat, d, pitch + up), mk(beat + d, d, pitch),
+                mk(beat + 2 * d, d, pitch - down), mk(beat + 3 * d, d, pitch)]
     return [row]
 
 
@@ -2382,6 +2396,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
         last_onset, stack_n, arp_here = 0.0, 0, False
         pedal_down = None
         shift = 0      # octave-shift (8va/8vb), in semitones
+        cur_fifths = 0  # key signature — ornament neighbors are DIATONIC, not fixed intervals
         transpose = 0  # transposing instruments, in semitones
         graces = []    # pending grace pitches awaiting their host note
         wedges = []    # (raw pos, "c"|"d"|"stop")
@@ -2396,6 +2411,12 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     d = text_of(el, "divisions")
                     if d:
                         divisions = float(d)
+                    k_el = kid(el, "key")
+                    if k_el is not None:
+                        try:
+                            cur_fifths = int(text_of(k_el, "fifths") or 0)
+                        except ValueError:
+                            pass
                     t = kid(el, "time")
                     if t is not None and meter is None:
                         try:
@@ -2554,6 +2575,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                             ot = _strip_ns(o.tag)
                             if ot == "trill-mark":
                                 orn_kind = "trill"
+                            elif ot == "inverted-mordent":
+                                orn_kind = "mordent_up"
                             elif "mordent" in ot:
                                 orn_kind = "mordent"
                             elif ot == "turn":
@@ -2577,8 +2600,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                         stack_n = 0
                         arp_here = arp
                     onset = last_onset if is_stack else m_base + cur
-                    if is_stack and (arp_here or arp):
-                        onset += stack_n * 0.04  # rolled chord — the arpeggio sign
+                    roll_n = stack_n if (is_stack and (arp_here or arp)) else 0
                     if not is_stack:
                         last_onset = onset
                     n_staff = _xt(el, "staff", "1") or "1"
@@ -2600,12 +2622,19 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                                     "part": f_part, "patch": _patch_for_program(f_prog),
                                     "program": f_prog, "pitch": midi, "vel": nvel,
                                     "gate": gate, "staff": n_staff}
+                        if roll_n:
+                            # A rolled chord is a hand gesture — constant in TIME. The old
+                            # 0.04-beat step made 월광 (bpm 44) roll 55ms per voice; applied
+                            # after the warp below, in seconds.
+                            base_row["_roll"] = roll_n
                         if (tie and parts_out and parts_out[-1]["part"] == f_part
                                 and parts_out[-1].get("pitch") == midi
                                 and not parts_out[-1].get("pedal")):
                             parts_out[-1]["beats"] += dur
                         elif orn_kind:
-                            parts_out.extend(_ornament_rows(base_row, orn_kind))
+                            parts_out.extend(_ornament_rows(
+                                base_row, orn_kind,
+                                *_diatonic_neighbors(cur_fifths, midi)))
                         else:
                             parts_out.append(base_row)
                     graces = [] if not is_stack else graces
@@ -2659,10 +2688,14 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
     master = tempo_events[0][1] if tempo_events else 120.0
     warp = _warp_fn(tempo_events, master)
     if parts_out is not None:
+        spb_w = 60.0 / max(20.0, min(300.0, master))
         for row in parts_out:
             b0, b1 = row["beat"], row["beat"] + row["beats"]
             row["beat"] = round(warp(b0), 4)
             row["beats"] = max(0.06, round(warp(b1) - warp(b0), 4))
+            rl = row.pop("_roll", 0)
+            if rl:
+                row["beat"] = round(row["beat"] + rl * (0.022 / spb_w), 4)
     best = max(parsed_parts, key=lambda pp: (pp["lyrics"], len(pp["notes"])))
 
     lyr = list(str(lyrics or "").replace(" ", "").replace("\n", ""))
@@ -3867,6 +3900,31 @@ def action_selftest():
        (0, 0.75), (lit_n, lit_rows[1]["beat"]),
        lit_n == 0 and lit_rows[1]["beat"] == 0.75)
 
+    dn = _diatonic_neighbors(4, 68)   # E major (월광's signature), G#
+    ck("ornament neighbors are diatonic (E major: G#-A up a semitone, G#-F# down a tone)",
+       (1, 2), dn, dn == (1, 2))
+    orn_base = {"beat": 0.0, "beats": 1.0, "part": "melody", "patch": "piano", "program": 0,
+                "pitch": 60, "vel": 0.5, "gate": 1.0}
+    m_dn = _ornament_rows(dict(orn_base), "mordent", *_diatonic_neighbors(0, 60))
+    m_up = _ornament_rows(dict(orn_base), "mordent_up", *_diatonic_neighbors(0, 60))
+    ck("the mordent sign beats down, the inverted mordent beats up",
+       (59, 62), (m_dn[1]["pitch"], m_up[1]["pitch"]),
+       m_dn[1]["pitch"] == 59 and m_up[1]["pitch"] == 62)
+    arp_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+               '<notations><arpeggiate/></notations></note>'
+               '<note><chord/><pitch><step>E</step><octave>4</octave></pitch>'
+               '<duration>4</duration><notations><arpeggiate/></notations></note>'
+               '</measure>' + E)
+    with open("data/sing/selftest-arp.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(arp_doc)
+    arows = []
+    asc, aerr = musicxml_to_score("data/sing/selftest-arp.musicxml", parts_out=arows)
+    arp_top = [r for r in arows if r.get("pitch") == 64]
+    ck("a rolled chord is a hand gesture — constant milliseconds, not beats",
+       0.044, arp_top[0]["beat"] if arp_top else None,
+       aerr is None and bool(arp_top) and abs(arp_top[0]["beat"] - 0.044) < 0.002)
+
     xml_doc = (
         '<score-partwise><part-list/><part id="P1"><measure number="1">'
         '<attributes><divisions>2</divisions><time><beats>3</beats>'
@@ -3935,7 +3993,7 @@ def action_selftest():
     for f in ("data/sing/selftest-x.musicxml", "data/sing/selftest-x.mxl",
               "data/sing/selftest-rep.musicxml", "data/sing/selftest-tempo.musicxml",
               "data/sing/selftest-met.musicxml", "data/sing/selftest-perf.musicxml",
-              "data/sing/selftest-lyr.musicxml"):
+              "data/sing/selftest-lyr.musicxml", "data/sing/selftest-arp.musicxml"):
         if os.path.exists(f):
             os.remove(f)
     low = parse_score(dict(score, chords=[{"root": "C1", "beats": 4}]))
