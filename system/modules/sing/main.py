@@ -82,8 +82,8 @@ def parse_score(score):
         beats = float(n.get("beats") or 1)
         if freq is None:
             return None, None, None, None, None, None, f"음이름을 읽을 수 없습니다: {n.get('note')!r}"
-        if beats <= 0 or beats > 16:
-            return None, None, None, None, None, None, f"beats {beats} 가 이상합니다 (0 < beats <= 16)"
+        if beats <= 0 or beats > 64:
+            return None, None, None, None, None, None, f"beats {beats} 가 이상합니다 (0 < beats <= 64)"
         syl = str(n.get("syl") or "").strip()
         if syl == "-" and events:
             events[-1]["segments"].append((freq, beats))
@@ -183,9 +183,9 @@ def parse_score(score):
                        pick("vel", "velocity", "v")]
             if not isinstance(row, (list, tuple)) or len(row) < 2:
                 return None, None, None, None, None, None,                     f"drumPattern 행은 [드럼이름, 마디내박(, 세기)] 입니다 — "                     f"예: [[\"kick\",0,0.9],[\"snare\",1]] (받은 행: {str(row)[:80]})"
-            dname = str(row[0] or "").strip().lower()
-            if dname not in DRUM_NOTE:
-                return None, None, None, None, None, None,                     f"드럼 {dname!r} 를 모릅니다 — 가능한 드럼: {', '.join(sorted(DRUM_NOTE))}"
+            dname = _drum_of(row[0])
+            if dname is None:
+                return None, None, None, None, None, None,                     f"드럼 {str(row[0])!r} 를 모릅니다 — 가능한 드럼: {', '.join(sorted(DRUM_NOTE))}"
             offs = row[1] if isinstance(row[1], (list, tuple)) else [row[1]]
             for off_raw in offs:
                 try:
@@ -811,6 +811,33 @@ DRUM_NOTE = {
     "guiro_short": 73, "guiro_long": 74, "claves": 75, "woodblock_hi": 76, "woodblock_lo": 77,
     "cuica_mute": 78, "cuica_open": 79, "triangle_mute": 80, "triangle_open": 81,
 }
+
+
+# The names people (and models) actually write for the kit — bare families map to their open/
+# lead variant, GM-spec spellings map home. Resolution is normalized (case/space/hyphen blind).
+DRUM_ALIASES = {
+    "triangle": "triangle_open", "conga": "conga_open", "bongo": "bongo_hi",
+    "timbale": "timbale_hi", "woodblock": "woodblock_hi", "agogo": "agogo_hi",
+    "guiro": "guiro_short", "cuica": "cuica_open", "whistle": "whistle_short",
+    "tom": "tom_mid", "floortom": "tom_floor_hi", "shaker": "maracas",
+    "tambourine": "tamb", "handclap": "clap", "sidestick": "rim", "rimshot": "rim",
+    "hihat": "hat", "closedhihat": "hat", "openhihat": "ohat", "openhat": "ohat",
+    "pedalhihat": "hat_pedal", "ridecymbal": "ride", "ridebell2": "ride2",
+    "crashcymbal": "crash", "chinacymbal": "china", "splashcymbal": "splash",
+    "bassdrum": "kick", "bass": "kick", "acousticbassdrum": "kick2",
+    "acousticsnare": "snare", "electricsnare": "snare2", "claps": "clap",
+}
+
+
+def _drum_of(raw):
+    """Kit name -> canonical DRUM_NOTE key, or None. Normalized, alias-aware."""
+    n = "".join(ch for ch in str(raw or "").casefold() if ch.isalnum())
+    if not n:
+        return None
+    canon = {"".join(ch for ch in k if ch.isalnum()): k for k in DRUM_NOTE}
+    if n in canon:
+        return canon[n]
+    return DRUM_ALIASES.get(n)
 
 
 def _kit_bank():
@@ -1561,6 +1588,17 @@ def midi_to_score(path, lyrics=None):
             continue
         break
 
+    # The file's own meter (실측: Take Five parsed as 4/4 — the 5 was in the file, unread).
+    meter = None
+    for tr in mf.tracks:
+        for msg in tr:
+            if msg.type == "time_signature":
+                if 2 <= int(msg.numerator) <= 12:
+                    meter = int(msg.numerator)
+                break
+        if meter is not None:
+            break
+
     # Lyric events: absolute tick -> text, per track (so we can prefer the lyric-bearing track).
     lyric_by_track = []
     for tr in mf.tracks:
@@ -1607,7 +1645,9 @@ def midi_to_score(path, lyrics=None):
     seq = []
     for i, (note, start, dur) in enumerate(mel):
         span = (mel[i + 1][1] - start) if i + 1 < len(mel) else dur
-        beats = max(0.25, round(span / tpb * 4) / 4)
+        # Real performances hold notes for bars (pedal, pads — 실측: 34.5·37 박). A recorded
+        # length is a fact to absorb, not a typo to refuse: clamp to the score cap.
+        beats = min(64.0, max(0.25, round(span / tpb * 4) / 4))
         seq.append({"note": _midi_name(note), "beats": beats, "tick": start})
 
     # Syllables: file lyric events matched to note starts, else the caller's string, else 라.
@@ -1645,6 +1685,8 @@ def midi_to_score(path, lyrics=None):
             w += 2
 
     score = {"bpm": bpm, "notes": notes}
+    if meter is not None and meter != 4:
+        score["meter"] = meter
     if chords:
         score["chords"] = chords
     return score, None
@@ -1673,8 +1715,9 @@ def _media_to_path(raw):
 
 
 def _norm_name(s):
-    """Alias comparison key — case and spacing are not identity ("캐논 변주곡" == "캐논변주곡")."""
-    return "".join(str(s or "").split()).casefold()
+    """Alias comparison key — only letters and digits are identity: case, spacing, hyphens and
+    underscores are all spelling ("take-five" == "take five" == "TakeFive", 실측 미스)."""
+    return "".join(ch for ch in str(s or "").casefold() if ch.isalnum())
 
 
 def action_scores(inp=None):
@@ -2287,6 +2330,16 @@ def action_selftest():
        [len(mb), mb[0][1] % bar_n], len(mb) >= 2 and mb[0][0] == 0
        and mb[-1][1] == SR * 60 * 15 and all(a % bar_n == 0 for a, _ in mb)
        and all(mb[i][1] == mb[i + 1][0] for i in range(len(mb) - 1)))
+    hy = _norm_name("take-five")
+    ck("hyphens are spelling, not identity (take-five == take five)", True,
+       hy, hy == _norm_name("Take Five"))
+    ck("bare drum names land on their family's lead voice",
+       ("triangle_open", "conga_open", "hat", "kick"),
+       (_drum_of("triangle"), _drum_of("conga"), _drum_of("hi-hat"), _drum_of("bass drum")),
+       (_drum_of("triangle"), _drum_of("conga"), _drum_of("hi-hat"), _drum_of("bass drum"))
+       == ("triangle_open", "conga_open", "hat", "kick"))
+    long_note = parse_score(dict(score, notes=[{"syl": "라", "note": "C4", "beats": 34.5}]))[6]
+    ck("a held 34.5-beat note is legal (the cap is 64 now)", None, long_note, long_note is None)
     s8 = dict(score); s8["drumPattern"] = {"kick": [0, 2], "snare": 1}
     fl8 = parse_score(s8)[5]
     ck("a name->beats map is a drumPattern dialect", 3,
