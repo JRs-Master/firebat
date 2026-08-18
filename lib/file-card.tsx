@@ -20,6 +20,9 @@ export const FILE_CARD_EXTS: Record<string, string> = {
   hwpx: 'text-sky-700 bg-sky-50 border-sky-200',
   hwp: 'text-sky-700 bg-sky-50 border-sky-200',
   mid: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+  // Karaoke lyric timing (sing's LRC lane) — neutral: lrc has no brand colour the way excel is
+  // green, and purple-by-default is off the table.
+  lrc: 'text-slate-600 bg-slate-100 border-slate-200',
 };
 
 /** Badge look for an extension the table above does not name. Slate — the palette's neutral;
