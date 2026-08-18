@@ -396,6 +396,10 @@ ssh root@SERVER_IP          # everything below runs on the server
 # 2. base packages + firewall
 apt update && apt upgrade -y
 apt install -y curl wget git ufw htop ca-certificates python3-pip rsync
+# optional but recommended: system synth + GM soundfont — the sing module discovers both on its
+# own (engine on PATH, font under /usr/share/sounds/sf2) and renders with real instrument
+# samples; without them it degrades to its built-in numpy synth
+apt install -y fluidsynth fluid-soundfont-gm
 ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp && ufw --force enable
 
 # 3. swap — required on 1GB-RAM plans (skip if 2GB+); also prevents OOM during `npm run build`
