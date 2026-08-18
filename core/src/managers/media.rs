@@ -279,6 +279,21 @@ fn parse_focus_point(v: &serde_json::Value) -> crate::ports::CropPosition {
     CropPosition::Attention
 }
 
+/// Opaque-MIME rescue: when the declared type is `application/octet-stream`, the filename
+/// hint's extension is adopted — but only from an allowlist, and only when the bytes agree.
+/// (A hint is the uploader's claim too; the magic keeps it honest, same as every other gate
+/// on this door.)
+fn ext_from_hint_for_opaque(hint: Option<&str>, binary: &[u8]) -> Option<&'static str> {
+    let ext = hint?.rsplit_once('.')?.1.to_ascii_lowercase();
+    match ext.as_str() {
+        "mxl" if binary.starts_with(b"PK") => Some("mxl"),
+        "musicxml" if binary.iter().take(16).any(|b| *b == b'<') => Some("musicxml"),
+        "xml" if binary.iter().take(16).any(|b| *b == b'<') => Some("xml"),
+        "mid" | "midi" if binary.starts_with(b"MThd") => Some("mid"),
+        _ => None,
+    }
+}
+
 /// Audio / MIDI magic bytes — the intake gate for the non-image half of the media door.
 ///
 /// Mirrors `detect_image_ext` in shape and in reason: the declared content type is the
@@ -685,6 +700,17 @@ impl MediaManager {
             }
             if opts.ext.as_deref().unwrap_or("").is_empty() {
                 opts.ext = Some(doc_ext.to_string());
+            }
+        }
+        if content_type.eq_ignore_ascii_case("application/octet-stream")
+            && opts.ext.as_deref().unwrap_or("").is_empty()
+        {
+            // The browser has no MIME for many score formats (measured: MuseScore's own .mxl
+            // uploads as octet-stream), so the original filename's extension is the only truth
+            // the caller still holds. Allowlisted + magic-checked, it beats stamping ".bin" -
+            // which strips the one thing every later reader keys on.
+            if let Some(ext) = ext_from_hint_for_opaque(opts.filename_hint.as_deref(), binary) {
+                opts.ext = Some(ext.to_string());
             }
         }
         self.media.save(binary, content_type, &opts).await
@@ -1718,6 +1744,21 @@ mod tests {
             Some((MediaScope::System, "x".to_string(), "webp".to_string()))
         );
         assert_eq!(parse_media_url("https://example.com/image.png"), None);
+    }
+
+    #[test]
+    fn opaque_mime_takes_the_hinted_ext_only_when_the_bytes_agree() {
+        assert_eq!(
+            super::ext_from_hint_for_opaque(Some("moonlight.mxl"), b"PK\x03\x04zip"),
+            Some("mxl")
+        );
+        assert_eq!(
+            super::ext_from_hint_for_opaque(Some("score.musicxml"), b"<?xml version"),
+            Some("musicxml")
+        );
+        assert_eq!(super::ext_from_hint_for_opaque(Some("x.mxl"), b"<?xml"), None);
+        assert_eq!(super::ext_from_hint_for_opaque(Some("x.exe"), b"MZ\x00"), None);
+        assert_eq!(super::ext_from_hint_for_opaque(None, b"PK"), None);
     }
 
     #[test]

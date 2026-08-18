@@ -1830,6 +1830,29 @@ def _strip_ns(tag):
     return tag.rsplit("}", 1)[-1]
 
 
+def score_media_kind(path):
+    """What a score file IS, by content first, extension second. 실측 (월광): the browser did
+    not know .mxl's MIME, the upload saved it as .bin, and the extension gate refused a
+    perfectly good score. Bytes do not lie: MThd = MIDI, PK = mxl (zip), <?xml = MusicXML."""
+    ext = str(path).rsplit(".", 1)[-1].lower() if "." in str(path) else ""
+    if ext in ("mid", "midi"):
+        return "midi"
+    if ext in ("musicxml", "xml", "mxl"):
+        return "musicxml"
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(64)
+    except OSError:
+        return None
+    if head[:4] == b"MThd":
+        return "midi"
+    if head[:2] == b"PK":
+        return "musicxml"  # .mxl is a zip; the reader unzips whatever the name says
+    if head.lstrip()[:5] in (b"<?xml", b"<scor"):
+        return "musicxml"
+    return None
+
+
 def musicxml_to_score(path, lyrics=None):
     """MusicXML (.musicxml/.xml/.mxl) -> score. The electronic-score standard says everything
     a MIDI only implies: exact notes, the lyric under each one, REAL chord symbols (harmony),
@@ -1838,7 +1861,9 @@ def musicxml_to_score(path, lyrics=None):
     import xml.etree.ElementTree as ET
     import zipfile
     try:
-        if str(path).lower().endswith(".mxl"):
+        with open(path, "rb") as fh:
+            is_zip = fh.read(2) == b"PK"
+        if is_zip:
             with zipfile.ZipFile(path) as z:
                 inner = [n for n in z.namelist()
                          if n.lower().endswith((".xml", ".musicxml"))
@@ -2144,9 +2169,9 @@ def action_render(inp):
             return {"success": False,
                     "error": "no score: pass `score`, or `scoreMediaPath` (URL, path, or a shelf "
                              "alias), or upload one in the module settings (악보 보관함)"}
-        ext = media_path.rsplit(".", 1)[-1].lower()
-        if ext in ("mid", "midi", "musicxml", "xml", "mxl"):
-            reader = midi_to_score if ext in ("mid", "midi") else musicxml_to_score
+        kind = score_media_kind(media_path)
+        if kind:
+            reader = midi_to_score if kind == "midi" else musicxml_to_score
             score, err = reader(media_path, lyrics=inp.get("lyrics"))
             if err:
                 return {"success": False, "error": err}
@@ -2159,9 +2184,10 @@ def action_render(inp):
                     score[knob] = inp[knob]
             parsed_from = media_path
         else:
+            ext = media_path.rsplit(".", 1)[-1].lower() if "." in media_path else "?"
             return {"success": False,
-                    "error": f"score media must be MIDI or MusicXML (.mid/.midi/.musicxml/"
-                             f".mxl/.xml, got .{ext}) — hum-to-score is a later slice"}
+                    "error": f"score media must be MIDI or MusicXML (got .{ext}, and the bytes "
+                             "are neither MThd, zip nor XML) — hum-to-score is a later slice"}
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
@@ -2677,6 +2703,13 @@ def action_selftest():
     mxl_sc, mxl_err = musicxml_to_score("data/sing/selftest-x.mxl")
     ck("a compressed .mxl opens the same door", 2,
        len((mxl_sc or {}).get("notes") or []), mxl_err is None and len(mxl_sc["notes"]) == 2)
+    import shutil as _sh
+    _sh.copy("data/sing/selftest-x.mxl", "data/sing/selftest-x.bin")
+    ck("an .mxl the upload renamed .bin is judged by its bytes (실측: 월광)", "musicxml",
+       score_media_kind("data/sing/selftest-x.bin"),
+       score_media_kind("data/sing/selftest-x.bin") == "musicxml"
+       and musicxml_to_score("data/sing/selftest-x.bin")[1] is None)
+    os.remove("data/sing/selftest-x.bin")
     for f in ("data/sing/selftest-x.musicxml", "data/sing/selftest-x.mxl"):
         if os.path.exists(f):
             os.remove(f)

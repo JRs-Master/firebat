@@ -104,6 +104,8 @@ impl LocalMediaAdapter {
             // Documents — the same intake door again (office decks, sheets, HWPX, PDF).
             // The manager's magic-byte gate has already verified the container by the time
             // save() reaches here; this map only keeps the stored name honest.
+            "application/vnd.recordare.musicxml" => "mxl",
+            "application/vnd.recordare.musicxml+xml" => "musicxml",
             "application/pdf" => "pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
