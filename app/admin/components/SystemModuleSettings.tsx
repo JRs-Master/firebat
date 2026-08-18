@@ -67,8 +67,14 @@ interface ConfigI18nText {
 interface ConfigSettingField {
   key: string;
   type: FieldType;
-  /** file 필드: input accept 문자열 (예: 'audio/*,.mid'). 선언이 곧 필터. */
+  /** inline 라벨/설명 — lang/{lang}.json 이 없는 모듈의 원본. resolveConfigField 가 이걸 안 읽고
+   *  키로 떨어뜨리던 것이 "라벨이 masterPptxUrl 로 보이던" 뿌리였다 (2026-08-18). */
+  label?: string;
+  description?: string;
+  /** file/files 필드: input accept 문자열 (예: 'audio/*,.mid'). 선언이 곧 필터. */
   accept?: string;
+  /** files 필드 전용: 종류(확장자)별 대표 라디오. */
+  defaultPerKind?: boolean;
   placeholder?: string;
   defaultValue?: any;
   tab?: string;
@@ -138,11 +144,13 @@ function resolveConfigField(
     key: cf.key,
     type: cf.type,
     accept: cf.accept,
+    defaultPerKind: cf.defaultPerKind,
     placeholder:
       langField.placeholder ?? primary.placeholder ?? fallback.placeholder ?? cf.placeholder,
     defaultValue: cf.defaultValue,
-    label: langField.label ?? primary.label ?? fallback.label ?? cf.key,
-    description: langField.description ?? primary.description ?? fallback.description,
+    label: langField.label ?? primary.label ?? fallback.label ?? cf.label ?? cf.key,
+    description:
+      langField.description ?? primary.description ?? fallback.description ?? cf.description,
     tab: cf.tab,
     group: langField.group ?? primary.group ?? fallback.group ?? cf.group,
     oauthUrl: cf.oauthUrl,
