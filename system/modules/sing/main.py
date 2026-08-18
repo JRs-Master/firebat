@@ -85,10 +85,17 @@ def parse_score(score):
         if beats <= 0 or beats > 64:
             return None, None, None, None, None, None, f"beats {beats} 가 이상합니다 (0 < beats <= 64)"
         syl = str(n.get("syl") or "").strip()
+        vel = n.get("vel")
+        if vel is not None:
+            try:
+                vel = max(0.05, min(1.0, float(vel)))
+            except (TypeError, ValueError):
+                return None, None, None, None, None, None, "notes[].vel 은 0~1 숫자입니다"
         if syl == "-" and events:
             events[-1]["segments"].append((freq, beats))
+            events[-1]["vels"].append(vel)
         else:
-            events.append({"syl": syl, "segments": [(freq, beats)]})
+            events.append({"syl": syl, "segments": [(freq, beats)], "vels": [vel]})
     chords = []
     for c in score.get("chords") or []:
         root = note_freq(c.get("root")) if isinstance(c, dict) else None
@@ -1090,11 +1097,15 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # Velocity is a phrase shape, not a constant: downbeats lean, offbeats step back.
     beat = 0.0
     for ev in events:
-        for freq, beats in ev["segments"]:
+        vels = ev.get("vels") or []
+        for si, (freq, beats) in enumerate(ev["segments"]):
             m = int(round(69 + 12 * math.log2(freq / 440.0)))
             on_down = (beat % meter) < 1e-6
             on_beat = (beat % 1.0) < 1e-6
-            vel = 0.82 if on_down else (0.74 if on_beat else 0.64)
+            # The note's own dynamic (MIDI velocity / notes[].vel) is the truth; the phrase
+            # curve only shapes notes that never declared one.
+            own = vels[si] if si < len(vels) else None
+            vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
             out.append({"beat": beat, "beats": beats, "part": "melody", "patch": patch_of["melody"],
                         "pitch": m, "program": prog["melody"], "vel": vel, "gate": gate})
             beat += beats
@@ -1548,16 +1559,16 @@ def _fix_lyric_text(s):
 
 
 def _track_events(track):
-    """One track -> [[note, start_tick, dur_tick], ...] sorted by start."""
+    """One track -> [[note, start_tick, dur_tick, velocity], ...] sorted by start."""
     events, t, on = [], 0, {}
     for msg in track:
         t += msg.time
         if msg.type == "note_on" and msg.velocity > 0:
-            on[msg.note] = t
+            on[msg.note] = (t, msg.velocity)
         elif (msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0)) \
                 and msg.note in on:
-            start = on.pop(msg.note)
-            events.append([msg.note, start, t - start])
+            start, vel = on.pop(msg.note)
+            events.append([msg.note, start, t - start, vel])
     events.sort(key=lambda e: e[1])
     return events
 
@@ -1643,12 +1654,15 @@ def midi_to_score(path, lyrics=None):
             continue
         mel.append(e)
     seq = []
-    for i, (note, start, dur) in enumerate(mel):
+    for i, (note, start, dur, vel) in enumerate(mel):
         span = (mel[i + 1][1] - start) if i + 1 < len(mel) else dur
         # Real performances hold notes for bars (pedal, pads — 실측: 34.5·37 박). A recorded
         # length is a fact to absorb, not a typo to refuse: clamp to the score cap.
         beats = min(64.0, max(0.25, round(span / tpb * 4) / 4))
-        seq.append({"note": _midi_name(note), "beats": beats, "tick": start})
+        # The recorded dynamics ARE the score (실측: 짐노페디가 우리 일률 곡선 때문에 다
+        # 세게 나왔다 — pp 를 mf 로 덮어 쓰고 있었다). 0-1 scale, our vel language.
+        seq.append({"note": _midi_name(note), "beats": beats, "tick": start,
+                    "vel": round(vel / 127.0, 3)})
 
     # Syllables: file lyric events matched to note starts, else the caller's string, else 라.
     file_lyrics = lyric_by_track[melody["idx"]]
@@ -1661,12 +1675,12 @@ def midi_to_score(path, lyrics=None):
                 syl = file_lyrics[li][1]
                 li += 1
             notes.append({"syl": syl if notes or syl != "-" else "라",
-                          "note": s["note"], "beats": s["beats"]})
+                          "note": s["note"], "beats": s["beats"], "vel": s.get("vel")})
     else:
         syls = [ch for ch in str(lyrics or "") if not ch.isspace()]
         for i, s in enumerate(seq):
             syl = syls[i] if i < len(syls) else ("-" if syls else "라")
-            notes.append({"syl": syl, "note": s["note"], "beats": s["beats"]})
+            notes.append({"syl": syl, "note": s["note"], "beats": s["beats"], "vel": s.get("vel")})
 
     # Chords off the lowest track (if any candidate besides the melody).
     chords = []
@@ -1677,7 +1691,7 @@ def midi_to_score(path, lyrics=None):
         w = 0.0
         while w < total_beats:
             lo, hi = w * tpb, (w + 2) * tpb
-            window = [n for n, s, d in bass if lo <= s < hi]
+            window = [n for n, s, d, _v in bass if lo <= s < hi]
             if window:
                 chords.append({"root": _midi_name(min(window)), "beats": 2})
             elif chords:
@@ -2330,6 +2344,13 @@ def action_selftest():
        [len(mb), mb[0][1] % bar_n], len(mb) >= 2 and mb[0][0] == 0
        and mb[-1][1] == SR * 60 * 15 and all(a % bar_n == 0 for a, _ in mb)
        and all(mb[i][1] == mb[i + 1][0] for i in range(len(mb) - 1)))
+    dyn = parse_score(dict(score, notes=[
+        {"syl": "라", "note": "C4", "beats": 1, "vel": 0.3},
+        {"syl": "나", "note": "E4", "beats": 1}]))
+    darr = build_arrangement(dyn[1], dyn[2], "none", 2, None, dyn[5])
+    dm = [e["vel"] for e in darr if e["part"] == "melody"]
+    ck("a note's own dynamic wins; the phrase curve only fills silence", (0.3, 0.74),
+       tuple(round(v, 2) for v in dm), abs(dm[0] - 0.3) < 1e-6 and abs(dm[1] - 0.74) < 1e-6)
     hy = _norm_name("take-five")
     ck("hyphens are spelling, not identity (take-five == take five)", True,
        hy, hy == _norm_name("Take Five"))
