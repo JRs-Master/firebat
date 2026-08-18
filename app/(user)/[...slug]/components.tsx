@@ -1667,18 +1667,12 @@ function KaraokeLineRow({ line, active, at, align, until }: {
   // 지어내지 않는다** — 노래방은 정확해야 하고, 균등 배분은 그럴듯할 뿐 틀린 자리를 짚는다
   // (사용자 확정 8/19). 대신 줄 전체를 밝히고, 그 줄의 시간이 얼마나 갔는지만 막대로 말한다.
   if (active && !line.timed) {
-    const span = Math.max(0.5, (until ?? 0) - line.t || 4);
-    const pct = Math.max(0, Math.min(1, (at - line.t) / span));
+    // 줄 시간뿐인 가사는 줄 전체가 켜지는 것으로 끝낸다. 진행 막대를 달아 봤지만 그 폭도
+    // 추정이라 싱크가 어긋나 보였고, 눈이 계속 그리로 갔다 (사용자: "정신사납다").
     return (
-      <span className={`block ${align === 'right' ? 'text-right' : 'text-left'}`}>
-        <span className={`inline-block break-keep leading-snug text-blue-600 ${size}`}>
-          {line.text}
-          <span className="mt-0.5 block h-[3px] rounded-full bg-blue-100" aria-hidden>
-            <span className="block h-full rounded-full bg-blue-500"
-              style={{ width: `${(pct * 100).toFixed(1)}%` }} />
-          </span>
-        </span>
-      </span>
+      <p className={`break-keep leading-snug text-blue-600 ${size} ${align === 'right' ? 'text-right' : 'text-left'}`}>
+        {line.text}
+      </p>
     );
   }
   return (
@@ -1758,16 +1752,23 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
   const topIdx = idx % 2 === 0 ? idx : idx + 1;
   const botIdx = idx % 2 === 0 ? idx + 1 : idx;
   const nextT = lines[idx + 1]?.t;
-  // 카운트다운은 **아무도 안 부르고 있을 때만** — 전주와 간주가 그 자리다. 실측 8/19: 남은
-  // 시간만 보니 부르는 중인 소절 위로 3 이 떴다(마지막 음절이 3초 안에 있으면 언제나 참).
-  // 그래서 조건은 둘 — 직전 소절이 (마지막 음절 + 여운) 만큼 지나 이미 끝났을 것, 그리고 그
-  // 쉼이 애초에 3초 넘게 길 것. 소절 사이 한 박 숨에는 뜨지 않는다.
-  const TAIL = 1.2; // 마지막 음절이 울리는 시간 — LRC 는 시작만 적지 길이를 안 적는다
-  const sungEnd = idx >= 0
-    ? (lines[idx].syls[lines[idx].syls.length - 1]?.t ?? lines[idx].t) + TAIL
-    : 0;
+  // 이 곡이 한 소절에 대략 몇 초를 쓰는지 — 줄 간격의 중앙값. 줄 단위 가사(lrclib)는 음절
+  // 시계가 없어서 "이 소절이 언제 끝났나"를 파일이 말해 주지 않는다. 2차 실측 8/19: 음절이
+  // 줄 시작 하나뿐이라 모든 소절이 1.2초 만에 "끝난" 것으로 계산돼 3·2·1 이 내내 떴다.
+  // 중앙값은 그 곡 자신에게서 나온 값이라 템포가 빠르든 느리든 따라간다.
+  const medianGap = useMemo(() => {
+    const gaps = lines.slice(1).map((l, i) => l.t - lines[i].t).filter((g) => g > 0).sort((a, b) => a - b);
+    return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 4;
+  }, [lines]);
+  // 카운트다운은 **아무도 안 부르고 있을 때만** — 전주와 간주가 그 자리다.
+  const TAIL = 1.2; // 마지막 음절이 울리는 여운 — LRC 는 시작만 적지 길이를 안 적는다
+  const restStart = idx < 0
+    ? 0
+    : lines[idx].timed
+      ? (lines[idx].syls[lines[idx].syls.length - 1]?.t ?? lines[idx].t) + TAIL
+      : lines[idx].t + medianGap; // 보통 소절만큼은 부르고 있다고 본다
   const left = nextT != null ? nextT - at : 0;
-  const countIn = nextT != null && at >= sungEnd && nextT - sungEnd >= 3
+  const countIn = nextT != null && at >= restStart && nextT - restStart >= 3
     && left > 0 && left <= 3.0 ? Math.ceil(left) : 0;
 
   const canRecord = typeof window !== 'undefined' && !!window.isSecureContext
