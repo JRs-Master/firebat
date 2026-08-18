@@ -2356,6 +2356,12 @@ def action_render(inp):
         return {"success": False,
                 "error": "빈 곡입니다 — notes/chords 를 채우거나, 드럼 솔로면 drumPattern 과 "
                          "bars 를 함께 주세요"}
+    # The last fuse after the memory diet: length itself is the resource. A malformed or
+    # absurd score must refuse here, not fight the OOM killer on a 949MB box (실측: 월광).
+    if total_beats * spb > 1800:
+        return {"success": False,
+                "error": f"렌더 길이 {round(total_beats * spb / 60)}분 — 30분을 넘는 렌더는 "
+                         "거부합니다. bars/score 를 줄이거나 구간을 나눠 주세요"}
     arr = (sorted(faithful_rows, key=lambda r: (r["beat"], r["part"])) if faithful
            else build_arrangement(events, chords, style, total_beats, band, feel))
     vocal_path = str(inp.get("vocalPath") or "").strip()
@@ -2746,6 +2752,12 @@ def action_selftest():
                           "score": {"bpm": 120, "bars": 2, "style": "rock",
                                     "drumPattern": [["kick", 0.0, 0.9], ["snare", 1.0],
                                                     ["conga_open", 2.5, 0.6]]}})
+    huge_len = action_render({"action": "render",
+                              "score": {"bpm": 20, "bars": 256,
+                                        "drumPattern": [["kick", 0.0]]}})
+    ck("a 30-minute-plus render refuses instead of fighting the OOM killer", True,
+       (huge_len.get("error") or "")[:30],
+       not huge_len.get("success") and "30분" in (huge_len.get("error") or ""))
     ck("a drum solo renders from drumPattern + bars alone", ["drum"],
        (solo.get("data") or {}).get("parts"),
        solo.get("success") and (solo.get("data") or {}).get("parts") == ["drum"])
