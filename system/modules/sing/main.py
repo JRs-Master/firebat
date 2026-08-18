@@ -1295,8 +1295,10 @@ def render_arrangement(arr, spb, total_beats):
     """The numpy backend — (stereo (n,2) array, mono reverb-send bus). The band is panned onto
     a stage and each voice contributes to one shared room (add_room applies it at the end)."""
     n_total = int(SR * spb * total_beats) + int(SR * 0.5)
-    out = np.zeros((n_total, 2))
-    send = np.zeros(n_total)
+    # float32, in place: a five-minute float64 stereo buffer alone is ~250MB and every `x * k`
+    # copy doubles it — the sum OOM-killed the 월광 render on the small server.
+    out = np.zeros((n_total, 2), dtype=np.float32)
+    send = np.zeros(n_total, dtype=np.float32)
     hits = _kit_bank()
     for e in arr:
         i = int(SR * spb * e["beat"])
@@ -1361,9 +1363,20 @@ def _reverb_ir(seconds, seed):
 
 
 def _fft_convolve(x, ir):
-    n = len(x) + len(ir) - 1
-    size = 1 << max(1, (n - 1).bit_length())
-    return np.fft.irfft(np.fft.rfft(x, size) * np.fft.rfft(ir, size), size)[:len(x)]
+    """Overlap-add in fixed blocks — a whole-piece FFT allocated complex128 at FULL length,
+    which on a five-minute piece is hundreds of MB and what OOM-killed the 월광 render on the
+    949MB server (실측 dmesg: python3 killed, rss 668MB). Peak memory is now a constant."""
+    n_ir = len(ir)
+    block = 1 << 20
+    size = 1 << max(1, (block + n_ir - 2).bit_length())
+    f_ir = np.fft.rfft(ir, size)
+    out = np.zeros(len(x), dtype=np.float32)
+    for a in range(0, len(x), block):
+        seg = x[a:a + block]
+        conv = np.fft.irfft(np.fft.rfft(seg, size) * f_ir, size)
+        keep = min(len(seg) + n_ir - 1, len(x) - a)
+        out[a:a + keep] += conv[:keep].astype(np.float32)
+    return out
 
 
 def add_room(stereo, send, wet=0.9):
@@ -1501,15 +1514,16 @@ def render_sf2(arr, spb, binp, font):
             tail = (r.stderr or r.stdout or b"")[-300:].decode("utf-8", "replace").strip()
             return None, f"fluidsynth exit {r.returncode}: {tail}"
         import soundfile as sf
-        data, sr = sf.read(wav_path, dtype="float64", always_2d=True)
+        data, sr = sf.read(wav_path, dtype="float32", always_2d=True)
         if data.shape[1] == 1:
             data = np.repeat(data, 2, axis=1)
         data = data[:, :2]
         if sr != SR:
             data = np.stack([resample_linear(data[:, 0], SR / sr),
-                             resample_linear(data[:, 1], SR / sr)], axis=1)
-        peak = np.max(np.abs(data)) or 1.0
-        return data / peak, None
+                             resample_linear(data[:, 1], SR / sr)], axis=1).astype(np.float32)
+        peak = float(np.max(np.abs(data))) or 1.0
+        data /= peak
+        return data, None
     except subprocess.TimeoutExpired:
         return None, "fluidsynth timed out"
     finally:
@@ -2252,10 +2266,13 @@ def read_wav_mono(path):
 
 def write_wav(path, x):
     # soundfile picks the container from the extension — .wav and .flac both PCM_16.
+    # Scaled IN PLACE: at five minutes the old `x / peak * 0.95` copy was another quarter-GB.
     import soundfile as sf
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    peak = np.max(np.abs(x)) or 1.0
-    sf.write(path, (x / peak * 0.95).astype(np.float32), SR, subtype="PCM_16")
+    x = np.asarray(x, dtype=np.float32)
+    peak = float(np.max(np.abs(x))) or 1.0
+    x *= 0.95 / peak
+    sf.write(path, x, SR, subtype="PCM_16")
 
 
 def action_render(inp):
@@ -2364,10 +2381,12 @@ def action_render(inp):
                 engine_used, sf2_font = "sf2", os.path.basename(font)
                 # The engine's own space is the MIDI default — we add no room of ours on top.
                 # (The vocal overlay still sends to add_room below: that voice is OUR sound.)
-                mix, send = stereo * 0.45, np.zeros(len(stereo))
+                stereo *= 0.45
+                mix, send = stereo, np.zeros(len(stereo), dtype=np.float32)
     if mix is None:
         mix, send = render_arrangement(arr, spb, total_beats)
-        mix, send = mix * 0.45, send * 0.45
+        mix *= 0.45
+        send *= 0.45
     if vocal_path:
         if not os.path.isfile(vocal_path):
             return {"success": False,
