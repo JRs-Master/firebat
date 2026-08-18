@@ -254,6 +254,12 @@
       }
     }
   },
+  "pageExport": [
+    { "action": "make_pptx", "label": "PPTX" },
+    { "action": "make_xlsx", "label": "XLSX" },
+    { "action": "make_docx", "label": "DOCX" },
+    { "action": "make_pdf", "label": "PDF" }
+  ],
   "settings_fields": [
     {
       "key": "masters",

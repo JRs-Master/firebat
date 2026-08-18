@@ -41,14 +41,10 @@ export type ConversationMeta = {
 
 type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'skills' | 'entities' | 'notes' | 'calendar' | 'library';
 
-// Page → document export. The panel only picks the docs action; the docs sysmod owns block
-// normalization, so the page body travels verbatim (pre-processing here would fork that ownership).
-const EXPORT_FORMATS = [
-  { label: 'PPTX', action: 'make_pptx' },
-  { label: 'XLSX', action: 'make_xlsx' },
-  { label: 'DOCX', action: 'make_docx' },
-  { label: 'PDF', action: 'make_pdf' },
-] as const;
+// Page → document export. Which modules offer it — and which actions — is DERIVED from module
+// config declarations (`pageExport`), not listed here: a hand list meant a new export module
+// needed a frontend edit. The module owns block normalization; the page body travels verbatim.
+interface ExportFormat { module: string; action: string; label: string }
 
 // label·tooltip = i18n: 렌더에서 t(`sidebar.${id}`) 로 해석(한글 워크스페이스/스킬/라이브러리/리콜,
 // 영어 사용자는 Workspace/Skills/Library/Recall). 여기선 id + Icon 만.
@@ -298,6 +294,17 @@ export function Sidebar({
   // 문서 내보내기 — 같은 ⋯ 메뉴 안에서 포맷 목록으로 전환된 항목 ID / 내보내는 중인 page slug.
   const [exportMenuFor, setExportMenuFor] = useState<string | null>(null);
   const [exportingPage, setExportingPage] = useState<string | null>(null);
+  // 내보내기 포맷 = 모듈 선언 파생(pageExport). 빈 목록 = 메뉴 자체가 안 뜬다.
+  const [exportFormats, setExportFormats] = useState<ExportFormat[]>([]);
+  useEffect(() => {
+    if (hubMode) return; // 내보내기는 admin 표면 — hub 는 라우트 인증부터 다르다
+    apiGet<{ success: boolean; exports?: ExportFormat[] }>(
+      '/api/settings/modules/page-exports', { category: 'sidebar' },
+    ).then((r) => {
+      if (r.success && Array.isArray(r.exports)) setExportFormats(r.exports);
+    }).catch(() => { /* 선언 조회 실패 = 메뉴 없음이 정답 */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hubMode]);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   // 비밀번호 입력 모달
   const [pwModal, setPwModal] = useState<{ type: 'page' | 'project'; target: string } | null>(null);
@@ -602,7 +609,7 @@ export function Sidebar({
   // ── 페이지 → 문서 내보내기 ──
   // 페이지 spec 의 body(= render 블록 배열)를 docs 시스템 모듈에 그대로 넘긴다. 블록 정규화는
   // 모듈 소유라 여기서는 spec 모양에서 배열만 꺼낸다. 경로 = 다른 패널과 같은 `/api/module/run`.
-  const handleExportPage = useCallback(async (slug: string, action: string, label: string) => {
+  const handleExportPage = useCallback(async (slug: string, module: string, action: string, label: string) => {
     setOpenMenu(null);
     setExportMenuFor(null);
     setSelectedItem(null);
@@ -629,7 +636,7 @@ export function Sidebar({
         error?: string;
       }>(
         '/api/module/run',
-        { module: 'docs', data: { action, title: headTitle || slug, blocks } },
+        { module, data: { action, title: headTitle || slug, blocks } },
         { category: 'sidebar' },
       );
       if (!res.success) {
@@ -679,10 +686,10 @@ export function Sidebar({
           <ChevronLeft size={10} /> 뒤로
         </button>
       )}
-      {EXPORT_FORMATS.map(f => (
+      {exportFormats.map(f => (
         <button
-          key={f.action}
-          onClick={(e) => { e.stopPropagation(); handleExportPage(slug, f.action, f.label); }}
+          key={`${f.module}:${f.action}`}
+          onClick={(e) => { e.stopPropagation(); handleExportPage(slug, f.module, f.action, f.label); }}
           className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
         >
           <Download size={10} /> {f.label}
@@ -695,6 +702,7 @@ export function Sidebar({
   //  · hover 기기 = CascadeMenuItem(표준, Menu.tsx) — 항목 옆에 서브메뉴, 호버로 열고 마우스로 닫힘.
   //  · hover 없는 기기 = 같은 메뉴를 포맷 목록으로 뒤집는 flip(터치에선 hover 가 발화하지 않는다).
   const renderExportEntry = (menuKey: string, slug: string) => {
+    if (exportFormats.length === 0) return null; // 선언한 모듈이 없으면 메뉴도 없다
     if (hoverNone) {
       return (
         <button

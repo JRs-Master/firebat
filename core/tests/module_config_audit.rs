@@ -38,6 +38,8 @@ const KNOWN_KEYS: &[&str] = &[
     "editorSchema", "unsupportedActions", "notify", "notifyJob", "paramSource",
     // inbound webhook (reader: ModuleManager::webhook_decl + grpc ModuleService Webhook*)
     "webhook",
+    // page -> document export offer (reader: /api/settings/modules/page-exports route -> Sidebar)
+    "pageExport",
 ];
 
 /// Field types the settings UI can render — READ OUT OF THE RENDERER, not listed here. A
