@@ -1788,6 +1788,21 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
     setShift(Math.round((a.currentTime - line.t) * 100) / 100);
   }, []);
 
+  // 같은 일을 겨냥 없이. 무대의 두 줄은 자리를 바꿔 가며 움직여서 누르기 어렵다(사용자) —
+  // 고정 버튼을 누르면 지금 화면에 가장 가깝게 서 있는 소절을 이 순간으로 끌어온다. 듣는
+  // 사람이 고르는 건 "지금"뿐이고, 어느 줄인지는 카드가 안다. 한 번에 반 소절 이상 어긋나
+  // 있었다면 이웃 줄로 붙을 수 있으니, 다음 소절에서 한 번 더 누르면 자리를 찾는다.
+  const nudgeToNow = useCallback(() => {
+    const a = audioRef.current;
+    if (!a || !lines.length) return;
+    const t = a.currentTime;
+    let best = lines[0];
+    for (const ln of lines) {
+      if (Math.abs(ln.t + shift - t) < Math.abs(best.t + shift - t)) best = ln;
+    }
+    setShift(Math.round((t - best.t) * 100) / 100);
+  }, [lines, shift]);
+
   const canRecord = typeof window !== 'undefined' && !!window.isSecureContext
     && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
     && typeof MediaRecorder !== 'undefined';
@@ -1903,6 +1918,10 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
             className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">−0.1초</button>
           <button type="button" onClick={() => setShift((v) => Math.round((v + 0.1) * 100) / 100)}
             className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+0.1초</button>
+          <button type="button" onClick={nudgeToNow} disabled={!lines.length}
+            className="px-2.5 py-1 text-[11px] rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40">
+            지금 이 소절
+          </button>
           <span className="px-1 text-[11px] tabular-nums text-slate-600 min-w-[4rem] text-center">
             {shift > 0 ? '+' : ''}{shift.toFixed(2)}초
           </span>
