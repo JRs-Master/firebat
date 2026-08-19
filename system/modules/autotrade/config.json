@@ -504,8 +504,7 @@
       "type": "number",
       "defaultValue": 50000,
       "tab": "전역",
-      "group": "한도",
-      "description": "원화 거래의 하루 실현 손실 한도입니다. 이 값을 넘으면 그날은 매매가 멈춥니다. 달러 등 다른 통화는 아래 칸에서 각자의 숫자로 정합니다."
+      "group": "한도"
     },
     {
       "key": "dailyLossLimits",

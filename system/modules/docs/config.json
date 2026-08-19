@@ -301,8 +301,7 @@
       "key": "masters",
       "type": "files",
       "defaultPerKind": true,
-      "accept": ".pptx,.xlsx,.docx,.hwpx,.pdf",
-      "label": "서식 보관함"
+      "accept": ".pptx,.xlsx,.docx,.hwpx,.pdf"
     }
   ]
 }

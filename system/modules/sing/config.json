@@ -349,8 +349,7 @@
     {
       "key": "scores",
       "type": "files",
-      "accept": "audio/*,.mid,.midi,.musicxml,.mxl,.xml,.lrc",
-      "label": "악보 보관함 (MIDI · 오디오)"
+      "accept": "audio/*,.mid,.midi,.musicxml,.mxl,.xml,.lrc"
     }
   ],
   "actionCatalog": [
