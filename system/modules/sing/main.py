@@ -512,8 +512,12 @@ PATCHES = {
 }
 
 
-def synth_note(freq, dur, patch="bass", vel=0.8):
-    """One note of `patch` — float array of `dur` seconds, peak-normalised to the patch gain."""
+def synth_note(freq, dur, patch="bass", vel=0.8, bend=None):
+    """One note of `patch` — float array of `dur` seconds, peak-normalised to the patch gain.
+
+    `bend` = BEND_CURVES 의 한 줄. 음 하나 안에서 음정이 움직인다(벤딩). 물리모델(ks) 패치는
+    줄 길이가 곧 음정이라 이 경로로는 못 휘고, 가산합성 패치만 휜다 — 일렉/디스토션 기타가
+    거기 있으니 정작 필요한 자리는 덮인다."""
     p = PATCHES.get(patch, PATCHES["bass"])
     n = max(1, int(SR * dur))
     t = np.arange(n) / SR
@@ -525,12 +529,20 @@ def synth_note(freq, dur, patch="bass", vel=0.8):
         bright = 0.55 + 0.45 * float(np.clip(vel, 0.0, 1.0))
         # One phase ramp, shared by every partial — this is what lets vibrato bend the whole
         # note as one instrument instead of detuning each harmonic separately.
+        # 벤딩과 비브라토는 같은 자리에서 만난다 — 둘 다 순간 주파수를 흔드는 일이라,
+        # 하나의 위상 램프에 곱해 두면 서로를 지우지 않는다.
+        curve = np.ones(n)
+        if bend:
+            fr = t / max(1e-6, dur)
+            curve = np.power(2.0, np.array([bend_at(bend, float(x)) for x in fr]) / 12.0)
         if p.get("vib"):
             rate, depth = p["vib"]
             # Vibrato that starts immediately sounds like a siren; players ease in.
             onset = np.minimum(1.0, t / 0.18)
-            inst = freq * (1.0 + depth * onset * np.sin(2 * np.pi * rate * t))
+            inst = freq * curve * (1.0 + depth * onset * np.sin(2 * np.pi * rate * t))
             ph = 2 * np.pi * np.cumsum(inst) / SR
+        elif bend:
+            ph = 2 * np.pi * np.cumsum(freq * curve) / SR
         else:
             ph = 2 * np.pi * freq * t
         partials = p.get("partials") or [(float(k), a) for k, a in enumerate(p.get("harm", []), 1)]
@@ -1000,8 +1012,8 @@ STYLE_FEEL = {
     "trot":      {"orn": "kkeokgi", "comp": "stabs", "bass": "twobeat", "swing": 0.3, "gate": 0.8},
     "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
-    "rock":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
-    "metal":     {"voicing_kind": "power", "comp": "chug", "bass": "alt", "swing": 0.0, "gate": 0.7},
+    "rock":      {"orn": "bendin", "voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
+    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
     "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
@@ -1011,7 +1023,7 @@ STYLE_FEEL = {
     "funk":      {"comp": "chank", "bass": "funk16", "swing": 0.0, "gate": 0.55},
     "punk":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.6},
     "jazz":      {"comp": "charleston", "bass": "walk", "swing": 0.65, "gate": 0.85},
-    "blues":     {"orn": "bend", "comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
+    "blues":     {"orn": "scoop", "comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
     "carol":     {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 0.95},
     "folk":      {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 1.0},
@@ -1100,6 +1112,28 @@ def smooth_voicing(notes, prev):
         return sorted(notes)
     center = sum(prev) / len(prev)
     return sorted(min((n - 12, n, n + 12), key=lambda c: abs(c - center)) for n in notes)
+
+
+BEND_CURVES = {
+    # (음 길이의 몇 %, 반음 단위 편차) — 음 안에서 음정이 움직이는 길. 기타리스트가 목표음을
+    # 곧게 짚지 않고 **아래에서 밀어 올려 도착**하는 그 손이고, 록 솔로와 블루스의 얼굴이다.
+    # 도착 뒤에는 0 이라 가락은 악보 그대로 남는다 — 표현이지 이조가 아니다.
+    "scoop":  [(0.0, -1.0), (0.18, 0.0), (1.0, 0.0)],   # 블루스 — 반음
+    "bendin": [(0.0, -2.0), (0.22, 0.0), (1.0, 0.0)],   # 록 솔로 — 온음("띠요오옹")
+}
+
+
+def bend_at(curve, frac):
+    """곡선 위 한 점 — 브레이크포인트 사이를 직선으로 잇는다."""
+    prev = curve[0]
+    for pt in curve:
+        if frac <= pt[0]:
+            if pt[0] == prev[0]:
+                return pt[1]
+            r = (frac - prev[0]) / (pt[0] - prev[0])
+            return prev[1] + (pt[1] - prev[1]) * r
+        prev = pt
+    return curve[-1][1]
 
 
 def _comp_hits(kind, beats, meter):
@@ -1244,7 +1278,13 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # curve only shapes notes that never declared one.
             own = vels[si] if si < len(vels) else None
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
-            if lead_orn == "bend" and beats >= 0.5:
+            if lead_orn in BEND_CURVES and beats >= 0.75:
+                # 진짜 벤딩 — 음을 둘로 쪼개지 않고 음정이 음 안에서 움직인다.
+                out.append({"beat": beat, "beats": beats, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": m,
+                            "program": prog["melody"], "vel": vel, "gate": gate,
+                            "bend": BEND_CURVES[lead_orn]})
+            elif lead_orn == "bend" and beats >= 0.5:
                 # 블루스의 스쿠프 — 반음 아래에서 밀어 올려 음에 도착한다. 기타·하모니카의
                 # 그 손이고, 곧게 시작하면 블루스로 안 들린다.
                 lead = min(0.14, beats * 0.2)
@@ -1587,7 +1627,8 @@ def render_arrangement(arr, spb, total_beats):
                     break
             seg = synth_note(freq_of_midi(e["pitch"]),
                              spb * held * float(e.get("gate", 1.0)),
-                             e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)))
+                             e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)),
+                             bend=e.get("bend"))
             key = e["part"]
         m = min(len(seg), n_total - i)
         seg = seg[:m]
@@ -1715,7 +1756,8 @@ def write_midi(arr, bpm, path):
                                    value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
         # (tick, kind) marks in one time-ordered pass — MIDI deltas are relative, so note-offs
         # and pedal changes have to be interleaved rather than appended per event. kind: 0 =
-        # note_off, 1 = note_on, 2 = CC64 (sustain — fluidsynth and every GM synth honor it).
+        # note_off, 1 = note_on, 2 = CC64 (sustain — fluidsynth and every GM synth honor it),
+        # 3 = pitch wheel (벤딩 — sf2 가 기본 엔진이라 여기에도 실려야 실제로 들린다).
         marks = []
         for e in rows:
             if e.get("pedal"):
@@ -1724,6 +1766,17 @@ def write_midi(arr, bpm, path):
                 marks.append((start, 2, 127, 0))
                 marks.append((end, 2, 0, 0))
                 continue
+            curve = e.get("bend")
+            if curve and part != "drum":
+                # GM 의 휠 기본 범위는 ±2반음 — 록의 온음 벤딩이 마침 그 끝이다. 음 하나를
+                # 16토막으로 나눠 값을 놓고, 끝나면 0 으로 돌려 다음 음을 오염시키지 않는다.
+                b0 = int(round(e["beat"] * tpb))
+                b1 = b0 + max(1, int(round(e["beats"] * tpb)))
+                for k in range(16):
+                    semis = bend_at(curve, k / 15.0)
+                    val = max(-8192, min(8191, int(round(semis / 2.0 * 8192))))
+                    marks.append((b0 + (b1 - b0) * k // 15, 3, val, 0))
+                marks.append((b1, 3, 0, 0))
             start = int(round(e["beat"] * tpb))
             pitch = DRUM_NOTE.get(e["drum"], 42) if part == "drum" else e["pitch"]
             vel = int(round(127 * float(e.get("vel", 0.71))))
@@ -1733,7 +1786,9 @@ def write_midi(arr, bpm, path):
         marks.sort(key=lambda m: (m[0], m[1]))
         prev = 0
         for tick, kind, a, b in marks:
-            if kind == 2:
+            if kind == 3:
+                tr.append(mido.Message("pitchwheel", channel=ch, pitch=a, time=tick - prev))
+            elif kind == 2:
                 tr.append(mido.Message("control_change", channel=ch, control=64, value=a,
                                        time=tick - prev))
             else:
