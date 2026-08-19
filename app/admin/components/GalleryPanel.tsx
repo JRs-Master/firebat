@@ -394,7 +394,7 @@ export function GalleryPanel({
               onClick={() => setKind(k)}
               className={`flex-1 px-1 py-1 text-[10px] font-bold rounded-md transition-colors ${
                 (k === 'music' ? MUSIC_KINDS.includes(kind) : kind === k)
-                  ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+                  ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
               }`}
             >
               {t(`gallery.kind_${k}`)}
