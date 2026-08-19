@@ -1656,35 +1656,28 @@ function parseLrc(text: string): KaraokeLine[] {
 
 /** 무대의 한 줄. 부르는 중이면 이미 지난 음절이 색으로 차오르고(그 순간의 글자가 경계),
  *  대기 줄이면 옅게 미리 선다. 빈 자리는 높이만 지켜 무대가 덜컹거리지 않게 한다. */
-function KaraokeLineRow({ line, active, at, align, until, onTap }: {
-  line?: KaraokeLine; active: boolean; at: number; align: 'left' | 'right'; until?: number;
-  onTap?: (line: KaraokeLine) => void;
+function KaraokeLineRow({ line, active, at, align }: {
+  line?: KaraokeLine; active: boolean; at: number; align: 'left' | 'right';
 }) {
   if (!line) return <p className="h-[1.9em]" aria-hidden />;
   const size = active
     ? 'text-[19px] sm:text-[21px] font-extrabold'
     : 'text-[15px] sm:text-[16px] font-semibold text-slate-400';
-  // 탭 = 정렬. 어느 줄이 "지금" 인지는 듣는 사람만 안다 — 그 줄을 누르면 그 순간이 그 줄의
-  // 시작이 된다. 0.1초 버튼을 열세 번 누르는 대신 한 번, 그리고 추정이 아니라 귀로 찍은 값이다.
-  const tap = onTap && line ? () => onTap(line) : undefined;
-  const tappable = tap
-    ? ' cursor-pointer hover:text-blue-500 transition-colors'
-    : '';
   // 파일이 음절 시계를 들고 왔을 때만 글자가 차오른다. 줄 시간뿐이면(lrclib 등) **어느 글자냐를
   // 지어내지 않는다** — 노래방은 정확해야 하고, 균등 배분은 그럴듯할 뿐 틀린 자리를 짚는다
   // (사용자 확정 8/19). 대신 줄 전체를 밝히고, 그 줄의 시간이 얼마나 갔는지만 막대로 말한다.
-  const box = `break-keep leading-snug ${align === 'right' ? 'text-right' : 'text-left'} ${size}${tappable}`;
+  const box = `break-keep leading-snug ${align === 'right' ? 'text-right' : 'text-left'} ${size}`;
   if (active && !line.timed) {
     // 줄 시간뿐인 가사는 줄 전체가 켜지는 것으로 끝낸다. 진행 막대를 달아 봤지만 그 폭도
     // 추정이라 싱크가 어긋나 보였고, 눈이 계속 그리로 갔다 (사용자: "정신사납다").
     return (
-      <p className={`${box} text-blue-600`} onClick={tap} title={tap ? '지금 들리는 소절이면 눌러서 맞추기' : undefined}>
+      <p className={`${box} text-blue-600`}>
         {line.text}
       </p>
     );
   }
   return (
-    <p className={`${box} transition-colors`} onClick={tap} title={tap ? '지금 들리는 소절이면 눌러서 맞추기' : undefined}>
+    <p className={`${box} transition-colors`}>
       {active
         ? line.syls.map((sy, k) => (
             <span key={k} className={at >= sy.t ? 'text-blue-600' : 'text-slate-800'}>{sy.s}</span>
@@ -1782,27 +1775,6 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
   // 듣는 사람이 "이 줄이 지금이다" 하고 누르면 그 자리가 정렬점이 된다. 어긋남은 그 .lrc 가
   // 어느 음원 판본 기준이냐에 달려 있어 계산으로는 못 찾는다(실측: 악보 악구와의 상관은 54줄 중
   // 17%밖에 안 맞았다) — 아는 것은 귀뿐이라, 귀가 찍은 한 번을 값으로 삼는다.
-  const tapSync = useCallback((line: KaraokeLine) => {
-    const a = audioRef.current;
-    if (!a) return;
-    setShift(Math.round((a.currentTime - line.t) * 100) / 100);
-  }, []);
-
-  // 같은 일을 겨냥 없이. 무대의 두 줄은 자리를 바꿔 가며 움직여서 누르기 어렵다(사용자) —
-  // 고정 버튼을 누르면 지금 화면에 가장 가깝게 서 있는 소절을 이 순간으로 끌어온다. 듣는
-  // 사람이 고르는 건 "지금"뿐이고, 어느 줄인지는 카드가 안다. 한 번에 반 소절 이상 어긋나
-  // 있었다면 이웃 줄로 붙을 수 있으니, 다음 소절에서 한 번 더 누르면 자리를 찾는다.
-  const nudgeToNow = useCallback(() => {
-    const a = audioRef.current;
-    if (!a || !lines.length) return;
-    const t = a.currentTime;
-    let best = lines[0];
-    for (const ln of lines) {
-      if (Math.abs(ln.t + shift - t) < Math.abs(best.t + shift - t)) best = ln;
-    }
-    setShift(Math.round((t - best.t) * 100) / 100);
-  }, [lines, shift]);
-
   const canRecord = typeof window !== 'undefined' && !!window.isSecureContext
     && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
     && typeof MediaRecorder !== 'undefined';
@@ -1889,10 +1861,8 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
           <p className="text-center text-[12px] text-slate-400">{note || '가사를 불러오는 중입니다'}</p>
         ) : (
           <>
-            <KaraokeLineRow line={lines[topIdx]} active={topIdx === idx} at={at} align="left"
-              until={lines[topIdx + 1]?.t} onTap={tapSync} />
-            <KaraokeLineRow line={lines[botIdx]} active={botIdx === idx} at={at} align="right"
-              until={lines[botIdx + 1]?.t} onTap={tapSync} />
+            <KaraokeLineRow line={lines[topIdx]} active={topIdx === idx} at={at} align="left" />
+            <KaraokeLineRow line={lines[botIdx]} active={botIdx === idx} at={at} align="right" />
           </>
         )}
         {countIn > 0 && (
@@ -1909,19 +1879,16 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
       <div className="px-3 py-2 border-t border-slate-100">
         <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {/* 어긋남은 그 .lrc 가 어느 음원 판본을 기준으로 찍혔느냐에 달렸다 — 곡마다도
-              파일마다도 다르니 값을 어디에 굳혀 두지 않는다(사용자). 탭이 찍은 값은 0.01초
-              단위라 ± 도 같은 단위로 더한다 — 0.1 격자에 반올림하면 1.27 에서 +0.1 이 1.40 으로
-              튄다. */}
+          {/* 어긋남은 그 .lrc 가 어느 음원 판본을 기준으로 찍혔느냐에 달렸다 — 곡마다도 파일마다도
+              다르니 값을 어디에 굳혀 두지 않는다(사용자). 큰 걸음으로 자리를 잡고 0.1초로 다듬는다. */}
           <span className="text-[11px] text-slate-500">가사 싱크</span>
-          <button type="button" onClick={() => setShift((v) => Math.round((v - 0.1) * 100) / 100)}
-            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">−0.1초</button>
-          <button type="button" onClick={() => setShift((v) => Math.round((v + 0.1) * 100) / 100)}
-            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+0.1초</button>
-          <button type="button" onClick={nudgeToNow} disabled={!lines.length}
-            className="px-2.5 py-1 text-[11px] rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40">
-            지금 이 소절
-          </button>
+          {[-1, -0.5, -0.1, 0.1, 0.5, 1].map((step) => (
+            <button key={step} type="button"
+              onClick={() => setShift((v) => Math.round((v + step) * 100) / 100)}
+              className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 tabular-nums">
+              {step > 0 ? '+' : '−'}{Math.abs(step)}초
+            </button>
+          ))}
           <span className="px-1 text-[11px] tabular-nums text-slate-600 min-w-[4rem] text-center">
             {shift > 0 ? '+' : ''}{shift.toFixed(2)}초
           </span>
