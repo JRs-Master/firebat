@@ -26,7 +26,9 @@ import numpy as np
 # 24000 cut everything above 12 kHz — cymbals, attack transients and the top of a synth patch all
 # live up there, and the patches below are tuned by ear. Doubling costs render time and file size,
 # both of which are a spike per render rather than anything resident.
-SR = 44100  # mono, everything resampled here on load
+SR = 48000  # everything resampled here on load. 48k is Opus's ONLY supported rate (libsndfile
+# refuses 44.1k outright), fluidsynth's own default, and what every browser decodes to anyway —
+# so the render, the engine and the container finally agree on one clock.
 
 # ── score ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -3013,10 +3015,15 @@ def _slug_name(raw):
     return "-".join(t for t in out.split("-") if t)[:40]
 
 
-def _movement_bounds(n_samples, spb, meter):
+# Bytes per sample-frame once encoded — measured on a 245s render (43.2MB wav → 23.8MB flac →
+# 4.5MB mp3). The mp3 number is why a full piece no longer has to be split at all.
+_FMT_BYTES = {"wav": 4.0, "flac": 2.2, "mp3": 0.42, "opus": 0.30}
+
+
+def _movement_bounds(n_samples, spb, meter, fmt="flac"):
     """[(start, end)] sample slices, bar-aligned, each expected to fit the media door."""
     cap = 48 * 1024 * 1024
-    est = int(n_samples * 4 * 0.65)  # conservative flac size guess
+    est = int(n_samples * _FMT_BYTES.get(fmt, 2.2))
     k = max(1, -(-est // cap))
     if k == 1:
         return [(0, n_samples)]
@@ -3031,13 +3038,20 @@ def _movement_bounds(n_samples, spb, meter):
     return bounds
 
 
-def _out_path_for(requested, score, engine_used, n_samples, base=None):
-    """Media import caps a file at ~50MB, and a full piece as 16-bit wav crosses it (실측:
-    353s = 62MB, import refused with mediaExportError, and the model's rational recovery was
-    a 42-second piece). FLAC is the same audio at ~60% under the cap — so length changes the
-    CONTAINER, never the length. The engine also salts the default name: a builtin re-render
-    of the same score must not overwrite the sf2 take (실측: it did, and the sf2 take died)."""
-    big = n_samples * 4 > 48 * 1024 * 1024
+def _out_path_for(requested, score, engine_used, n_samples, base=None, fmt="opus"):
+    """The render's file name and container.
+
+    `fmt` is the caller's choice; mp3 is the default because these files live on a small server
+    and are streamed to a phone (실측: one 245s MR = 43.2MB wav · 23.8MB flac · 4.5MB mp3, and
+    six test renders of one song had already taken 250MB of the media store). wav/flac stay one
+    word away for when the render is the master rather than something to listen to.
+
+    Length still changes the CONTAINER, never the music: a lossless render past the ~50MB media
+    door becomes flac (실측: 353s wav = 62MB, refused, and the model's rational recovery was to
+    compose a 42-second piece instead). The engine salts the name so a builtin re-render cannot
+    overwrite the sf2 take (실측: it did, and the sf2 take died)."""
+    if fmt == "wav" and n_samples * 4 > 48 * 1024 * 1024:
+        fmt = "flac"  # the same audio, still lossless, under the door
     path = str(requested or "").strip()
     if not path:
         h = hashlib.sha1((json.dumps(score, sort_keys=True) + ":" + engine_used)
@@ -3045,9 +3059,7 @@ def _out_path_for(requested, score, engine_used, n_samples, base=None):
         style = str((score or {}).get("style") or "").strip().lower()
         stem = "-".join(x for x in (_slug_name(base) or "sing",
                                     style if style and style != "none" else "", h) if x)
-        return f"data/sing/{stem}." + ("flac" if big else "wav")
-    if big and path.lower().endswith(".wav"):
-        return path[:-4] + ".flac"
+        return f"data/sing/{stem}.{fmt}"
     return path
 
 
@@ -3061,14 +3073,19 @@ def read_wav_mono(path):
 
 
 def write_wav(path, x):
-    # soundfile picks the container from the extension — .wav and .flac both PCM_16.
+    # soundfile picks the container from the extension — wav/flac ride PCM_16, mp3 goes through
+    # libsndfile's LAME encoder (subtype MPEG_LAYER_III, its own default rate ~150 kbps VBR).
     # Scaled IN PLACE: at five minutes the old `x / peak * 0.95` copy was another quarter-GB.
     import soundfile as sf
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     x = np.asarray(x, dtype=np.float32)
     peak = float(np.max(np.abs(x))) or 1.0
     x *= 0.95 / peak
-    sf.write(path, x, SR, subtype="PCM_16")
+    ext = path.rsplit(".", 1)[-1].lower()
+    if ext == "opus":
+        sf.write(path, x, SR, format="OGG", subtype="OPUS")
+    else:
+        sf.write(path, x, SR, subtype="MPEG_LAYER_III" if ext == "mp3" else "PCM_16")
 
 
 def action_lyrics(inp):
@@ -3323,8 +3340,12 @@ def action_render(inp):
         send += v * 0.18
     if np.any(send):
         mix = add_room(mix, send)
+    fmt = str(inp.get("audioFormat") or "opus").strip().lower()
+    if fmt not in _FMT_BYTES:
+        return {"success": False,
+                "error": "audioFormat must be opus | mp3 | flac | wav (omit = opus)"}
     out_path = _out_path_for(inp.get("outPath"), score, engine_used, len(mix),
-                             base=inp.get("scoreMediaPath"))
+                             base=inp.get("scoreMediaPath"), fmt=fmt)
     lrc_path = None
     if lrc_text:
         lrc_path = out_path.rsplit(".", 1)[0] + ".lrc"
@@ -3341,7 +3362,8 @@ def action_render(inp):
     # cut on bar lines. Lossless and playable everywhere — ogg is free but Safari will not play
     # it, so splitting beats transcoding.
     part_paths = []
-    bounds = _movement_bounds(len(mix), spb, feel["meter"])
+    bounds = _movement_bounds(len(mix), spb, feel["meter"],
+                              out_path.rsplit(".", 1)[-1].lower())
     if len(bounds) > 1:
         stem0, ext0 = out_path.rsplit(".", 1)
         for i, (a, b) in enumerate(bounds, 1):
@@ -3412,7 +3434,8 @@ def action_render(inp):
     # declared door every module's files leave through. The wav and its .mid are one product in
     # two forms, so they travel as one array.
     stem = os.path.basename(out_path).rsplit(".", 1)[0]
-    audio_type = "audio/flac" if out_path.lower().endswith(".flac") else "audio/wav"
+    audio_type = {"flac": "audio/flac", "mp3": "audio/mpeg", "opus": "audio/ogg"}.get(
+        out_path.rsplit(".", 1)[-1].lower(), "audio/wav")
     if part_paths:
         imports = [{"path": pp, "contentType": audio_type,
                     "filenameHint": os.path.basename(pp).rsplit(".", 1)[0]} for pp in part_paths]
@@ -3776,17 +3799,20 @@ def action_selftest():
         os.remove("data/sing/selftest-solo.wav")
     small = _out_path_for(None, score, "builtin", SR * 60)
     huge = _out_path_for(None, score, "builtin", SR * 400)
-    ck("an hour under the cap stays wav, a full piece goes flac", (".wav", ".flac"),
-       (small[-4:], huge[-5:]), small.endswith(".wav") and huge.endswith(".flac"))
+    ck("length no longer changes the default container — opus either way", (".opus", ".opus"),
+       (small[-5:], huge[-5:]), small.endswith(".opus") and huge.endswith(".opus"))
     ck("the engine salts the default name (no cross-engine overwrite)", True,
        _out_path_for(None, score, "sf2", SR * 60) != small,
        _out_path_for(None, score, "sf2", SR * 60) != small)
-    forced = _out_path_for("data/sing/x.wav", score, "sf2", SR * 400)
-    ck("an explicit .wav over the cap is re-containered, same stem", "data/sing/x.flac",
-       forced, forced == "data/sing/x.flac")
+    forced = _out_path_for(None, score, "sf2", SR * 400, fmt="wav")
+    ck("a LOSSLESS render past the media door becomes flac, never a shorter piece",
+       ".flac", forced[-5:], forced.endswith(".flac"))
+    kept = _out_path_for(None, score, "sf2", SR * 400, fmt="mp3")
+    ck("a lossy container has no door to cross, so it is left alone",
+       ".mp3", kept[-4:], kept.endswith(".mp3"))
     named = _out_path_for(None, dict(score, style="pop"), "sf2", SR * 60, base="캐논 변주곡.mid")
     ck("the default filename reads as the piece, not a hash", True, named,
-       "캐논-변주곡" in named and "-pop-" in named and named.endswith(".wav"))
+       "캐논-변주곡" in named and "-pop-" in named and named.endswith(".opus"))
     five = parse_score(dict(score, meter="5/4", style="jazz"))
     ck("5/4 reads the numerator and parses", 5, (five[5] or {}).get("meter"),
        five[6] is None and five[5]["meter"] == 5)

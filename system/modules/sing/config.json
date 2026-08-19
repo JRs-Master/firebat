@@ -261,6 +261,20 @@
         ],
         "description": "[render] sf2 = system FluidSynth + GM SoundFont — realistic instruments; the server enables it with `apt install fluidsynth fluid-soundfont-gm` and the module finds both on its own. builtin = the module's own synth. Omit = auto: sf2 when installed, else builtin."
       },
+      "audioFormat": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "opus",
+          "mp3",
+          "flac",
+          "wav",
+          null
+        ],
+        "description": "[render] Container for the rendered audio. Omit = opus — the same 4-minute render is ~3MB there against ~4.5MB mp3, ~24MB flac and ~43MB wav, and it is transparent at that size. mp3 is the compatibility choice for a player that cannot open Ogg/Opus; flac or wav when the file is a master to keep or edit rather than something to listen to."
+      },
       "bpm": {
         "type": [
           "number",
@@ -350,6 +364,7 @@
         "lyrics",
         "style",
         "engine",
+        "audioFormat",
         "bpm",
         "humanize",
         "voicing",
