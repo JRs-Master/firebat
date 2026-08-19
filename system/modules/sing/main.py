@@ -2042,13 +2042,46 @@ def split_vocal(x, count):
     return [core[edges[i]:edges[i + 1]] for i in range(count)]
 
 
+def vocal_octave_shift(vocal, events):
+    """How many octaves the tune has to move to be **singable by this voice**.
+
+    A singer given a song out of their range transposes it; they do not squeak through it.
+    We were doing the squeaking: the melody's written pitches went straight to the retuner, so
+    a score composed up in the fifth octave (실측 8/19: the model wrote one by hand) dragged a
+    speaking-voice take an octave or more above where it lives, and the result was a thin
+    chipmunk over a normal backing — 사용자: "보컬음이 아니고 더 높게 부른다".
+
+    Whole octaves only: the tune, the intervals and the key all survive; only the register
+    moves. The reference is the take's own measured pitch, not a table of voice types, because
+    the take is what has to do the singing."""
+    freqs = [f for ev in events for f, _ in ev["segments"] if f and f > 0]
+    if not freqs or vocal is None or len(vocal) < int(SR * 0.2):
+        return 0
+    med_target = sorted(freqs)[len(freqs) // 2]
+    # The speaker's own pitch, read off a middle slice (the ends hold breath and silence).
+    a, b = int(len(vocal) * 0.25), int(len(vocal) * 0.75)
+    natural = detect_f0(vocal[a:b])
+    if not natural or natural <= 0:
+        return 0
+    # 노래는 말보다 **위에서** 한다 — 평상 음높이 그 자리를 겨누면 정상적인 멜로디까지 끌어
+    # 내린다(첫 판에서 C4~G4 가 한 옥타브 내려갔다). 중심은 말소리의 한 옥타브 위로 둔다.
+    dev = math.log2((natural * 2.0) / med_target)
+    # 그리고 **한 옥타브 넘게 벗어났을 때만** 움직인다. 노래는 원래 넓게 쓰는 것이고, 여기서
+    # 고치려는 건 부를 수 없는 자리에 적힌 악보 하나지 음역 취향이 아니다.
+    if abs(dev) < 1.0:
+        return 0
+    return int(max(-2, min(2, round(dev))))
+
+
 def render_vocal(vocal, events, spb):
     """The whole take, syllable by syllable, onto the score's pitches and beats."""
     pw = try_pyworld()
     chunks = split_vocal(vocal, len(events))
+    shift = vocal_octave_shift(vocal, events)
     out = []
     for ev, chunk in zip(events, chunks):
         for i, (freq, beats) in enumerate(ev["segments"]):
+            freq = freq * (2.0 ** shift)
             target_len = int(SR * spb * beats)
             # A melisma re-sings the same chunk on each pitch; plain syllables use it once.
             src = chunk if len(chunk) else np.zeros(target_len)

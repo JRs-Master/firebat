@@ -54,7 +54,7 @@
           "boolean",
           "null"
         ],
-        "description": "true = SING the syllables: the framework synthesizes a spoken TTS take of notes[].syl and this module retunes it onto the notes (needs a server TTS key; 64 syllables max — one verse). Omitted/false = instrumental."
+        "description": "[render] true = SING it: the framework synthesizes a spoken TTS take and this module retunes it onto the melody's notes. The words come from the score's own lyrics, or from `lyrics` when the score has none. Needs a server TTS key; 64 syllables max — one verse. Omitted/false = instrumental. A melody written far outside a singable register is folded by whole octaves onto the take's own range, the way a singer transposes a song."
       },
       "score": {
         "type": "object",
@@ -211,7 +211,7 @@
           "string",
           "null"
         ],
-        "description": "Syllable string to lay onto MIDI notes in order (used only when the MIDI has no lyric events). Whitespace ignored; extra notes become melisma '-'."
+        "description": "[render] Syllables to lay onto an existing score's notes, in order — works for ANY score passed as scoreMediaPath (MIDI or MusicXML), not just MIDI, and is used when that score carries no lyrics of its own. This is how you sing a shelved guide melody: pass the score's alias as scoreMediaPath, the words here, and vocal:true. Writing a new `score` by hand throws the guide melody away. Whitespace ignored; extra notes become melisma '-'."
       },
       "style": {
         "type": [
