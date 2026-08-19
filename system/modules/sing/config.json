@@ -349,7 +349,7 @@
     {
       "key": "scores",
       "type": "files",
-      "accept": "audio/*,.mid,.midi,.musicxml,.mxl,.xml,.lrc"
+      "accept": ".mid,.midi,.mxl,.musicxml,.xml,.lrc"
     }
   ],
   "actionCatalog": [
