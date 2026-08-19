@@ -1880,9 +1880,10 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
         <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {/* 어긋남은 그 .lrc 가 어느 음원 판본을 기준으로 찍혔느냐에 달렸다 — 곡마다도 파일마다도
-              다르니 값을 어디에 굳혀 두지 않는다(사용자). 큰 걸음으로 자리를 잡고 0.1초로 다듬는다. */}
+              다르니 값을 어디에 굳혀 두지 않는다(사용자). 걸음은 둘이면 충분하다: 0.5 로 자리를
+              잡고 0.1 로 다듬는다(실측 1.3초 = 다섯 번). */}
           <span className="text-[11px] text-slate-500">가사 싱크</span>
-          {[-1, -0.5, -0.1, 0.1, 0.5, 1].map((step) => (
+          {[-0.5, -0.1, 0.1, 0.5].map((step) => (
             <button key={step} type="button"
               onClick={() => setShift((v) => Math.round((v + step) * 100) / 100)}
               className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 tabular-nums">
