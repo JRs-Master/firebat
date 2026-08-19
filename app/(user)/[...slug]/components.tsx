@@ -1699,7 +1699,6 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
   const [note, setNote] = useState<string | null>(null);
   const [cur, setCur] = useState(0);
   const [shift, setShift] = useState(Number(offset) || 0);
-  const [menu, setMenu] = useState(false);
   const [recState, setRecState] = useState<'idle' | 'arming' | 'recording'>('idle');
   const [takes, setTakes] = useState<{ mix: string; voice: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -1855,25 +1854,11 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
         </span>
         <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700 truncate">{title || '노래방'}</span>
         {lines.length > 0 && <span className="shrink-0 text-[11px] text-slate-400 tabular-nums">{lines.length}줄</span>}
-        {/* 내려받기는 재생기의 ⋮ 안에 있는 게 이 카드의 관례다 — 브라우저 기본 메뉴에는 MR 밖에
-            못 넣으므로(가사는 우리 파일이다) 카드가 자기 메뉴를 가진다. */}
-        <span className="relative shrink-0">
-          <button type="button" aria-label="파일 내려받기" onClick={() => setMenu((v) => !v)}
-            className="w-7 h-7 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 leading-none">⋮</button>
-          {menu && (
-            <>
-              <span className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-              <span className="absolute right-0 top-8 z-20 min-w-[7rem] rounded-lg border border-slate-200 bg-white shadow-lg py-1 flex flex-col">
-                <a href={audioUrl} download onClick={() => setMenu(false)}
-                  className="px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50">MR 저장</a>
-                {lrcUrl && (
-                  <a href={lrcUrl} download onClick={() => setMenu(false)}
-                    className="px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50">가사 저장</a>
-                )}
-              </span>
-            </>
-          )}
-        </span>
+        {/* MR 은 재생기 기본 ⋮ 의 "다운로드"가 이미 준다 — 브라우저가 그리는 메뉴라 항목을
+            더할 수 없어서, 우리 파일인 가사만 여기 남는다(두 번째 ⋮ 를 만들지 않는다). */}
+        {lrcUrl && (
+          <a href={lrcUrl} download className="shrink-0 text-[11px] text-slate-500 hover:text-slate-700">가사 저장</a>
+        )}
       </div>
 
       <div className="relative h-32 sm:h-36 px-5 py-4 bg-slate-50/60 flex flex-col justify-center gap-1.5">
