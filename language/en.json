@@ -993,6 +993,10 @@
   },
   "module_settings": {
     "file_pick": "Choose file",
+    "file_from_media": "From media library",
+    "media_pick_search": "Search by name",
+    "media_pick_empty": "No matching file in the library",
+    "media_pick_close": "Close",
     "files_alias": "Alias (the name you call it in chat)",
     "files_default": "Use as the default for this kind"
   }

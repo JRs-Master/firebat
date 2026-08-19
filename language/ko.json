@@ -993,6 +993,10 @@
   },
   "module_settings": {
     "file_pick": "파일 선택",
+    "file_from_media": "미디어에서 불러오기",
+    "media_pick_search": "이름으로 검색",
+    "media_pick_empty": "보관함에 맞는 파일이 없습니다",
+    "media_pick_close": "닫기",
     "files_alias": "별칭 (채팅에서 부르는 이름)",
     "files_default": "이 종류의 대표 파일로 씁니다"
   }

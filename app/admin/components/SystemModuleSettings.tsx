@@ -2073,6 +2073,74 @@ function parseFileEntries(raw: string): FileEntry[] {
 const extOf = (name: string) => (name.includes('.') ? name.split('.').pop()!.toLowerCase() : '');
 
 /** files 필드 — 여러 파일을 올려 두고 별칭으로 부르는 보관함. */
+/** 보관함에서 고르기 — 올리는 문과 **같은 자리**에 선다. 값이 참조 목록이라 삭제가 참조만
+ *  걷는데(원본은 미디어 소유), 등록이 업로드 한 문뿐이면 이미 가진 파일을 걸 방법이 없었다.
+ *  문 둘이 나란히 있어야 그 비대칭이 사라진다(2026-08-19 사용자). `accept` 로 거른다. */
+function MediaPickPanel({ accept, onPick, onClose, t }: {
+  accept: string; onPick: (it: { url: string; name: string }) => void;
+  onClose: () => void; t: (k: string) => string;
+}) {
+  const [items, setItems] = useState<Array<{ slug: string; ext: string; filenameHint?: string; createdAt: number; scope?: string }>>([]);
+  const [q, setQ] = useState('');
+  const [loading, setLoading] = useState(true);
+  // accept 는 필드 선언이 정한다 — 여기서 확장자 목록을 다시 적지 않는다.
+  const exts = accept.split(',').map((x) => x.trim().replace(/^\./, '').toLowerCase())
+    .filter((x) => x && x !== '*/*' && !x.includes('/'));
+  useEffect(() => {
+    let alive = true;
+    const params = new URLSearchParams({ limit: '200', offset: '0', scope: 'user', sort: 'newest' });
+    fetch(`/api/media/list?${params.toString()}`)
+      .then((r) => r.json())
+      .then((j) => { if (alive) setItems(Array.isArray(j?.items) ? j.items : []); })
+      .catch(() => { if (alive) setItems([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+  const shown = items.filter((it) => {
+    if (exts.length && !exts.includes((it.ext || '').toLowerCase())) return false;
+    if (!q.trim()) return true;
+    return (it.filenameHint || it.slug).toLowerCase().includes(q.trim().toLowerCase());
+  });
+  return (
+    <div className="border border-slate-200 rounded-lg bg-slate-50 p-2 flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text" value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder={t('module_settings.media_pick_search')}
+          className="flex-1 min-w-0 px-2 py-1 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:border-blue-400"
+        />
+        <button type="button" onClick={onClose}
+          className="shrink-0 px-2 py-1 text-[12px] text-slate-500 hover:text-slate-700">
+          {t('module_settings.media_pick_close')}
+        </button>
+      </div>
+      <div className="max-h-56 overflow-y-auto flex flex-col gap-1">
+        {loading ? (
+          <p className="text-[11px] text-slate-400 px-1 py-2">{t('common.loading')}</p>
+        ) : shown.length === 0 ? (
+          <p className="text-[11px] text-slate-400 px-1 py-2">{t('module_settings.media_pick_empty')}</p>
+        ) : shown.map((it) => {
+          const name = `${it.filenameHint || it.slug}.${it.ext}`;
+          return (
+            <button
+              key={`${it.scope ?? 'user'}-${it.slug}`}
+              type="button"
+              onClick={() => onPick({ url: `/${it.scope ?? 'user'}/media/${it.slug}.${it.ext}`, name })}
+              className="flex items-center gap-2 text-left bg-white border border-slate-200 rounded-md px-2 py-1 hover:border-blue-400"
+            >
+              <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1 py-0.5">{it.ext}</span>
+              <span className="min-w-0 flex-1 text-[12px] text-slate-700 truncate">{it.filenameHint || it.slug}</span>
+              <span className="shrink-0 text-[10px] text-slate-400 tabular-nums">
+                {new Date(it.createdAt).toLocaleDateString()}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function FilesField({ label, description, accept, defaultPerKind, value, onChange, t }: {
   label: string; description?: string; accept: string; defaultPerKind: boolean;
   value: string; onChange: (json: string) => void; t: (k: string) => string;
@@ -2080,6 +2148,7 @@ function FilesField({ label, description, accept, defaultPerKind, value, onChang
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [picking, setPicking] = useState(false);
   const entries = parseFileEntries(value);
   const commit = (next: FileEntry[]) => onChange(JSON.stringify(next));
   const pick = async (f: File) => {
@@ -2116,10 +2185,37 @@ function FilesField({ label, description, accept, defaultPerKind, value, onChang
       extOf(e.name) === kind ? { ...e, default: k === i } : e));
   };
   const remove = (i: number) => commit(entries.filter((_, k) => k !== i));
+  const addFromMedia = (it: { url: string; name: string }) => {
+    setPicking(false);
+    if (entries.some((e) => e.url === it.url)) return; // 같은 파일을 두 번 걸지 않는다
+    commit([...entries, { url: it.url, name: it.name, alias: it.name.replace(/\.[^.]+$/, '') }]);
+  };
   return (
     <>
       <span className="text-xs sm:text-sm font-bold text-slate-700">{label}</span>
       <div className="flex flex-col gap-1.5">
+        {/* 문 둘이 먼저, 목록이 그 밑 — 늘어난 목록 끝까지 스크롤해야 파일을 더할 수 있으면
+            등록이 목록에 밀린다. 문은 항상 라벨 바로 아래 같은 자리에 있다. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => inputRef.current?.click()}
+            className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            {busy ? t('common.loading') : t('module_settings.file_pick')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPicking((v) => !v)}
+            className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            {t('module_settings.file_from_media')}
+          </button>
+        </div>
+        {picking && (
+          <MediaPickPanel accept={accept} onPick={addFromMedia} onClose={() => setPicking(false)} t={t} />
+        )}
         {entries.map((e, i) => (
           <div key={`${e.url}-${i}`} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
             {defaultPerKind && (
@@ -2149,16 +2245,6 @@ function FilesField({ label, description, accept, defaultPerKind, value, onChang
             </button>
           </div>
         ))}
-        <div>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => inputRef.current?.click()}
-            className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
-          >
-            {busy ? t('common.loading') : t('module_settings.file_pick')}
-          </button>
-        </div>
       </div>
       <input
         ref={inputRef}
