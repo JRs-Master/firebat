@@ -1884,8 +1884,10 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
       <div className="px-3 py-2 border-t border-slate-100">
         <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
         {/* 한 줄에 들어가야 한다(모바일 실측: 저장 링크와 안내 문구가 두 줄로 접혔다) — 저장은
-            헤더로 올라갔고, 버튼은 숫자만 남기고, 좁으면 라벨이 먼저 빠진다. */}
+            헤더로 올라갔고 버튼은 숫자만 남는다. 라벨은 안 뺀다: ± 숫자만 남으면 무엇을 미는
+            버튼인지 화면이 말하지 않는다(모바일 실측). 좁으면 접지 말고 옆으로 민다. */}
         <div className="mt-2 flex items-center gap-1 overflow-x-auto">
+          <span className="shrink-0 text-[11px] text-slate-500">가사 싱크</span>
           {[-0.5, -0.1, 0.1, 0.5].map((step) => (
             <button key={step} type="button"
               onClick={() => setShift((v) => Math.round((v + step) * 100) / 100)}
@@ -1893,8 +1895,8 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
               {step > 0 ? '+' : '−'}{Math.abs(step)}
             </button>
           ))}
-          <span className="shrink-0 px-1 text-[11px] tabular-nums text-slate-500 whitespace-nowrap">
-            가사 싱크 <span className="text-slate-700">{shift > 0 ? '+' : ''}{shift.toFixed(2)}초</span>
+          <span className="shrink-0 px-1 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
+            {shift > 0 ? '+' : ''}{shift.toFixed(2)}초
           </span>
           {shift !== 0 && (
             <button type="button" onClick={() => setShift(0)}
