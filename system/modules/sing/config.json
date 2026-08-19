@@ -331,6 +331,13 @@
       "path": {
         "type": "string",
         "description": "[preview] The score file to hear: a media path, a URL, or a shelf alias."
+      },
+      "voice": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render] Which TTS voice sings, by the server provider's own voice name. Omit to use the voice configured in settings. Set it only to carry a request that was made in words (\"여자 목소리로\", \"낮은 남자 목소리로\") — the singer is not the model's choice. Choosing a voice that fits the song's register is the real fix for a melody that sits too high or too low; the octave fold is only the safety net under it."
       }
     }
   },

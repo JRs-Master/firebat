@@ -3390,6 +3390,7 @@ def action_render(inp):
     score = inp.get("score")
     parsed_from = None
     own_lyrics = None
+    voice = str(inp.get("voice") or "").strip()
     if not score:
         # No inline score — the uploaded one (input path or the module's own setting) steps in.
         media_path, err = resolve_score_media(inp)
@@ -3523,6 +3524,10 @@ def action_render(inp):
             "service": "tts",
             "text": " ".join(syls),
             "style": "또박또박, 음절 하나하나를 또렷하게, 일정한 속도로 읽어 주세요.",
+            # 목소리는 곡이 고른다 — 프레임워크는 원래 이 칸을 넘겨 주고 있었는데(module.rs 의
+            # `_prepare.voice`) 우리가 안 보내서 늘 서버 기본값으로 불렀다. 음역을 옥타브로 접는
+            # 것은 키가 안 맞을 때의 응급처치고, 애초에 맞는 목소리로 부르는 것이 본래 순서다.
+            **({"voice": voice} if voice else {}),
             "into": "vocalPath",
         }}}
     total_beats = sum(b for ev in events for _, b in ev["segments"])
