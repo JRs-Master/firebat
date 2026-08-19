@@ -1003,15 +1003,15 @@ STYLE_FEEL = {
     "rock":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
     "metal":     {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
-    "dance":     {"comp": "stabs", "bass": "alt", "swing": 0.0, "gate": 0.7},
-    "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
-    "rocknroll": {"comp": "quarters", "bass": "alt", "swing": 0.6, "gate": 0.75},
-    "hiphop":    {"comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
-    "country":   {"comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
-    "funk":      {"comp": "stabs", "bass": "alt", "swing": 0.0, "gate": 0.55},
+    "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
+    "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
+    "rocknroll": {"comp": "quarters", "bass": "boogie", "swing": 0.6, "gate": 0.75},
+    "hiphop":    {"laidback": 0.05, "comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
+    "country":   {"orn": "grace", "comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
+    "funk":      {"comp": "chank", "bass": "funk16", "swing": 0.0, "gate": 0.55},
     "punk":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.6},
-    "jazz":      {"comp": "stabs", "bass": "walk", "swing": 0.65, "gate": 0.85},
-    "blues":     {"comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
+    "jazz":      {"comp": "charleston", "bass": "walk", "swing": 0.65, "gate": 0.85},
+    "blues":     {"orn": "bend", "comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
     "carol":     {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 0.95},
     "folk":      {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 1.0},
@@ -1113,6 +1113,20 @@ def _comp_hits(kind, beats, meter):
         return [(float(b), 0.9, 0.74 if b % 2 == 0 else 0.64) for b in range(int(beats))]
     if kind == "eighths":  # driving on-and-off strokes — the rock/pop rhythm guitar hand
         return [(s * 0.5, 0.5, 0.68 if s % 2 == 0 else 0.55) for s in range(int(beats * 2))]
+    if kind == "charleston":
+        # 재즈 컴핑은 박을 짚지 않는다 — 1박과 2박 뒤(찰스턴)에 짧게 놓고 비운다. 정박에 코드를
+        # 깔면 워킹 베이스와 라이드가 이미 하고 있는 일을 세 번째로 반복하게 된다.
+        hits = []
+        for bar0 in np.arange(0.0, beats, 4.0):
+            for off, vel in ((0.0, 0.62), (1.5, 0.7)):
+                if bar0 + off < beats:
+                    hits.append((float(bar0 + off), 0.7, vel))
+        return hits
+    if kind == "chank":
+        # 펑크 기타의 커팅 — 16분 뒷박을 아주 짧게 긁는다. 길이가 짧은 것이 핵심이라
+        # 화음이 울리지 않고 리듬이 된다.
+        return [(s * 0.25, 0.12, 0.6 if s % 4 == 2 else 0.4)
+                for s in range(int(beats * 4)) if s % 4 != 0]
     return [(0.0, float(beats), 0.6)]  # pad
 
 
@@ -1120,7 +1134,9 @@ def _bass_line(kind, root_midi, beats, next_root_midi, meter, semis=None):
     """(offset, dur, pitch, vel) for one chord segment. The bass register is root-12 as before.
     twobeat = root/5th alternation (the 뽕짝 walk) · alt = marching quarters · walk = the jazz
     floor (root, third, fifth in quarters, a dominant pickup into the next chord — quality-aware,
-    so a minor chord walks a minor third) · hold = whole note + pickup."""
+    so a minor chord walks a minor third) · hold = whole note + pickup ·
+    offbeat = the house pump (eighth offbeats, out of the four-on-the-floor kick's way) ·
+    funk16 = stabbed sixteenths with octave pops · boogie = 1-3-5-6-5-3 under a shuffle."""
     b = root_midi - 12
     # Register floor (실측: 비발디 사계가 "저주파처럼 웅웅" — the file's roots are already low,
     # and our octave-down shove landed the hold line at 30-40Hz). A real double bass bottoms
@@ -1152,6 +1168,23 @@ def _bass_line(kind, root_midi, beats, next_root_midi, meter, semis=None):
     if kind == "alt":
         return [(float(i), 0.9, fifth if i % 2 else b, 0.62 if i % 2 else 0.78)
                 for i in range(int(beats))]
+    if kind == "offbeat":
+        # 하우스·EDM 의 펌프 — 킥이 정박을 다 먹으니 베이스는 그 사이 8분 뒷박에만 선다.
+        # 정박에 같이 서면 킥과 겹쳐 저역이 뭉치고, 비켜서면 곡이 앞으로 밀린다.
+        return [(i * 0.5 + 0.5, 0.42, b, 0.74) for i in range(int(beats * 2))
+                if i * 0.5 + 0.5 < beats]
+    if kind == "funk16":
+        # 펑크 베이스는 걷지 않고 **찌른다** — 근음을 16분으로 끊어 치고 옥타브로 튕긴다(팝).
+        # 마디를 채우는 게 아니라 구멍을 남기는 것이 이 장르의 문법이다.
+        slots = [(0.0, b, 0.9), (0.75, b, 0.6), (1.5, b + 12, 0.72), (1.75, b, 0.55),
+                 (2.5, b, 0.85), (3.25, b + 12, 0.7), (3.5, b, 0.6)]
+        return [(o, 0.22, pit, v) for o, pit, v in slots if o < beats]
+    if kind == "boogie":
+        # 로큰롤·부기우기의 그 손 — 근음 3음 5음 6음을 올라갔다 내려온다(1-3-5-6-5-3).
+        # 셔플(swing)과 짝이라 8분이 길고-짧게 흔들린다.
+        seq = [b, b + 4, b + 7, b + 9, b + 7, b + 4]
+        return [(i * 0.5, 0.45, seq[i % len(seq)], 0.76 if i % 2 == 0 else 0.6)
+                for i in range(int(beats * 2))]
     # hold — and walk into the next chord instead of teleporting there. The pickup is the
     # NEXT chord's fifth (its dominant), never a chromatic neighbour: a half-step approach
     # put F under an A-minor bar and B♭ under the Canon's D major, and both were plainly sour.
@@ -1179,6 +1212,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     defaults = STYLE_FEEL.get(style, STYLE_FEEL["trot"])
     voicing_kind = defaults.get("voicing_kind", "")
     lead_orn = defaults.get("orn", "")
+    laidback = float(defaults.get("laidback", 0.0))
     feel = feel or {}
     meter = int(feel.get("meter") or 4)
     swing = float(feel.get("swing") if feel.get("swing") is not None else defaults["swing"])
@@ -1206,7 +1240,26 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # curve only shapes notes that never declared one.
             own = vels[si] if si < len(vels) else None
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
-            if lead_orn == "kkeokgi" and beats >= 1.0:
+            if lead_orn == "bend" and beats >= 0.5:
+                # 블루스의 스쿠프 — 반음 아래에서 밀어 올려 음에 도착한다. 기타·하모니카의
+                # 그 손이고, 곧게 시작하면 블루스로 안 들린다.
+                lead = min(0.14, beats * 0.2)
+                out.append({"beat": beat, "beats": lead, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": max(0, m - 1),
+                            "program": prog["melody"], "vel": round(vel * 0.7, 3), "gate": gate})
+                out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": m,
+                            "program": prog["melody"], "vel": vel, "gate": gate})
+            elif lead_orn == "grace" and beats >= 0.5:
+                # 컨트리의 해머온 — 온음 아래를 스치고 본음을 때린다.
+                lead = min(0.12, beats * 0.18)
+                out.append({"beat": beat, "beats": lead, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": max(0, m - 2),
+                            "program": prog["melody"], "vel": round(vel * 0.72, 3), "gate": gate})
+                out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": m,
+                            "program": prog["melody"], "vel": vel, "gate": gate})
+            elif lead_orn == "kkeokgi" and beats >= 1.0:
                 # 꺾기 — 트로트를 트로트로 만드는 그 꺾는 창법. 긴 음의 **끝을** 한 음 떨어뜨렸다
                 # 놓는다(창법의 이름이 '꺾는다'인 자리가 거기다). 편곡만 뽕짝이고 가락이 곧게
                 # 뻗으면 "구수하다"가 안 산다(8/19 사용자: "뽕짝이 살짝 아쉽다").
@@ -1336,8 +1389,20 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         for e in out:
             if e["part"] != "melody" and e.get("double_of") != "melody"                     and abs(e["beat"] % 1.0 - 0.5) < 1e-6:
                 e["beat"] += shift
+    _lay_back(out, laidback)
     out.sort(key=lambda e: (e["beat"], e["part"]))
     return out
+
+
+def _lay_back(rows, amount):
+    """R&B·힙합의 그 느낌 — **가락만** 박 뒤로 조금 눕는다. 리듬 섹션은 격자에 그대로 있고
+    노래가 그 뒤를 걷기 때문에 생기는 여유라, 전부 같이 밀면 그냥 느린 곡이 된다."""
+    if amount <= 0:
+        return rows
+    for r in rows:
+        if r.get("part") == "melody":
+            r["beat"] = round(r["beat"] + amount, 4)
+    return rows
 
 
 def reinstrument(rows, band):
