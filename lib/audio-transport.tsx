@@ -8,9 +8,13 @@ import React, { useEffect, useRef, useState } from 'react';
 // 표면마다 다른 건 셋뿐: **색**(테마 토큰) · **A-B 를 무엇에 붙이나**(snapTo — 토익은 단어,
 // 노래방은 가사 줄) · **그 표면만의 컨트롤**(children).
 //
-// 생김새는 **브라우저 기본 재생기를 그대로 따른다**(사용자 확정) — 손이 이미 아는 모양이라
-// 배울 게 없다. 네이티브를 안 쓰는 이유는 모양이 싫어서가 아니라 브라우저마다 다르고(사파리엔
-// 배속도 다운로드도 없다) 그 ⋮ 안에 우리 파일(.lrc)을 넣을 수 없어서다.
+// 생김새는 **브라우저 기본 재생기의 손버릇을 따르되**(손이 이미 아는 모양이라 배울 게 없다)
+// 모서리·색은 우리 것이다. 네이티브를 안 쓰는 이유는 모양이 싫어서가 아니라 브라우저마다
+// 다르고(사파리엔 배속도 다운로드도 없다) 그 ⋮ 안에 우리 파일(.lrc)을 넣을 수 없어서다.
+//
+// ⚠️ **막대 안에 "소리"라는 표식(음표 같은)을 넣지 않는다** — 이 재생기를 쓰는 표면은 전부
+// 자기가 먼저 그 말을 하고 있다(파일카드의 아이콘 타일 · 노래방의 마이크 · 갤러리의 큰 음표).
+// 한 번 넣었다가 걷었다: 카드 타일과 나란히 놓이니 같은 말이 두 번이었다(8/19 사용자 지적).
 export type TransportTheme = {
   /** 바깥 상자(연습 도구 줄까지 감싼다). 파일카드처럼 카드가 이미 있으면 transparent. */
   surface: string; border: string; radius: string; pad: string;
@@ -202,10 +206,6 @@ export function AudioTransport({
             ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[17px] h-[17px]" aria-hidden><path d="M7 5h3.2v14H7zM13.8 5H17v14h-3.2z" /></svg>
             : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[17px] h-[17px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
         </button>
-        {/* 음표 — 이 막대가 소리를 다룬다는 표식(사용자 요청). 누르는 것이 아니라 이름표다. */}
-        <span className="shrink-0 flex items-center justify-center w-4" style={{ color: th.muted }} aria-hidden>
-          <svg viewBox="0 0 24 24" fill="currentColor" className="w-[13px] h-[13px]"><path d="M10 18.5a2.5 2.5 0 1 1-2.5-2.5c.6 0 1.1.2 1.5.5V4l8-1.6v11.1a2.5 2.5 0 1 1-2.5-2.5c.6 0 1.1.2 1.5.5V5.6L10 6.8z" /></svg>
-        </span>
         <span className="text-[12px] tabular-nums shrink-0 px-1" style={{ color: th.muted }}>{fmt(cur)} / {fmt(dur)}</span>
         <input type="range" min={0} max={dur || 0} step={0.05} value={Math.min(cur, dur || 0)}
           onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치"
