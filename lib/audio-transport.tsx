@@ -19,11 +19,12 @@ export type TransportTheme = {
   accent: string; text: string; muted: string; track: string; pill: string; pillOn: string;
 };
 export const TRANSPORT_THEMES: Record<string, TransportTheme> = {
-  // 기본 = 브라우저 재생기. 바깥은 없고 막대만 회색 알약, 색은 파랑이 아니라 중립 먹색이다
-  // (재생기는 강조 위젯이 아니라 도구다 — 화면의 주인공은 가사·스크립트·파일 이름).
+  // 기본 = 브라우저 재생기의 손버릇을 따르되 **모서리는 우리 것**(rounded-lg — 카드·상자·입력이
+  // 쓰는 반경). 색도 파랑이 아니라 중립 먹색이다: 재생기는 강조 위젯이 아니라 도구고, 화면의
+  // 주인공은 가사·스크립트·파일 이름이다.
   plain: {
     surface: 'transparent', border: 'transparent', radius: '0', pad: '0px',
-    bar: '#f1f3f4', barRadius: '9999px', barPad: '0.25rem 0.5rem',
+    bar: '#f1f3f4', barRadius: '0.5rem', barPad: '0.25rem 0.5rem',
     accent: '#3c4043', text: '#202124', muted: '#5f6368', track: '#dadce0',
     pill: '#e8eaed', pillOn: '#cbd0d5',
   },

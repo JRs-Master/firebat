@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from 'react';
 import React from 'react';
-import { Download, FileText } from 'lucide-react';
+import { Download, FileText, Music } from 'lucide-react';
 import { AudioTransport } from './audio-transport';
 
 // ── The file card, shared by every surface that can be handed a document ──────────────────────
@@ -33,16 +33,21 @@ const FILE_CARD_NEUTRAL = 'text-slate-600 bg-slate-100 border-slate-200';
 
 export const AUDIO_PLAYER_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'flac']);
 
-/** 들을 수 있는 파일의 카드 — 이름 한 줄 + 공통 재생기. 채팅과 공유 페이지가 **같은 카드**를
- *  쓴다(전엔 같은 마크업이 두 벌이라 한쪽만 고쳐질 자리였다). 마크다운 문단 안에 들어가므로
- *  전부 span 이고, 재생기도 그래서 span 으로 그린다. 음표는 재생기 막대가 이미 달고 있다. */
+/** 들을 수 있는 파일의 카드 — 아이콘 타일 + 이름 + 공통 재생기. 채팅과 공유 페이지가 **같은
+ *  카드**를 쓴다(전엔 같은 마크업이 두 벌이라 한쪽만 고쳐질 자리였다).
+ *  타일과 재생기 안의 음표는 **다른 말을 한다** — 타일은 이 카드가 무슨 파일인지(다른 확장자
+ *  카드들과 같은 자리·같은 모양), 음표는 그 막대가 소리를 다룬다는 것. 하나가 다른 하나를
+ *  대신하지 않는다. 마크다운 문단 안에 들어가므로 전부 span 이고, 재생기도 그래서 span 이다. */
 export function AudioFileCard({ href, name, ext }: { href: string; name: string; ext: string }) {
   return (
-    <span className="not-prose my-1.5 block max-w-md px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm">
-      <span className="block text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
-      <span className="block mt-1">
-        <AudioTransport src={href} study={false} preload="none"
-          downloads={[{ href, label: '저장' }]} />
+    <span className="not-prose my-1.5 flex items-center gap-2.5 max-w-md px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm">
+      <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500"><Music size={16} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
+        <span className="block mt-1">
+          <AudioTransport src={href} study={false} preload="none"
+            downloads={[{ href, label: '저장' }]} />
+        </span>
       </span>
     </span>
   );
