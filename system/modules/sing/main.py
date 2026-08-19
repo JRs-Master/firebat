@@ -479,6 +479,12 @@ PATCHES = {
     "dguitar":    {"harm": [1.0, 0.62, 0.45, 0.30, 0.20, 0.12], "hdecay": 0.7, "hslope": 0.8,
                    "detune": 0.004, "noise": 0.06, "shape": 5.5, "atk": 0.004, "rel": 0.09,
                    "gain": 0.26, "gm": 30},
+    # 리드 기타 — 리듬(dguitar)과 **다른 소리여야 한다**. 같은 파형으로 리프도 치고 가락도
+    # 치면 가락이 벽에 묻힌다. 게인은 그대로 높되 덜 부서지고(shape↓) 더 길게 남는다(hdecay↑):
+    # 오버드라이브(GM 29)가 리드를, 디스토션(30)이 리듬을 맡는 그 배치다.
+    "lguitar":    {"harm": [1.0, 0.70, 0.42, 0.26, 0.16, 0.09], "hdecay": 2.2, "hslope": 0.95,
+                   "detune": 0.003, "noise": 0.04, "shape": 3.2, "atk": 0.004, "rel": 0.16,
+                   "gain": 0.30, "gm": 29},
     # bowed / sustained
     "eviolin":    {"harm": [1.0, 0.62, 0.44, 0.32, 0.24, 0.17, 0.12, 0.08], "hdecay": 0.35,
                    "hslope": 0.9, "detune": 0.004, "noise": 0.02, "vib": (5.5, 0.007),
@@ -769,7 +775,7 @@ def _generic_fill(meter):
 # How often a style opens a phrase on a crash, and how hard. Every 4 bars at 0.7 was applied
 # to EVERYONE — but a ballad marks sections (8), and a jazz drummer says it on the ride, not
 # the crash. (bar 0 stays the piece's opening accent everywhere.)
-CRASH_STYLE = {"ballad": (8, 0.5), "rnb": (8, 0.5), "jazz": (8, 0.45), "blues": (8, 0.55),
+CRASH_STYLE = {"metal": (2, 0.9), "punk": (2, 0.85), "ballad": (8, 0.5), "rnb": (8, 0.5), "jazz": (8, 0.45), "blues": (8, 0.55),
                "carol": (8, 0.45), "country": (8, 0.55), "hiphop": (8, 0.55)}
 
 ROLL_STYLES = {"trot", "march", "rock", "metal", "punk", "rocknroll", "dance", "pop"}
@@ -992,7 +998,7 @@ STYLE_BAND = {
     "ballad":    {"melody": "piano", "chord": "strings", "bass": "bass"},
     "march":     {"melody": "brass", "chord": "brass", "bass": "bass"},  # 군악대에 오르간은 없다
     "rock":      {"melody": "eguitar", "chord": "dguitar", "bass": "bass"},
-    "metal":     {"melody": "dguitar", "chord": "dguitar", "bass": "pickbass"},  # 메탈은 피크 베이스
+    "metal":     {"melody": "lguitar", "chord": "dguitar", "bass": "pickbass"},  # 메탈은 피크 베이스
     "pop":       {"melody": "piano", "chord": "epiano", "bass": "synthbass"},
     "dance":     {"melody": "synthlead", "chord": "strings", "bass": "synthbass"},
     "rnb":       {"melody": "epiano", "chord": "epiano", "bass": "bass"},
@@ -1021,7 +1027,7 @@ STYLE_FEEL = {
     "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "rock":      {"orn": "bendin", "voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.8},
-    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "drive", "swing": 0.0, "gate": 0.7},
+    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "drive", "swing": 0.0, "gate": 1.0},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
     "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
@@ -1136,7 +1142,7 @@ BEND_CURVES = {
 # 속도는 시간(Hz)이지 박이 아니다 — 느린 곡이라고 천천히 떨지 않는다.
 VIB_STYLES = {
     "rock":  (5.5, 0.28, 0.35),   # 노래하는 비브라토 — 얕고 고르게
-    "metal": (6.0, 0.30, 0.30),
+    "metal": (5.5, 0.48, 0.22),  # 더 넓고 더 일찍 — 노래가 아니라 울음이다
     "blues": (5.0, 0.42, 0.30),   # 더 넓고 느리게 — 블루스의 그 울음
 }
 
@@ -1164,7 +1170,7 @@ def bend_at(curve, frac):
     return curve[-1][1]
 
 
-def _comp_hits(kind, beats, meter):
+def _comp_hits(kind, beats, meter, spb=0.5):
     """(offset, dur, vel) strokes for ONE chord segment — how the chord part moves.
     stabs = the 짝 of 쿵-짝(offbeats) · quarters = a march's on-beats · pad = the old whole note.
     (arp is built in the caller: it needs the voicing, not just a rhythm.)"""
@@ -1185,9 +1191,18 @@ def _comp_hits(kind, beats, meter):
                     hits.append((float(bar0 + off), 0.7, vel))
         return hits
     if kind == "chug":
-        # 팜뮤트 — 지지직. 손날로 줄을 눌러 **아주 짧게** 끊어 치는 8분(빠르면 16분처럼 들린다).
-        # 울림이 없어서 화음이 아니라 엔진 소리가 되고, 그게 이 장르의 리듬 기타다.
-        return [(s * 0.5, 0.14, 0.72 if s % 2 == 0 else 0.58) for s in range(int(beats * 2))]
+        # 팜뮤트 — 지지직. 손날로 줄을 눌러 아주 짧게 끊어 치는 소리이고, 울림이 없어서 화음이
+        # 아니라 엔진이 된다. **속도는 박이 아니라 귀가 정한다**: 메탈의 청킹은 대략 5초당
+        # 스무 번 언저리(≈200ms 간격)로 촘촘해야 벽이 되고, 그보다 성기면 짧은 스탭 = 펑키한
+        # 커팅으로 들린다(8/19 실측: bpm 62 에서 8분 = 484ms 간격, 사용자 "펑키/컨트리 같다").
+        # 그래서 마디를 나누는 눈금을 템포에서 고른다 — 느린 곡은 16분, 빠른 곡은 8분.
+        step = 0.5
+        while step * spb > 0.30 and step > 0.125:
+            step /= 2.0
+        # 뮤트 길이는 초로 고정한다 — 박으로 잡으면 느린 곡에서 늘어져 뭉갠다.
+        dur = min(step * 0.6, 0.095 / max(1e-6, spb))
+        n = int(beats / step)
+        return [(k * step, dur, 0.74 if (k * step) % 1.0 < 1e-6 else 0.58) for k in range(n)]
     if kind == "chank":
         # 펑크 기타의 커팅 — 16분 뒷박을 아주 짧게 긁는다. 길이가 짧은 것이 핵심이라
         # 화음이 울리지 않고 리듬이 된다.
@@ -1313,7 +1328,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # curve only shapes notes that never declared one.
             own = vels[si] if si < len(vels) else None
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
-            if lead_orn in BEND_CURVES and beats >= 0.75:
+            if lead_orn in BEND_CURVES and beats >= 1.5:
                 # 진짜 벤딩 — 음을 둘로 쪼개지 않고 음정이 음 안에서 움직인다.
                 row = {"beat": beat, "beats": beats, "part": "melody",
                        "patch": patch_of["melody"], "pitch": m,
@@ -1379,13 +1394,28 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         else:
             # 팜뮤트는 제일 낮은 줄 하나만 눌러 끊는다 — 세 음을 다 그으면 스트로크가 된다.
             struck = voicing[:1] if comp == "chug" else voicing
-            for off, dur, vel in _comp_hits(comp, beats, meter):
+            spb_a = 60.0 / bpm
+            for hi, (off, dur, vel) in enumerate(_comp_hits(comp, beats, meter, spb=spb_a)):
                 if pos + off >= total_beats:
                     break
                 for p in struck:
-                    out.append({"beat": pos + off, "beats": dur, "part": "chord",
-                                "patch": patch_of["chord"], "pitch": p,
-                                "program": prog["chord"], "vel": vel})
+                    row = {"beat": pos + off, "beats": dur, "part": "chord",
+                           "patch": patch_of["chord"], "pitch": p,
+                           "program": prog["chord"], "vel": vel}
+                    if comp == "chug":
+                        row["pan"] = -0.7   # 벽의 왼쪽 절반
+                    out.append(row)
+                    if comp != "chug":
+                        continue
+                    # 더블트래킹 — 메탈의 두께는 게인이 아니라 **같은 리프를 두 번 따로 쳐서
+                    # 좌우 끝으로 벌리는 것**에서 나온다. 한 대는 아무리 세게 쳐도 얇다.
+                    # 두 번째 손은 사람이라 몇 밀리초씩 어긋나고 세기도 다르다 — 그 어긋남이
+                    # 두께의 정체라, 완전히 같은 음을 복사하면 그냥 볼륨만 커진다.
+                    nudge = ((hi % 3) - 1) * (0.007 / spb_a)
+                    out.append({"beat": max(0.0, pos + off + nudge), "beats": dur,
+                                "part": "chord2", "patch": patch_of["chord"], "pitch": p,
+                                "program": prog["chord"], "pan": 0.7,
+                                "vel": round(vel * (0.94 if hi % 2 else 1.0), 3)})
         next_rm = None
         if idx + 1 < len(chords):
             next_rm = int(round(69 + 12 * math.log2(chords[idx + 1][0] / 440.0)))
@@ -1686,7 +1716,10 @@ def render_arrangement(arr, spb, total_beats):
 # Where each voice sits (−1 left … +1 right) and how much of it goes to the room. The dry mix
 # was mono and bone-dry, which doubled the synth-ness of everything: a stage and a little air
 # are half of "sounds like a record".
-PAN = {"melody": 0.0, "chord": -0.25, "bass": 0.0, "vocal": 0.0,
+# 리듬 기타 두 대는 좌우 **끝**으로, 리드와 베이스와 킥은 센터. 저역과 가락이 가운데 서고
+# 벽이 양옆에 서는 것이 이 장르의 그림이다(팬은 파트 단위 = MIDI CC10 이라 두 대가 서로 다른
+# 파트여야 갈린다 — 그래서 두 번째 손이 `chord2` 라는 제 이름을 갖는다).
+PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "bass": 0.0, "vocal": 0.0,
        "kick": 0.0, "kick2": 0.0, "snare": 0.08, "snare2": 0.08, "rim": 0.05, "clap": 0.12,
        "hat": 0.32, "hat_pedal": 0.32, "ohat": 0.32,
        "tom_hi": -0.28, "tom_himid": -0.15, "tom_mid": 0.0, "tom_lo": 0.28,
@@ -1701,7 +1734,7 @@ PAN = {"melody": 0.0, "chord": -0.25, "bass": 0.0, "vocal": 0.0,
        "woodblock_hi": 0.18, "woodblock_lo": 0.18, "cuica_mute": 0.15, "cuica_open": 0.15,
        "triangle_mute": -0.18, "triangle_open": -0.18,
        "whistle_short": -0.10, "whistle_long": -0.10}
-SEND = {"melody": 0.22, "chord": 0.16, "bass": 0.04,
+SEND = {"melody": 0.22, "chord": 0.16, "chord2": 0.16, "bass": 0.04,
         "kick": 0.05, "kick2": 0.05, "snare": 0.14, "snare2": 0.14, "rim": 0.08, "clap": 0.16,
         "hat": 0.08, "hat_pedal": 0.06, "ohat": 0.10,
         "tom_hi": 0.16, "tom_himid": 0.16, "tom_mid": 0.16, "tom_lo": 0.16,
