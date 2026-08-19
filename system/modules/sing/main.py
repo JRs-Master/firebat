@@ -3038,6 +3038,18 @@ def _movement_bounds(n_samples, spb, meter, fmt="flac"):
     return bounds
 
 
+def _display_name(stem):
+    """The name a person reads in the media library — the file's stem without the hash we
+    salted it with. The hash keeps two takes of one piece from overwriting each other on disk;
+    in a list it only pushes the title out of view (실측 8/19: four renders of 아로하 all read
+    as "아로" in the gallery, because a narrow cell fills up before the hash ends)."""
+    parts = stem.split("-")
+    while len(parts) > 1 and len(parts[-1]) in (4, 6, 10) and all(
+            ch in "0123456789abcdef" for ch in parts[-1].lower()):
+        parts.pop()
+    return "-".join(parts) or stem
+
+
 def _out_path_for(requested, score, engine_used, n_samples, base=None, fmt="flac"):
     """The render's file name and container.
 
@@ -3435,19 +3447,22 @@ def action_render(inp):
     # declared door every module's files leave through. The wav and its .mid are one product in
     # two forms, so they travel as one array.
     stem = os.path.basename(out_path).rsplit(".", 1)[0]
+    hint = _display_name(stem)
     audio_type = {"flac": "audio/flac", "mp3": "audio/mpeg", "opus": "audio/ogg"}.get(
         out_path.rsplit(".", 1)[-1].lower(), "audio/wav")
     if part_paths:
+        # 악장은 몇 번째인지가 이름의 일부다 — 그건 해시가 아니라 사람이 읽는 정보다.
         imports = [{"path": pp, "contentType": audio_type,
-                    "filenameHint": os.path.basename(pp).rsplit(".", 1)[0]} for pp in part_paths]
+                    "filenameHint": f"{hint}-{i}of{len(part_paths)}"}
+                   for i, pp in enumerate(part_paths, 1)]
         data["movements"] = len(part_paths)
     else:
-        imports = [{"path": out_path, "contentType": audio_type, "filenameHint": stem}]
+        imports = [{"path": out_path, "contentType": audio_type, "filenameHint": hint}]
     if midi_written:
-        imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": stem})
+        imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": hint})
     if lrc_path:
         imports.append({"path": lrc_path, "contentType": "application/x-lrc",
-                        "filenameHint": stem})
+                        "filenameHint": hint})
     data["_mediaImport"] = imports if len(imports) > 1 else imports[0]
     if lrc_path:
         # A backing track plus its synced lyrics IS a karaoke stage — the module is the only one
@@ -3505,7 +3520,8 @@ def action_preview(inp):
     if not isinstance(imports, dict):
         return {"success": False, "error": "미리듣기 렌더가 파일을 내놓지 않았습니다"}
     # 이름이 곧 색인 — 다음 호출이 이 해시로 이 파일을 찾는다.
-    imports["filenameHint"] = f"{stem}-{tag}"
+    # 여기서만 해시가 이름에 남는다 — 다음 호출이 이 이름으로 구운 것을 찾기 때문이다.
+    imports["filenameHint"] = f"{_display_name(stem)}-{tag}"
     return {"success": True, "data": {"_mediaImport": imports, "cached": False,
                                       "note": "악보를 소리로 구웠습니다 — 브라우저는 MIDI 를 "
                                               "직접 재생하지 못합니다"}}
