@@ -3327,13 +3327,19 @@ def action_lyrics(inp):
     os.makedirs("data/sing/lrc", exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
-    data = {"path": out, "offsetSec": offset,
+    # 가사 **본문을 응답에 싣는다.** 전엔 모듈 작업 경로(data/sing/lrc/…)만 돌려줬는데, 그 주소는
+    # 부르는 쪽이 읽을 수 없다(AI 파일 접근은 user/ 안으로 갇혀 있다). 실측 8/19: 한 절만 잘라
+    # 쓰려던 턴이 read_file→network_request(상대 URL 실패)→cache_grep→write_file 로 헤매다
+    # 결국 가사를 손으로 다시 썼다. 텍스트는 몇 KB고, 그걸 주면 그 우회가 통째로 사라진다.
+    data = {"lrc": text, "offsetSec": offset,
             "lrcLines": sum(1 for ln in text.splitlines()
                             if ln[:1] == "[" and ln[1:2].isdigit()),
             "_mediaImport": {"path": out, "contentType": "application/x-lrc",
                              "filenameHint": base + tag},
-            "note": ("render 의 lyricsMediaPath 에 이 path 를 넘기면 반주와 함께 나갑니다 — "
-                     "타이밍이 밀리면 lrcOffset 로 전체를 밀고 당깁니다(+ = 늦게)")}
+            "note": ("가사 본문은 이 응답의 `lrc` 에 있습니다 — 그대로(또는 원하는 절만 잘라) "
+                     "render 의 `lrc` 로 넘기면 됩니다. 파일째 쓰려면 `media.url` 을 render 의 "
+                     "`lyricsMediaPath` 로 넘기세요. 타이밍이 밀리면 lrcOffset 으로 전체를 "
+                     "밀고 당깁니다(+ = 늦게).")}
     if meta:
         data["identity"] = (f"{meta.get('artist')} - {meta.get('track')} "
                             f"({int(meta.get('duration') or 0)}s, lrclib)")
@@ -4357,8 +4363,9 @@ def action_selftest():
     lyx = action_lyrics({"lyricsMediaPath": "data/sing/lrc/selftest-cached.lrc",
                          "lrcOffset": 1.0})
     lyd = lyx.get("data") or {}
-    lyt = open(lyd["path"], encoding="utf-8").read() if lyx.get("success") else ""
-    ck("the lyrics action re-stamps without an audio render and ships a media card",
+    # 본문이 응답에 있으니 파일을 열지 않는다 — 부르는 쪽이 실제로 하는 일과 같은 경로다.
+    lyt = lyd.get("lrc", "") if lyx.get("success") else ""
+    ck("the lyrics action hands back the text itself, not an address only it can read",
        True,
        bool(lyx.get("success") and lyt.startswith("[00:02.00]")
             and isinstance(lyd.get("_mediaImport"), dict)),
