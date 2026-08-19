@@ -800,7 +800,7 @@ DRUM_PATTERNS = {
                            ("snare", 1.0, 0.85), ("snare", 3.0, 0.85)],
     "metal":     [("kick", o / 2.0, 0.85) for o in range(8)] +
                  [("snare", 1.0, 0.9), ("snare", 3.0, 0.9),
-                  ("ohat", 0.0, 0.5), ("ohat", 1.0, 0.5), ("ohat", 2.0, 0.5), ("ohat", 3.0, 0.5)],
+                  ("hat", 0.0, 0.5), ("hat", 1.0, 0.5), ("hat", 2.0, 0.5), ("hat", 3.0, 0.5)],
     "pop":       _HATS8 + [("kick", 0.0, 0.85), ("kick", 2.0, 0.75),
                            ("snare", 1.0, 0.75), ("snare", 3.0, 0.75)],
     "dance":     [("kick", 0.0, 0.95), ("kick", 1.0, 0.95), ("kick", 2.0, 0.95), ("kick", 3.0, 0.95),
@@ -1020,8 +1020,8 @@ STYLE_FEEL = {
     "trot":      {"orn": "kkeokgi", "comp": "stabs", "bass": "twobeat", "swing": 0.3, "gate": 0.8},
     "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
-    "rock":      {"orn": "bendin", "voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
-    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "alt", "swing": 0.0, "gate": 0.7},
+    "rock":      {"orn": "bendin", "voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.8},
+    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "drive", "swing": 0.0, "gate": 0.7},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
     "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
@@ -1029,7 +1029,7 @@ STYLE_FEEL = {
     "hiphop":    {"laidback": 0.05, "comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
     "country":   {"orn": "grace", "comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
     "funk":      {"comp": "chank", "bass": "funk16", "swing": 0.0, "gate": 0.55},
-    "punk":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.6},
+    "punk":      {"voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.6},
     "jazz":      {"comp": "charleston", "bass": "walk", "swing": 0.65, "gate": 0.85},
     "blues":     {"orn": "scoop", "comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
     "carol":     {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 0.95},
@@ -1201,6 +1201,7 @@ def _bass_line(kind, root_midi, beats, next_root_midi, meter, semis=None):
     twobeat = root/5th alternation (the 뽕짝 walk) · alt = marching quarters · walk = the jazz
     floor (root, third, fifth in quarters, a dominant pickup into the next chord — quality-aware,
     so a minor chord walks a minor third) · hold = whole note + pickup ·
+    drive = straight eighths on the root, doubling the guitar riff (rock/punk/metal) ·
     offbeat = the house pump (eighth offbeats, out of the four-on-the-floor kick's way) ·
     funk16 = stabbed sixteenths with octave pops · boogie = 1-3-5-6-5-3 under a shuffle."""
     b = root_midi - 12
@@ -1234,6 +1235,12 @@ def _bass_line(kind, root_midi, beats, next_root_midi, meter, semis=None):
     if kind == "alt":
         return [(float(i), 0.9, fifth if i % 2 else b, 0.62 if i % 2 else 0.78)
                 for i in range(int(beats))]
+    if kind == "drive":
+        # 록·메탈 베이스는 화성을 설명하지 않는다 — **기타 리프를 그대로 겹쳐** 근음을 8분으로
+        # 민다. 4분 근음-5음 행진(alt)을 깔면 그 순간 장르가 펑키록 쪽으로 미끄러진다
+        # (8/19 실측: "메탈이라기보다 펑키락 같다").
+        return [(i * 0.5, 0.46, b, 0.82 if i % 2 == 0 else 0.7)
+                for i in range(int(beats * 2))]
     if kind == "offbeat":
         # 하우스·EDM 의 펌프 — 킥이 정박을 다 먹으니 베이스는 그 사이 8분 뒷박에만 선다.
         # 정박에 같이 서면 킥과 겹쳐 저역이 뭉치고, 비켜서면 곡이 앞으로 밀린다.

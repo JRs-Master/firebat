@@ -275,7 +275,7 @@
           "wav",
           null
         ],
-        "description": "[render] Container for the rendered audio. Omit = flac — measured on a 4-minute render: flac 24MB written in 0.4s, against wav 47MB, mp3 4.6MB in 8.3s and opus 3.7MB in 7.9s. Lossless, plays everywhere, and twenty times cheaper to encode on a small server. Ask for mp3 or opus when the transfer size matters more than the CPU (a long piece to stream to a phone), wav only for a master to edit."
+        "description": "[render] Container for the rendered audio. **Omit it.** flac is the default and is the right answer unless the person asked for something else in words: lossless, plays everywhere, and twenty times cheaper to encode on a small server (measured on a 4-minute render: flac 24MB in 0.4s, wav 47MB, mp3 4.6MB in 8.3s, opus 3.7MB in 7.9s). Set it only to carry a request that was actually made — \"작게\"/\"용량\" for mp3 or opus, \"편집용 원본\" for wav. Length alone is not a reason to change it."
       },
       "bpm": {
         "type": [
