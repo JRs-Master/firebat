@@ -3038,13 +3038,14 @@ def _movement_bounds(n_samples, spb, meter, fmt="flac"):
     return bounds
 
 
-def _out_path_for(requested, score, engine_used, n_samples, base=None, fmt="opus"):
+def _out_path_for(requested, score, engine_used, n_samples, base=None, fmt="flac"):
     """The render's file name and container.
 
-    `fmt` is the caller's choice; mp3 is the default because these files live on a small server
-    and are streamed to a phone (실측: one 245s MR = 43.2MB wav · 23.8MB flac · 4.5MB mp3, and
-    six test renders of one song had already taken 250MB of the media store). wav/flac stay one
-    word away for when the render is the master rather than something to listen to.
+    `fmt` is the caller's choice; flac is the default. Measured on a 245s MR at 48k: wav 47.1MB
+    · flac 24.4MB in 0.4s · opus 3.7MB in 7.9s · mp3 4.6MB in 8.3s. The lossy pair is far smaller
+    but costs twenty times the CPU to write, and this server is small — flac halves the disk for
+    almost no compute and plays everywhere. opus/mp3 stay one word away when the bytes on the
+    wire matter more than the seconds spent making them.
 
     Length still changes the CONTAINER, never the music: a lossless render past the ~50MB media
     door becomes flac (실측: 353s wav = 62MB, refused, and the model's rational recovery was to
@@ -3340,10 +3341,10 @@ def action_render(inp):
         send += v * 0.18
     if np.any(send):
         mix = add_room(mix, send)
-    fmt = str(inp.get("audioFormat") or "opus").strip().lower()
+    fmt = str(inp.get("audioFormat") or "flac").strip().lower()
     if fmt not in _FMT_BYTES:
         return {"success": False,
-                "error": "audioFormat must be opus | mp3 | flac | wav (omit = opus)"}
+                "error": "audioFormat must be flac | mp3 | opus | wav (omit = flac)"}
     out_path = _out_path_for(inp.get("outPath"), score, engine_used, len(mix),
                              base=inp.get("scoreMediaPath"), fmt=fmt)
     lrc_path = None
@@ -3799,8 +3800,8 @@ def action_selftest():
         os.remove("data/sing/selftest-solo.wav")
     small = _out_path_for(None, score, "builtin", SR * 60)
     huge = _out_path_for(None, score, "builtin", SR * 400)
-    ck("length no longer changes the default container — opus either way", (".opus", ".opus"),
-       (small[-5:], huge[-5:]), small.endswith(".opus") and huge.endswith(".opus"))
+    ck("length no longer changes the default container — flac either way", (".flac", ".flac"),
+       (small[-5:], huge[-5:]), small.endswith(".flac") and huge.endswith(".flac"))
     ck("the engine salts the default name (no cross-engine overwrite)", True,
        _out_path_for(None, score, "sf2", SR * 60) != small,
        _out_path_for(None, score, "sf2", SR * 60) != small)
@@ -3812,7 +3813,7 @@ def action_selftest():
        ".mp3", kept[-4:], kept.endswith(".mp3"))
     named = _out_path_for(None, dict(score, style="pop"), "sf2", SR * 60, base="캐논 변주곡.mid")
     ck("the default filename reads as the piece, not a hash", True, named,
-       "캐논-변주곡" in named and "-pop-" in named and named.endswith(".opus"))
+       "캐논-변주곡" in named and "-pop-" in named and named.endswith(".flac"))
     five = parse_score(dict(score, meter="5/4", style="jazz"))
     ck("5/4 reads the numerator and parses", 5, (five[5] or {}).get("meter"),
        five[6] is None and five[5]["meter"] == 5)
