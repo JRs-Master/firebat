@@ -1877,18 +1877,14 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
       <div className="px-3 py-2 border-t border-slate-100">
         <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {/* 가사와 반주가 다른 채보에서 오면 어긋남이 초 단위가 아니라 십수 초다 (실측 아로하:
-              반주 240.0s vs 가사 226.8s, 같은 bpm 99). 0.5초 버튼으로 13초를 맞추게 두지 않는다 —
-              슬라이더로 대충 맞추고 버튼으로 다듬는다. */}
+          {/* 어긋남은 그 .lrc 가 어느 음원 판본을 기준으로 찍혔느냐에 달렸다 — 곡마다도
+              파일마다도 다르니 값을 어디에 굳혀 두지 않는다(사용자). 듣는 사람이 그 자리에서
+              0.1초씩 맞춘다. */}
           <span className="text-[11px] text-slate-500">가사 싱크</span>
-          <button type="button" onClick={() => setShift((v) => Math.round((v - 0.5) * 10) / 10)}
-            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">−0.5초</button>
-          <input type="range" min={-20} max={20} step={0.1} value={shift}
-            onChange={(e) => setShift(Number(e.target.value))}
-            aria-label="가사 싱크 (초)"
-            className="w-28 sm:w-40 accent-blue-600" />
-          <button type="button" onClick={() => setShift((v) => Math.round((v + 0.5) * 10) / 10)}
-            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+0.5초</button>
+          <button type="button" onClick={() => setShift((v) => Math.round((v - 0.1) * 10) / 10)}
+            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">−0.1초</button>
+          <button type="button" onClick={() => setShift((v) => Math.round((v + 0.1) * 10) / 10)}
+            className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+0.1초</button>
           <span className="px-1 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
             {shift > 0 ? '+' : ''}{shift.toFixed(1)}초
           </span>
