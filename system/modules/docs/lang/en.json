@@ -1,8 +1,7 @@
 {
   "settings": {
     "masters": {
-      "label": "Template shelf",
-      "description": "Keep master/template files here (company forms and the like). Mark one per kind as the default — everyday documents build on it — and call another by alias when you want a different look. Files live in media storage; only the reference list lives here."
+      "label": "Template shelf"
     }
   }
 }

@@ -1,8 +1,7 @@
 {
   "settings": {
     "scores": {
-      "label": "악보 보관함 (MIDI · MusicXML · 오디오)",
-      "description": "악보를 여러 개 올려 두고 별칭으로 부릅니다 — \"캐논 기타버전으로 연주해줘\"처럼요. 파일은 미디어 보관함에 저장되고 여기에는 목록만 남습니다."
+      "label": "악보 보관함 (MIDI · MusicXML · 오디오)"
     }
   }
 }
