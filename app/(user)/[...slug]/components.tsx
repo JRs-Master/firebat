@@ -2145,6 +2145,33 @@ function AudioTransport({
           onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치"
           className="tp-range flex-1" style={{ ['--tp-pct' as string]: pct(cur, dur) } as React.CSSProperties} />
         <span className="text-[11px] tabular-nums shrink-0" style={{ color: th.muted }}>{fmt(cur)}/{fmt(dur)}</span>
+        {/* 볼륨 = 손이 닿으면 **왼쪽으로 펼쳐지는 한 줄**(사용자 확정 — 네이티브 재생기와 같은
+            손버릇). 상자를 띄우지 않으니 아래 줄이 밀리지 않고, 트랙은 여기서도 선만·점은 손이
+            닿았을 때만. hover 가 없는 화면(터치)에선 탭이 같은 일을 한다. */}
+        <span className={`group/vol flex items-center rounded-full shrink-0 transition-colors ${showVol ? 'bg-black/5' : 'hover:bg-black/5'}`}>
+          <span className={`overflow-hidden transition-[width,opacity] duration-150 ${showVol ? 'w-20 opacity-100' : 'w-0 opacity-0 group-hover/vol:w-20 group-hover/vol:opacity-100'}`}>
+            <input type="range" min={0} max={1} step={0.05} value={vol}
+              onChange={(e) => setVol(Number(e.target.value))} aria-label="볼륨"
+              className="tp-range w-20 px-2 align-middle"
+              style={{ ['--tp-pct' as string]: pct(vol, 1) } as React.CSSProperties} />
+          </span>
+          {/* 아이콘이 곧 눈금 — 음소거·한 칸·두 칸. 숫자를 따로 안 적어도 상태가 보인다. */}
+          <button type="button" onClick={() => setShowVol((v) => !v)} style={{ color: th.muted }}
+            aria-label={`볼륨 ${Math.round(vol * 100)}`}
+            className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
+              <path fill="currentColor" d="M4 9.5v5h3.2L12 18.5v-13L7.2 9.5H4z" />
+              {vol > 0.02 ? (
+                <>
+                  <path d="M15.2 9.2a4 4 0 0 1 0 5.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  {vol > 0.5 && <path d="M17.7 6.7a7.5 7.5 0 0 1 0 10.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />}
+                </>
+              ) : (
+                <path d="M15.6 9.6l4.8 4.8m0-4.8l-4.8 4.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              )}
+            </svg>
+          </button>
+        </span>
         {downloads.length > 0 && (
           <span className="relative shrink-0">
             <button type="button" aria-label="내려받기" onClick={() => setMenu((v) => !v)}
@@ -2163,10 +2190,10 @@ function AudioTransport({
           </span>
         )}
       </div>
-      {/* 컨트롤 한 줄 — 배속·전체반복·구간 + 볼륨(ml-auto 로 항상 우측 끝). 모바일은 자연 wrap.
-          시험 모드(study=false)면 배속·전체반복·구간을 숨긴다(1회청취). */}
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
-        {study && (
+      {/* 둘째 줄 = 연습 도구(배속·전체반복·구간). 시험 모드(1회청취)엔 아무것도 없으니 줄 자체가
+          안 선다 — 볼륨은 위 줄에 있어 시험 모드에서도 계속 쓸 수 있다. */}
+      {study && (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
           <div className="relative flex items-center gap-1.5">
             <span style={{ color: th.muted }}>속도</span>
             <button type="button" onClick={() => setShowSpeed((v) => !v)} className={pillCls} style={pillStyle(showSpeed)}>{speed.toFixed(1)}x</button>
@@ -2181,8 +2208,6 @@ function AudioTransport({
               </div>
             )}
           </div>
-        )}
-        {study && <>
           <button type="button" onClick={() => setLoop((v) => !v)} className={pillCls} style={pillStyle(loop)} title="전체 반복">↻</button>
           <span className="ml-1" style={{ color: th.muted }}>구간</span>
           <button type="button" onClick={() => setAbA(snapStart(cur))} className={pillCls} style={pillStyle(abA != null)} title="구간 시작(A) — 현재 위치">A</button>
@@ -2190,19 +2215,8 @@ function AudioTransport({
           {(abA != null || abB != null) && (
             <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className={pillCls} style={pillStyle(false)} title="구간 해제">✕</button>
           )}
-        </>}
-        <div className="relative flex items-center ml-auto">
-          <button type="button" onClick={() => setShowVol((v) => !v)} className={pillCls} style={pillStyle(showVol)} aria-label="볼륨">🔊 {Math.round(vol * 100)}</button>
-          {showVol && (
-            <div className="absolute right-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-44">
-              <input type="range" min={0} max={1} step={0.05} value={vol}
-                onChange={(e) => setVol(Number(e.target.value))} onPointerUp={() => setShowVol(false)}
-                aria-label="볼륨" className="tp-range flex-1" style={{ ['--tp-pct' as string]: pct(vol, 1) } as React.CSSProperties} />
-              <span className="w-8 text-right tabular-nums text-slate-500">{Math.round(vol * 100)}</span>
-            </div>
-          )}
         </div>
-      </div>
+      )}
       {children}
     </div>
   );
