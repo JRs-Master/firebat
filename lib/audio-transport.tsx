@@ -56,11 +56,7 @@ const TRANSPORT_CSS = `
 .tp-range:focus-visible::-webkit-slider-thumb{opacity:1}
 .tp-range:hover::-moz-range-thumb,.tp-range:active::-moz-range-thumb,
 .tp-range:focus-visible::-moz-range-thumb{opacity:1}
-.tp-btn:focus-visible,.tp-range:focus-visible{outline:none}
-.tp-btn:focus-visible{box-shadow:0 0 0 3px rgba(0,0,0,.12)}
-.tp-range:focus-visible{--tp-thumb-shadow:0 0 0 3px rgba(0,0,0,.12)}
-.tp-range:focus-visible::-webkit-slider-thumb{box-shadow:var(--tp-thumb-shadow)}
-.tp-range:focus-visible::-moz-range-thumb{box-shadow:var(--tp-thumb-shadow)}`;
+.tp-btn:focus,.tp-btn:focus-visible,.tp-range:focus,.tp-range:focus-visible{outline:none}`;
 
 export type TransportSpan = { start: number; end: number };
 
