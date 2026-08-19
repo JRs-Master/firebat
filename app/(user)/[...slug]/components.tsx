@@ -1702,7 +1702,6 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
   const [recState, setRecState] = useState<'idle' | 'arming' | 'recording'>('idle');
   const [takes, setTakes] = useState<{ mix: string; voice: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const rafRef = useRef<number | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const srcRef = useRef<MediaElementAudioSourceNode | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -1717,29 +1716,6 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
       .catch(() => { if (alive) setNote('가사 파일을 불러오지 못했습니다'); });
     return () => { alive = false; };
   }, [lrc, lrcUrl]);
-
-  // 재생 중에는 rAF 로 따라간다 — timeupdate 는 초당 네 번이라 음절이 뚝뚝 끊긴다.
-  useEffect(() => {
-    const a = audioRef.current;
-    if (!a) return;
-    const tick = () => { setCur(a.currentTime); rafRef.current = requestAnimationFrame(tick); };
-    const start = () => { if (rafRef.current == null) rafRef.current = requestAnimationFrame(tick); };
-    const stop = () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } setCur(a.currentTime); };
-    // Seeking mid-song fires `seeked`, not `play` — stopping there and waiting for a play event
-    // froze the lyrics for the rest of the track (실측 8/19: "싱크가 실시간으로 안 된다").
-    const resync = () => { setCur(a.currentTime); if (!a.paused && !a.ended) start(); else stop(); };
-    a.addEventListener('play', start);
-    a.addEventListener('playing', start);
-    a.addEventListener('pause', stop);
-    a.addEventListener('seeked', resync);
-    a.addEventListener('ended', stop);
-    return () => {
-      a.removeEventListener('play', start); a.removeEventListener('playing', start);
-      a.removeEventListener('pause', stop); a.removeEventListener('seeked', resync);
-      a.removeEventListener('ended', stop);
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    };
-  }, [audioUrl]);
 
   const at = cur - shift; // shift(+) = 가사를 늦게 = 같은 순간에 더 앞 가사를 부른다
   const idx = useMemo(() => {
@@ -1761,6 +1737,13 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
     const gaps = lines.slice(1).map((l, i) => l.t - lines[i].t).filter((g) => g > 0).sort((a, b) => a - b);
     return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 4;
   }, [lines]);
+  // A-B 는 **가사 줄**에 붙는다(토익이 단어에 붙는 것과 같은 자리) — 소절 한복판에서 끊기면
+  // 연습이 안 된다. 경계는 오디오 시계라 shift 를 더해 준다(가사 시계 != 소리 시계).
+  const lineSpans = useMemo(() => lines.map((l, k) => ({
+    start: l.t + shift,
+    end: (lines[k + 1]?.t ?? l.t + medianGap) + shift,
+  })), [lines, shift, medianGap]);
+
   // 카운트다운은 **아무도 안 부르고 있을 때만** — 전주와 간주가 그 자리다.
   const TAIL = 1.2; // 마지막 음절이 울리는 여운 — LRC 는 시작만 적지 길이를 안 적는다
   const restStart = idx < 0
@@ -1854,11 +1837,6 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
         </span>
         <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700 truncate">{title || '노래방'}</span>
         {lines.length > 0 && <span className="shrink-0 text-[11px] text-slate-400 tabular-nums">{lines.length}줄</span>}
-        {/* MR 은 재생기 기본 ⋮ 의 "다운로드"가 이미 준다 — 브라우저가 그리는 메뉴라 항목을
-            더할 수 없어서, 우리 파일인 가사만 여기 남는다(두 번째 ⋮ 를 만들지 않는다). */}
-        {lrcUrl && (
-          <a href={lrcUrl} download className="shrink-0 text-[11px] text-slate-500 hover:text-slate-700">가사 저장</a>
-        )}
       </div>
 
       <div className="relative h-32 sm:h-36 px-5 py-4 bg-slate-50/60 flex flex-col justify-center gap-1.5">
@@ -1882,40 +1860,43 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
       </div>
 
       <div className="px-3 py-2 border-t border-slate-100">
-        <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
-        {/* 한 줄에 들어가야 한다(모바일 실측: 저장 링크와 안내 문구가 두 줄로 접혔다) — 저장은
-            헤더로 올라갔고 버튼은 숫자만 남는다. 라벨은 안 뺀다: ± 숫자만 남으면 무엇을 미는
-            버튼인지 화면이 말하지 않는다(모바일 실측). 좁으면 접지 말고 옆으로 민다. */}
-        <div className="mt-2 flex items-center gap-1 overflow-x-auto">
-          <span className="shrink-0 text-[11px] text-slate-500">가사 싱크</span>
-          {[-0.5, -0.1, 0.1, 0.5].map((step) => (
-            <button key={step} type="button"
-              onClick={() => setShift((v) => Math.round((v + step) * 100) / 100)}
-              className="shrink-0 px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 tabular-nums">
-              {step > 0 ? '+' : '−'}{Math.abs(step)}
-            </button>
-          ))}
-          <span className="shrink-0 px-1 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
-            {shift > 0 ? '+' : ''}{shift.toFixed(2)}초
-          </span>
-          {shift !== 0 && (
-            <button type="button" onClick={() => setShift(0)}
-              className="shrink-0 px-1.5 py-1 text-[11px] rounded-md text-slate-400 hover:text-slate-600">되돌리기</button>
-          )}
-          {record !== false && canRecord && (
-            <span className="ml-auto shrink-0">
-              {recState === 'recording' ? (
-                <button type="button" onClick={() => stopRef.current?.()}
-                  className="px-2.5 py-1 text-[11px] rounded-md bg-slate-800 text-white hover:bg-slate-700">■ 정지</button>
-              ) : (
-                <button type="button" disabled={recState === 'arming'} onClick={startRec}
-                  className="px-2.5 py-1 text-[11px] rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                  {recState === 'arming' ? '준비 중…' : '● 녹음'}
-                </button>
-              )}
+        <AudioTransport src={audioUrl} audioRef={audioRef} onTime={setCur} snapTo={lineSpans}
+          downloads={[{ href: audioUrl, label: 'MR 저장' },
+                      ...(lrcUrl ? [{ href: lrcUrl, label: '가사 저장' }] : [])]}>
+          {/* 노래방만의 칸 — 한 줄에 들어가야 한다(모바일 실측: 두 줄로 접혔다). 버튼은 숫자만
+              남기되 라벨은 안 뺀다: ± 숫자만 남으면 무엇을 미는 버튼인지 화면이 말하지 않는다.
+              좁으면 접지 말고 옆으로 민다. */}
+          <div className="mt-2 flex items-center gap-1 overflow-x-auto">
+            <span className="shrink-0 text-[11px] text-slate-500">가사 싱크</span>
+            {[-0.5, -0.1, 0.1, 0.5].map((step) => (
+              <button key={step} type="button"
+                onClick={() => setShift((v) => Math.round((v + step) * 100) / 100)}
+                className="shrink-0 px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 tabular-nums">
+                {step > 0 ? '+' : '−'}{Math.abs(step)}
+              </button>
+            ))}
+            <span className="shrink-0 px-1 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
+              {shift > 0 ? '+' : ''}{shift.toFixed(2)}초
             </span>
-          )}
-        </div>
+            {shift !== 0 && (
+              <button type="button" onClick={() => setShift(0)}
+                className="shrink-0 px-1.5 py-1 text-[11px] rounded-md text-slate-400 hover:text-slate-600">되돌리기</button>
+            )}
+            {record !== false && canRecord && (
+              <span className="ml-auto shrink-0">
+                {recState === 'recording' ? (
+                  <button type="button" onClick={() => stopRef.current?.()}
+                    className="px-2.5 py-1 text-[11px] rounded-md bg-slate-800 text-white hover:bg-slate-700">■ 정지</button>
+                ) : (
+                  <button type="button" disabled={recState === 'arming'} onClick={startRec}
+                    className="px-2.5 py-1 text-[11px] rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                    {recState === 'arming' ? '준비 중…' : '● 녹음'}
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
+        </AudioTransport>
         {note && lines.length > 0 && <p className="mt-1.5 text-[11px] text-slate-400">{note}</p>}
         {takes && (
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -1982,49 +1963,110 @@ function dictationDiff(script: string, typed: string) {
 
 // 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독
 // (스크립트 줄 하이라이트·클릭 seek 용). 학습 핵심 = 느리게·구간 반복 청취(intensive listening).
-function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [], abA, abB, setAbA, setAbB }: {
+// ── 공통 재생기 ────────────────────────────────────────────────────────────────────────────────
+// 재생·위치·배속·볼륨·전체반복·A-B 구간반복은 어느 카드에서든 같은 물건이라 한 곳에 산다.
+// 카드마다 다른 건 셋뿐: **색**(테마 토큰) · **A-B 를 무엇에 붙이나**(snapTo — 토익은 단어,
+// 노래방은 가사 줄) · **그 카드만의 컨트롤**(children).
+// 네이티브 <audio controls> 를 안 쓰는 이유 = 브라우저마다 다르고(사파리엔 배속도 다운로드도
+// 없다) 그 ⋮ 안에 우리 파일(.lrc)을 넣을 수 없다. 그래서 내려받기도 여기서 우리가 그린다.
+type TransportTheme = {
+  surface: string; border: string; accent: string;
+  text: string; muted: string; track: string; pill: string; pillOn: string; pad: string;
+};
+const TRANSPORT_THEMES: Record<string, TransportTheme> = {
+  // 기본 — 흰 카드 위. 자기 테두리를 안 그린다(카드가 이미 그렸다).
+  plain: { surface: 'transparent', border: 'transparent', accent: '#2563eb', text: '#334155',
+           muted: '#94a3b8', track: '#e2e8f0', pill: '#f1f5f9', pillOn: '#cbd5e1', pad: '0px' },
+  // 시험지 미색지 — 카드와 같은 종이색이라 재생기가 종이 위에서 떠 보이지 않는다.
+  paper: { surface: '#f3eedd', border: '#d9cdae', accent: '#2563eb', text: '#334155',
+           muted: '#94a3b8', track: '#ded3b4', pill: 'rgba(255,255,255,0.7)', pillOn: '#cbd5e1',
+           pad: '0.625rem' },
+};
+// 트랙은 선만, 손잡이 점은 손이 닿았을 때만(사용자 확정) — 재생 중 화면의 주인공은 가사·스크립트라
+// 트랙이 조용해야 한다. 지나온 구간은 --tp-pct 로 채운다.
+const TRANSPORT_CSS = `
+.tp-range{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;cursor:pointer}
+.tp-range::-webkit-slider-runnable-track{height:3px;border-radius:9999px;
+  background:linear-gradient(to right,var(--tp-accent) var(--tp-pct,0%),var(--tp-track) var(--tp-pct,0%))}
+.tp-range::-moz-range-track{height:3px;border-radius:9999px;
+  background:linear-gradient(to right,var(--tp-accent) var(--tp-pct,0%),var(--tp-track) var(--tp-pct,0%))}
+.tp-range::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;
+  border-radius:9999px;background:var(--tp-accent);opacity:0;transition:opacity .12s}
+.tp-range::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:9999px;
+  background:var(--tp-accent);opacity:0;transition:opacity .12s}
+.tp-range:hover::-webkit-slider-thumb,.tp-range:active::-webkit-slider-thumb,
+.tp-range:focus-visible::-webkit-slider-thumb{opacity:1}
+.tp-range:hover::-moz-range-thumb,.tp-range:active::-moz-range-thumb,
+.tp-range:focus-visible::-moz-range-thumb{opacity:1}`;
+
+type TransportSpan = { start: number; end: number };
+
+function AudioTransport({
+  src, audioRef, onTime, onDur, study = true, theme = 'plain', snapTo = [], downloads = [],
+  abA: pAbA, abB: pAbB, setAbA: pSetAbA, setAbB: pSetAbB, children,
+}: {
   src: string;
   audioRef: React.RefObject<HTMLAudioElement | null>;
-  onTime: (t: number) => void;
-  onDur: (d: number) => void;
-  /** 학습 모드 = 속도·전체반복·구간반복 노출. 시험 모드(false) = 재생+위치+볼륨만(1회청취). */
+  onTime?: (t: number) => void;
+  onDur?: (d: number) => void;
+  /** 학습 모드 = 배속·전체반복·구간반복 노출. 시험 모드(false) = 재생+위치+볼륨만(1회청취). */
   study?: boolean;
-  /** LRC 단어 [start,end] — A-B 구간을 단어 경계로 snap(단어 중간 잘림 방지). 없으면 raw 시간. */
-  words?: Array<{ start: number; end: number }>;
-  /** A-B 구간(초) — 부모(스크립트)가 소유. 스크립트 단어 클릭/마커와 플레이어 A/B 버튼이 같은 상태 공유. */
-  abA: number | null; abB: number | null;
-  setAbA: (t: number | null) => void; setAbB: (t: number | null) => void;
+  /** 프리셋 이름이거나, 프리셋 위에 덮을 색 몇 개. 카드가 자기 색을 가진다. */
+  theme?: keyof typeof TRANSPORT_THEMES | Partial<TransportTheme>;
+  /** A-B 를 이 구간 경계에 붙인다(토익 = LRC 단어, 노래방 = 가사 줄). 없으면 raw 시간. */
+  snapTo?: TransportSpan[];
+  /** 우리가 그리는 ⋮ 내려받기 — 네이티브를 걷었으니 그 자리를 여기서 갚는다. */
+  downloads?: Array<{ href: string; label: string }>;
+  /** A-B 를 부모가 소유할 때(토익 스크립트가 단어 클릭으로 같은 값을 쓴다). 없으면 자기가 든다. */
+  abA?: number | null; abB?: number | null;
+  setAbA?: (t: number | null) => void; setAbB?: (t: number | null) => void;
+  children?: React.ReactNode;
 }) {
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
   const [speed, setSpeed] = useState(1);
-  const [showSpeed, setShowSpeed] = useState(false); // 속도 탭 → 슬라이더(0.1~3x) 노출 토글.
+  const [showSpeed, setShowSpeed] = useState(false);
   const [vol, setVol] = useState(1);
-  const [showVol, setShowVol] = useState(false); // 볼륨 탭 → 슬라이더 오버레이(속도와 동일 패턴).
+  const [showVol, setShowVol] = useState(false);
   const [loop, setLoop] = useState(false);
-  const loopingRef = useRef(false); // A-B 루프 0.5초 딜레이 중 재트리거 방지.
-  // A-B 단어 경계 snap — t 가 든 단어로(있으면), 빈음이면 A=다음 단어 start / B=이전 단어 end.
+  const [menu, setMenu] = useState(false);
+  const [ownA, setOwnA] = useState<number | null>(null);
+  const [ownB, setOwnB] = useState<number | null>(null);
+  const loopingRef = useRef(false); // A-B 되돌아가는 0.5초 사이의 재트리거 방지
+
+  const controlled = !!(pSetAbA && pSetAbB);
+  const abA = controlled ? (pAbA ?? null) : ownA;
+  const abB = controlled ? (pAbB ?? null) : ownB;
+  const setAbA = controlled ? pSetAbA! : setOwnA;
+  const setAbB = controlled ? pSetAbB! : setOwnB;
+
+  const th: TransportTheme = typeof theme === 'string'
+    ? (TRANSPORT_THEMES[theme] ?? TRANSPORT_THEMES.plain)
+    : { ...TRANSPORT_THEMES.plain, ...theme };
+
+  // A-B 경계 붙이기 — t 가 든 구간으로, 빈 자리면 A=다음 구간 시작 / B=이전 구간 끝.
   const snapStart = (t: number) => {
-    if (!words.length) return t;
-    const inw = words.find((w) => t >= w.start && t < w.end);
+    if (!snapTo.length) return t;
+    const inw = snapTo.find((w) => t >= w.start && t < w.end);
     if (inw) return inw.start;
-    const next = words.find((w) => w.start >= t);
+    const next = snapTo.find((w) => w.start >= t);
     return next ? next.start : t;
   };
   const snapEnd = (t: number) => {
-    if (!words.length) return t;
-    const inw = words.find((w) => t >= w.start && t < w.end);
+    if (!snapTo.length) return t;
+    const inw = snapTo.find((w) => t >= w.start && t < w.end);
     if (inw) return inw.end;
-    let prev: { start: number; end: number } | undefined;
-    for (const w of words) { if (w.end <= t) prev = w; else break; }
+    let prev: TransportSpan | undefined;
+    for (const w of snapTo) { if (w.end <= t) prev = w; else break; }
     return prev ? prev.end : t;
   };
+
   useEffect(() => {
     const a = audioRef.current; if (!a) return;
     const onT = () => {
-      setCur(a.currentTime); onTime(a.currentTime);
-      // A-B 구간반복 — B 도달 시 0.5초 숨돌린 뒤 A 부터(바로 또 시작하면 못 따라감, 정독 청취).
+      setCur(a.currentTime); onTime?.(a.currentTime);
+      // B 에 닿으면 0.5초 숨 돌리고 A 로 — 바로 또 시작하면 귀가 못 따라간다.
       if (abA != null && abB != null && abB > abA && a.currentTime >= abB && !loopingRef.current) {
         loopingRef.current = true;
         a.pause();
@@ -2035,85 +2077,152 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
         }, 500);
       }
     };
-    const onMeta = () => { setDur(a.duration || 0); onDur(a.duration || 0); };
+    const onMeta = () => { setDur(a.duration || 0); onDur?.(a.duration || 0); };
     const onEnd = () => { if (!a.loop) setPlaying(false); };
-    // play/pause 이벤트 = 버튼 상태 동기 (단어 클릭·seek 등 외부 재생도 버튼이 ▶↔❚❚ 반영).
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    a.addEventListener('timeupdate', onT); a.addEventListener('loadedmetadata', onMeta); a.addEventListener('ended', onEnd);
+    a.addEventListener('timeupdate', onT); a.addEventListener('loadedmetadata', onMeta);
+    a.addEventListener('durationchange', onMeta); a.addEventListener('ended', onEnd);
     a.addEventListener('play', onPlay); a.addEventListener('pause', onPause);
-    return () => { a.removeEventListener('timeupdate', onT); a.removeEventListener('loadedmetadata', onMeta); a.removeEventListener('ended', onEnd); a.removeEventListener('play', onPlay); a.removeEventListener('pause', onPause); };
+    onMeta();
+    return () => {
+      a.removeEventListener('timeupdate', onT); a.removeEventListener('loadedmetadata', onMeta);
+      a.removeEventListener('durationchange', onMeta); a.removeEventListener('ended', onEnd);
+      a.removeEventListener('play', onPlay); a.removeEventListener('pause', onPause);
+    };
   }, [audioRef, abA, abB, onTime, onDur]);
-  // 재생 중 rAF 로 시간/슬라이더 부드럽게 — timeupdate 는 ~4회/초라 시간바가 뚝뚝 끊김.
+
+  // 재생 중엔 rAF — timeupdate 는 초당 네 번이라 슬라이더도 가사도 뚝뚝 끊긴다.
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
     const tick = () => {
       const a = audioRef.current;
-      if (a && !a.paused) { setCur(a.currentTime); onTime(a.currentTime); }
+      if (a && !a.paused) { setCur(a.currentTime); onTime?.(a.currentTime); }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [playing, audioRef, onTime]);
+
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.loop = loop; }, [loop, audioRef]);
-  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) { if (abA != null && (a.currentTime < abA || (abB != null && a.currentTime >= abB))) a.currentTime = abA; void a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); } };
-  const seek = (t: number) => { const a = audioRef.current; if (a) { a.currentTime = t; setCur(t); } };
-  const fmt = (s: number) => { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60); const x = Math.floor(s % 60); return `${m}:${x.toString().padStart(2, '0')}`; };
-  // 활성 = muted 슬레이트(약간 진해짐) — 파랑/녹색/주황 등 saturated 색 대신 컨트롤 톤 통일.
-  const pill = (on: boolean) => `px-1.5 py-0.5 rounded leading-none transition-colors ${on ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`;
+
+  const toggle = () => {
+    const a = audioRef.current; if (!a) return;
+    if (a.paused) {
+      if (abA != null && (a.currentTime < abA || (abB != null && a.currentTime >= abB))) a.currentTime = abA;
+      void a.play(); setPlaying(true);
+    } else { a.pause(); setPlaying(false); }
+  };
+  // 위치를 옮기면 그 자리를 바로 알린다 — timeupdate 를 기다리면 가사가 한 박 늦게 따라온다.
+  const seek = (t: number) => { const a = audioRef.current; if (a) { a.currentTime = t; setCur(t); onTime?.(t); } };
+  const fmt = (s: number) => {
+    if (!isFinite(s) || s < 0) return '0:00';
+    const m = Math.floor(s / 60);
+    return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+  };
+  const pct = (v: number, max: number) => `${max > 0 ? Math.min(100, Math.max(0, (v / max) * 100)) : 0}%`;
+  const pillStyle = (on: boolean) => ({ background: on ? th.pillOn : th.pill, color: on ? th.text : th.muted });
+  const pillCls = 'px-1.5 py-0.5 rounded leading-none transition-colors';
+
   return (
-    <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5">
+    <div style={{ ['--tp-accent' as string]: th.accent, ['--tp-track' as string]: th.track,
+                  background: th.surface, borderColor: th.border, padding: th.pad } as React.CSSProperties}
+      className="rounded-lg border">
+      <style>{TRANSPORT_CSS}</style>
       <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
       <div className="flex items-center gap-2">
-        <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'} className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
+        <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'}
+          style={{ background: th.accent }}
+          className="w-9 h-9 shrink-0 rounded-full text-white flex items-center justify-center hover:opacity-90">
           {playing
             ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
             : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
         </button>
-        <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
-        <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
+        <input type="range" min={0} max={dur || 0} step={0.05} value={Math.min(cur, dur || 0)}
+          onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치"
+          className="tp-range flex-1" style={{ ['--tp-pct' as string]: pct(cur, dur) } as React.CSSProperties} />
+        <span className="text-[11px] tabular-nums shrink-0" style={{ color: th.muted }}>{fmt(cur)}/{fmt(dur)}</span>
+        {downloads.length > 0 && (
+          <span className="relative shrink-0">
+            <button type="button" aria-label="내려받기" onClick={() => setMenu((v) => !v)}
+              className="w-7 h-7 rounded-md leading-none hover:bg-black/5" style={{ color: th.muted }}>⋮</button>
+            {menu && (
+              <>
+                <span className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+                <span className="absolute right-0 top-8 z-20 min-w-[7rem] rounded-lg border border-slate-200 bg-white shadow-lg py-1 flex flex-col">
+                  {downloads.map((d) => (
+                    <a key={d.label} href={d.href} download onClick={() => setMenu(false)}
+                      className="px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50">{d.label}</a>
+                  ))}
+                </span>
+              </>
+            )}
+          </span>
+        )}
       </div>
-      {/* 컨트롤 한 줄(브라우저 TTS 와 동일 구조) — 속도·전체반복·구간 + 볼륨(ml-auto 로 항상 우측 끝).
-          모바일은 자연 wrap. 시험 모드(study=false)면 속도·전체반복·구간 숨김(1회청취), 볼륨만(우측 고정). */}
+      {/* 컨트롤 한 줄 — 배속·전체반복·구간 + 볼륨(ml-auto 로 항상 우측 끝). 모바일은 자연 wrap.
+          시험 모드(study=false)면 배속·전체반복·구간을 숨긴다(1회청취). */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
         {study && (
           <div className="relative flex items-center gap-1.5">
-            <span className="text-slate-400">속도</span>
-            <button type="button" onClick={() => setShowSpeed((v) => !v)} className={pill(showSpeed)}>{speed.toFixed(1)}x</button>
+            <span style={{ color: th.muted }}>속도</span>
+            <button type="button" onClick={() => setShowSpeed((v) => !v)} className={pillCls} style={pillStyle(showSpeed)}>{speed.toFixed(1)}x</button>
             {showSpeed && (
-              // 팝오버(absolute, 흐름 밖) — 다른 컨트롤 위에 떠서 줄 밀림 0. 슬라이더 놓으면 자동 닫힘.
+              // 팝오버(흐름 밖) — 다른 컨트롤 위에 떠서 줄 밀림 0. 슬라이더를 놓으면 닫힌다.
               <div className="absolute left-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-52">
                 <input type="range" min={0.1} max={3} step={0.1} value={speed}
                   onChange={(e) => setSpeed(Math.round(Number(e.target.value) * 10) / 10)}
-                  onPointerUp={() => setShowSpeed(false)}
-                  aria-label="재생 속도" className="flex-1 accent-blue-600" />
+                  onPointerUp={() => setShowSpeed(false)} aria-label="재생 속도"
+                  className="tp-range flex-1" style={{ ['--tp-pct' as string]: pct(speed - 0.1, 2.9) } as React.CSSProperties} />
                 <span className="w-9 text-right tabular-nums text-slate-500">{speed.toFixed(1)}x</span>
               </div>
             )}
           </div>
         )}
         {study && <>
-          <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">↻</button>
-          <span className="text-slate-400 ml-1">구간</span>
-          <button type="button" onClick={() => setAbA(snapStart(cur))} className={pill(abA != null)} title="구간 시작(A) — 현재 위치">A</button>
-          <button type="button" onClick={() => setAbB(snapEnd(cur))} className={pill(abB != null)} title="구간 끝(B) — 현재 위치">B</button>
-          {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
+          <button type="button" onClick={() => setLoop((v) => !v)} className={pillCls} style={pillStyle(loop)} title="전체 반복">↻</button>
+          <span className="ml-1" style={{ color: th.muted }}>구간</span>
+          <button type="button" onClick={() => setAbA(snapStart(cur))} className={pillCls} style={pillStyle(abA != null)} title="구간 시작(A) — 현재 위치">A</button>
+          <button type="button" onClick={() => setAbB(snapEnd(cur))} className={pillCls} style={pillStyle(abB != null)} title="구간 끝(B) — 현재 위치">B</button>
+          {(abA != null || abB != null) && (
+            <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className={pillCls} style={pillStyle(false)} title="구간 해제">✕</button>
+          )}
         </>}
-        {/* 볼륨 = 항상 오른쪽 끝 고정(ml-auto) — 구간 ✕ 버튼이 떠도 위치 불변. 시험 모드(볼륨만)도 동일하게 우측. */}
         <div className="relative flex items-center ml-auto">
-          <button type="button" onClick={() => setShowVol((v) => !v)} className={pill(showVol)} aria-label="볼륨">🔊 {Math.round(vol * 100)}</button>
+          <button type="button" onClick={() => setShowVol((v) => !v)} className={pillCls} style={pillStyle(showVol)} aria-label="볼륨">🔊 {Math.round(vol * 100)}</button>
           {showVol && (
             <div className="absolute right-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-44">
-              <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} onPointerUp={() => setShowVol(false)} aria-label="볼륨" className="flex-1 accent-blue-600" />
+              <input type="range" min={0} max={1} step={0.05} value={vol}
+                onChange={(e) => setVol(Number(e.target.value))} onPointerUp={() => setShowVol(false)}
+                aria-label="볼륨" className="tp-range flex-1" style={{ ['--tp-pct' as string]: pct(vol, 1) } as React.CSSProperties} />
               <span className="w-8 text-right tabular-nums text-slate-500">{Math.round(vol * 100)}</span>
             </div>
           )}
         </div>
       </div>
+      {children}
     </div>
+  );
+}
+
+// 토익 LC = 공통 재생기에 미색지 색과 단어 경계만 얹은 것. 이 껍데기가 남는 이유는 부르는 쪽
+// (ListeningComp)이 `words`·`study` 라는 자기 어휘로 계속 말하게 하기 위해서다.
+function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [], abA, abB, setAbA, setAbB }: {
+  src: string;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
+  onTime: (t: number) => void;
+  onDur: (d: number) => void;
+  study?: boolean;
+  words?: TransportSpan[];
+  abA: number | null; abB: number | null;
+  setAbA: (t: number | null) => void; setAbB: (t: number | null) => void;
+}) {
+  return (
+    <AudioTransport src={src} audioRef={audioRef} onTime={onTime} onDur={onDur} study={study}
+      theme="paper" snapTo={words} abA={abA} abB={abB} setAbA={setAbA} setAbB={setAbB} />
   );
 }
 
