@@ -3468,6 +3468,49 @@ def action_render(inp):
     return {"success": True, "data": data}
 
 
+def action_preview(inp):
+    """Hear a score. The browser has no MIDI synthesiser, so a .mid in the library is a file
+    nobody can play — the sound has to be made on this side, by the same engine that renders
+    everything else, so what you hear IS what a render would give you.
+
+    Rendered once per file and then found again: the name carries a hash of the bytes, so the
+    second press is a directory lookup, not a minute of synthesis. Nothing is composed and no
+    taste knob is applied — this is the score as written."""
+    src = str(inp.get("path") or inp.get("scoreMediaPath") or "").strip()
+    if not src:
+        return {"success": False, "error": "path 가 필요합니다 — 악보 파일의 경로·URL·별칭"}
+    media_path, err = resolve_score_media({"scoreMediaPath": src})
+    if err:
+        return {"success": False, "error": err}
+    if not media_path or not os.path.isfile(media_path):
+        return {"success": False, "error": f"악보 파일을 찾지 못했습니다: {src}"}
+    with open(media_path, "rb") as fh:
+        h = hashlib.sha1(fh.read()).hexdigest()[:10]
+    # 이미 구워 둔 것이 있으면 그것 — 미디어 보관함이 곧 캐시다(모듈이 따로 장부를 안 든다).
+    tag = f"preview-{h}"
+    try:
+        for fn in sorted(os.listdir("user/media")):
+            if tag in fn and not fn.endswith(".meta.json"):
+                return {"success": True, "data": {"url": f"/user/media/{fn}", "cached": True}}
+    except OSError:
+        pass
+    stem = _slug_name(os.path.basename(media_path)) or "score"
+    out = action_render({"scoreMediaPath": media_path})
+    if not out.get("success"):
+        return out
+    data = out.get("data") or {}
+    imports = data.get("_mediaImport")
+    if isinstance(imports, list):
+        imports = next((i for i in imports if not str(i.get("path", "")).endswith(".mid")), None)
+    if not isinstance(imports, dict):
+        return {"success": False, "error": "미리듣기 렌더가 파일을 내놓지 않았습니다"}
+    # 이름이 곧 색인 — 다음 호출이 이 해시로 이 파일을 찾는다.
+    imports["filenameHint"] = f"{stem}-{tag}"
+    return {"success": True, "data": {"_mediaImport": imports, "cached": False,
+                                      "note": "악보를 소리로 구웠습니다 — 브라우저는 MIDI 를 "
+                                              "직접 재생하지 못합니다"}}
+
+
 def action_selftest():
     checks = []
 
@@ -4401,9 +4444,12 @@ def main():
         out = action_scores(inp)
     elif action == "lyrics":
         out = action_lyrics(inp)
+    elif action == "preview":
+        out = action_preview(inp)
     else:
         out = {"success": False,
-               "error": f"unknown action {action!r} — one of: render, scores, lyrics, selftest"}
+               "error": f"unknown action {action!r} — one of: render, preview, scores, lyrics, "
+                        "selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False)).encode("utf-8"))

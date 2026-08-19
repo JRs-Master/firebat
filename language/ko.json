@@ -976,7 +976,7 @@
     "delete": "삭제",
     "kind_all": "전체",
     "kind_image": "이미지",
-    "kind_audio": "오디오",
+    "kind_audio": "음원",
     "kind_document": "문서",
     "kind_other": "기타",
     "sort_label": "정렬",
@@ -989,7 +989,13 @@
     "upload_failed": "업로드에 실패했습니다",
     "upload_too_large": "파일이 너무 큽니다 (최대 {max}MB).",
     "download": "다운로드",
-    "no_preview": "미리보기를 지원하지 않는 형식입니다"
+    "no_preview": "미리보기를 지원하지 않는 형식입니다",
+    "kind_music": "음악",
+    "kind_score": "악보",
+    "kind_lyrics": "가사",
+    "score_listen": "들어보기",
+    "score_rendering": "소리로 굽는 중… 처음 한 번만 걸립니다",
+    "score_no_browser": "브라우저는 악보를 직접 재생하지 못합니다"
   },
   "module_settings": {
     "file_pick": "파일 선택",

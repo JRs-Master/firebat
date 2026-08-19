@@ -989,7 +989,13 @@
     "upload_failed": "Upload failed",
     "upload_too_large": "File too large (max {max}MB).",
     "download": "Download",
-    "no_preview": "No preview for this format"
+    "no_preview": "No preview for this format",
+    "kind_music": "Music",
+    "kind_score": "Score",
+    "kind_lyrics": "Lyrics",
+    "score_listen": "Listen",
+    "score_rendering": "Rendering to audio… only the first time",
+    "score_no_browser": "A browser cannot play a score on its own"
   },
   "module_settings": {
     "file_pick": "Choose file",

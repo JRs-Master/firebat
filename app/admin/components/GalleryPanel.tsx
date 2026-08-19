@@ -40,8 +40,11 @@ interface MediaItem {
 
 const PAGE_SIZE = 48;
 
-/** Content type → panel kind. Same vocabulary as the Rust list filter (media_kind). */
-type MediaKind = 'image' | 'audio' | 'document' | 'other';
+/** Content type + extension → panel kind. Same vocabulary as the Rust list filter
+ *  (`media_kind_of` in infra/src/adapters/media.rs) — **두 벌이니 한쪽만 고치지 말 것.**
+ *  `music` 은 종류가 아니라 묶음(음원 ∪ 악보 ∪ 가사)이라 아이콘 표에는 없다. */
+type MediaKind = 'image' | 'audio' | 'score' | 'lyrics' | 'document' | 'other';
+type KindChip = MediaKind | 'music' | 'all';
 const DOC_CONTENT_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -51,15 +54,66 @@ const DOC_CONTENT_TYPES = new Set([
   'application/haansofthwpx',
   'application/hwp+zip',
 ]);
-function kindOf(contentType: string): MediaKind {
+// 우리 포맷은 **확장자가 정한다** — 주장된 타입이 못 미덥다(실측: .mxl 하나가
+// application/octet-stream 으로, .mid 는 audio/mid 와 audio/midi 로 갈려 들어와 있었다).
+const SCORE_EXTS = new Set(['mid', 'midi', 'mxl', 'musicxml']);
+function kindOf(contentType: string, ext?: string): MediaKind {
+  const e = (ext || '').toLowerCase();
+  if (SCORE_EXTS.has(e)) return 'score';
+  if (e === 'lrc') return 'lyrics';
   const ct = (contentType || '').toLowerCase();
   if (ct.startsWith('image/')) return 'image';
   if (ct.startsWith('audio/') || ct === 'application/ogg') return 'audio';
   if (DOC_CONTENT_TYPES.has(ct)) return 'document';
   return 'other';
 }
+const MUSIC_KINDS: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
+
+/** 악보 미리듣기 — 브라우저엔 MIDI 신디사이저가 없어서, 소리는 이쪽에서 만들어야 한다.
+ *  굽는 엔진은 sing 이 렌더에 쓰는 바로 그것이라 **여기서 들리는 것이 곧 렌더 결과**다.
+ *  같은 파일은 한 번만 굽는다(모듈이 해시로 이름 붙여 두고 다음엔 그것을 찾는다). */
+function ScorePreview({ path, t }: { path: string; t: (k: string) => string }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'error'>('idle');
+  const [url, setUrl] = useState('');
+  const [err, setErr] = useState('');
+  useEffect(() => { setState('idle'); setUrl(''); setErr(''); }, [path]);
+  const listen = async () => {
+    setState('busy'); setErr('');
+    try {
+      const res = await fetch('/api/module/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ module: 'sing', data: { action: 'preview', path } }),
+      });
+      const j = await res.json();
+      // 구운 파일은 media 로 들어오고(첫 번째), 이미 있던 것이면 url 이 바로 온다.
+      const got = j?.data?.url
+        || (Array.isArray(j?.data?.media) ? j.data.media[0]?.url : j?.data?.media?.url);
+      if (!j?.success || !got) throw new Error(j?.error || 'preview failed');
+      setUrl(got); setState('ready');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setState('error');
+    }
+  };
+  if (state === 'ready') return <div className="w-full max-w-sm"><AudioTransport src={url} study /></div>;
+  return (
+    <div className="flex flex-col items-center gap-2 w-full max-w-sm">
+      <button
+        type="button" onClick={listen} disabled={state === 'busy'}
+        className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700 disabled:opacity-50"
+      >
+        {state === 'busy' ? t('gallery.score_rendering') : t('gallery.score_listen')}
+      </button>
+      <p className="text-[11px] text-slate-400 text-center">
+        {state === 'error' ? err : t('gallery.score_no_browser')}
+      </p>
+    </div>
+  );
+}
 const KIND_ICON: Record<MediaKind, typeof ImageIcon> = {
-  image: ImageIcon, audio: Music, document: FileText, other: FileIcon,
+  image: ImageIcon, audio: Music, score: Music, lyrics: FileText,
+  document: FileText, other: FileIcon,
 };
 
 /** Format badge colors — the same vocabulary as the chat file cards (format colors are
@@ -98,7 +152,10 @@ const EXT_MIME: Record<string, string> = {
 const UPLOAD_ACCEPT = 'image/*,audio/*,.mid,.midi,.pdf,.docx,.xlsx,.pptx,.hwpx,.hwp';
 const UPLOAD_MAX_MB = 25;
 
-const KINDS: Array<MediaKind | 'all'> = ['all', 'image', 'audio', 'document', 'other'];
+// 윗줄은 큰 갈래, 음악을 고르면 아랫줄에 그 안의 셋이 선다 — 한 곡을 찾을 때 소리·악보·가사가
+// 서로 옆에 있어야 한다(전엔 .mid 는 오디오, .mxl 은 기타로 같은 곡이 두 탭에 흩어졌다).
+const KINDS: KindChip[] = ['all', 'image', 'music', 'document', 'other'];
+const MUSIC_SUB: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
 const SORTS = ['newest', 'oldest', 'name', 'size'] as const;
 type SortKey = typeof SORTS[number];
 
@@ -116,7 +173,7 @@ export function GalleryPanel({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [scope, setScope] = useState<'all' | 'user' | 'system'>('user');
-  const [kind, setKind] = useState<MediaKind | 'all'>('all');
+  const [kind, setKind] = useState<KindChip>('all');
   const [sort, setSort] = useState<SortKey>('newest');
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
@@ -336,13 +393,29 @@ export function GalleryPanel({
               key={k}
               onClick={() => setKind(k)}
               className={`flex-1 px-1 py-1 text-[10px] font-bold rounded-md transition-colors ${
-                kind === k ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+                (k === 'music' ? MUSIC_KINDS.includes(kind) : kind === k)
+                  ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'
               }`}
             >
               {t(`gallery.kind_${k}`)}
             </button>
           ))}
         </div>
+        {MUSIC_KINDS.includes(kind) && (
+          <div className="flex gap-1 pl-2">
+            {MUSIC_SUB.map(k => (
+              <button
+                key={k}
+                onClick={() => setKind(k)}
+                className={`flex-1 px-1 py-1 text-[10px] font-semibold rounded-md transition-colors ${
+                  kind === k ? 'bg-slate-200 text-slate-800' : 'text-slate-400 hover:bg-slate-100'
+                }`}
+              >
+                {k === 'music' ? t('gallery.kind_all') : t(`gallery.kind_${k}`)}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <select
             value={sort}
@@ -392,7 +465,7 @@ export function GalleryPanel({
             {items.map((item, idx) => {
               const isError = item.status === 'error';
               const isRendering = item.status === 'rendering';
-              const itemKind = kindOf(item.contentType);
+              const itemKind = kindOf(item.contentType, item.ext);
               const KindIcon = KIND_ICON[itemKind];
               const thumbSrc = item.thumbnailUrl || `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
               const tooltipLabel = isError
@@ -507,7 +580,7 @@ function MediaDetailModal({
 }) {
   const t = useTranslations();
   const isError = item.status === 'error';
-  const itemKind = kindOf(item.contentType);
+  const itemKind = kindOf(item.contentType, item.ext);
   const HeaderIcon = KIND_ICON[itemKind];
   const canRegenerate = !!item.prompt; // a prompt is required to re-run
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -608,6 +681,11 @@ function MediaDetailModal({
                 <Loader2 size={32} className="animate-spin" />
                 <div className="text-sm font-bold">{t('gallery.generating_title')}</div>
                 <p className="text-[11px] text-slate-500 italic mt-1">{t('gallery.generating_hint')}</p>
+              </div>
+            ) : itemKind === 'score' ? (
+              <div className="flex flex-col items-center gap-3 w-full px-4 py-6 text-slate-600">
+                <Music size={32} strokeWidth={1.5} />
+                <ScorePreview path={`${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`} t={t} />
               </div>
             ) : itemKind === 'audio' ? (
               <div className="flex flex-col items-center gap-3 w-full px-4 py-6 text-slate-600">

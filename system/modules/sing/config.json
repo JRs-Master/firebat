@@ -42,7 +42,9 @@
         "type": "string",
         "enum": [
           "render",
+          "preview",
           "scores",
+          "lyrics",
           "selftest"
         ],
         "description": "render = score -> song. Returns data.media with the wav url (put it in a `listening` component's audioUrl) and, with midiOut, the .mid beside it. scores = list the shelved scores (alias + filename) — check it FIRST when the user refers to an uploaded/shelved piece, then pass the alias as render's scoreMediaPath. You cannot recall a real melody from memory: an existing song plays from a MIDI (scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one. selftest = self-checks, no files needed."
@@ -325,6 +327,10 @@
         ],
         "description": "[scores] Filter the shelf by substring of alias or filename (case/spacing ignored). Omit for the whole shelf.",
         "collection": "scores"
+      },
+      "path": {
+        "type": "string",
+        "description": "[preview] The score file to hear: a media path, a URL, or a shelf alias."
       }
     }
   },
@@ -387,6 +393,19 @@
         "MR",
         "엠알",
         "반주"
+      ]
+    },
+    {
+      "id": "preview",
+      "name": "악보 미리듣기 (MIDI → 소리)",
+      "description": "악보 파일(path) 하나를 있는 그대로 소리로 구워 재생 URL 을 돌려줍니다 — 브라우저는 MIDI 를 재생하지 못하므로 이쪽에서 만듭니다. 같은 파일은 한 번만 굽고 이후에는 그 결과를 찾아 돌려줍니다. 작곡·편곡·취향 노브 없음(악보 그대로), 가사 없음.",
+      "params": [
+        "path"
+      ],
+      "aliases": [
+        "미리듣기",
+        "들어보기",
+        "미디재생"
       ]
     },
     {

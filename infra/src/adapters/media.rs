@@ -120,9 +120,23 @@ impl LocalMediaAdapter {
         }
     }
 
-    /// Content type → gallery kind ("image" | "audio" | "document" | "other").
-    /// The list filter and the panel chips speak this one vocabulary.
-    fn media_kind(content_type: &str) -> &'static str {
+    /// Content type (+ extension) → gallery kind.
+    /// `image | audio | score | lyrics | document | other`, and `music` = audio ∪ score ∪ lyrics
+    /// as a group the filter accepts. Music arrives in three forms and a person looking for a
+    /// piece wants all three near each other: the sound, the notation that makes it, and the
+    /// words that go over it. Before this, a `.mid` sat under audio (where it cannot even play)
+    /// while its `.mxl` sat under "other" — the same piece in two tabs.
+    ///
+    /// The **extension decides for our own formats**, because the claimed type is not reliable
+    /// for them: measured on the live store, one `.mxl` had arrived as `application/octet-stream`
+    /// and `.mid` was split across `audio/mid` and `audio/midi`. The browser has no MIME for a
+    /// score, so the byte gate is what vouches for these files, not the claim.
+    fn media_kind_of(content_type: &str, ext: &str) -> &'static str {
+        match ext.to_ascii_lowercase().as_str() {
+            "mid" | "midi" | "mxl" | "musicxml" => return "score",
+            "lrc" => return "lyrics",
+            _ => {}
+        }
         let ct = content_type.to_ascii_lowercase();
         if ct.starts_with("image/") {
             "image"
@@ -141,6 +155,16 @@ impl LocalMediaAdapter {
             "document"
         } else {
             "other"
+        }
+    }
+
+    /// Does a record belong under the chip the caller asked for? `music` is the one chip that
+    /// is a group rather than a kind — it is where the three musical forms live together.
+    fn kind_matches(record_kind: &str, asked: &str) -> bool {
+        if asked == "music" {
+            matches!(record_kind, "audio" | "score" | "lyrics")
+        } else {
+            record_kind == asked
         }
     }
 
@@ -533,7 +557,7 @@ impl IMediaPort for LocalMediaAdapter {
         }
         // 종류 필터 — content_type 분류. 페이지네이션 앞에서 걸러야 offset/total 이 맞는다.
         if let Some(kind) = opts.kind.as_deref().filter(|k| !k.is_empty() && *k != "all") {
-            all.retain(|r| Self::media_kind(&r.content_type) == kind);
+            all.retain(|r| Self::kind_matches(Self::media_kind_of(&r.content_type, &r.ext), kind));
         }
         // 정렬 — 기본 최신순. name 은 표시 이름(filenameHint 우선) 기준, size 는 큰 것부터.
         match opts.sort.as_deref().unwrap_or("newest") {
