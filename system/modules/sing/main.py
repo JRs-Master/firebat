@@ -997,11 +997,11 @@ STYLE_BAND = {
 # eighths lean (0 straight, 1 full triplet; drums/comp/bass only — the melody stays straight
 # because the vocal is cut to the written grid). Every knob is score-overridable.
 STYLE_FEEL = {
-    "trot":      {"comp": "stabs", "bass": "twobeat", "swing": 0.3, "gate": 0.8},
+    "trot":      {"orn": "kkeokgi", "comp": "stabs", "bass": "twobeat", "swing": 0.3, "gate": 0.8},
     "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
-    "rock":      {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
-    "metal":     {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.7},
+    "rock":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
+    "metal":     {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
@@ -1009,7 +1009,7 @@ STYLE_FEEL = {
     "hiphop":    {"comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
     "country":   {"comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
     "funk":      {"comp": "stabs", "bass": "alt", "swing": 0.0, "gate": 0.55},
-    "punk":      {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.6},
+    "punk":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.6},
     "jazz":      {"comp": "stabs", "bass": "walk", "swing": 0.65, "gate": 0.85},
     "blues":     {"comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
     "carol":     {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 0.95},
@@ -1073,9 +1073,17 @@ CHORD_QUALITY = {
 }
 
 
-def chord_voicing(root_midi, quality=""):
+def chord_voicing(root_midi, quality="", kind=""):
     """Root-position chord above the written root. Trot lives on minor and dominant sevenths, so
-    a score that could only say "root" was stuck in major whatever the song actually was."""
+    a score that could only say "root" was stuck in major whatever the song actually was.
+
+    `kind="power"` = root + fifth + octave, no third. That is what a distorted guitar plays and
+    why it stays clear: distortion multiplies every interval, and a third in there turns the
+    chord into mud. Rock, punk and metal are written that way, not as a taste choice."""
+    if kind == "power":
+        while root_midi < 40:
+            root_midi += 12
+        return [root_midi, root_midi + 7, root_midi + 12]
     semis = CHORD_QUALITY.get(str(quality or "").strip(), CHORD_QUALITY[""])
     # Low-interval limit (관현악법 그대로): close-position chords below ~C3 blur into a hum,
     # so the voicing lifts by octaves until its root clears C3. The bass line still owns the
@@ -1169,6 +1177,8 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     for part, name in hire.items():
         patch_of[part], prog[part] = resolve_instrument(name)
     defaults = STYLE_FEEL.get(style, STYLE_FEEL["trot"])
+    voicing_kind = defaults.get("voicing_kind", "")
+    lead_orn = defaults.get("orn", "")
     feel = feel or {}
     meter = int(feel.get("meter") or 4)
     swing = float(feel.get("swing") if feel.get("swing") is not None else defaults["swing"])
@@ -1196,14 +1206,27 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # curve only shapes notes that never declared one.
             own = vels[si] if si < len(vels) else None
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
-            out.append({"beat": beat, "beats": beats, "part": "melody", "patch": patch_of["melody"],
-                        "pitch": m, "program": prog["melody"], "vel": vel, "gate": gate})
+            if lead_orn == "kkeokgi" and beats >= 1.0:
+                # 꺾기 — 트로트를 트로트로 만드는 그 꺾는 창법. 긴 음의 **끝을** 한 음 떨어뜨렸다
+                # 놓는다(창법의 이름이 '꺾는다'인 자리가 거기다). 편곡만 뽕짝이고 가락이 곧게
+                # 뻗으면 "구수하다"가 안 산다(8/19 사용자: "뽕짝이 살짝 아쉽다").
+                # 폭은 온음 — 조표를 모르는 자리라 가장 흔한 폭을 쓴다.
+                flick = min(0.25, beats * 0.25)
+                out.append({"beat": beat, "beats": beats - flick, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": m,
+                            "program": prog["melody"], "vel": vel, "gate": gate})
+                out.append({"beat": beat + beats - flick, "beats": flick, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": max(0, m - 2),
+                            "program": prog["melody"], "vel": round(vel * 0.85, 3), "gate": gate})
+            else:
+                out.append({"beat": beat, "beats": beats, "part": "melody", "patch": patch_of["melody"],
+                            "pitch": m, "program": prog["melody"], "vel": vel, "gate": gate})
             beat += beats
     pos = 0.0
     prev_voicing = None
     for idx, (root, beats, quality) in enumerate(chords):
         rm = int(round(69 + 12 * math.log2(root / 440.0)))
-        voicing = smooth_voicing(chord_voicing(rm, quality), prev_voicing)
+        voicing = smooth_voicing(chord_voicing(rm, quality, voicing_kind), prev_voicing)
         prev_voicing = voicing
         if comp == "arp":
             # Eighths rippling up-and-down the voicing — needs the notes, not just a rhythm.
