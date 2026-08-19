@@ -719,7 +719,7 @@ def _generic_pattern(style, meter):
     """A derived groove for any meter the hand tables don't cover: kick on group heads, the
     backbeat on alternating groups, eighth hats (a ride for jazz/blues). One rule instead of a
     table per meter × style — 3/4 and 4/4 keep their idiomatic hand-written rows."""
-    if style in ("folk", "classic", "newage", "none"):
+    if style in ("folk", "classic", "newage", "strings", "none"):
         return []
     cym = "ride" if style in ("jazz", "blues") else "hat"
     hits = [(cym, sub * 0.5, 0.32) for sub in range(meter * 2)]
@@ -1247,15 +1247,19 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                         "patch": dpatch, "program": dprog,
                         "pitch": max(0, min(127, e["pitch"] + 12 * octv)),
                         "vel": e["vel"] * dvel, "pan": pan})
+    # 손으로 쓴 행이 있으면 그것, 없으면 **그 장르에서 파생**한다. 예전엔 표에 없는 장르가
+    # trot 으로 떨어졌는데, 3박 표에는 ballad·march·none·trot 넷뿐이라 **3/4 클래식·포크·뉴에이지·
+    # 현악이 전부 뽕짝 드럼을 달고 나왔다**(그리고 4마디마다 트로트 톰 필까지). 파생은 조용해야
+    # 할 장르를 알고 있으므로(_generic_pattern) 드럼이 없어야 할 곡은 그대로 조용하다.
     if meter == 3:
-        base = DRUM_PATTERNS_3.get(style, DRUM_PATTERNS_3["trot"])
-        fill = DRUM_FILLS_3.get(style if style in DRUM_FILLS_3 else "trot")
+        base = DRUM_PATTERNS_3[style] if style in DRUM_PATTERNS_3 else _generic_pattern(style, 3)
+        fill = DRUM_FILLS_3.get(style) or (_generic_fill(3) if base else None)
     elif meter == 4:
-        base = DRUM_PATTERNS.get(style, DRUM_PATTERNS["trot"])
-        fill = DRUM_FILLS.get(style if style in DRUM_FILLS else "trot")
+        base = DRUM_PATTERNS[style] if style in DRUM_PATTERNS else _generic_pattern(style, 4)
+        fill = DRUM_FILLS.get(style) or (_generic_fill(4) if base else None)
     else:
         base = _generic_pattern(style, meter)
-        fill = _generic_fill(meter)
+        fill = _generic_fill(meter) if base else None
     # A score's own drumPattern replaces the style's bar loop; fills and crashes still apply,
     # so a custom groove keeps a drummer (다다다다 included) instead of becoming a metronome.
     custom = feel.get("drums")
