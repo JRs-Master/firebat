@@ -1,7 +1,7 @@
 'use client';
 
-import { Ghost, Music } from 'lucide-react';
-import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, FileCard } from '../../../lib/file-card';
+import { Ghost } from 'lucide-react';
+import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, AudioFileCard, FileCard } from '../../../lib/file-card';
 import ReactMarkdown from 'react-markdown';
 import { CodeComp } from '@/app/components/CodeBlock';
 import remarkGfm from 'remark-gfm';
@@ -72,15 +72,7 @@ function ShareMediaLink({ href, children, ...props }: any) {
     const name = (text || (() => { try { return decodeURIComponent(m[1]); } catch { return m[1]; } })())
       .replace(new RegExp(`\.${ext}$`, 'i'), '');
     if (AUDIO_PLAYER_EXTS.has(ext)) {
-      return (
-        <span className="not-prose my-1.5 flex items-center gap-2.5 max-w-md px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm">
-          <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500"><Music size={16} /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
-            <audio controls preload="none" src={href} className="mt-1 w-full h-8" />
-          </span>
-        </span>
-      );
+      return <AudioFileCard href={href} name={name} ext={ext} />;
     }
     return <FileCard href={href} name={name} ext={ext} />;
   }

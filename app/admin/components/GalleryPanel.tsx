@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw, Upload, Music, FileText, File as FileIcon, FolderOpen, Download } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
+import { AudioTransport } from '../../../lib/audio-transport';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useEvents } from '../hooks/events-manager';
@@ -611,7 +612,9 @@ function MediaDetailModal({
             ) : itemKind === 'audio' ? (
               <div className="flex flex-col items-center gap-3 w-full px-4 py-6 text-slate-600">
                 <Music size={32} strokeWidth={1.5} />
-                <audio controls src={`${url}?v=${item.bytes || item.createdAt}`} className="w-full max-w-sm" />
+                <div className="w-full max-w-sm">
+                  <AudioTransport src={`${url}?v=${item.bytes || item.createdAt}`} study={false} />
+                </div>
               </div>
             ) : itemKind !== 'image' ? (
               <div className="flex flex-col items-center gap-2 text-center px-4 py-8 text-slate-500">

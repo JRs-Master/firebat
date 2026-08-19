@@ -3,6 +3,7 @@
 import { createContext, useContext } from 'react';
 import React from 'react';
 import { Download, FileText } from 'lucide-react';
+import { AudioTransport } from './audio-transport';
 
 // ── The file card, shared by every surface that can be handed a document ──────────────────────
 // It started life inside the admin markdown renderer (a bare `[x.xlsx](...)` link read as an
@@ -31,6 +32,21 @@ export const FILE_CARD_EXTS: Record<string, string> = {
 const FILE_CARD_NEUTRAL = 'text-slate-600 bg-slate-100 border-slate-200';
 
 export const AUDIO_PLAYER_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'flac']);
+
+/** 들을 수 있는 파일의 카드 — 이름 한 줄 + 공통 재생기. 채팅과 공유 페이지가 **같은 카드**를
+ *  쓴다(전엔 같은 마크업이 두 벌이라 한쪽만 고쳐질 자리였다). 마크다운 문단 안에 들어가므로
+ *  전부 span 이고, 재생기도 그래서 span 으로 그린다. 음표는 재생기 막대가 이미 달고 있다. */
+export function AudioFileCard({ href, name, ext }: { href: string; name: string; ext: string }) {
+  return (
+    <span className="not-prose my-1.5 block max-w-md px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm">
+      <span className="block text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
+      <span className="block mt-1">
+        <AudioTransport src={href} study={false} preload="none"
+          downloads={[{ href, label: '저장' }]} />
+      </span>
+    </span>
+  );
+}
 
 /** Last path segment of an address, percent-decoded, query/hash dropped. */
 function baseNameOf(src: string): string {
