@@ -512,7 +512,7 @@ PATCHES = {
 }
 
 
-def synth_note(freq, dur, patch="bass", vel=0.8, bend=None):
+def synth_note(freq, dur, patch="bass", vel=0.8, bend=None, vib=None):
     """One note of `patch` — float array of `dur` seconds, peak-normalised to the patch gain.
 
     `bend` = BEND_CURVES 의 한 줄. 음 하나 안에서 음정이 움직인다(벤딩). 물리모델(ks) 패치는
@@ -532,16 +532,24 @@ def synth_note(freq, dur, patch="bass", vel=0.8, bend=None):
         # 벤딩과 비브라토는 같은 자리에서 만난다 — 둘 다 순간 주파수를 흔드는 일이라,
         # 하나의 위상 램프에 곱해 두면 서로를 지우지 않는다.
         curve = np.ones(n)
-        if bend:
-            fr = t / max(1e-6, dur)
-            curve = np.power(2.0, np.array([bend_at(bend, float(x)) for x in fr]) / 12.0)
+        if bend or vib:
+            semis = np.zeros(n)
+            if bend:
+                fr = t / max(1e-6, dur)
+                semis += np.array([bend_at(bend, float(x)) for x in fr])
+            if vib:
+                rate, depth, onset = vib
+                start = onset * dur
+                ease = np.clip((t - start) / 0.12, 0.0, 1.0)
+                semis += depth * ease * np.sin(2 * np.pi * rate * np.maximum(0.0, t - start))
+            curve = np.power(2.0, semis / 12.0)
         if p.get("vib"):
             rate, depth = p["vib"]
             # Vibrato that starts immediately sounds like a siren; players ease in.
             onset = np.minimum(1.0, t / 0.18)
             inst = freq * curve * (1.0 + depth * onset * np.sin(2 * np.pi * rate * t))
             ph = 2 * np.pi * np.cumsum(inst) / SR
-        elif bend:
+        elif bend or vib:
             ph = 2 * np.pi * np.cumsum(freq * curve) / SR
         else:
             ph = 2 * np.pi * freq * t
@@ -1123,6 +1131,26 @@ BEND_CURVES = {
 }
 
 
+# (Hz, 반음 깊이, 언제부터) — 손가락 비브라토. 벤딩이 **도착**이라면 이건 **머무는 동안**이고,
+# 기타 솔로에서 긴 음이 살아 있는 이유가 이것이다. 곧게 뻗은 롱톤은 신디사이저처럼 들린다.
+# 속도는 시간(Hz)이지 박이 아니다 — 느린 곡이라고 천천히 떨지 않는다.
+VIB_STYLES = {
+    "rock":  (5.5, 0.28, 0.35),   # 노래하는 비브라토 — 얕고 고르게
+    "metal": (6.0, 0.30, 0.30),
+    "blues": (5.0, 0.42, 0.30),   # 더 넓고 느리게 — 블루스의 그 울음
+}
+
+
+def vib_at(vib, t, dur):
+    """t초에서의 흔들림(반음). onset 전에는 0, 그 뒤로 서서히 열린다 — 처음부터 떨면 사이렌."""
+    rate, depth, onset = vib
+    start = onset * dur
+    if t <= start:
+        return 0.0
+    ease = min(1.0, (t - start) / max(1e-6, 0.12))
+    return depth * ease * math.sin(2 * math.pi * rate * (t - start))
+
+
 def bend_at(curve, frac):
     """곡선 위 한 점 — 브레이크포인트 사이를 직선으로 잇는다."""
     prev = curve[0]
@@ -1280,10 +1308,15 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
             if lead_orn in BEND_CURVES and beats >= 0.75:
                 # 진짜 벤딩 — 음을 둘로 쪼개지 않고 음정이 음 안에서 움직인다.
-                out.append({"beat": beat, "beats": beats, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": m,
-                            "program": prog["melody"], "vel": vel, "gate": gate,
-                            "bend": BEND_CURVES[lead_orn]})
+                row = {"beat": beat, "beats": beats, "part": "melody",
+                       "patch": patch_of["melody"], "pitch": m,
+                       "program": prog["melody"], "vel": vel, "gate": gate,
+                       "bend": BEND_CURVES[lead_orn]}
+                # 흔들림은 **긴 음에만** — 짧은 음에 걸면 떨 시간이 없어 음정만 흔들린 것처럼
+                # 들린다. 기타리스트도 롱톤에서만 손목을 쓴다.
+                if style in VIB_STYLES and beats >= 1.5:
+                    row["vib"] = VIB_STYLES[style]
+                out.append(row)
             elif lead_orn == "bend" and beats >= 0.5:
                 # 블루스의 스쿠프 — 반음 아래에서 밀어 올려 음에 도착한다. 기타·하모니카의
                 # 그 손이고, 곧게 시작하면 블루스로 안 들린다.
@@ -1628,7 +1661,7 @@ def render_arrangement(arr, spb, total_beats):
             seg = synth_note(freq_of_midi(e["pitch"]),
                              spb * held * float(e.get("gate", 1.0)),
                              e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)),
-                             bend=e.get("bend"))
+                             bend=e.get("bend"), vib=e.get("vib"))
             key = e["part"]
         m = min(len(seg), n_total - i)
         seg = seg[:m]
@@ -1766,16 +1799,23 @@ def write_midi(arr, bpm, path):
                 marks.append((start, 2, 127, 0))
                 marks.append((end, 2, 0, 0))
                 continue
-            curve = e.get("bend")
-            if curve and part != "drum":
-                # GM 의 휠 기본 범위는 ±2반음 — 록의 온음 벤딩이 마침 그 끝이다. 음 하나를
-                # 16토막으로 나눠 값을 놓고, 끝나면 0 으로 돌려 다음 음을 오염시키지 않는다.
+            curve, vib = e.get("bend"), e.get("vib")
+            if (curve or vib) and part != "drum":
+                # GM 의 휠 기본 범위는 ±2반음 — 록의 온음 벤딩이 마침 그 끝이다. 끝나면 0 으로
+                # 돌려 다음 음을 오염시키지 않는다. **시간 격자로** 훑는 이유는 비브라토가
+                # 박이 아니라 초로 떨기 때문 — 음을 n등분하면 느린 곡에서 흔들림이 늘어진다.
+                spb_w = 60.0 / max(1e-6, bpm)
+                dur_s = e["beats"] * spb_w
                 b0 = int(round(e["beat"] * tpb))
                 b1 = b0 + max(1, int(round(e["beats"] * tpb)))
-                for k in range(16):
-                    semis = bend_at(curve, k / 15.0)
+                steps = max(8, min(240, int(dur_s / 0.025)))
+                for k in range(steps + 1):
+                    frac = k / steps
+                    semis = bend_at(curve, frac) if curve else 0.0
+                    if vib:
+                        semis += vib_at(vib, frac * dur_s, dur_s)
                     val = max(-8192, min(8191, int(round(semis / 2.0 * 8192))))
-                    marks.append((b0 + (b1 - b0) * k // 15, 3, val, 0))
+                    marks.append((b0 + int((b1 - b0) * frac), 3, val, 0))
                 marks.append((b1, 3, 0, 0))
             start = int(round(e["beat"] * tpb))
             pitch = DRUM_NOTE.get(e["drum"], 42) if part == "drum" else e["pitch"]
