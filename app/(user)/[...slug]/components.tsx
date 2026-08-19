@@ -1699,6 +1699,7 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
   const [note, setNote] = useState<string | null>(null);
   const [cur, setCur] = useState(0);
   const [shift, setShift] = useState(Number(offset) || 0);
+  const [menu, setMenu] = useState(false);
   const [recState, setRecState] = useState<'idle' | 'arming' | 'recording'>('idle');
   const [takes, setTakes] = useState<{ mix: string; voice: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -1853,7 +1854,26 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
           </svg>
         </span>
         <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700 truncate">{title || '노래방'}</span>
-        {lines.length > 0 && <span className="text-[11px] text-slate-400 tabular-nums">{lines.length}줄</span>}
+        {lines.length > 0 && <span className="shrink-0 text-[11px] text-slate-400 tabular-nums">{lines.length}줄</span>}
+        {/* 내려받기는 재생기의 ⋮ 안에 있는 게 이 카드의 관례다 — 브라우저 기본 메뉴에는 MR 밖에
+            못 넣으므로(가사는 우리 파일이다) 카드가 자기 메뉴를 가진다. */}
+        <span className="relative shrink-0">
+          <button type="button" aria-label="파일 내려받기" onClick={() => setMenu((v) => !v)}
+            className="w-7 h-7 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 leading-none">⋮</button>
+          {menu && (
+            <>
+              <span className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+              <span className="absolute right-0 top-8 z-20 min-w-[7rem] rounded-lg border border-slate-200 bg-white shadow-lg py-1 flex flex-col">
+                <a href={audioUrl} download onClick={() => setMenu(false)}
+                  className="px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50">MR 저장</a>
+                {lrcUrl && (
+                  <a href={lrcUrl} download onClick={() => setMenu(false)}
+                    className="px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50">가사 저장</a>
+                )}
+              </span>
+            </>
+          )}
+        </span>
       </div>
 
       <div className="relative h-32 sm:h-36 px-5 py-4 bg-slate-50/60 flex flex-col justify-center gap-1.5">
@@ -1878,42 +1898,33 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
 
       <div className="px-3 py-2 border-t border-slate-100">
         <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {/* 어긋남은 그 .lrc 가 어느 음원 판본을 기준으로 찍혔느냐에 달렸다 — 곡마다도 파일마다도
-              다르니 값을 어디에 굳혀 두지 않는다(사용자). 걸음은 둘이면 충분하다: 0.5 로 자리를
-              잡고 0.1 로 다듬는다(실측 1.3초 = 다섯 번). */}
-          <span className="text-[11px] text-slate-500">가사 싱크</span>
+        {/* 한 줄에 들어가야 한다(모바일 실측: 저장 링크와 안내 문구가 두 줄로 접혔다) — 저장은
+            헤더로 올라갔고, 버튼은 숫자만 남기고, 좁으면 라벨이 먼저 빠진다. */}
+        <div className="mt-2 flex items-center gap-1 overflow-x-auto">
+          <span className="hidden sm:inline shrink-0 text-[11px] text-slate-500">가사 싱크</span>
           {[-0.5, -0.1, 0.1, 0.5].map((step) => (
             <button key={step} type="button"
               onClick={() => setShift((v) => Math.round((v + step) * 100) / 100)}
-              className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 tabular-nums">
-              {step > 0 ? '+' : '−'}{Math.abs(step)}초
+              className="shrink-0 px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 tabular-nums">
+              {step > 0 ? '+' : '−'}{Math.abs(step)}
             </button>
           ))}
-          <span className="px-1 text-[11px] tabular-nums text-slate-600 min-w-[4rem] text-center">
+          <span className="shrink-0 px-1 text-[11px] tabular-nums text-slate-600 min-w-[3.5rem] text-center">
             {shift > 0 ? '+' : ''}{shift.toFixed(2)}초
           </span>
           {shift !== 0 && (
             <button type="button" onClick={() => setShift(0)}
-              className="px-2 py-1 text-[11px] rounded-md text-slate-400 hover:text-slate-600">되돌리기</button>
+              className="shrink-0 px-1.5 py-1 text-[11px] rounded-md text-slate-400 hover:text-slate-600">되돌리기</button>
           )}
-          <span className="flex items-center gap-1.5 pl-1">
-            <a href={audioUrl} download className="text-[11px] text-slate-500 hover:text-slate-700">MR 저장</a>
-            {lrcUrl && (
-              <a href={lrcUrl} download className="text-[11px] text-slate-500 hover:text-slate-700">가사 저장</a>
-            )}
-          </span>
-          {record !== false && (
-            <span className="ml-auto flex items-center gap-1.5">
-              {!canRecord ? (
-                <span className="text-[11px] text-slate-400">녹음은 HTTPS 에서만 가능합니다</span>
-              ) : recState === 'recording' ? (
+          {record !== false && canRecord && (
+            <span className="ml-auto shrink-0">
+              {recState === 'recording' ? (
                 <button type="button" onClick={() => stopRef.current?.()}
-                  className="px-2.5 py-1 text-[11px] rounded-md bg-slate-800 text-white hover:bg-slate-700">■ 녹음 정지</button>
+                  className="px-2.5 py-1 text-[11px] rounded-md bg-slate-800 text-white hover:bg-slate-700">■ 정지</button>
               ) : (
                 <button type="button" disabled={recState === 'arming'} onClick={startRec}
                   className="px-2.5 py-1 text-[11px] rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                  {recState === 'arming' ? '준비 중…' : '● 부르면서 녹음'}
+                  {recState === 'arming' ? '준비 중…' : '● 녹음'}
                 </button>
               )}
             </span>
