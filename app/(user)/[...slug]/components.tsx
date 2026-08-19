@@ -1895,17 +1895,17 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
         <audio ref={audioRef} controls preload="metadata" src={audioUrl} className="w-full h-8" />
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {/* 어긋남은 그 .lrc 가 어느 음원 판본을 기준으로 찍혔느냐에 달렸다 — 곡마다도
-              파일마다도 다르니 값을 어디에 굳혀 두지 않는다(사용자). 듣는 사람이 그 자리에서
-              0.1초씩 맞춘다. */}
+              파일마다도 다르니 값을 어디에 굳혀 두지 않는다(사용자). 탭이 찍은 값은 0.01초
+              단위라 ± 도 같은 단위로 더한다 — 0.1 격자에 반올림하면 1.27 에서 +0.1 이 1.40 으로
+              튄다. */}
           <span className="text-[11px] text-slate-500">가사 싱크</span>
-          <button type="button" onClick={() => setShift((v) => Math.round((v - 0.1) * 10) / 10)}
+          <button type="button" onClick={() => setShift((v) => Math.round((v - 0.1) * 100) / 100)}
             className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">−0.1초</button>
-          <button type="button" onClick={() => setShift((v) => Math.round((v + 0.1) * 10) / 10)}
+          <button type="button" onClick={() => setShift((v) => Math.round((v + 0.1) * 100) / 100)}
             className="px-2 py-1 text-[11px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+0.1초</button>
           <span className="px-1 text-[11px] tabular-nums text-slate-600 min-w-[4rem] text-center">
             {shift > 0 ? '+' : ''}{shift.toFixed(2)}초
           </span>
-          <span className="text-[11px] text-slate-400">· 지금 들리는 소절을 누르면 맞춰집니다</span>
           {shift !== 0 && (
             <button type="button" onClick={() => setShift(0)}
               className="px-2 py-1 text-[11px] rounded-md text-slate-400 hover:text-slate-600">되돌리기</button>
