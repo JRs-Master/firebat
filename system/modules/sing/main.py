@@ -1001,7 +1001,7 @@ STYLE_FEEL = {
     "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "rock":      {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.8},
-    "metal":     {"voicing_kind": "power", "comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.7},
+    "metal":     {"voicing_kind": "power", "comp": "chug", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
     "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
@@ -1122,6 +1122,10 @@ def _comp_hits(kind, beats, meter):
                 if bar0 + off < beats:
                     hits.append((float(bar0 + off), 0.7, vel))
         return hits
+    if kind == "chug":
+        # 팜뮤트 — 지지직. 손날로 줄을 눌러 **아주 짧게** 끊어 치는 8분(빠르면 16분처럼 들린다).
+        # 울림이 없어서 화음이 아니라 엔진 소리가 되고, 그게 이 장르의 리듬 기타다.
+        return [(s * 0.5, 0.14, 0.72 if s % 2 == 0 else 0.58) for s in range(int(beats * 2))]
     if kind == "chank":
         # 펑크 기타의 커팅 — 16분 뒷박을 아주 짧게 긁는다. 길이가 짧은 것이 핵심이라
         # 화음이 울리지 않고 리듬이 된다.
@@ -1293,10 +1297,12 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                             "program": prog["chord"],
                             "vel": 0.58 if slot % 2 == 0 else 0.48})
         else:
+            # 팜뮤트는 제일 낮은 줄 하나만 눌러 끊는다 — 세 음을 다 그으면 스트로크가 된다.
+            struck = voicing[:1] if comp == "chug" else voicing
             for off, dur, vel in _comp_hits(comp, beats, meter):
                 if pos + off >= total_beats:
                     break
-                for p in voicing:
+                for p in struck:
                     out.append({"beat": pos + off, "beats": dur, "part": "chord",
                                 "patch": patch_of["chord"], "pitch": p,
                                 "program": prog["chord"], "vel": vel})
