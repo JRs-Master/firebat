@@ -55,7 +55,12 @@ const TRANSPORT_CSS = `
 .tp-range:hover::-webkit-slider-thumb,.tp-range:active::-webkit-slider-thumb,
 .tp-range:focus-visible::-webkit-slider-thumb{opacity:1}
 .tp-range:hover::-moz-range-thumb,.tp-range:active::-moz-range-thumb,
-.tp-range:focus-visible::-moz-range-thumb{opacity:1}`;
+.tp-range:focus-visible::-moz-range-thumb{opacity:1}
+.tp-btn:focus-visible,.tp-range:focus-visible{outline:none}
+.tp-btn:focus-visible{box-shadow:0 0 0 3px rgba(0,0,0,.12)}
+.tp-range:focus-visible{--tp-thumb-shadow:0 0 0 3px rgba(0,0,0,.12)}
+.tp-range:focus-visible::-webkit-slider-thumb{box-shadow:var(--tp-thumb-shadow)}
+.tp-range:focus-visible::-moz-range-thumb{box-shadow:var(--tp-thumb-shadow)}`;
 
 export type TransportSpan = { start: number; end: number };
 
@@ -187,9 +192,9 @@ export function AudioTransport({
   };
   const pct = (v: number, max: number) => `${max > 0 ? Math.min(100, Math.max(0, (v / max) * 100)) : 0}%`;
   const pillStyle = (on: boolean) => ({ background: on ? th.pillOn : th.pill, color: on ? th.text : th.muted });
-  const pillCls = 'px-1.5 py-0.5 rounded leading-none transition-colors';
+  const pillCls = 'tp-btn px-1.5 py-0.5 rounded leading-none transition-colors';
   // 아이콘 버튼 = 맨몸 글리프 + 손이 닿으면 동그라미(기본 재생기와 같은 손버릇).
-  const iconBtn = 'w-8 h-8 shrink-0 rounded-full flex items-center justify-center transition-colors hover:bg-black/[0.08]';
+  const iconBtn = 'tp-btn w-8 h-8 shrink-0 rounded-full flex items-center justify-center transition-colors hover:bg-black/[0.08]';
 
   return (
     <span style={{ display: 'block',
