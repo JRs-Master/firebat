@@ -220,7 +220,8 @@ def parse_score(score):
     axes = {}
     for key, hi, why in (("laidback", 0.5, "0 = 격자 위, 0.05 = R&B 의 그 여유"),
                          ("gate", 1.0, "0.55 = 끊어 치기, 1.0 = 이어 붙이기"),
-                         ("double", 1.0, "0 = 한 대, 0.7 = 좌우로 벌린 두 대")):
+                         ("double", 1.0, "0 = 한 대, 0.7 = 좌우로 벌린 두 대"),
+                         ("fill", 1.0, "0 = 안 받아침, 0.7 = 트로트 아코디언처럼 대답")):
         raw = score.get(key)
         if raw is None:
             continue
@@ -302,7 +303,8 @@ def parse_score(score):
             "drums": drum_rows, "bars": bars, "bpm": bpm, "doubles": doubles,
             "humanize": humanize, "pedal": pedal, "voicing": voicing,
             "orn": orn, "voicing_kind": chord_shape, "laidback": axes.get("laidback"),
-            "gate": axes.get("gate"), "double": axes.get("double")}
+            "gate": axes.get("gate"), "double": axes.get("double"),
+            "fill": axes.get("fill")}
     return spb, events, chords, style, band, feel, None
 
 
@@ -1174,6 +1176,14 @@ STYLE_FEEL = {
 # the model picks from the short list and quietly loses the genre's own hand. 실측 8/19: metal's
 # row asked for `chug`+`drive`, a caller could only say `stabs`+`alt`, and one override took the
 # wall off the metal render. selftest audits STYLE_FEEL against these.
+# How much the band ANSWERS. Comping is what a chord part does while the singer sings; a fill is
+# what it does while the singer does not. We had only the first, so a melody instrument like the
+# accordion spent a whole trot playing block chords on a grid — 사용자 8/20: "아코디언은 멜로디가
+# 있는 악기잖아 왜 뺘악~ 뺘악만 해". The material for the second only arrived with rests: until the
+# reader kept them, nothing in the data said where the singer stops.
+# 0 = never answer. The rows below are the genres whose face this is.
+FILL_STYLES = {"trot": 0.7, "blues": 0.6, "rocknroll": 0.55, "jazz": 0.45, "country": 0.4,
+               "rnb": 0.3}
 COMP_KINDS = ("pad", "stabs", "arp", "quarters", "eighths", "chug", "charleston", "chank")
 BASS_KINDS = ("hold", "twobeat", "alt", "walk", "drive", "offbeat", "funk16", "boogie")
 # How the lead hand shapes a long note, and what a chord actually contains. A genre IS these axes
@@ -1429,9 +1439,14 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     `band` = per-part instrument override ({part: PATCHES name}) on top of the style's own.
     `feel` = {meter, swing, comp, bass} from parse_score; None = the style's own defaults."""
     hire = dict(STYLE_BAND.get(style, STYLE_BAND["trot"]))
+    # The answering voice defaults to whoever is comping — in trot that is the accordion, which
+    # is the instrument the ear expects to hear reply. `band.fill` names someone else.
+    hire.setdefault("fill", hire.get("chord", "piano"))
     for part, name in (band or {}).items():
         if part in hire and resolve_instrument(name) is not None:
             hire[part] = name
+    if not (band or {}).get("fill"):
+        hire["fill"] = hire["chord"]
     # Two faces per instrument: the GM program (what the .mid and the sf2 engine mean) and the
     # builtin patch (what numpy can play). PATCHES names are native to both; GM names degrade.
     patch_of, prog = {}, {}
@@ -1457,6 +1472,8 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # style press notes the same shape — funk clips, a ballad sings through (실측·사용자:
     # "리듬에 어울리게 안 나오냐").
     gate = float(feel["gate"] if feel.get("gate") is not None else defaults.get("gate", 0.9))
+    fill_amt = float(feel["fill"] if feel.get("fill") is not None
+                     else FILL_STYLES.get(style, 0.0))
     # Thickness is its own axis. It used to ride on `comp == "chug"`, so a caller who changed the
     # strumming hand silently lost the second guitar — the one thing that makes a wall a wall
     # (실측 8/19: `comp:"stabs"` on a metal render, and `chord2` was gone from the part list).
@@ -1470,8 +1487,12 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # instrumental render (no vocalPath) had rhythm and bass and no tune at all.
     # Velocity is a phrase shape, not a constant: downbeats lean, offbeats step back.
     beat = 0.0
+    mel_gaps = []
     for ev in events:
-        beat += float(ev.get("gap") or 0.0)   # the rests the score actually wrote
+        g_here = float(ev.get("gap") or 0.0)
+        if g_here >= 1.0:
+            mel_gaps.append((beat, g_here))
+        beat += g_here                        # the rests the score actually wrote
         vels = ev.get("vels") or []
         for si, (freq, beats) in enumerate(ev["segments"]):
             m = int(round(69 + 12 * math.log2(freq / 440.0)))
@@ -1581,6 +1602,41 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         pos += beats
         if pos >= total_beats:
             break
+    if fill_amt > 0 and mel_gaps and chords:
+        # Where the harmony is, so the answer belongs to the song and not to a scale we picked.
+        spans, cpos = [], 0.0
+        for c_root, c_beats, c_qual in chords:
+            spans.append((cpos, cpos + c_beats, c_root, c_qual))
+            cpos += c_beats
+        step = 0.5
+        for gi, (g_at, g_len) in enumerate(mel_gaps):
+            # A fill answers INTO the next entry: it sits at the END of the breath and stops
+            # just short of it. Landing early leaves a hole; overrunning steps on the singer.
+            room = g_len - 0.5
+            if room < 1.0:
+                continue
+            span = min(room, 1.0 + 3.0 * fill_amt)
+            at = g_at + g_len - 0.5 - span
+            # Up on one breath, down on the next — a player does not repeat the same shape all
+            # night, and alternating is the cheapest honest variety (no randomness to reproduce).
+            climb = (gi % 2 == 0)
+            i = 0
+            limit = g_at + g_len - 0.5
+            # The whole note has to fit, not just its onset: a fill that ends ON the entry is a
+            # fill that steps on the singer.
+            while at + step <= limit + 1e-9 and at < total_beats:
+                cs = next((sp for sp in spans if sp[0] <= at < sp[1]), None)
+                if cs is None:
+                    break
+                rm_f = int(round(69 + 12 * math.log2(cs[2] / 440.0)))
+                tones = chord_voicing(rm_f + 12, cs[3], voicing_kind)
+                pick = tones[(i if climb else len(tones) - 1 - i) % len(tones)]
+                out.append({"beat": round(at, 4), "beats": step * 0.9, "part": "fill",
+                            "patch": patch_of["fill"], "pitch": pick,
+                            "program": prog["fill"], "gate": gate,
+                            "vel": round(0.42 + 0.22 * fill_amt, 3)})
+                at += step
+                i += 1
     doubles = feel.get("doubles")
     if doubles is None:
         doubles = STYLE_DOUBLES.get(style, [])
@@ -1872,7 +1928,7 @@ def render_arrangement(arr, spb, total_beats):
 # 리듬 기타 두 대는 좌우 **끝**으로, 리드와 베이스와 킥은 센터. 저역과 가락이 가운데 서고
 # 벽이 양옆에 서는 것이 이 장르의 그림이다(팬은 파트 단위 = MIDI CC10 이라 두 대가 서로 다른
 # 파트여야 갈린다 — 그래서 두 번째 손이 `chord2` 라는 제 이름을 갖는다).
-PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "bass": 0.0, "vocal": 0.0,
+PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "fill": 0.30, "bass": 0.0, "vocal": 0.0,
        "kick": 0.0, "kick2": 0.0, "snare": 0.08, "snare2": 0.08, "rim": 0.05, "clap": 0.12,
        "hat": 0.32, "hat_pedal": 0.32, "ohat": 0.32,
        "tom_hi": -0.28, "tom_himid": -0.15, "tom_mid": 0.0, "tom_lo": 0.28,
@@ -1887,7 +1943,7 @@ PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "bass": 0.0, "vocal": 0.0,
        "woodblock_hi": 0.18, "woodblock_lo": 0.18, "cuica_mute": 0.15, "cuica_open": 0.15,
        "triangle_mute": -0.18, "triangle_open": -0.18,
        "whistle_short": -0.10, "whistle_long": -0.10}
-SEND = {"melody": 0.22, "chord": 0.16, "chord2": 0.16, "bass": 0.04,
+SEND = {"melody": 0.22, "chord": 0.16, "chord2": 0.16, "fill": 0.20, "bass": 0.04,
         "kick": 0.05, "kick2": 0.05, "snare": 0.14, "snare2": 0.14, "rim": 0.08, "clap": 0.16,
         "hat": 0.08, "hat_pedal": 0.06, "ohat": 0.10,
         "tom_hi": 0.16, "tom_himid": 0.16, "tom_mid": 0.16, "tom_lo": 0.16,
@@ -4484,6 +4540,55 @@ def action_selftest():
         ck("…and no kit asked for means no program change (Standard)", [], msgs2, not msgs2)
         if os.path.isfile(kpath):
             os.remove(kpath)
+    # The answer in the breath. A melody that rests gets replied to; one that never rests does
+    # not, and no genre answers unless its row says it does.
+    fscore = {"bpm": 120,
+              "notes": [{"syl": "라", "note": "C5", "beats": 2},
+                        {"rest": True, "beats": 6},
+                        {"syl": "라", "note": "E5", "beats": 2}],
+              "chords": [{"root": "C3", "beats": 5}, {"root": "G2", "beats": 5}]}
+    _, fev, fch, _, fbd, ffl, ferr = parse_score(dict(fscore, style="trot"))
+    farr = build_arrangement(fev, fch, "trot", 10, fbd, ffl)
+    fills = [r for r in farr if r["part"] == "fill"]
+    ck("trot answers the singer in the gap", True, len(fills) > 0, bool(fills))
+    if fills:
+        lo, hi = min(r["beat"] for r in fills), max(r["beat"] + r["beats"] for r in fills)
+        ck("…inside the breath, and out of the way before the next entry", True,
+           (round(lo, 2), round(hi, 2)),
+           lo >= 2.0 - 1e-6 and hi <= 8.0 - 0.5 + 1e-6)
+        ck("…on chord tones of the harmony under it", [],
+           sorted({r["pitch"] % 12 for r in fills} - {0, 4, 7, 2, 11}),
+           {r["pitch"] % 12 for r in fills} <= {0, 4, 7, 2, 11})
+    _, bev, bch, _, bbd, bfl, _ = parse_score(dict(fscore, style="ballad"))
+    ck("a genre that does not answer stays quiet", 0,
+       len([r for r in build_arrangement(bev, bch, "ballad", 10, bbd, bfl)
+            if r["part"] == "fill"]),
+       not [r for r in build_arrangement(bev, bch, "ballad", 10, bbd, bfl)
+            if r["part"] == "fill"])
+    _, oev, och, _, obd, ofl, _ = parse_score(dict(fscore, style="ballad", fill=0.8))
+    ck("…until the caller asks it to", True,
+       bool([r for r in build_arrangement(oev, och, "ballad", 10, obd, ofl)
+             if r["part"] == "fill"]),
+       bool([r for r in build_arrangement(oev, och, "ballad", 10, obd, ofl)
+             if r["part"] == "fill"]))
+    _, qev, qch, _, qbd, qfl, _ = parse_score(dict(fscore, style="trot", fill=0.0))
+    ck("…and off means off", 0,
+       len([r for r in build_arrangement(qev, qch, "trot", 10, qbd, qfl)
+            if r["part"] == "fill"]),
+       not [r for r in build_arrangement(qev, qch, "trot", 10, qbd, qfl)
+            if r["part"] == "fill"])
+    _, nev, nch, _, nbd, nfl, _ = parse_score({"bpm": 120, "style": "trot",
+                                               "notes": [{"syl": "라", "note": "C5", "beats": 1}] * 8,
+                                               "chords": [{"root": "C3", "beats": 8}]})
+    ck("a singer who never breathes is never answered over", 0,
+       len([r for r in build_arrangement(nev, nch, "trot", 8, nbd, nfl)
+            if r["part"] == "fill"]),
+       not [r for r in build_arrangement(nev, nch, "trot", 8, nbd, nfl)
+            if r["part"] == "fill"])
+    fb = build_arrangement(fev, fch, "trot", 10, {"fill": "piano"}, ffl)
+    ck("band.fill names who answers", True,
+       any(r["part"] == "fill" and r["program"] == 0 for r in fb),
+       any(r["part"] == "fill" and r["program"] == 0 for r in fb))
     badkit = action_render({"action": "render", "score": score, "kit": "웩킷"})
     ck("an unknown kit is refused WITH this font's list", True, (badkit.get("error") or "")[:44],
        not badkit.get("success") and "standard" in (badkit.get("error") or ""))
