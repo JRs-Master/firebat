@@ -373,6 +373,13 @@
           "null"
         ],
         "description": "0-1: double-tracked rhythm guitar — the same riff played a second time and spread to this much stereo width (metal's row uses 0.7). 0 = one guitar. Omit for the style's default."
+      },
+      "kit": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render] Which drum kit plays: standard | room | power | electronic | tr808 | jazz | brush | orchestra, plus whatever else the installed SoundFont carries under its own name. An unknown one is refused with the list this font actually has. Omit for standard."
       }
     }
   },
@@ -417,6 +424,7 @@
         "pedal",
         "band",
         "drumPattern",
+        "kit",
         "swing",
         "comp",
         "bassline",

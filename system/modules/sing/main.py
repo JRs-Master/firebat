@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import struct
 import sys
 
 import numpy as np
@@ -732,6 +733,19 @@ def _norm_inst(s):
 
 
 _INST_LOOKUP = None
+_FONT_ALIASES = {}
+
+
+def load_font_aliases(font_path):
+    """Fill _FONT_ALIASES from the installed font. Called once per render, before the band is
+    hired — never at import, because the font can be swapped under us between runs."""
+    inv = font_inventory(font_path) if font_path else None
+    if not inv:
+        return
+    for prog, name in inv["programs"].items():
+        k = _norm_inst(name)
+        if k:
+            _FONT_ALIASES.setdefault(k, prog)
 
 
 def resolve_instrument(name):
@@ -748,7 +762,15 @@ def resolve_instrument(name):
         for k in PATCHES:
             lut[_norm_inst(k)] = ("patch", k)
         _INST_LOOKUP = lut
-    hit = _INST_LOOKUP.get(_norm_inst(name))
+    key = _norm_inst(name)
+    hit = _INST_LOOKUP.get(key)
+    if hit is None and _FONT_ALIASES:
+        # The font names its own presets ("French Horns", "Grand Piano"), and those names differ
+        # from the GM spelling by design. Spec names win; the font's own words are a free layer
+        # underneath, so whatever is installed can be asked for the way it calls itself.
+        g = _FONT_ALIASES.get(key)
+        if g is not None:
+            hit = ("gm", g)
     if hit is None:
         return None
     if hit[0] == "patch":
@@ -947,6 +969,24 @@ DRUM_NOTE = {
     "cabasa": 69, "maracas": 70, "whistle_short": 71, "whistle_long": 72,
     "guiro_short": 73, "guiro_long": 74, "claves": 75, "woodblock_hi": 76, "woodblock_lo": 77,
     "cuica_mute": 78, "cuica_open": 79, "triangle_mute": 80, "triangle_open": 81,
+    # 35~81 above is General MIDI Level 1 — the floor every GM font has. Below and above it lies
+    # the GS/GM2 extension, and the fonts people actually install do carry it: Arachno's kits run
+    # 26~87 (실측 8/20). Naming them is the difference between "the font has castanets" and "you
+    # can ask for castanets". A font WITHOUT them is handled, not assumed — DRUM_GM1_SUB below.
+    "fingersnap": 26, "highq": 27, "slap": 28, "scratch_push": 29, "scratch_pull": 30,
+    "sticks": 31, "square_click": 32, "metronome_click": 33, "metronome_bell": 34,
+    "shaker": 82, "jingle_bell": 83, "belltree": 84, "castanets": 85,
+    "surdo_mute": 86, "surdo_open": 87,
+}
+
+# What each extension key becomes on a font that stops at GM1. Silence is the one wrong answer:
+# a drum that is simply absent reads as a mixing choice, not as a missing sample.
+DRUM_GM1_SUB = {
+    "fingersnap": "clap", "highq": "rim", "slap": "clap",
+    "scratch_push": "cabasa", "scratch_pull": "cabasa", "sticks": "claves",
+    "square_click": "rim", "metronome_click": "rim", "metronome_bell": "triangle_mute",
+    "shaker": "maracas", "jingle_bell": "tamb", "belltree": "triangle_open",
+    "castanets": "claves", "surdo_mute": "tom_floor_lo", "surdo_open": "tom_floor_lo",
 }
 
 
@@ -956,7 +996,10 @@ DRUM_ALIASES = {
     "triangle": "triangle_open", "conga": "conga_open", "bongo": "bongo_hi",
     "timbale": "timbale_hi", "woodblock": "woodblock_hi", "agogo": "agogo_hi",
     "guiro": "guiro_short", "cuica": "cuica_open", "whistle": "whistle_short",
-    "tom": "tom_mid", "floortom": "tom_floor_hi", "shaker": "maracas",
+    "tom": "tom_mid", "floortom": "tom_floor_hi",
+    "castanet": "castanets", "jinglebell": "jingle_bell", "sleighbell": "jingle_bell",
+    "belltree2": "belltree", "surdo": "surdo_open", "stick": "sticks", "snap": "fingersnap",
+    "scratch": "scratch_push", "metronome": "metronome_click", "click": "metronome_click",
     "tambourine": "tamb", "handclap": "clap", "sidestick": "rim", "rimshot": "rim",
     "hihat": "hat", "closedhihat": "hat", "openhihat": "ohat", "openhat": "ohat",
     "pedalhihat": "hat_pedal", "ridecymbal": "ride", "ridebell2": "ride2",
@@ -964,6 +1007,27 @@ DRUM_ALIASES = {
     "bassdrum": "kick", "bass": "kick", "acousticbassdrum": "kick2",
     "acousticsnare": "snare", "electricsnare": "snare2", "claps": "clap",
 }
+
+
+# The GM2 kit programs — a published spec, stable across fonts. Which of them the INSTALLED font
+# actually carries is a different question, and only the font can answer it (font_inventory).
+KIT_PROGRAMS = {"standard": 0, "room": 8, "power": 16, "electronic": 24, "tr808": 25,
+                "jazz": 32, "brush": 40, "orchestra": 48}
+
+
+def kits_available(font_path):
+    """{name: program} for the kits this font really has — the spec names it carries, plus the
+    font's OWN preset names as aliases. A font that ships a kit we never enumerated becomes
+    callable the moment it is installed, with no table of ours to edit."""
+    inv = font_inventory(font_path) if font_path else None
+    if not inv or not inv["kits"]:
+        return dict(KIT_PROGRAMS)
+    out = {n: pr for n, pr in KIT_PROGRAMS.items() if pr in inv["kits"]}
+    for pr, meta in inv["kits"].items():
+        alias = _norm_inst(meta["name"].replace("Drum Kit", ""))
+        if alias and alias not in out:
+            out[alias] = pr
+    return out or dict(KIT_PROGRAMS)
 
 
 def _drum_of(raw):
@@ -1015,6 +1079,27 @@ def _kit_bank():
         "cuica_open": _squeak(380.0, 700.0, 0.30, gain=0.3),
         "triangle_mute": _ping(4300.0, 0.10, 0.03, partials=((2.86, 0.5),), gain=0.22),
         "triangle_open": _ping(4300.0, 1.2, 0.45, partials=((2.86, 0.5), (5.4, 0.25)), gain=0.22),
+        # The GS extension, in the same coarse-but-honest register as the rest. A name that only
+        # sounds on sf2 would be a name that behaves differently depending on the engine, and
+        # that is the kind of difference nobody can debug by ear.
+        "fingersnap": _ping(2400.0, 0.07, 0.014, partials=((2.2, 0.4),), gain=0.32)
+                      + _shaker(0.07, 73, decay=0.02, gain=0.25),
+        "highq": _squeak(3100.0, 1250.0, 0.10, gain=0.30),
+        "slap": _am_noise(0.10, 95.0, 75, gain=0.34),
+        "scratch_push": _am_noise(0.12, 72.0, 77, gain=0.30),
+        "scratch_pull": _am_noise(0.14, 54.0, 79, gain=0.30),
+        "sticks": _ping(2200.0, 0.045, 0.009, gain=0.38),
+        "square_click": _ping(1000.0, 0.03, 0.006, partials=((3.0, 0.5), (5.0, 0.3)), gain=0.35),
+        "metronome_click": _ping(1300.0, 0.04, 0.008, gain=0.35),
+        "metronome_bell": _ping(2600.0, 0.35, 0.12, partials=((2.7, 0.4),), gain=0.28),
+        "shaker": _shaker(0.11, 63, decay=0.04),
+        "jingle_bell": _shaker(0.25, 65, decay=0.08, gain=0.30)
+                       + _ping(5200.0, 0.25, 0.08, partials=((2.1, 0.5),), gain=0.18),
+        "belltree": _ping(6000.0, 1.4, 0.6,
+                          partials=((1.7, 0.5), (2.9, 0.35), (4.3, 0.2)), gain=0.20),
+        "castanets": _ping(3200.0, 0.05, 0.008, partials=((1.6, 0.6),), gain=0.40),
+        "surdo_mute": tom(72.0, 0.18, seed=33),
+        "surdo_open": tom(68.0, 0.55, seed=35),
     }
 
 # Which band a style hires — part → instrument name in PATCHES. The score's own `band` field
@@ -1861,6 +1946,12 @@ def write_midi(arr, bpm, path):
         tr.append(mido.MetaMessage("track_name", name=part, time=0))
         if part == "drum":
             ch = 9
+            # A kit is chosen by program change like any other instrument — GM only fixes WHICH
+            # channel it sits on. Without this line the drum track was always Standard, whatever
+            # else the font carried (Arachno ships ten kits; we could reach one).
+            kp = int(rows[0].get("program") or 0)
+            if kp:
+                tr.append(mido.Message("program_change", channel=ch, program=kp, time=0))
         else:
             ch = min(15, next_ch)
             next_ch += 1
@@ -1937,6 +2028,100 @@ def write_midi(arr, bpm, path):
 # ── SF2 backend (system fluidsynth) ─────────────────────────────────────────────────────────────
 
 SF2_DIRS = ("/usr/share/sounds/sf2", "/usr/local/share/sounds/sf2")
+
+
+# ── what the installed font can actually play ─────────────────────────────────────────────────
+# We used to assume. The font is the original for "which sounds exist" — it says so in its own
+# table of contents — and asking it is cheap: the chunk walk SEEKS past the sample data, so a
+# 155 MB SoundFont costs 0.36 MB of reads and 1.8 ms (실측 8/20, Arachno). Cheap enough to ask
+# every render, which means we never ship a name the current font cannot sound. Swap the font and
+# the answer changes with it; no table of ours has to be edited to keep up.
+_FONT_CACHE = {}
+
+
+def font_inventory(path):
+    """{'programs': {program: preset name}, 'kits': {program: {'name', 'keys'}}} for the font at
+    `path`, or None if it cannot be read. Melodic = bank 0, kits = bank 128 (the GM convention).
+    Keys are the notes a kit actually answers to — that is the difference between a drum that
+    sounds and one that is silently nothing."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    ck = (path, st.st_mtime_ns, st.st_size)
+    if ck in _FONT_CACHE:
+        return _FONT_CACHE[ck]
+    try:
+        raw = {}
+        with open(path, "rb") as f:
+            f.seek(12)
+            while True:
+                hdr = f.read(8)
+                if len(hdr) < 8:
+                    break
+                cid = hdr[:4].decode("latin1")
+                sz = struct.unpack("<I", hdr[4:])[0]
+                if cid == "LIST":
+                    if f.read(4) == b"pdta":
+                        end = f.tell() + sz - 4
+                        while f.tell() < end - 8:
+                            h = f.read(8)
+                            sid = h[:4].decode("latin1")
+                            ssz = struct.unpack("<I", h[4:])[0]
+                            raw[sid] = f.read(ssz)
+                            if ssz & 1:
+                                f.read(1)
+                        break
+                    f.seek(sz - 4 + (sz & 1), 1)
+                else:
+                    f.seek(sz + (sz & 1), 1)
+        if not {"phdr", "pbag", "pgen", "inst", "ibag", "igen"} <= set(raw):
+            return None
+
+        def recs(name, fmt, size):
+            b = raw[name]
+            return [struct.unpack_from(fmt, b, i * size) for i in range(len(b) // size)]
+
+        phdr = [(n.split(bytes([0]))[0].decode("latin1", "replace"), pr, bk, bg)
+                for n, pr, bk, bg, *_ in recs("phdr", "<20sHHHIII", 38)]
+        pbag, pgen = recs("pbag", "<HH", 4), recs("pgen", "<HH", 4)
+        inst = [(n, bg) for n, bg in recs("inst", "<20sH", 22)]
+        ibag, igen = recs("ibag", "<HH", 4), recs("igen", "<HH", 4)
+
+        def inst_keys(ix):
+            keys, start = set(), inst[ix][1]
+            end = inst[ix + 1][1] if ix + 1 < len(inst) else len(ibag)
+            for bi in range(start, min(end, len(ibag))):
+                gs = ibag[bi][0]
+                ge = ibag[bi + 1][0] if bi + 1 < len(ibag) else len(igen)
+                for gi in range(gs, min(ge, len(igen))):
+                    op, amt = igen[gi]
+                    if op == 43:                                  # keyRange
+                        keys.update(range(amt & 0xFF, ((amt >> 8) & 0xFF) + 1))
+            return keys
+
+        programs, kits = {}, {}
+        for pi, (name, preset, bank, bagndx) in enumerate(phdr):
+            if bank not in (0, 128):
+                continue
+            if bank == 0:
+                programs[preset] = name
+                continue
+            end = phdr[pi + 1][3] if pi + 1 < len(phdr) else len(pbag)
+            keys = set()
+            for bi in range(bagndx, min(end, len(pbag))):
+                gs = pbag[bi][0]
+                ge = pbag[bi + 1][0] if bi + 1 < len(pbag) else len(pgen)
+                for gi in range(gs, min(ge, len(pgen))):
+                    op, amt = pgen[gi]
+                    if op == 41 and amt < len(inst):              # instrument
+                        keys |= inst_keys(amt)
+            kits[preset] = {"name": name, "keys": keys}
+        out = {"programs": programs, "kits": kits} if programs or kits else None
+    except (OSError, ValueError, struct.error, IndexError):
+        out = None
+    _FONT_CACHE[ck] = out
+    return out
 
 
 def sf2_backend():
@@ -3633,8 +3818,27 @@ def action_render(inp):
         return {"success": False,
                 "error": f"렌더 길이 {round(total_beats * spb / 60)}분 — 30분을 넘는 렌더는 "
                          "거부합니다. bars/score 를 줄이거나 구간을 나눠 주세요"}
+    # Ask the font what it can play BEFORE hiring the band: its own preset names become
+    # instrument aliases, and the kit list in an error message is then the truth for THIS box.
+    _fbin, _ffont, _fwhy = sf2_backend()
+    font_path = None if _fwhy else _ffont
+    load_font_aliases(font_path)
+    kit_name = str(inp.get("kit") or "").strip().lower()
+    kit_prog, kit_label = 0, None
+    if kit_name:
+        avail = kits_available(font_path)
+        pick = avail.get(_norm_inst(kit_name))
+        if pick is None:
+            return {"success": False,
+                    "error": f"kit {kit_name!r} 를 모릅니다 — 이 폰트가 가진 킷: "
+                             + " | ".join(sorted(avail))}
+        kit_prog, kit_label = pick, kit_name
     arr = (sorted(faithful_rows, key=lambda r: (r["beat"], r["part"])) if faithful
            else build_arrangement(events, chords, style, total_beats, band, feel))
+    if kit_prog:
+        for e in arr:
+            if e.get("part") == "drum":
+                e["program"] = kit_prog
     assim = assimilate_triplets(arr)
     arr = apply_performance(arr, feel, spb, total_beats)
     vocal_path = str(inp.get("vocalPath") or "").strip()
@@ -3642,6 +3846,24 @@ def action_render(inp):
     # tune, and dropping it was why an instrumental render came out as rhythm and bass only.
     if vocal_path:
         arr = [e for e in arr if e["part"] != "melody"]
+    # A drum whose note this font's kit does not answer to would come out as nothing at all, and
+    # silence reads as a mixing decision rather than a missing sample. Substitute the GM1 stand-in
+    # and SAY which ones moved (the module knows; the listener cannot).
+    swapped = {}
+    inv = font_inventory(font_path) if font_path else None
+    if inv:
+        have = (inv["kits"].get(kit_prog) or inv["kits"].get(0) or {}).get("keys") or set()
+        if have:
+            for e in arr:
+                if e.get("part") != "drum":
+                    continue
+                d = e.get("drum")
+                if DRUM_NOTE.get(d, 42) in have:
+                    continue
+                sub = DRUM_GM1_SUB.get(d)
+                if sub and DRUM_NOTE[sub] in have:
+                    swapped[d] = sub
+                    e["drum"] = sub
     engine = str(inp.get("engine") or "").strip().lower()
     if engine not in ("", "auto", "sf2", "builtin"):
         return {"success": False,
@@ -3649,7 +3871,7 @@ def action_render(inp):
     engine_used, engine_note, sf2_font = "builtin", None, None
     mix = send = None
     if engine != "builtin":
-        binp, font, why = sf2_backend()
+        binp, font, why = _fbin, _ffont, _fwhy
         if engine == "sf2" and why:
             return {"success": False, "error": f"engine:sf2 사용 불가 — {why}"}
         if not why:
@@ -3748,6 +3970,11 @@ def action_render(inp):
                                    "셋잇단 셋째 음(2/3)에 정렬했습니다 — 관례적 2:3 처리")
     if sf2_font:
         data["soundfont"] = sf2_font
+    if kit_label:
+        data["kit"] = kit_label
+    if swapped and engine_used == "sf2":
+        data["kitNote"] = ("이 사운드폰트에 없는 드럼을 GM1 소리로 바꿔 연주했습니다: "
+                           + ", ".join(f"{k}→{v}" for k, v in sorted(swapped.items())))
     if engine_note:
         data["engineNote"] = engine_note
     if midi_note:
@@ -4101,6 +4328,38 @@ def action_selftest():
            (forced.get("error") or "")[:60],
            not forced.get("success") and e_why[:12] in (forced.get("error") or ""))
 
+    # What the font can play is a fact we can check, not a thing to assume. On a box with no
+    # SoundFont these skip — the audit belongs where the font is.
+    if not e_why:
+        inv = font_inventory(e_font)
+        ck("the font answers what it can play", True, bool(inv and inv["programs"]),
+           bool(inv and inv["programs"]))
+        if inv:
+            missing_prog = [g for g in range(128) if g not in inv["programs"]]
+            ck("every GM program we may name exists in this font", [], missing_prog[:8],
+               not missing_prog)
+            kit_keys = (inv["kits"].get(0) or {}).get("keys") or set()
+            unsounded = sorted(n for n, k in DRUM_NOTE.items() if k not in kit_keys)
+            ck("every drum we name has a sample in this font", [], unsounded[:8], not unsounded)
+            ck("the font's own preset names are callable", True,
+               bool(_FONT_ALIASES) or bool(load_font_aliases(e_font)) or bool(_FONT_ALIASES),
+               bool(_FONT_ALIASES))
+    badkit = action_render({"action": "render", "score": score, "kit": "웩킷"})
+    ck("an unknown kit is refused WITH this font's list", True, (badkit.get("error") or "")[:44],
+       not badkit.get("success") and "standard" in (badkit.get("error") or ""))
+    for name in ("castanets", "shaker", "belltree", "sticks"):
+        ck(f"the GS extension is callable and sounds on both engines ({name})", True,
+           bool(_drum_of(name)) and name in _kit_bank() and name in DRUM_GM1_SUB,
+           bool(_drum_of(name)) and name in _kit_bank() and name in DRUM_GM1_SUB)
+    ck("castanet resolves to castanets (the way people spell it)", "castanets",
+       _drum_of("castanet"), _drum_of("castanet") == "castanets")
+    ck("every extension key declares a GM1 stand-in", [],
+       sorted(n for n, k in DRUM_NOTE.items() if k not in range(35, 82) and n not in DRUM_GM1_SUB),
+       all(n in DRUM_GM1_SUB for n, k in DRUM_NOTE.items() if k not in range(35, 82)))
+    ck("…and every stand-in is itself GM1", [],
+       sorted(v for v in DRUM_GM1_SUB.values() if DRUM_NOTE[v] not in range(35, 82)),
+       all(DRUM_NOTE[v] in range(35, 82) for v in DRUM_GM1_SUB.values()))
+
     # The whole GM world: any GM name fronts a band (native on sf2, nearest-family on numpy),
     # the kit is the full percussion map, and a score can write its own bar loop.
     s2 = dict(score); s2["band"] = {"melody": "cello"}
@@ -4119,8 +4378,14 @@ def action_selftest():
     err4 = parse_score(s4)[6]
     ck("an unknown instrument still refuses with both libraries", True, (err4 or "")[:40],
        bool(err4) and "GM" in err4)
-    ck("the kit is the whole GM percussion map", 47, len(DRUM_NOTE),
-       len(DRUM_NOTE) == 47 and set(DRUM_NOTE.values()) == set(range(35, 82)))
+    # Contiguity, not a count. The old assertion hard-coded 47 and had to be edited the day the
+    # kit grew past GM1 — a number typed by hand is a copy of the table, and copies drift.
+    notes = sorted(DRUM_NOTE.values())
+    ck("the kit is a contiguous percussion map with no repeats", [],
+       [b for a, b in zip(notes, notes[1:]) if b != a + 1],
+       len(set(notes)) == len(notes) and notes == list(range(notes[0], notes[-1] + 1)))
+    ck("…and it covers General MIDI Level 1 whole", [],
+       sorted(set(range(35, 82)) - set(notes)), set(range(35, 82)) <= set(notes))
     bank = _kit_bank()
     ck("every kit name has a builtin sample", 0,
        sum(1 for k in DRUM_NOTE if k not in bank or not len(bank[k])),
