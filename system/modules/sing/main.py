@@ -78,11 +78,20 @@ def parse_score(score):
         else:
             return None, None, None, None, None, None, "notes 가 비었습니다"
     events = []
+    pending_gap = 0.0
     for n in notes:
         if not isinstance(n, dict):
             return None, None, None, None, None, None, "notes 항목이 객체가 아닙니다"
-        freq = note_freq(n.get("note"))
         beats = float(n.get("beats") or 1)
+        if n.get("rest") or (n.get("note") is None and not str(n.get("syl") or "").strip()):
+            # Silence carried as a gap on the note that follows, so `events` stays what it has
+            # always been — one entry per SUNG syllable — and every consumer that counts
+            # syllables (the vocal take, the .lrc) keeps counting the same things.
+            if beats <= 0 or beats > 256:
+                return None, None, None, None, None, None, f"rest beats {beats} 가 이상합니다"
+            pending_gap += beats
+            continue
+        freq = note_freq(n.get("note"))
         if freq is None:
             return None, None, None, None, None, None, f"음이름을 읽을 수 없습니다: {n.get('note')!r}"
         if beats <= 0 or beats > 64:
@@ -98,7 +107,9 @@ def parse_score(score):
             events[-1]["segments"].append((freq, beats))
             events[-1]["vels"].append(vel)
         else:
-            events.append({"syl": syl, "segments": [(freq, beats)], "vels": [vel]})
+            events.append({"syl": syl, "segments": [(freq, beats)], "vels": [vel],
+                           "gap": pending_gap})
+            pending_gap = 0.0
     chords = []
     for c in score.get("chords") or []:
         root = note_freq(c.get("root")) if isinstance(c, dict) else None
@@ -1406,6 +1417,12 @@ def _bass_line(kind, root_midi, beats, next_root_midi, meter, semis=None):
     return [(0.0, float(beats), b, 0.72)]
 
 
+def events_beats(events):
+    """Total written length of a melody: its notes AND the silence between them. Two callers used
+    to sum only the segments, which is the song minus its rests."""
+    return sum(float(ev.get("gap") or 0.0) + sum(b for _, b in ev["segments"]) for ev in events)
+
+
 def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     """Score -> flat list of {beat, beats, part, patch, pitch|drum, program, vel}. Beats, not
     samples: the renderers turn them into whatever they count in (samples here, MIDI ticks there).
@@ -1454,6 +1471,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # Velocity is a phrase shape, not a constant: downbeats lean, offbeats step back.
     beat = 0.0
     for ev in events:
+        beat += float(ev.get("gap") or 0.0)   # the rests the score actually wrote
         vels = ev.get("vels") or []
         for si, (freq, beats) in enumerate(ev["segments"]):
             m = int(round(69 + 12 * math.log2(freq / 440.0)))
@@ -2348,6 +2366,9 @@ def render_vocal(vocal, events, spb):
     shift = vocal_octave_shift(vocal, events)
     out = []
     for ev, chunk in zip(events, chunks):
+        gap = float(ev.get("gap") or 0.0)
+        if gap > 0:
+            out.append(np.zeros(int(SR * spb * gap), dtype=np.float32))
         for i, (freq, beats) in enumerate(ev["segments"]):
             freq = freq * (2.0 ** shift)
             target_len = int(SR * spb * beats)
@@ -2874,6 +2895,12 @@ def _wanted_part(parts, want):
     return None
 
 
+def _pitched(rows):
+    """Rows that are notes. A rest carries length, not a voice, so nothing that measures how much
+    a part PLAYS may count it — least of all the tiebreak that decides which part is the tune."""
+    return [r for r in rows if not r.get("rest")]
+
+
 def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     """MusicXML (.musicxml/.xml/.mxl) -> score. The whole notation plays (사용자: "악보에 있는
     건 다 구현해줘"): repeats/voltas/D.C./D.S./coda/fine expand the playback order; tempo
@@ -3096,8 +3123,15 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             m_len = max(m_len, cur)
                         continue
                     if kid(el, "rest") is not None:
-                        if notes:
-                            notes[-1]["beats"] += dur  # a rest rides the note before it
+                        # A rest is silence, not a longer note. Folding it into the previous note
+                        # held every phrase through its own breath, and a rest with NO previous
+                        # note — the intro — disappeared entirely, taking the timeline with it
+                        # (실측 8/20: 아로하 lost its 간주 and ran 13s short the moment the lead
+                        # became the Voice part, which is the part that actually rests).
+                        if notes and notes[-1].get("rest"):
+                            notes[-1]["beats"] += dur
+                        else:
+                            notes.append({"rest": True, "beats": dur, "syl": "", "_at": cur})
                         cur += dur
                         m_len = max(m_len, cur)
                         continue
@@ -3199,7 +3233,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         lead_voice = voice
                     if voice != lead_voice:
                         continue
-                    if tie and notes and notes[-1]["midi"] == midi:
+                    if tie and notes and notes[-1].get("midi") == midi:
                         notes[-1]["beats"] += dur
                         notes[-1]["_sung"] = notes[-1].get("_sung", 0.0) + dur
                     else:
@@ -3253,16 +3287,27 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     # then the note count. Count alone hands the tune to whoever plays the most notes.
     best = (_wanted_part(parsed_parts, want_part)
             or max(parsed_parts, key=lambda pp: (pp["lyrics"], part_is_vocal(pp["name"]),
-                                                 len(pp["notes"]))))
+                                                 len(_pitched(pp["notes"])))))
 
     lyr = list(str(lyrics or "").replace(" ", "").replace("\n", ""))
     has_own = best["lyrics"] > 0
     has_caller = bool(lyr)
-    lyric_only = bool(best.get("unp")) and best["unp"] == len(best["notes"])
+    lyric_only = bool(best.get("unp")) and best["unp"] == len(_pitched(best["notes"]))
     spb_m = 60.0 / max(20.0, min(300.0, master))
     out_notes, lyric_rows = [], []
     for n in best["notes"]:
         at = n.pop("_at", None)
+        if n.get("rest"):
+            # Silence travels as its own row: it has a length and no pitch, and the reader that
+            # consumes this list turns it into the gap before the next sung note.
+            span = n["beats"]
+            if at is not None:
+                span = max(0.0625, warp(at + span) - warp(at))
+            if out_notes and out_notes[-1].get("rest"):
+                out_notes[-1]["beats"] = min(256.0, out_notes[-1]["beats"] + span)
+            else:
+                out_notes.append({"rest": True, "beats": min(256.0, round(span * 4) / 4)})
+            continue
         sung = n.pop("_sung", n["beats"])
         n.pop("_st", None)
         n.pop("_unp", None)
@@ -3291,8 +3336,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     # the render just sounded like a different song and nothing in the reply said why.
     if len(parsed_parts) > 1:
         score["_leadPart"] = best.get("name") or best.get("id") or ""
-        score["_partsSeen"] = [f"{pp.get('name') or pp.get('id') or '?'}({len(pp['notes'])})"
-                               for pp in parsed_parts]
+        score["_partsSeen"] = [
+            f"{pp.get('name') or pp.get('id') or '?'}({len(_pitched(pp['notes']))})"
+            for pp in parsed_parts]
     if lyric_rows:
         score["_lyrics"] = lyric_rows
     if lyric_only:
@@ -3307,10 +3353,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         # No chord symbols written — read the harmony off the lowest part, lowest note per
         # 2-beat window, the exact recipe the MIDI reader has always used. Without this an
         # arranged render of a symbol-less score was a naked melody (실측: 월광 15:15).
-        low = min((pp for pp in parsed_parts if pp is not best),
-                  key=lambda pp: sum(n["midi"] for n in pp["notes"]) / len(pp["notes"]))
+        low = min((pp for pp in parsed_parts if pp is not best and _pitched(pp["notes"])),
+                  key=lambda pp: (sum(n["midi"] for n in _pitched(pp["notes"]))
+                                  / len(_pitched(pp["notes"]))))
         buckets = {}
-        for n in low["notes"]:
+        for n in _pitched(low["notes"]):
             at = n.get("_at")
             if at is None:
                 continue
@@ -3817,7 +3864,7 @@ def action_render(inp):
             # a NOTE, not a failure — the track is still worth having; the real accident
             # would be the WRONG song's lyrics attached silently, so the pick is reported
             # (data.lrcSource) for the ear to veto.
-            hint = sum(b for ev in events for _, b in ev["segments"]) * spb
+            hint = events_beats(events) * spb
             lpath, lrc_meta, ferr = _fetch_lrc(lyr_q, duration=hint if hint > 30 else None)
             if ferr:
                 lrc_miss = ferr
@@ -3864,7 +3911,7 @@ def action_render(inp):
             **({"voice": voice} if voice else {}),
             "into": "vocalPath",
         }}}
-    total_beats = sum(b for ev in events for _, b in ev["segments"])
+    total_beats = events_beats(events)
     chord_beats = sum(c[1] for c in chords)
     total_beats = max(total_beats, chord_beats)
     if faithful:
@@ -4986,11 +5033,33 @@ def action_selftest():
             xsc["notes"][0]["syl"]),
            xsc.get("meter") == 3 and xsc.get("bpm") == 80.0
            and xsc["notes"][0].get("vel") == 0.3 and xsc["notes"][0]["syl"] == "사")
-        ck("chord tones stack, rests ride, ties merge — two melody notes remain",
-           [("A4", 2.0), ("A#4", 2.0)],
-           [(n["note"], n["beats"]) for n in xsc["notes"]],
-           len(xsc["notes"]) == 2 and xsc["notes"][0]["beats"] == 2.0
-           and xsc["notes"][1]["note"] in ("A#4", "Bb4"))
+        # A rest is a row of its own now. It used to be added to the note before it, which held
+        # every phrase through its own breath and — with nothing before it — deleted the intro.
+        rows = [(n.get("note", "rest"), n["beats"]) for n in xsc["notes"]]
+        ck("chord tones stack, ties merge, and a rest is silence rather than a longer note",
+           [("A4", 1.0), ("rest", 1.0), ("A#4", 2.0)], rows,
+           len(rows) == 3 and rows[0] == ("A4", 1.0) and rows[1] == ("rest", 1.0)
+           and rows[2][1] == 2.0 and xsc["notes"][2]["note"] in ("A#4", "Bb4"))
+        ck("…and the written length of the bar is unchanged by that", 4.0,
+           sum(n["beats"] for n in xsc["notes"]),
+           abs(sum(n["beats"] for n in xsc["notes"]) - 4.0) < 1e-9)
+        # The intro: a rest with no note before it. This is the one the old rule dropped whole.
+        intro = xml_doc.replace(
+            '<harmony><root><root-step>A</root-step></root><kind>minor</kind></harmony>',
+            '<harmony><root><root-step>A</root-step></root><kind>minor</kind></harmony>'
+            '<note><rest/><duration>8</duration></note>')
+        with open("data/sing/selftest-intro.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(intro)
+        isc, ierr = musicxml_to_score("data/sing/selftest-intro.musicxml")
+        _, iev, _, _, _, _, ierr2 = parse_score(isc) if isc else (None,)*7
+        lead_gap = (iev[0].get("gap") if iev else None)
+        ck("a rest before the first note is the intro, and it survives", 4.0, lead_gap,
+           ierr is None and ierr2 is None and lead_gap == 4.0)
+        ck("…and the piece is that much longer, not that much shorter", 8.0,
+           events_beats(iev) if iev else None,
+           bool(iev) and abs(events_beats(iev) - 8.0) < 1e-9)
+        if os.path.isfile("data/sing/selftest-intro.musicxml"):
+            os.remove("data/sing/selftest-intro.musicxml")
         ck("harmony elements become REAL chords, quality included",
            ("A2", "m"), (xsc["chords"][0]["root"], xsc["chords"][0]["quality"]),
            bool(xsc.get("chords")) and xsc["chords"][0]["quality"] == "m")
@@ -5008,8 +5077,9 @@ def action_selftest():
         fh.write(two_voice)
     fparts = []
     v_sc, v_err = musicxml_to_score("data/sing/selftest-2v.musicxml", parts_out=fparts)
+    v_notes = _pitched((v_sc or {}).get("notes") or [])
     ck("the melody reduction follows ONE voice (월광: no more inflated length)", 2,
-       len((v_sc or {}).get("notes") or []), v_err is None and len(v_sc["notes"]) == 2)
+       len(v_notes), v_err is None and len(v_notes) == 2)
     ck("...while faithful rows keep every voice", 5, len(fparts), len(fparts) == 5)
     os.remove("data/sing/selftest-2v.musicxml")
     import zipfile as _zf
@@ -5017,7 +5087,8 @@ def action_selftest():
         z.writestr("score.xml", xml_doc)
     mxl_sc, mxl_err = musicxml_to_score("data/sing/selftest-x.mxl")
     ck("a compressed .mxl opens the same door", 2,
-       len((mxl_sc or {}).get("notes") or []), mxl_err is None and len(mxl_sc["notes"]) == 2)
+       len(_pitched((mxl_sc or {}).get("notes") or [])),
+       mxl_err is None and len(_pitched(mxl_sc["notes"])) == 2)
     import shutil as _sh
     _sh.copy("data/sing/selftest-x.mxl", "data/sing/selftest-x.bin")
     ck("an .mxl the upload renamed .bin is judged by its bytes (실측: 월광)", "musicxml",
