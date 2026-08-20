@@ -1292,11 +1292,13 @@ BEND_CURVES = {
     # 도착 뒤에는 0 이라 가락은 악보 그대로 남는다 — 표현이지 이조가 아니다.
     "scoop":  [(0.0, -1.0), (0.18, 0.0), (1.0, 0.0)],   # 블루스 — 반음
     "bendin": [(0.0, -2.0), (0.22, 0.0), (1.0, 0.0)],   # 록 솔로 — 온음("띠요오옹")
-    # 트로트의 꺾기 — **한 음절 안에서** 목을 꺾었다 돌아온다. 사용자 8/20 정정: "소쩍새 슬피
-    # 우는" 이 "소~오쩍새 슬피이~ 우~느흔~" 이 되는 그것이고, 음이 **제자리로 돌아온다.**
-    # 옛 구현은 음을 둘로 쪼개 뒤쪽을 온음 아래에 두고 끝냈다 — 돌아오지 않으니 한 음절이 아니라
-    # 뒤에 붙은 별개의 짧은 음, 즉 "삐융" 으로 들렸다. 벤딩 통로가 생겼으니 이제 제 모양이 된다.
-    "kkeokgi": [(0.0, 0.0), (0.44, 0.0), (0.54, -2.0), (0.66, 0.0), (1.0, 0.0)],
+    # 트로트의 꺾기 — 사용자 8/20: "소쩍새 슬피 우는" 이 "소~오쩍새 슬피이~ 우~느흔~".
+    # **두 상태다**: 소 를 끌다가 오 로 꺾고 거기서 끝난다. 돌아오면 소~오~소 가 되어 상태가
+    # 셋이 된다(사용자 재정정: "돌아오면 소오~가 아니고 소오~오 되는거 아닌가").
+    # 그러면 "삐융" 의 원인은 돌아오지 않은 것이 아니라 **음을 다시 때린 것**이었다 — 옛 구현이
+    # 음을 둘로 쪼개 아래 음에 새 어택을 줬고, 관악기에서 새 어택은 별개의 음으로 들린다.
+    # 그래서 어택은 하나, 음정만 꺾여 내려가 그대로 끝난다. 한 숨, 한 음절, 두 상태.
+    "kkeokgi": [(0.0, 0.0), (0.60, 0.0), (0.70, -2.0), (1.0, -2.0)],
 }
 
 # 장식마다 필요한 최소 길이. 꺾을 시간이 없는 음에 걸면 음정이 틀린 것처럼 들린다.
@@ -4456,13 +4458,23 @@ def action_selftest():
        not [e for e in straight if e.get("bend")] and len(bent) == 1)
     # 꺾기 is one syllable whose pitch moves and COMES BACK. The old one split the note and left
     # the tail a whole step down, which is a second short note — 사용자: "삐융".
-    ck("꺾기 bends inside the note and returns to it", True,
-       (len([e for e in kkeok if e["part"] == "melody"]), BEND_CURVES["kkeokgi"][-1]),
-       len([e for e in kkeok if e["part"] == "melody"]) == 1
-       and BEND_CURVES["kkeokgi"][-1] == (1.0, 0.0) and BEND_CURVES["kkeokgi"][0] == (0.0, 0.0))
-    ck("…and every curve we own ends where the score wrote it", [],
-       [k for k, c in BEND_CURVES.items() if c[-1][1] != 0.0],
-       all(c[-1][1] == 0.0 for c in BEND_CURVES.values()))
+    ck("꺾기 is ONE note whose pitch breaks — no second attack", 1,
+       len([e for e in kkeok if e["part"] == "melody"]),
+       len([e for e in kkeok if e["part"] == "melody"]) == 1)
+    ck("…and it stays where it broke: two states, not three", (0.0, -2.0),
+       (BEND_CURVES["kkeokgi"][0][1], BEND_CURVES["kkeokgi"][-1][1]),
+       BEND_CURVES["kkeokgi"][0][1] == 0.0 and BEND_CURVES["kkeokgi"][-1][1] < 0)
+    # An ornament is a deviation, not a transposition: most of the note has to be the note.
+    # (Both shapes qualify — an arrival bend starts away and lands, a 꺾기 sits and then leaves.)
+    def _at_pitch(curve):
+        span = 0.0
+        for (t0, v0), (t1, v1) in zip(curve, curve[1:]):
+            if v0 == 0.0 and v1 == 0.0:
+                span += t1 - t0
+        return span
+    ck("every curve leaves the written pitch alone for most of the note", [],
+       [k for k, c in BEND_CURVES.items() if _at_pitch(c) < 0.5],
+       all(_at_pitch(c) >= 0.5 for c in BEND_CURVES.values()))
     badorn = parse_score({"bpm": 120, "orn": "웩", "notes": [{"syl": "라", "note": "C4",
                                                              "beats": 1}]})
     ck("an unknown orn is refused WITH the list", True, (badorn[-1] or "")[:40],
