@@ -195,9 +195,19 @@
         ],
         "description": "[lyrics] Target recording length in seconds — picks the right version when a song exists in several cuts."
       },
-      "lrc": {
-        "type": "boolean",
-        "description": "[render] Emit an .lrc from the MAIN score's own lyrics (karaoke MIDI / vocal score with syllables). lyricsMediaPath implies this - set lrc only when the melody score itself carries the words."
+      "lrcFromScore": {
+        "type": [
+          "boolean",
+          "null"
+        ],
+        "description": "[render] Build the .lrc from the syllables of the uploaded score FILE (scoreMediaPath — a karaoke MIDI or a vocal score that carries words). Inline `score` syllables are not a source for this. It is a DERIVE switch, not the lyrics: it was called `lrc`, which reads like the lyric data, so a model holding no words still set it and was told the score has none. Lyrics you already hold go in `lrcText`; a lyric file or a song title go in `lyricsMediaPath` / `lyricsQuery`, and either of those implies this."
+      },
+      "lrcText": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render] Ready-made LRC text to ship beside the audio, timestamps and all (\"[00:12.30]첫 줄\"). Use it when you already have the synced lyrics; use `lyricsMediaPath` for a file, `lyricsQuery` to look the song up, and `lrcFromScore` to derive them from the score's own syllables."
       },
       "lrcOffset": {
         "type": [
@@ -226,7 +236,7 @@
           "array",
           "null"
         ],
-        "description": "[render] Instrument override for the piece (works WITH scoreMediaPath — no need to compose a score to pick instruments): {melody?, chord?, bass?}, e.g. {\"melody\":\"piano\"}. Names = the module's own patches (piano, epiano, organ, accordion, aguitar/cguitar/eguitar/dguitar, eviolin, strings, brass, flute, marimba, bell, musicbox, synthlead, squarelead, synthbass, bass) or ANY General MIDI instrument — official spellings like 'acoustic grand piano' are absorbed, case/spacing ignored. A flat list is assigned to melody/chord/bass in order; drum words in it are skipped (drums come from style or drumPattern). Unknown names are refused with the full library. A \"doubles\" list inside band adds section doublings - the orchestral unison: [{\"part\": melody|chord|bass, \"instrument\", \"octave\": -2..2, \"vel\"?}] plays the same line on another instrument (flute an octave above, cello below). classic/orchestra and march carry a default set; an explicit list replaces it."
+        "description": "[render] Instrument override for the piece (works WITH scoreMediaPath — no need to compose a score to pick instruments): {melody?, chord?, bass?}, e.g. {\"melody\":\"piano\"}. Names = the module's own patches (piano, epiano, organ, accordion, aguitar/cguitar/eguitar/dguitar, eviolin, strings, brass, flute, marimba, bell, musicbox, synthlead, squarelead, synthbass, bass) or ANY General MIDI instrument — official spellings like 'acoustic grand piano' are absorbed, case/spacing ignored. A flat list is assigned to melody/chord/bass in order; drum words in it are skipped (drums come from style or drumPattern). Unknown names are refused with the full library. A \"doubles\" list inside band adds section doublings - the orchestral unison: [{\"part\": melody|chord|bass, \"instrument\", \"octave\": -2..2, \"vel\"?}] plays the same line on another instrument (flute an octave above, cello below). classic/orchestra and march carry a default set; an explicit list replaces it. With arrangeFrom score/parts the comping voices are chord, chord2, chord3 … in register order, and each can be named the same way ({\"chord2\":\"piano\"}) — naming plain `chord` gives every comping voice that one instrument."
       },
       "drumPattern": {
         "type": [
@@ -344,7 +354,7 @@
           "string",
           "null"
         ],
-        "description": "How the lead hand shapes a long note: scoop (arrive from a semitone below — blues) | bendin (whole-step bend into the note — rock solos) | bend (stepped semitone approach) | grace (hammer-on from a whole step below — country) | kkeokgi (the trot flick: a long note's tail drops a step and lets go) | none (straight). Omit for the style's default."
+        "description": "How the lead hand shapes a long note: scoop (arrive from a semitone below — blues) | bendin (whole-step bend into the note — rock solos) | bend (stepped semitone approach) | grace (hammer-on from a whole step below — country) | kkeokgi (the trot flick: a long note's tail drops a step and lets go) | pinch (pinch harmonic — the fundamental dies and a squealing 5th-partial rides on top, metal) | harmonic (the same touch an octave up, gentler) | none (straight). Omit for the style's default."
       },
       "chordShape": {
         "type": [
@@ -407,7 +417,7 @@
           "string",
           "null"
         ],
-        "description": "[render, with scoreMediaPath] What a style is applied TO. melody (default) reduces the piece to its tune, derives the harmony and builds the genre's backing from scratch. score keeps every part the file wrote and re-casts them by role — the tune on the genre's lead instrument, the lowest voice on its bass, the rest comping — then adds the genre's drums. Use score when the person asked for the piece's OWN instruments in a new style (\"악보에 있는 악기들을 메탈로\"); use melody when they asked for the song in that genre."
+        "description": "[render, with scoreMediaPath] How much of the score survives a style. melody (default) keeps only the tune, derives the harmony and builds the genre's backing from scratch — \"이 노래를 뽕짝으로\". score keeps every part the file wrote and re-casts them by role and register — the tune on the genre's lead, the lowest voice on its bass, the rest comping on the genre's hands in register order — then adds the genre's drums: \"악보에 나오는 악기들을 메탈로\". parts keeps the parts AND the instruments the file declared, and only adds the genre's rhythm section: \"악보 악기 그대로 두고 뽕짝 리듬만\". Pick by which of the three the person actually said; 살려서/그대로 usually means parts."
       },
       "vary": {
         "type": [
@@ -447,7 +457,8 @@
         "melodyPart",
         "lyricsMediaPath",
         "lyricsQuery",
-        "lrc",
+        "lrcFromScore",
+        "lrcText",
         "lrcOffset",
         "vocal",
         "lyrics",

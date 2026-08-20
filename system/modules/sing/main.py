@@ -538,6 +538,12 @@ PATCHES = {
     # 리드 기타 — 리듬(dguitar)과 **다른 소리여야 한다**. 같은 파형으로 리프도 치고 가락도
     # 치면 가락이 벽에 묻힌다. 게인은 그대로 높되 덜 부서지고(shape↓) 더 길게 남는다(hdecay↑):
     # 오버드라이브(GM 29)가 리드를, 디스토션(30)이 리듬을 맡는 그 배치다.
+    # 핀치 하모닉의 소리 — 기본음이 죽고 배음만 남은 그 유리질. harm[0] 이 낮은 것이 정체고,
+    # 그래서 같은 음고를 눌러도 기타가 아니라 "끼이익" 으로 들린다. 내장 신디 전용이다(sf2 는
+    # 음색을 못 바꾸므로 거기선 같은 기타가 배음 자리를 짚는다 — 아래 PINCH_HARMONICS 참조).
+    "pinchharm":  {"harm": [0.14, 0.42, 1.0, 0.74, 0.52, 0.34, 0.20], "hdecay": 2.8,
+                   "hslope": 1.0, "detune": 0.002, "noise": 0.035, "shape": 2.2,
+                   "atk": 0.005, "rel": 0.24, "gain": 0.22, "gm": 30},
     "lguitar":    {"harm": [1.0, 0.70, 0.42, 0.26, 0.16, 0.09], "hdecay": 2.2, "hslope": 0.95,
                    "detune": 0.003, "noise": 0.04, "shape": 3.2, "atk": 0.004, "rel": 0.16,
                    "gain": 0.30, "gm": 29},
@@ -808,6 +814,28 @@ def resolve_instrument(name):
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
 
 
+def named_program(name):
+    """파트 이름이 악기를 말하면 그 GM 번호, 아니면 None.
+
+    총보의 파트 이름은 대개 악기 이름 그대로다("Flute", "Violin I"). `<midi-program>` 이 없는
+    악보에서는 그 이름이 편성에 대해 우리가 가진 **유일한 선언**이고, 그걸 안 읽으면 전 성부가
+    프로그램 0(피아노)으로 떨어져 악보가 말한 것을 우리가 지운다.
+
+    성부 번호(I·II·2)는 "같은 악기의 몇 번째 자리"라는 뜻이라 떼고 한 번 더 묻는다. 이름을 못
+    알아들으면 None — 지어내지 않는다.
+    """
+    raw = str(name or "").strip()
+    if not raw:
+        return None
+    got = resolve_instrument(raw)
+    if got is None:
+        import re as _re
+        trimmed = _re.sub(r"[\s._-]*(?:[0-9]+|[IVXivx]+)$", "", raw).strip()
+        if trimmed and trimmed != raw:
+            got = resolve_instrument(trimmed)
+    return got[1] if got else None
+
+
 def _meter_groups(meter):
     """How an odd bar is actually counted: threes lead (5 = 3+2 — Take Five's own grouping),
     compound meters are all threes (6 = 3+3, 9 = 3+3+3), plain even bars are twos."""
@@ -945,7 +973,60 @@ STYLE_ALIASES = {"edm": "dance", "house": "dance", "kpop": "pop", "jpop": "pop",
                  "stringorchestra": "strings", "stringensemble": "strings",
                  "rock-ballad": "ballad", "rockballad": "ballad", "waltz": "ballad",
                  "rap": "hiphop", "boombap": "hiphop", "swing": "jazz",
-                 "christmas": "carol", "xmas": "carol"}
+                 "christmas": "carol", "xmas": "carol",
+                 # 사람이 말하는 이름 그대로. 한 라운드를 아끼자는 것이지 새 장르가 아니다 —
+                 # "헤비메탈로 해줘" 는 목록과 함께 거부당한 뒤 모델이 다시 부르고 있었다.
+                 "트로트": "trot", "뽕짝": "trot", "메탈": "metal", "헤비메탈": "metal",
+                 "락": "rock", "록": "rock", "발라드": "ballad", "재즈": "jazz",
+                 "블루스": "blues", "힙합": "hiphop", "랩": "hiphop", "컨트리": "country",
+                 "훵크": "funk", "펑키": "funk", "펑크록": "punk", "펑크로크": "punk",
+                 "댄스": "dance", "클래식": "classic", "행진곡": "march", "마치": "march",
+                 "캐롤": "carol", "캐럴": "carol", "포크": "folk", "민요": "folk",
+                 "알앤비": "rnb", "아르앤비": "rnb", "뉴에이지": "newage", "팝": "pop",
+                 "로큰롤": "rocknroll", "로큰롤": "rocknroll", "왈츠": "ballad"}
+# ⚠️ 맨 "펑크" 는 일부러 없다 — 우리말에서 punk 도 funk 도 그렇게 쓴다. 뜻이 둘인 별칭은 모델이
+# 하나를 합법적으로 골라 틀리고 값이 유효라 어느 그물에도 안 찍힌다(제7장 "한 필드 한 뜻").
+# 목록과 함께 거부당해 사용자가 고르는 편이 조용히 다른 장르로 가는 것보다 낫다.
+
+
+def band_seats(style, band=None):
+    """장르가 선언한 자리 → `{part: [악기, …]}`. 컴핑은 자리가 여럿일 수 있다.
+
+    자리마다 악기가 하나이던 시절, 성부가 몇이든 리드와 베이스를 뺀 전부가 `chord` 한 자리에서
+    악기를 받아 갔다. 아로나 5성부를 뽕짝으로 입히니 기타·피아노·기타가 **아코디언 세 대**가
+    됐고(사용자 8/21 "웅엥웅엥"), 감쇠 없는 악기 세 벌이 겹치면 화음이 아니라 벽이다. 세 대를
+    쓰기로 아무도 결정하지 않았다 — 컴핑 의자가 하나뿐인 소리였다.
+
+    목록 길이 1 = 옛 동작 그대로. 호출자가 자리 이름을 대면 그 자리는 통째로 그 하나가 된다
+    ("컴핑을 피아노로"). 둘째·셋째 손을 따로 지목하는 것은 자리가 아니라 **역할**이라
+    `recast_parts` 몫이다.
+    """
+    out = {part: ([v] if isinstance(v, str) else [x for x in v if x])
+           for part, v in STYLE_BAND.get(style, STYLE_BAND["trot"]).items()}
+    # 대답하는 목소리는 기본적으로 컴핑하는 손이다. 자리를 먼저 만들어 둬야 호출자의 `fill` 이
+    # 걸린다 — 덮어쓰기 뒤에 만들면 그 이름이 조용히 버려진다.
+    out.setdefault("fill", list(out.get("chord") or ["piano"]))
+    for part, name in (band or {}).items():
+        if part in out and resolve_instrument(name) is not None:
+            out[part] = [name]
+    if not (band or {}).get("fill"):
+        out["fill"] = list(out.get("chord") or ["piano"])
+    return out
+
+
+def comping_stage(n):
+    """컴핑 N 목소리가 설 자리(−1 왼쪽 … +1 오른쪽)와 각자의 볼륨 배수.
+
+    팬은 파트 이름으로만 정해졌고 `chord3` 는 숫자를 떼어 `chord` 값을 받았다 — 같은 악기 두 대가
+    **정확히 같은 자리**에 포개졌다. 볼륨도 마찬가지로 컴핑이 하나일 때 고른 0.58 을 셋이 그대로
+    써서 합이 리드 1.0 을 넘었다(사용자가 들은 서열 그대로: 아코디언 → 보컬 → 드럼).
+    무상관 신호 N 개는 √N 으로 합해지므로 각자를 √N 으로 나누면 **컴핑 전체**가 예전 한 대와
+    같은 자리에 앉는다. N=1 이면 나눗셈도 이동도 없다 = 옛 동작 그대로.
+    """
+    if n <= 1:
+        return [PAN.get("chord", -0.25)], 1.0
+    return ([round(-0.5 + i * (1.0 / (n - 1)), 3) for i in range(n)], math.sqrt(n))
+
 
 # 쿵덕 for three bars, 두구두구 on the fourth, 쨍 on the downbeat after: every 4th bar keeps its
 # groove up to the fill start and rolls down the toms; every 4-bar group opens on a crash.
@@ -1134,7 +1215,11 @@ def _kit_bank():
 # Which band a style hires — part → instrument name in PATCHES. The score's own `band` field
 # overrides per part, so any instrument in the library can front any style.
 STYLE_BAND = {
-    "trot":      {"melody": "melody", "chord": "accordion", "bass": "bass"},
+    # 컴핑 자리는 **목록**일 수 있다 — 성부가 여럿인 악보를 입힐 때 높은 성부부터 순서대로
+    # 앉는다. 하나만 적으면(대부분) 옛 동작 그대로다. 아래 셋만 목록인 이유 = 그 편성의 관례를
+    # 댈 수 있는 장르가 그 셋이고, 없는 취향을 내가 지어내는 것이 이 표에서 제일 위험하다.
+    "trot":      {"melody": "melody", "chord": ["accordion", "epiano", "cguitar"],
+                  "bass": "bass"},
     "ballad":    {"melody": "piano", "chord": "strings", "bass": "bass"},
     "march":     {"melody": "brass", "chord": "brass", "bass": "bass"},  # 군악대에 오르간은 없다
     "rock":      {"melody": "eguitar", "chord": "dguitar", "bass": "bass"},
@@ -1151,8 +1236,15 @@ STYLE_BAND = {
     "blues":     {"melody": "eguitar", "chord": "organ", "bass": "bass"},
     "carol":     {"melody": "bell", "chord": "strings", "bass": "bass"},
     "folk":      {"melody": "aguitar", "chord": "aguitar", "bass": "bass"},
-    "classic":   {"melody": "violin", "chord": "strings", "bass": "contrabass"},
-    "strings":   {"melody": "violin", "chord": "strings", "bass": "contrabass"},
+    # 관현악의 안쪽 성부는 패드가 아니라 **각자 다른 줄**이다. 자리가 하나뿐이던 시절 "오케스트라"
+    # 는 바이올린 + 현악 패드 + 콘트라베이스 세 줄이었고, 관현악처럼 들리게 하려고 STYLE_DOUBLES
+    # 가 한 줄을 넷으로 유니즌 겹쳤다 — 두께로 때운 것이지 편성이 아니었다(사용자 8/21
+    # "오케스트라도 악기를 몇 개 안 쓰더라"). 순서 = 음역 내림차순, 총보가 앉는 그 순서.
+    "classic":   {"melody": "violin",
+                  "chord": ["violin", "viola", "clarinet", "cello", "frenchhorn"],
+                  "bass": "contrabass"},
+    "strings":   {"melody": "violin", "chord": ["violin", "viola", "cello"],
+                  "bass": "contrabass"},
     "newage":    {"melody": "piano", "chord": "strings", "bass": "bass"},
     "none":      {"melody": "melody", "chord": "chord", "bass": "bass"},
 }
@@ -1205,7 +1297,7 @@ BASS_KINDS = ("hold", "twobeat", "alt", "walk", "drive", "offbeat", "funk16", "b
 # How the lead hand shapes a long note, and what a chord actually contains. A genre IS these axes
 # together — naming them is what lets a caller assemble one we never listed instead of asking us
 # for another row.
-ORN_KINDS = ("none", "scoop", "bend", "bendin", "grace", "kkeokgi")
+ORN_KINDS = ("none", "scoop", "bend", "bendin", "grace", "kkeokgi", "pinch", "harmonic")
 CHORD_SHAPES = ("full", "power")
 
 # 3/4 grooves — a waltz bar is not a trimmed 4/4 bar, so the tables are their own.
@@ -1304,7 +1396,21 @@ BEND_CURVES = {
 }
 
 # 장식마다 필요한 최소 길이. 꺾을 시간이 없는 음에 걸면 음정이 틀린 것처럼 들린다.
-ORN_MIN = {"scoop": 1.0, "bendin": 1.5, "kkeokgi": 2.0, "bend": 0.5, "grace": 0.5}
+ORN_MIN = {"scoop": 1.0, "bendin": 1.5, "kkeokgi": 2.0, "bend": 0.5, "grace": 0.5,
+           "pinch": 1.0, "harmonic": 1.0}
+
+# 핀치 하모닉 — 픽을 쥔 엄지가 친 직후 줄을 스쳐 **기본음을 죽이고 배음만 남긴다**. 메탈의 그
+# "끼이익" 이고, 우리 벤딩 통로로는 못 낸다: 움직이는 것이 음정이 아니라 **배음 구조**라서다.
+# 두 엔진 다 음 하나의 음색을 도중에 못 바꾸므로 배음을 **자기 행**으로 낸다 — 그러면 내장
+# 신디는 유리질 패치(pinchharm)를 쓰고 sf2 는 같은 기타로 그 배음 자리를 짚는다. 한 구현이 두
+# 엔진을 덮고, 엔진 안에 분기가 하나도 안 생긴다.
+#   (배음 반음, 음의 몇 %에서 물리나, 배음 세기, 그동안 기본음이 남는 정도)
+PINCH_HARMONICS = {
+    "pinch":    (19, 0.30, 0.95, 0.38),   # 5배음(옥타브+5도) — 비명에 가까운 그 소리
+    "harmonic": (12, 0.25, 0.80, 0.50),   # 2배음 — 스치듯 부드러운 자연 하모닉
+}
+# 배음은 잡히면서 위로 밀려 올라간다 — 곧게 서 있으면 그냥 높은 음이지 비명이 아니다.
+PINCH_RISE = [(0.0, 0.0), (0.30, 0.45), (1.0, 0.9)]
 
 # Music is phrased in fours. A comp pattern applied identically to every bar of a four-minute
 # piece is the same bar 120 times, and that is what it sounds like (사용자 8/20: "연주법이 하나가
@@ -1338,7 +1444,9 @@ ORN_SET = {
     "trot":      {"end": "kkeokgi", "long": "vib", "leap": "scoop"},
     "blues":     {"end": "bend", "long": "vib", "leap": "scoop"},
     "rock":      {"end": "bendin", "long": "vib", "leap": "bendin"},
-    "metal":     {"end": "bendin", "long": "vib", "leap": "bendin"},
+    # 메탈은 도약해 닿은 음에서 핀치를 물린다. end 와 leap 이 둘 다 bendin 이던 시절 이 장르의
+    # 기교는 사실상 둘뿐이었다 — 자리가 셋인데 손이 둘이면 그것도 반복이다.
+    "metal":     {"end": "bendin", "long": "vib", "leap": "pinch"},
     "punk":      {"end": "bendin"},
     "country":   {"end": "grace", "long": "vib", "leap": "grace"},
     "rocknroll": {"end": "bend", "long": "vib"},
@@ -1523,9 +1631,9 @@ def events_beats(events):
     return sum(float(ev.get("gap") or 0.0) + sum(b for _, b in ev["segments"]) for ev in events)
 
 
-def recast_parts(rows, style, band=None, lead_row=None):
+def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False):
     """The file's own parts, re-cast for a genre — every voice keeps its notes and takes the
-    instrument its ROLE calls for.
+    instrument its ROLE and REGISTER call for. Returns (rows, cast_map, mix_overlay).
 
     The arrangement path throws the score away: it reduces the piece to one line, derives chords
     from it, and rebuilds a backing. That is right when you want the genre to play the song, and
@@ -1534,23 +1642,28 @@ def recast_parts(rows, style, band=None, lead_row=None):
     could only approximate it with four layers of doubling, because this path did not exist).
 
     Casting is derived, not declared: the part the reader chose as the tune sings, the lowest
-    voice plays bass, everyone else comps. Extra comping voices become chord2, chord3 … which
-    the pan and mix tables already resolve by name."""
+    voice plays bass, everyone else comps — and the comping voices take the genre's hands **in
+    register order**, highest part first. That order is why an orchestra sounds like one: violin,
+    viola, clarinet, cello sit where a score puts them. Before it, every comping voice asked the
+    same single seat and got the same answer (아로하 뽕짝: 아코디언 세 대 = "웅엥웅엥").
+
+    `keep_instruments` = the parts play what the FILE says they play; only the roles, the stage
+    and the balance are ours. "악보에 있는 악기들 다 살려서 뽕짝으로" reads that way in Korean and
+    there was no path for it: `faithful` refuses the moment a style is named, so keeping the
+    score's own instruments meant losing the groove entirely."""
     voices = {}
     for r in rows:
         if "pitch" in r and not r.get("pedal"):
             voices.setdefault(r["part"], []).append(r["pitch"])
     if not voices:
-        return rows, {}
+        return rows, {}, {}
     avg = {p: sum(v) / len(v) for p, v in voices.items()}
-    hire = dict(STYLE_BAND.get(style, STYLE_BAND["trot"]))
-    for part, name in (band or {}).items():
-        if part in hire and resolve_instrument(name) is not None:
-            hire[part] = name
+    seats = band_seats(style, band)
     lead = lead_row if lead_row in avg else max(avg, key=lambda x: avg[x])
     low = min(avg, key=lambda x: avg[x])
+    by_register = sorted(avg, key=lambda x: -avg[x])
     roles, n = {}, 0
-    for part in sorted(avg, key=lambda x: -avg[x]):
+    for part in by_register:
         if part == lead:
             roles[part] = "melody"
         elif part == low:
@@ -1558,6 +1671,21 @@ def recast_parts(rows, style, band=None, lead_row=None):
         else:
             n += 1
             roles[part] = "chord" if n == 1 else f"chord{n}"
+    comping = [p for p in by_register if roles[p].startswith("chord")]
+    hands = seats.get("chord") or ["piano"]
+    inst_for = {"melody": (seats.get("melody") or ["piano"])[0],
+                "bass": (seats.get("bass") or ["bass"])[0]}
+    for i, part in enumerate(comping):
+        inst_for[roles[part]] = hands[i % len(hands)]
+    # 역할 단위 지목 — `band: {"chord2": "piano"}` 는 자리가 아니라 **둘째 컴핑**을 말한다.
+    # 자리에만 걸려 있던 시절 그 이름은 `hire` 에 키가 없어 조용히 버려졌고, 호출자는 둘째 손을
+    # 부를 방법이 아예 없었다. 명시가 파생을 이긴다.
+    for role, name in (band or {}).items():
+        if role in inst_for and resolve_instrument(name) is not None:
+            inst_for[role] = name
+    stage, share = comping_stage(len(comping))
+    seat_at = {roles[p]: stage[i] for i, p in enumerate(comping)}
+    mix_over = {roles[p]: round(mix_of("chord") / share, 4) for p in comping} if share > 1.0 else {}
     out = []
     for r in rows:
         if r.get("part") == "drum":
@@ -1569,10 +1697,14 @@ def recast_parts(rows, style, band=None, lead_row=None):
             continue
         q = dict(r)
         q["part"] = role
-        base = role if role in hire else ("chord" if role.startswith("chord") else role)
-        q["patch"], q["program"] = resolve_instrument(hire.get(base, "piano"))
+        if not keep_instruments:
+            got = resolve_instrument(inst_for.get(role, "piano"))
+            if got is not None:
+                q["patch"], q["program"] = got
+        if role in seat_at:
+            q["pan"] = seat_at[role]
         out.append(q)
-    return out, {roles[k]: k for k in roles}
+    return out, {roles[k]: k for k in roles}, mix_over
 
 
 def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
@@ -1580,15 +1712,12 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     samples: the renderers turn them into whatever they count in (samples here, MIDI ticks there).
     `band` = per-part instrument override ({part: PATCHES name}) on top of the style's own.
     `feel` = {meter, swing, comp, bass} from parse_score; None = the style's own defaults."""
-    hire = dict(STYLE_BAND.get(style, STYLE_BAND["trot"]))
+    # 편곡 경로는 컴핑이 **한 목소리**다(chord2 = 더블트래킹이라 같은 악기가 제 규약) — 자리의
+    # 첫 손을 쓴다. 자리가 목록이 된 것은 악보 성부를 입히는 recast 쪽 사정이고, 여기 소리는
+    # 목록 도입 전과 바이트 단위로 같아야 한다.
     # The answering voice defaults to whoever is comping — in trot that is the accordion, which
     # is the instrument the ear expects to hear reply. `band.fill` names someone else.
-    hire.setdefault("fill", hire.get("chord", "piano"))
-    for part, name in (band or {}).items():
-        if part in hire and resolve_instrument(name) is not None:
-            hire[part] = name
-    if not (band or {}).get("fill"):
-        hire["fill"] = hire["chord"]
+    hire = {k: v[0] for k, v in band_seats(style, band).items() if v}
     # Two faces per instrument: the GM program (what the .mid and the sf2 engine mean) and the
     # builtin patch (what numpy can play). PATCHES names are native to both; GM names degrade.
     patch_of, prog = {}, {}
@@ -1671,6 +1800,20 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                 if style in VIB_STYLES and beats >= 1.5:
                     row["vib"] = VIB_STYLES[style]
                 out.append(row)
+            elif use_orn in PINCH_HARMONICS:
+                # 기본음은 계속 울리되 죽고, 그 위에 배음이 얹혀 밀려 올라간다. 음을 쪼개
+                # 새로 때리는 게 아니라(그건 별개의 음으로 들린다 — 꺾기에서 배운 것) 같은
+                # 어택 위에 배음이 **더해지는** 것이라 두 행이 겹쳐 산다.
+                semis, at, hgain, duck = PINCH_HARMONICS[use_orn]
+                out.append({"beat": beat, "beats": beats, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": m,
+                            "program": prog["melody"], "vel": round(vel * duck, 3),
+                            "gate": gate})
+                lead = beats * at
+                out.append({"beat": beat + lead, "beats": max(0.05, beats - lead),
+                            "part": "melody", "patch": "pinchharm",
+                            "pitch": min(127, m + semis), "program": prog["melody"],
+                            "vel": round(vel * hgain, 3), "gate": 1.0, "bend": PINCH_RISE})
             elif use_orn == "bend":
                 # 블루스의 스쿠프 — 반음 아래에서 밀어 올려 음에 도착한다. 기타·하모니카의
                 # 그 손이고, 곧게 시작하면 블루스로 안 들린다.
@@ -3207,6 +3350,15 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     unp_of[mi2.get("id")] = int(mu) - 1  # spec: 1-based MIDI note
                 except ValueError:
                     pass
+    # 파트가 하나도 <midi-program> 을 선언하지 않았으면 이름을 읽는다. 선언이 하나라도 있으면
+    # 선언이 원본이고 이름은 안 본다 — 반쯤 섞인 편성이 통째로 모르는 것보다 나쁘다.
+    named_progs = {}
+    if not prog_of:
+        for _pid, _nm in name_of.items():
+            _g = named_program(_nm)
+            if _g is not None:
+                named_progs[_pid] = _g
+
     skipped = {}
 
     def skip_mark(what):
@@ -3224,7 +3376,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         # 부산물). staff 없는 지시는 "1" 로.
         notes, harmonies, pos = [], [], 0.0
         lead_voice = None
-        f_prog = prog_of.get(part.get("id"), 0)
+        f_prog = prog_of.get(part.get("id"), named_progs.get(part.get("id"), 0))
         f_part = f"p{pi + 1}"
         last_onset, stack_n, arp_here = 0.0, 0, False
         pedal_down = None
@@ -4104,11 +4256,26 @@ def action_render(inp):
     lrc_text, lrc_meta, lrc_miss = None, None, None
     lyr_src = str(inp.get("lyricsMediaPath") or "").strip()
     lyr_q = str(inp.get("lyricsQuery") or "").strip()
-    if lyr_src or lyr_q or inp.get("lrc"):
+    # `lrc` 는 이름이 **가사 데이터**처럼 읽히는데 하는 일은 "악보에서 만들어라" 였다 — 손에 가사가
+    # 없는 모델이 그 칸을 켜고 "이 악보에는 가사가 없습니다"를 맞았다(실측). 이름을 하는 일대로
+    # 둘로 갈랐고, 옛 이름은 파서가 흡수한다: 참이면 파생 스위치, 문자열이면 그것이 곧 .lrc 다.
+    lrc_ready = str(inp.get("lrcText") or "").strip()
+    lrc_derive = bool(inp.get("lrcFromScore"))
+    legacy_lrc = inp.get("lrc")
+    if isinstance(legacy_lrc, str) and legacy_lrc.strip():
+        if legacy_lrc.strip().lower() in ("true", "1", "yes", "y"):
+            lrc_derive = True
+        elif not lrc_ready:
+            lrc_ready = legacy_lrc.strip()
+    elif legacy_lrc:
+        lrc_derive = True
+    if lyr_src or lyr_q or lrc_derive or lrc_ready:
         try:
             lrc_offset = float(inp.get("lrcOffset") or 0.0)
         except (TypeError, ValueError):
             return {"success": False, "error": "lrcOffset must be a number of seconds"}
+        # 명시한 것이 이긴다: 파일 → 손에 든 텍스트 → 이름으로 찾기 → 악보에서 파생.
+        # 텍스트가 조회보다 먼저인 이유 = 조회는 네트워크를 타고 **틀린 곡을 고를 수 있다**.
         if lyr_src:
             lpath, lerr = resolve_score_media(inp, key="lyricsMediaPath")
             if lerr:
@@ -4116,6 +4283,8 @@ def action_render(inp):
             lrc_text, lerr = lrc_from_file(lpath, lrc_offset, title=lyr_src)
             if lerr:
                 return {"success": False, "error": lerr}
+        elif lrc_ready:
+            lrc_text = shift_lrc(lrc_ready, lrc_offset)
         elif lyr_q:
             # The Winamp move: synced lyrics fetched by name while the MR renders. A miss is
             # a NOTE, not a failure — the track is still worth having; the real accident
@@ -4130,8 +4299,10 @@ def action_render(inp):
         else:
             if not own_lyrics:
                 return {"success": False, "error": (
-                    "lrc:true 인데 이 악보에는 가사가 없습니다 — 가사 악보나 .lrc 파일을 "
-                    "lyricsMediaPath 로 주세요")}
+                    "lrcFromScore 는 **업로드한 악보 파일**의 음절에서 가사 줄을 만듭니다 — "
+                    "이 요청에는 그게 없습니다(인라인 score 는 대상이 아니고, 이 파일에는 "
+                    "음절이 없습니다). 가사를 손에 들고 있으면 lrcText 로, 가사 악보나 .lrc "
+                    "파일이면 lyricsMediaPath 로, 곡 이름으로 찾으려면 lyricsQuery 로 주세요")}
             lrc_text = build_lrc(own_lyrics, spb, offset=lrc_offset,
                                  title=str(inp.get("scoreMediaPath") or "") or None)
     # ── faithful mode: "그대로 연주해줘" plays the FILE — every part, its own instrument, its
@@ -4146,21 +4317,29 @@ def action_render(inp):
     # written; arranged throws it away and rebuilds from one line. "Dress my five parts as a
     # metal band" was neither, and until now the model could only fake it with doubling.
     arrange_from = str(inp.get("arrangeFrom") or "").strip().lower()
-    if arrange_from and arrange_from not in ("melody", "score"):
+    if arrange_from and arrange_from not in ("melody", "score", "parts"):
         return {"success": False,
-                "error": "arrangeFrom 은 melody | score 입니다 (생략 = melody: 한 줄로 줄여 "
-                         "장르 반주를 새로 짓기 / score: 악보 성부를 그대로 두고 역할별로 "
-                         "재의상 + 장르 리듬섹션)"}
+                "error": "arrangeFrom 은 melody | score | parts 입니다 — 악보에서 무엇을 "
+                         "남기느냐입니다 (생략 = melody: 가락 한 줄만 남기고 장르 반주를 새로 "
+                         "짓기 / score: 성부를 전부 남기고 악기만 장르 것으로 / parts: 성부도 "
+                         "악기도 악보 그대로 두고 장르 리듬섹션만 얹기)"}
     recast = None
-    if (arrange_from == "score" and not faithful
+    if (arrange_from in ("score", "parts") and not faithful
             and len(locals().get("faithful_rows") or []) > 0):
-        recast, cast_map = recast_parts(faithful_rows, style, band, lead_row)
+        recast, cast_map, mix_over = recast_parts(faithful_rows, style, band, lead_row,
+                                                  keep_instruments=arrange_from == "parts")
         # The genre's rhythm section, borrowed whole from the arrangement path so the kit, the
         # fills and the crashes stay one implementation. Only the drums: the harmony is already
         # in the score's own parts.
         if not any(r.get("part") == "drum" for r in recast):
             backing = build_arrangement([], chords, style, total_beats, band, feel)
             recast += [r for r in backing if r.get("part") == "drum"]
+        # 컴핑이 여럿이면 각자의 볼륨이 낮아진다 — 파생값이라 호출자의 `mix` 가 이긴다.
+        # 두 엔진 다 feel["mix"] 를 읽으므로 여기 한 번 얹으면 .mid 의 CC7 과 내장 렌더가
+        # 같은 균형을 쓴다.
+        if mix_over:
+            feel = dict(feel or {})
+            feel["mix"] = {**mix_over, **(feel.get("mix") or {})}
     reinst_name = None
     if faithful and band:
         faithful_rows, reinst_name = reinstrument(faithful_rows, band)
@@ -4578,6 +4757,19 @@ def action_selftest():
     ck("every style has a feel and a band (no half-declared genre)", True,
        set(DRUM_PATTERNS) == set(STYLE_FEEL) == set(STYLE_BAND),
        set(DRUM_PATTERNS) == set(STYLE_FEEL) == set(STYLE_BAND))
+    # 자리에 적힌 이름은 전부 실제 악기여야 한다. 컴핑 자리가 목록이 되면서 오타 한 글자가
+    # 조용히 피아노로 떨어질 수 있게 됐다 — 선언이 힘을 갖는 건 읽는 코드가 있어서고, 읽는
+    # 코드가 못 알아들으면 아무 일도 안 일어난다.
+    _unknown = sorted({n for seats in STYLE_BAND.values()
+                       for v in seats.values()
+                       for n in ([v] if isinstance(v, str) else v)
+                       if resolve_instrument(n) is None})
+    ck("every instrument a genre row names is one the module can actually play",
+       [], _unknown, _unknown == [])
+    # 별칭이 가리키는 장르도 실재해야 한다. 한글 별칭을 늘리면서 오타가 나면 그 말은 목록과
+    # 함께 거부당하는데, 거부 메시지 안에 그 별칭이 들어 있어 사용자가 두 번 헷갈린다.
+    _dangling = sorted({v for v in STYLE_ALIASES.values() if v not in DRUM_PATTERNS})
+    ck("every style alias points at a style that exists", [], _dangling, _dangling == [])
     # …and every value a row asks for must be a value a CALLER may ask for. This is the audit
     # that was missing: the metal row said `chug`/`drive` while COMP_KINDS/BASS_KINDS still
     # listed four each, so the genre could play a hand no argument could name, and the model —
@@ -4879,6 +5071,47 @@ def action_selftest():
     ck("꺾기 lands on the line's end and the long note, not on every beat-long note",
        2, sum(1 for r in kmel if r.get("bend")),
        sum(1 for r in kmel if r.get("bend")) == 2 and len(kmel) == len(kev))
+    # 핀치 하모닉 — 배음이 자기 행으로 나오고, 기본음은 죽되 **다시 때리지 않는다**.
+    pk = {"bpm": 100, "style": "metal", "chords": [{"root": "E2", "beats": 8}],
+          "notes": [{"syl": "라", "note": "E3", "beats": 1},
+                    {"syl": "라", "note": "B3", "beats": 3},
+                    {"syl": "라", "note": "E3", "beats": 4}]}
+    _, pev, pch, _, pbd, pfl, _ = parse_score(pk)
+    pmel = [r for r in build_arrangement(pev, pch, "metal", 8, pbd, pfl)
+            if r["part"] == "melody"]
+    harm = [r for r in pmel if r.get("patch") == "pinchharm"]
+    fund = [r for r in pmel if r.get("pitch") == 59 and r.get("patch") != "pinchharm"]
+    ck("메탈의 도약음에 핀치 하모닉이 물린다 — 배음이 자기 행으로", 1, len(harm), len(harm) == 1)
+    ck("…배음은 5배음(+19반음) 자리이고 위로 밀려 올라간다", [78, True],
+       [harm[0]["pitch"] if harm else None, bool(harm and harm[0].get("bend"))],
+       bool(harm) and harm[0]["pitch"] == 59 + 19 and bool(harm[0].get("bend")))
+    ck("…기본음은 한 번만 울린다 — 쪼개서 다시 때리면 별개의 음으로 들린다(꺾기에서 배운 것)",
+       1, len(fund), len(fund) == 1)
+    ck("…배음은 음이 시작한 뒤에 물린다", True,
+       [round(harm[0]["beat"], 2) if harm else None, round(fund[0]["beat"], 2) if fund else None],
+       bool(harm and fund) and harm[0]["beat"] > fund[0]["beat"]
+       and harm[0]["beat"] < fund[0]["beat"] + fund[0]["beats"])
+    ck("…그리고 호출자가 orn 으로 직접 부를 수 있다", True, "pinch" in ORN_KINDS,
+       "pinch" in ORN_KINDS and "harmonic" in ORN_KINDS)
+
+    # 가사 칸은 이름이 하는 일을 말해야 한다 — 옛 `lrc` 는 데이터처럼 읽히고 파생 스위치였다.
+    _lsc = {"bpm": 120, "notes": [{"syl": "가", "note": "C4", "beats": 1},
+                                  {"syl": "나", "note": "D4", "beats": 1}]}
+    _ltxt = "[00:01.00]손에 든 가사" + chr(10) + "[00:03.00]둘째 줄"
+    _lr = action_render({"action": "render", "score": _lsc, "audioFormat": "wav",
+                         "lrcText": _ltxt})
+    ck("lrcText = 손에 든 가사가 그대로 실린다", 2,
+       (_lr.get("data") or {}).get("lrcLines"), (_lr.get("data") or {}).get("lrcLines") == 2)
+    _lo = action_render({"action": "render", "score": _lsc, "audioFormat": "wav",
+                         "lrc": _ltxt})
+    ck("…옛 이름에 문자열이 오면 파서가 흡수한다(거부하면 모델이 우회한다)", 2,
+       (_lo.get("data") or {}).get("lrcLines"), (_lo.get("data") or {}).get("lrcLines") == 2)
+    _lb = action_render({"action": "render", "score": _lsc, "lrc": True})
+    ck("…옛 이름의 참은 파생 스위치로 흡수되고, 대상이 없으면 다음 수를 말하며 거부한다",
+       True, (_lb.get("error") or "")[:24],
+       not _lb.get("success") and "lrcText" in (_lb.get("error") or "")
+       and "lyricsMediaPath" in (_lb.get("error") or ""))
+
     # Dressing the score instead of replacing it.
     rrows = ([{"beat": float(i), "beats": 1.0, "part": "p1", "pitch": 72, "vel": 0.8,
                "patch": "piano", "program": 0} for i in range(4)]
@@ -4886,7 +5119,7 @@ def action_selftest():
                  "patch": "piano", "program": 0} for i in range(4)]
              + [{"beat": float(i), "beats": 1.0, "part": "p3", "pitch": 40, "vel": 0.7,
                  "patch": "piano", "program": 0} for i in range(4)])
-    cast_rows, cast = recast_parts(rrows, "metal", None, "p1")
+    cast_rows, cast, cast_mix = recast_parts(rrows, "metal", None, "p1")
     ck("recast keeps every part the score wrote", 3,
        len({r["part"] for r in cast_rows}), len({r["part"] for r in cast_rows}) == 3)
     ck("…and casts them by role: the tune, the floor, the comping",
@@ -4899,13 +5132,37 @@ def action_selftest():
     ck("…and each role wears the genre's instrument, not the file's", True,
        (lead_prog, next(r["program"] for r in cast_rows if r["part"] == "chord")),
        lead_prog == resolve_instrument(STYLE_BAND["metal"]["melody"])[1])
-    many = recast_parts(rrows + [{"beat": 0.0, "beats": 1.0, "part": "p4", "pitch": 64,
-                                  "vel": 0.7, "patch": "piano", "program": 0}], "metal",
-                        None, "p1")[0]
+    ck("one comping voice keeps the seat it always had — no spread, no divide",
+       [PAN["chord"], {}], [cast_rows and next(r["pan"] for r in cast_rows
+                                               if r["part"] == "chord"), cast_mix],
+       next(r["pan"] for r in cast_rows if r["part"] == "chord") == PAN["chord"]
+       and cast_mix == {})
+    p4 = [{"beat": 0.0, "beats": 1.0, "part": "p4", "pitch": 64,
+           "vel": 0.7, "patch": "piano", "program": 0}]
+    many, _, many_mix = recast_parts(rrows + p4, "metal", None, "p1")
     ck("a fourth voice comps as chord2, where the pan and mix tables can still find it",
-       True, sorted({r["part"] for r in many}),
-       "chord2" in {r["part"] for r in many} and pan_of("chord2") == PAN["chord2"]
-       and mix_of("chord3") == MIX["chord"])
+       True, sorted({r["part"] for r in many}), "chord2" in {r["part"] for r in many})
+    # 같은 자리에 두 대가 포개지지 않는다 — 팬은 파트 이름이 아니라 **몇 대인가**가 정한다.
+    seats_used = sorted({r["pan"] for r in many if str(r["part"]).startswith("chord")})
+    ck("…and two comping voices stand apart instead of stacking on one spot",
+       [-0.5, 0.5], seats_used, seats_used == [-0.5, 0.5])
+    # 그리고 둘이면 각자 √2 만큼 낮아져 컴핑 전체가 예전 한 대 자리에 앉는다.
+    ck("…each dropping by root-N so the comping bed stays where one voice used to sit",
+       round(MIX["chord"] / math.sqrt(2), 4), many_mix.get("chord"),
+       many_mix.get("chord") == round(MIX["chord"] / math.sqrt(2), 4)
+       and many_mix.get("chord") == many_mix.get("chord2"))
+    # 둘째 손을 이름으로 부를 수 있다. 자리에만 걸려 있던 시절 이 인자는 조용히 버려졌다.
+    named = recast_parts(rrows + p4, "metal", {"chord2": "piano"}, "p1")[0]
+    ck("…and the caller can name the SECOND comping hand, which used to be dropped",
+       resolve_instrument("piano")[1],
+       next(r["program"] for r in named if r["part"] == "chord2"),
+       next(r["program"] for r in named if r["part"] == "chord2")
+       == resolve_instrument("piano")[1])
+    # parts 모드 = 악보가 말한 악기 그대로. 역할·무대·균형만 우리 것이다.
+    kept = recast_parts(rrows + p4, "metal", None, "p1", keep_instruments=True)[0]
+    ck("parts mode leaves every instrument the file declared", [0],
+       sorted({r["program"] for r in kept if "pitch" in r}),
+       sorted({r["program"] for r in kept if "pitch" in r}) == [0])
     # 기교도 하나면 기계다. 같은 장르 안에서 자리에 따라 다른 창법이 걸려야 한다.
     oscore = {"bpm": 100, "chords": [{"root": "C3", "beats": 24}], "notes": [
         {"syl": "가", "note": "C4", "beats": 2},          # 소절 안 긴 음 → 떨기
