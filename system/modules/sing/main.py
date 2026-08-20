@@ -15,6 +15,7 @@ core-tool bridge that composes this module — the same split as run_ui_action: 
 round trip, the module owns the work.
 """
 
+import collections
 import hashlib
 import json
 import math
@@ -1720,11 +1721,6 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                     break
                 bar = int((pos + off) // meter)
                 vel = round(vel * (1.0 + vary * (PHRASE4[bar % 4] - 1.0)), 3)
-                if vary > 0 and bar % BREATH_EVERY == BREATH_EVERY - 1:
-                    # the hole before the next phrase — the last stroke of the eighth bar
-                    nxt = hits_here[hi + 1] if hi + 1 < len(hits_here) else None
-                    if nxt is None or int((pos + nxt[0]) // meter) != bar:
-                        continue
                 for p in struck:
                     row = {"beat": pos + off, "beats": dur, "part": "chord",
                            "patch": patch_of["chord"], "pitch": p,
@@ -1756,6 +1752,24 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         pos += beats
         if pos >= total_beats:
             break
+    if vary > 0:
+        # The breath is the last stroke OF THE BAR, so it has to be chosen once the bar is whole.
+        # Deciding it inside the chord loop only ever saw one chord's strokes: a chord that ended
+        # mid-bar looked like the end of the bar and a bar whose last stroke belonged to the next
+        # chord was never touched. 실측 8/20 아로하: six breaths across 88 bars where the rule
+        # asks for eleven. Nothing about the rule was wrong — it was being asked the wrong scope.
+        by_bar = {}
+        for r in out:
+            if str(r.get("part", "")).startswith("chord"):
+                b = int(r["beat"] // meter)
+                if b % BREATH_EVERY == BREATH_EVERY - 1:
+                    by_bar.setdefault((b, r["part"]), []).append(r)
+        for rows in by_bar.values():
+            last = max(r["beat"] for r in rows)
+            for r in rows:
+                if abs(r["beat"] - last) < 1e-6:
+                    r["_breath"] = True
+        out = [r for r in out if not r.pop("_breath", False)]
     if fill_amt > 0 and mel_gaps and chords:
         # Where the harmony is, so the answer belongs to the song and not to a scale we picked.
         spans, cpos = [], 0.0
@@ -4934,12 +4948,11 @@ def action_selftest():
     vels = sorted({r["vel"] for r in vch_rows})
     ck("the comp is not the same bar sixteen times", True, len(vels),
        len(vels) >= 3)
-    bars = {int(r["beat"] // 4) for r in vch_rows}
-    ck("…and it breathes before the next phrase (a bar loses its last stroke)", True,
-       sorted(set(range(16)) - bars) or "매 마디 타점 있음",
-       any(sum(1 for r in vch_rows if int(r["beat"] // 4) == b)
-           < max(sum(1 for r in vch_rows if int(r["beat"] // 4) == c) for c in bars)
-           for b in bars))
+    per_bar = collections.Counter(int(r["beat"] // 4) for r in vch_rows)
+    full = max(per_bar.values())
+    short_bars = sorted(b for b, n in per_bar.items() if n < full)
+    ck("…and it breathes before every phrase — bar 8 and bar 16, not whichever the chord ended on",
+       [7, 15], short_bars, short_bars == [7, 15])
     _, sev, sch, _, sbd, sfl, _ = parse_score(dict(vscore, style="trot", vary=0))
     flat = [r for r in build_arrangement(sev, sch, "trot", 64, sbd, sfl)
             if r["part"] == "chord"]
