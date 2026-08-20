@@ -1162,22 +1162,22 @@ STYLE_BAND = {
 # eighths lean (0 straight, 1 full triplet; drums/comp/bass only — the melody stays straight
 # because the vocal is cut to the written grid). Every knob is score-overridable.
 STYLE_FEEL = {
-    "trot":      {"orn": "kkeokgi", "comp": "stabs", "bass": "twobeat", "swing": 0.3, "gate": 0.8},
+    "trot":      {"comp": "stabs", "bass": "twobeat", "swing": 0.3, "gate": 0.8},
     "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
-    "rock":      {"orn": "bendin", "voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.8},
-    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "drive",
+    "rock":      {"voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.8},
+    "metal":     {"voicing_kind": "power", "comp": "chug", "bass": "drive",
                   "double": 0.7, "swing": 0.0, "gate": 1.0},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
     "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
     "rocknroll": {"comp": "quarters", "bass": "boogie", "swing": 0.6, "gate": 0.75},
     "hiphop":    {"laidback": 0.05, "comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
-    "country":   {"orn": "grace", "comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
+    "country":   {"comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
     "funk":      {"comp": "chank", "bass": "funk16", "swing": 0.0, "gate": 0.55},
     "punk":      {"voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.6},
     "jazz":      {"comp": "charleston", "bass": "walk", "swing": 0.65, "gate": 0.85},
-    "blues":     {"orn": "scoop", "comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
+    "blues":     {"comp": "quarters", "bass": "walk", "swing": 0.6, "gate": 0.85},
     "carol":     {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 0.95},
     "folk":      {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "classic":   {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 1.0},
@@ -1322,7 +1322,48 @@ VIB_STYLES = {
     "rock":  (5.5, 0.28, 0.35),   # 노래하는 비브라토 — 얕고 고르게
     "metal": (5.5, 0.48, 0.22),  # 더 넓고 더 일찍 — 노래가 아니라 울음이다
     "blues": (5.0, 0.42, 0.30),   # 더 넓고 느리게 — 블루스의 그 울음
+    "trot":  (5.0, 0.35, 0.40),   # 트로트의 떨기 — 늦게 걸려 길게 떤다
+    "rocknroll": (5.2, 0.25, 0.35),
+    "rnb":   (4.6, 0.22, 0.45),   # 늦고 얕게 — 소울의 그 흔들림
+    "jazz":  (4.8, 0.20, 0.45),
+    "country": (5.0, 0.24, 0.40),
 }
+
+# 한 창법만 반복하면 그것도 하나의 기계다 — 사용자 8/20: "뽕짝에 꺾기만 들어가니까 단조로워진다".
+# 트로트 가수는 꺾기만 하지 않는다: 소절 끝에서 꺾고, 긴 음은 떨고, 위로 도약해 도착한 음은 밀어
+# 올린다. 어느 것을 쓸지는 **그 음이 어디 있느냐**가 정한다 — 난수가 아니라 문맥이라 재현된다.
+#   end  = 소절 끝(뒤에 쉼이 오는 음) · long = 소절 안의 긴 음 · leap = 위로 도약해 닿은 음
+ORN_SET = {
+    "trot":      {"end": "kkeokgi", "long": "vib", "leap": "scoop"},
+    "blues":     {"end": "bend", "long": "vib", "leap": "scoop"},
+    "rock":      {"end": "bendin", "long": "vib", "leap": "bendin"},
+    "metal":     {"end": "bendin", "long": "vib", "leap": "bendin"},
+    "punk":      {"end": "bendin"},
+    "country":   {"end": "grace", "long": "vib", "leap": "grace"},
+    "rocknroll": {"end": "bend", "long": "vib"},
+    "rnb":       {"long": "vib", "leap": "scoop"},
+    "jazz":      {"long": "vib"},
+}
+LEAP_UP = 3          # 반음 — 3도 이상 뛰어 올라 닿은 음이 "도약"이다
+
+
+def pick_orn(style, pinned, beats, phrase_end, leap_up):
+    """Which ornament this note gets. `pinned` (the caller's `orn`) wins everywhere; otherwise
+    the genre's repertoire answers by position. Returns "" for a plain note."""
+    if pinned == "none":
+        return ""
+    if pinned:
+        ok = beats >= ORN_MIN.get(pinned, 1.5) or (
+            pinned == "kkeokgi" and phrase_end and beats >= 1.0)
+        return pinned if ok else ""
+    rep = ORN_SET.get(style) or {}
+    if phrase_end and rep.get("end") and beats >= 1.0:
+        return rep["end"]
+    if leap_up and rep.get("leap") and beats >= ORN_MIN.get(rep["leap"], 1.0):
+        return rep["leap"]
+    if rep.get("long") and beats >= 1.5:
+        return rep["long"]
+    return ""
 
 
 def vib_at(vib, t, dur):
@@ -1559,9 +1600,9 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     voicing_kind = feel.get("voicing_kind") or defaults.get("voicing_kind", "")
     if voicing_kind == "full":       # an explicit "not power" is the plain quality voicing
         voicing_kind = ""
+    # "none" survives as itself — it is the caller saying "play it straight", and pick_orn has
+    # to hear that rather than an empty string, which now means "use the genre's repertoire".
     lead_orn = feel.get("orn") or defaults.get("orn", "")
-    if lead_orn == "none":           # ditto — an explicit "play it straight"
-        lead_orn = ""
     laidback = float(feel["laidback"] if feel.get("laidback") is not None
                      else defaults.get("laidback", 0.0))
     meter = int(feel.get("meter") or 4)
@@ -1588,7 +1629,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # instrumental render (no vocalPath) had rhythm and bass and no tune at all.
     # Velocity is a phrase shape, not a constant: downbeats lean, offbeats step back.
     beat = 0.0
-    mel_gaps = []
+    mel_gaps, prev_m = [], None
     for ei, ev in enumerate(events):
         # 꺾기 belongs at the end of a line — where the singer breathes — and on notes long
         # enough to hold. At the old 1.0-beat threshold it fired on 101 of 443 notes (실측
@@ -1608,21 +1649,28 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # curve only shapes notes that never declared one.
             own = vels[si] if si < len(vels) else None
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
-            # 꺾기는 소절 끝에서도 걸린다 — 창법이 사는 자리가 거기다. 다른 장식은 길이만 본다.
-            orn_ok = beats >= ORN_MIN.get(lead_orn, 1.5) or (
-                lead_orn == "kkeokgi" and phrase_end and beats >= 1.0)
-            if lead_orn in BEND_CURVES and orn_ok:
+            # 어느 기교를 쓸지는 그 음의 자리가 정한다 — 소절 끝인가, 긴 음인가, 뛰어 올라
+            # 닿았는가. 호출자가 `orn` 을 지목하면 그것 하나로 고정된다.
+            leap_up = prev_m is not None and (m - prev_m) >= LEAP_UP
+            use_orn = pick_orn(style, lead_orn, beats, phrase_end, leap_up)
+            prev_m = m
+            if use_orn == "vib" and style in VIB_STYLES:
+                out.append({"beat": beat, "beats": beats, "part": "melody",
+                            "patch": patch_of["melody"], "pitch": m,
+                            "program": prog["melody"], "vel": vel, "gate": gate,
+                            "vib": VIB_STYLES[style]})
+            elif use_orn in BEND_CURVES:
                 # 진짜 벤딩 — 음을 둘로 쪼개지 않고 음정이 음 안에서 움직인다.
                 row = {"beat": beat, "beats": beats, "part": "melody",
                        "patch": patch_of["melody"], "pitch": m,
                        "program": prog["melody"], "vel": vel, "gate": gate,
-                       "bend": BEND_CURVES[lead_orn]}
+                       "bend": BEND_CURVES[use_orn]}
                 # 흔들림은 **긴 음에만** — 짧은 음에 걸면 떨 시간이 없어 음정만 흔들린 것처럼
                 # 들린다. 기타리스트도 롱톤에서만 손목을 쓴다.
                 if style in VIB_STYLES and beats >= 1.5:
                     row["vib"] = VIB_STYLES[style]
                 out.append(row)
-            elif lead_orn == "bend" and beats >= ORN_MIN["bend"]:
+            elif use_orn == "bend":
                 # 블루스의 스쿠프 — 반음 아래에서 밀어 올려 음에 도착한다. 기타·하모니카의
                 # 그 손이고, 곧게 시작하면 블루스로 안 들린다.
                 lead = min(0.14, beats * 0.2)
@@ -1632,7 +1680,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                 out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
                             "patch": patch_of["melody"], "pitch": m,
                             "program": prog["melody"], "vel": vel, "gate": gate})
-            elif lead_orn == "grace" and beats >= ORN_MIN["grace"]:
+            elif use_orn == "grace":
                 # 컨트리의 해머온 — 온음 아래를 스치고 본음을 때린다.
                 lead = min(0.12, beats * 0.18)
                 out.append({"beat": beat, "beats": lead, "part": "melody",
@@ -4844,6 +4892,39 @@ def action_selftest():
        True, sorted({r["part"] for r in many}),
        "chord2" in {r["part"] for r in many} and pan_of("chord2") == PAN["chord2"]
        and mix_of("chord3") == MIX["chord"])
+    # 기교도 하나면 기계다. 같은 장르 안에서 자리에 따라 다른 창법이 걸려야 한다.
+    oscore = {"bpm": 100, "chords": [{"root": "C3", "beats": 24}], "notes": [
+        {"syl": "가", "note": "C4", "beats": 2},          # 소절 안 긴 음 → 떨기
+        {"syl": "나", "note": "G4", "beats": 2},          # 5도 위로 도약 → 밀어 올리기
+        {"syl": "다", "note": "E4", "beats": 2},          # 소절 끝(뒤에 쉼) → 꺾기
+        {"rest": True, "beats": 4},
+        {"syl": "라", "note": "C4", "beats": 0.5},        # 짧은 음 → 맨몸
+    ]}
+    _, oev, och, _, obd, ofl, _ = parse_score(dict(oscore, style="trot"))
+    oarr = [r for r in build_arrangement(oev, och, "trot", 24, obd, ofl)
+            if r["part"] == "melody"]
+    def _kind(r):
+        b = r.get("bend")
+        tag = "plain"
+        if b is not None:
+            tag = next((k for k, c in BEND_CURVES.items() if c == b), "bend")
+        return tag + ("+vib" if r.get("vib") else "")
+    kinds = [_kind(r) for r in oarr]
+    ck("one genre, more than one 기교 — the note's place picks it", True,
+       kinds, len(set(kinds)) >= 3)
+    ck("…the short note is left alone", "plain", kinds[-1] if kinds else None,
+       bool(kinds) and kinds[-1] == "plain")
+    pinned = [r for r in build_arrangement(oev, och, "trot", 24, obd,
+                                           dict(ofl, orn="kkeokgi"))
+              if r["part"] == "melody"]
+    pin_curves = {tuple(map(tuple, r["bend"])) for r in pinned if r.get("bend")}
+    ck("…and pinning `orn` goes back to one technique everywhere", 1,
+       len(pin_curves),
+       len(pin_curves) == 1
+       and pin_curves == {tuple(map(tuple, BEND_CURVES["kkeokgi"]))})
+    ck("ORN_SET is the only place a genre names its 기교", [],
+       [k for k, v in STYLE_FEEL.items() if "orn" in v],
+       not any("orn" in v for v in STYLE_FEEL.values()))
     # Phrasing: sixteen bars of the same chord must not be sixteen identical bars.
     vscore = {"bpm": 120, "notes": [{"syl": "라", "note": "C5", "beats": 64}],
               "chords": [{"root": "C3", "beats": 64}]}
