@@ -196,6 +196,30 @@ def parse_score(score):
     if bassline is not None and bassline not in BASS_KINDS:
         return None, None, None, None, None, None, \
             f"bassline {bassline!r} 를 모릅니다 — 가능한 값: {' | '.join(BASS_KINDS)}"
+    orn = str(score.get("orn") or "").strip().lower() or None
+    if orn is not None and orn not in ORN_KINDS:
+        return (None, None, None, None, None, None,
+                f"orn {orn!r} 를 모릅니다 — 가능한 값: {' | '.join(ORN_KINDS)}")
+    chord_shape = str(score.get("chordShape") or "").strip().lower() or None
+    if chord_shape is not None and chord_shape not in CHORD_SHAPES:
+        return (None, None, None, None, None, None,
+                f"chordShape {chord_shape!r} 를 모릅니다 — 가능한 값: {' | '.join(CHORD_SHAPES)}")
+    # The numeric axes share one gate because they share one shape: a 0~N dial with a reason.
+    axes = {}
+    for key, hi, why in (("laidback", 0.5, "0 = 격자 위, 0.05 = R&B 의 그 여유"),
+                         ("gate", 1.0, "0.55 = 끊어 치기, 1.0 = 이어 붙이기"),
+                         ("double", 1.0, "0 = 한 대, 0.7 = 좌우로 벌린 두 대")):
+        raw = score.get(key)
+        if raw is None:
+            continue
+        try:
+            axes[key] = float(raw)
+        except (TypeError, ValueError):
+            return (None, None, None, None, None, None,
+                    f"{key} 는 0~{hi} 숫자입니다 ({why})")
+        if not (0.0 <= axes[key] <= hi):
+            return (None, None, None, None, None, None,
+                    f"{key} 는 0~{hi} 사이여야 합니다 ({why})")
     drums = score.get("drumPattern")
     drum_rows = None
     if drums is not None:
@@ -264,7 +288,9 @@ def parse_score(score):
             return None, None, None, None, None, None, "bars 는 1~256 마디입니다"
     feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline,
             "drums": drum_rows, "bars": bars, "bpm": bpm, "doubles": doubles,
-            "humanize": humanize, "pedal": pedal, "voicing": voicing}
+            "humanize": humanize, "pedal": pedal, "voicing": voicing,
+            "orn": orn, "voicing_kind": chord_shape, "laidback": axes.get("laidback"),
+            "gate": axes.get("gate"), "double": axes.get("double")}
     return spb, events, chords, style, band, feel, None
 
 
@@ -1027,7 +1053,8 @@ STYLE_FEEL = {
     "ballad":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "rock":      {"orn": "bendin", "voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.8},
-    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "drive", "swing": 0.0, "gate": 1.0},
+    "metal":     {"orn": "bendin", "voicing_kind": "power", "comp": "chug", "bass": "drive",
+                  "double": 0.7, "swing": 0.0, "gate": 1.0},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
     "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
@@ -1045,8 +1072,19 @@ STYLE_FEEL = {
     "newage":    {"comp": "arp", "bass": "hold", "swing": 0.0, "gate": 1.0},
     "none":      {"comp": "pad", "bass": "hold", "swing": 0.0, "gate": 0.95},
 }
-COMP_KINDS = ("pad", "stabs", "arp", "quarters", "eighths")
-BASS_KINDS = ("hold", "twobeat", "alt", "walk")
+# The gate has to reach as far as the engine does. `_comp_hits`/`_bass_line` branch on these
+# names and STYLE_FEEL rows set them directly, so a mode the engine plays but the tuple omits is
+# reachable by genre name and **unreachable by argument** — and since the schema prints the tuple,
+# the model picks from the short list and quietly loses the genre's own hand. 실측 8/19: metal's
+# row asked for `chug`+`drive`, a caller could only say `stabs`+`alt`, and one override took the
+# wall off the metal render. selftest audits STYLE_FEEL against these.
+COMP_KINDS = ("pad", "stabs", "arp", "quarters", "eighths", "chug", "charleston", "chank")
+BASS_KINDS = ("hold", "twobeat", "alt", "walk", "drive", "offbeat", "funk16", "boogie")
+# How the lead hand shapes a long note, and what a chord actually contains. A genre IS these axes
+# together — naming them is what lets a caller assemble one we never listed instead of asking us
+# for another row.
+ORN_KINDS = ("none", "scoop", "bend", "bendin", "grace", "kkeokgi")
+CHORD_SHAPES = ("full", "power")
 
 # 3/4 grooves — a waltz bar is not a trimmed 4/4 bar, so the tables are their own.
 DRUM_PATTERNS_3 = {
@@ -1298,10 +1336,17 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     for part, name in hire.items():
         patch_of[part], prog[part] = resolve_instrument(name)
     defaults = STYLE_FEEL.get(style, STYLE_FEEL["trot"])
-    voicing_kind = defaults.get("voicing_kind", "")
-    lead_orn = defaults.get("orn", "")
-    laidback = float(defaults.get("laidback", 0.0))
     feel = feel or {}
+    # Caller first, genre second — for every axis. A genre row is a bundle of defaults, not a
+    # locked kit: naming one different hand has to leave the other five where the genre put them.
+    voicing_kind = feel.get("voicing_kind") or defaults.get("voicing_kind", "")
+    if voicing_kind == "full":       # an explicit "not power" is the plain quality voicing
+        voicing_kind = ""
+    lead_orn = feel.get("orn") or defaults.get("orn", "")
+    if lead_orn == "none":           # ditto — an explicit "play it straight"
+        lead_orn = ""
+    laidback = float(feel["laidback"] if feel.get("laidback") is not None
+                     else defaults.get("laidback", 0.0))
     meter = int(feel.get("meter") or 4)
     swing = float(feel.get("swing") if feel.get("swing") is not None else defaults["swing"])
     comp = feel.get("comp") or defaults["comp"]
@@ -1309,7 +1354,12 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # Articulation: how much of a written note actually SOUNDS. Velocity alone made every
     # style press notes the same shape — funk clips, a ballad sings through (실측·사용자:
     # "리듬에 어울리게 안 나오냐").
-    gate = float(defaults.get("gate", 0.9))
+    gate = float(feel["gate"] if feel.get("gate") is not None else defaults.get("gate", 0.9))
+    # Thickness is its own axis. It used to ride on `comp == "chug"`, so a caller who changed the
+    # strumming hand silently lost the second guitar — the one thing that makes a wall a wall
+    # (실측 8/19: `comp:"stabs"` on a metal render, and `chord2` was gone from the part list).
+    double = float(feel["double"] if feel.get("double") is not None
+                   else defaults.get("double", 0.0))
     # A machine-gun roll belongs to uptempo music: a slow piece keeps its soft fill even in a
     # rolling genre (실측: pop-style 캐논 at a slow bpm rolled, and it fit nothing).
     bpm = float(feel.get("bpm") or 120.0)
@@ -1402,10 +1452,10 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                     row = {"beat": pos + off, "beats": dur, "part": "chord",
                            "patch": patch_of["chord"], "pitch": p,
                            "program": prog["chord"], "vel": vel}
-                    if comp == "chug":
-                        row["pan"] = -0.7   # 벽의 왼쪽 절반
+                    if double > 0:
+                        row["pan"] = -double   # 벽의 왼쪽 절반
                     out.append(row)
-                    if comp != "chug":
+                    if double <= 0:
                         continue
                     # 더블트래킹 — 메탈의 두께는 게인이 아니라 **같은 리프를 두 번 따로 쳐서
                     # 좌우 끝으로 벌리는 것**에서 나온다. 한 대는 아무리 세게 쳐도 얇다.
@@ -1414,7 +1464,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                     nudge = ((hi % 3) - 1) * (0.007 / spb_a)
                     out.append({"beat": max(0.0, pos + off + nudge), "beats": dur,
                                 "part": "chord2", "patch": patch_of["chord"], "pitch": p,
-                                "program": prog["chord"], "pan": 0.7,
+                                "program": prog["chord"], "pan": double,
                                 "vel": round(vel * (0.94 if hi % 2 else 1.0), 3)})
         next_rm = None
         if idx + 1 < len(chords):
@@ -3671,8 +3721,13 @@ def action_render(inp):
     midi_written, midi_note = (None, None)
     if midi_out:
         midi_written, midi_note = write_midi(arr, 60.0 / spb, midi_out)
+    # No workspace paths here. `data/sing/x.flac` is an address the CALLER cannot open — AI file
+    # access is confined to `user/` — so handing one over invites a detour that ends in a wrong
+    # answer (실측 8/19: the lyrics action led with such a path and the model burned 17 calls
+    # before rewriting the words by hand). Every product leaves through `_mediaImport` below and
+    # comes back as a url the caller CAN open. The paths stay in this process's stdout, which is
+    # where a readout wants them anyway.
     data = {
-        "outPath": out_path,
         "seconds": round(len(mix) / SR, 2),
         "events": len(events),
         "parts": sorted({e["part"] for e in arr}),
@@ -3695,12 +3750,9 @@ def action_render(inp):
         data["soundfont"] = sf2_font
     if engine_note:
         data["engineNote"] = engine_note
-    if midi_written:
-        data["midiPath"] = midi_written
     if midi_note:
         data["midiNote"] = midi_note
     if lrc_path:
-        data["lrcPath"] = lrc_path
         data["lrcLines"] = sum(1 for ln in lrc_text.splitlines()
                                if ln[:1] == "[" and ln[1:2].isdigit())
         if lrc_meta:
@@ -3903,6 +3955,59 @@ def action_selftest():
     ck("every style has a feel and a band (no half-declared genre)", True,
        set(DRUM_PATTERNS) == set(STYLE_FEEL) == set(STYLE_BAND),
        set(DRUM_PATTERNS) == set(STYLE_FEEL) == set(STYLE_BAND))
+    # …and every value a row asks for must be a value a CALLER may ask for. This is the audit
+    # that was missing: the metal row said `chug`/`drive` while COMP_KINDS/BASS_KINDS still
+    # listed four each, so the genre could play a hand no argument could name, and the model —
+    # reading the short list — picked something else and took the genre apart (실측 8/19).
+    row_comps = sorted({r["comp"] for r in STYLE_FEEL.values() if r.get("comp")})
+    row_bass = sorted({r["bass"] for r in STYLE_FEEL.values() if r.get("bass")})
+    stray = ([c for c in row_comps if c not in COMP_KINDS]
+             + [b for b in row_bass if b not in BASS_KINDS])
+    ck("every hand a genre plays can be asked for by name", [], stray, not stray)
+    # And the schema has to print them, or the model chooses from a list that is not the truth.
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    try:
+        with open(cfg_path, encoding="utf-8") as fh:
+            props = (json.load(fh).get("input") or {}).get("properties") or {}
+    except (OSError, ValueError):
+        props = {}
+    missing_doc = [k for k in COMP_KINDS if k not in str(props.get("comp", {}).get("description"))]
+    missing_doc += [k for k in BASS_KINDS
+                    if k not in str(props.get("bassline", {}).get("description"))]
+    ck("the schema prints every value the gate accepts", [], missing_doc, not missing_doc)
+    undeclared = [k for k in ("orn", "chordShape", "laidback", "gate", "double")
+                  if k not in props]
+    ck("every feel axis is an argument, not a genre-only secret", [], undeclared,
+       not undeclared)
+
+    # Caller first, genre second: naming ONE hand must not strip the others. Thickness used to
+    # ride on comp, so asking for a different strum silently removed the second guitar.
+    wall = build_arrangement(events, [(note_freq("E2"), 4.0, "")], "metal", 4,
+                             feel={"comp": "stabs"})
+    ck("a metal render keeps its double-tracked wall when the strum changes", True,
+       any(e["part"] == "chord2" for e in wall),
+       any(e["part"] == "chord2" for e in wall))
+    thin = build_arrangement(events, [(note_freq("E2"), 4.0, "")], "metal", 4,
+                             feel={"double": 0.0})
+    ck("…and drops it when the caller asks for one guitar", False,
+       any(e["part"] == "chord2" for e in thin),
+       not any(e["part"] == "chord2" for e in thin))
+    straight = build_arrangement(events, [(note_freq("C3"), 4.0, "")], "trot", 4,
+                                 feel={"orn": "none"})
+    trot_lead = [e for e in straight if e["part"] == "melody"]
+    kkeok = build_arrangement(events, [(note_freq("C3"), 4.0, "")], "trot", 4)
+    ck("orn is a knob: 'none' plays the tune straight where the genre would flick it",
+       True, len(trot_lead) < len([e for e in kkeok if e["part"] == "melody"]),
+       len(trot_lead) < len([e for e in kkeok if e["part"] == "melody"]))
+    badorn = parse_score({"bpm": 120, "orn": "웩", "notes": [{"syl": "라", "note": "C4",
+                                                             "beats": 1}]})
+    ck("an unknown orn is refused WITH the list", True, (badorn[-1] or "")[:40],
+       bool(badorn[-1]) and "kkeokgi" in (badorn[-1] or ""))
+    chug = parse_score({"bpm": 120, "comp": "chug", "bassline": "drive",
+                        "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
+    ck("the new hands are callable by argument", ("chug", "drive"),
+       (chug[5] or {}).get("comp") if chug[5] else None,
+       bool(chug[5]) and chug[5]["comp"] == "chug" and chug[5]["bass"] == "drive")
     edm = parse_score({"bpm": 124, "style": "edm",
                        "notes": [{"syl": "라", "note": "C4", "beats": 4}]})
     ck("aliases resolve (edm plays the dance row)", "dance", edm[3], edm[3] == "dance")
@@ -4365,14 +4470,18 @@ def action_selftest():
         {"syl": "라", "note": "C4", "beats": 1.0}]},
         "lyricsMediaPath": "data/sing/selftest-lyr.musicxml"})
     ldat = ltrk.get("data") or {}
-    lok = bool(ltrk.get("success") and ldat.get("lrcPath")
-               and os.path.isfile(ldat["lrcPath"]))
+    # Read the same channel the caller reads: the products are the media imports, not paths in
+    # the payload. When this test can still find both files, so can the answer.
+    limports = ldat.get("_mediaImport") if isinstance(ldat.get("_mediaImport"), list) else []
+    lrc_imp = next((i for i in limports if str(i.get("path", "")).endswith(".lrc")), None)
+    lok = bool(ltrk.get("success") and lrc_imp and os.path.isfile(lrc_imp["path"]))
     ck("two-track: audio from one score, .lrc from the lyric sheet, one call",
-       True, lok,
-       lok and isinstance(ldat.get("_mediaImport"), list)
-       and any(str(i.get("path", "")).endswith(".lrc") for i in ldat["_mediaImport"])
-       and ldat.get("lrcLines") == 2)
-    for pth in (ldat.get("outPath"), ldat.get("lrcPath")):
+       True, lok, lok and len(limports) == 2 and ldat.get("lrcLines") == 2)
+    ck("a render hands back no address the caller cannot open", [],
+       sorted(k for k in ldat if k.endswith("Path")),
+       not any(k.endswith("Path") for k in ldat))
+    for imp in limports:
+        pth = imp.get("path")
         if pth and os.path.isfile(pth):
             os.remove(pth)
 

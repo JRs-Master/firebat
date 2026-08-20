@@ -247,14 +247,14 @@
           "string",
           "null"
         ],
-        "description": "How the chord part moves: pad (held) | stabs (offbeat strokes) | arp (rippling eighths) | quarters. Omit for the style's default."
+        "description": "How the chord part moves: pad (held) | stabs (offbeat strokes) | arp (rippling eighths) | quarters | eighths (straight downstrokes) | chug (palm-muted chunking on the lowest string — the metal wall) | charleston (the jazz dotted-quarter-plus-eighth) | chank (funk's 16th scratch). Omit for the style's default."
       },
       "bassline": {
         "type": [
           "string",
           "null"
         ],
-        "description": "How the bass moves: hold (whole notes + pickup into the next chord) | twobeat (root-fifth alternation) | alt (marching quarters) | walk (quality-aware root-third-fifth quarters — the jazz/blues floor). Omit for the style's default."
+        "description": "How the bass moves: hold (whole notes + pickup into the next chord) | twobeat (root-fifth alternation) | alt (marching quarters) | walk (quality-aware root-third-fifth into the next chord) | drive (straight eighths on the root, doubling the guitar riff) | offbeat (the house pump, out of the four-on-the-floor kick's way) | funk16 (sixteenth stabs) | boogie (the rock'n'roll shuffle figure). Omit for the style's default."
       },
       "engine": {
         "type": [
@@ -338,6 +338,41 @@
           "null"
         ],
         "description": "[render] Which TTS voice sings, by the server provider's own voice name. Omit to use the voice configured in settings. Set it only to carry a request that was made in words (\"여자 목소리로\", \"낮은 남자 목소리로\") — the singer is not the model's choice. Choosing a voice that fits the song's register is the real fix for a melody that sits too high or too low; the octave fold is only the safety net under it."
+      },
+      "orn": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "How the lead hand shapes a long note: scoop (arrive from a semitone below — blues) | bendin (whole-step bend into the note — rock solos) | bend (stepped semitone approach) | grace (hammer-on from a whole step below — country) | kkeokgi (the trot flick: a long note's tail drops a step and lets go) | none (straight). Omit for the style's default."
+      },
+      "chordShape": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "What a chord contains: power (root+fifth+octave, no third — what a distorted guitar plays) | full (the written quality). Omit for the style's default."
+      },
+      "laidback": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "0-0.5: how far behind the grid the MELODY sits while the rhythm section stays on it — the R&B/hiphop drag (those rows use 0.04-0.05). Omit for the style's default."
+      },
+      "gate": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "0.1-1.0: how much of each written note actually sounds. 0.55 clips (funk), 1.0 sings through (ballad, a metal lead). Omit for the style's default."
+      },
+      "double": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "0-1: double-tracked rhythm guitar — the same riff played a second time and spread to this much stereo width (metal's row uses 0.7). 0 = one guitar. Omit for the style's default."
       }
     }
   },
@@ -385,6 +420,11 @@
         "swing",
         "comp",
         "bassline",
+        "orn",
+        "chordShape",
+        "laidback",
+        "gate",
+        "double",
         "midiOut",
         "midiOutPath",
         "outPath",
