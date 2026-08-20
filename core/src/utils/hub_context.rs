@@ -561,11 +561,51 @@ pub fn confine_to_user(path: &str) -> Result<String, String> {
              Firebat file tools only reach paths under user/."
         ));
     }
+    // Firebat's own storage. Every module keeps its state under cwd-relative `data/<용도>/`
+    // (calendar, dart, sing …) and the system databases live beside them, so a `data/` path is
+    // neither product source nor the caller's runtime — and the metadata tools the old message
+    // recommended return CONTRACTS, never files. 실측 2026-08-19 (sing lyrics): the action handed
+    // back `data/sing/lrc/….lrc` and told the model to pass it along; the model could not open it,
+    // followed the refusal to `network_request` → `cache_grep` → `cache_read`, then gave up and
+    // rewrote the lyrics by hand — seventeen calls. The message promises nothing, because the same
+    // branch also catches `data/vault.db`: what is retrievable is whatever a response already
+    // handed over, and nothing else.
+    if norm == "data" || norm.starts_with("data/") {
+        return Err(format!(
+            concat!(
+                "'{path}' is Firebat's own storage — module working files and system databases ",
+                "alike — and the file tools never reach it (they are confined to user/). Module ",
+                "metadata tools will not help: they return contracts, not files. If you are after ",
+                "something a module produced, the response of the action that produced it already ",
+                "carries the address to use; read it there, or ask that module to act on the file."
+            ),
+            path = path
+        ));
+    }
+    // Product source that is not a module directory — prompts, skills, the component declaration.
+    // This is the one shape the old blanket advice was actually right for, so it keeps it.
+    if norm == "system" || norm.starts_with("system/") {
+        return Err(format!(
+            concat!(
+                "'{path}' is product source, which the file tools do not reach (they are confined ",
+                "to user/). For a module's contract use get_action_schema(module, action), ",
+                "list_system_modules to enumerate, or get_module_config for a whole declaration; ",
+                "for a skill use get_skill(name)."
+            ),
+            path = path
+        ));
+    }
+    // Nothing about this shape says which tool owns the path, so nothing is named. A refusal that
+    // guesses is worse than one that does not: the old text sent every unknown path to the
+    // module-metadata tools, and a model that follows a confident wrong pointer spends a round
+    // and arrives nowhere. Say what is reachable, and say that the guess is not available.
     Err(format!(
-        "file access is restricted to the user/ workspace (got '{path}'); system source, data, and \
-         binaries are off-limits — for module metadata use get_action_schema(module, action) for one \
-         action's contract, list_system_modules to enumerate, and get_module_config only when you \
-         need the whole declaration (large modules return a lot)"
+        concat!(
+            "file access is restricted to the user/ workspace (got '{path}'). Only paths under ",
+            "user/ can be read or written, and this path's shape does not say which tool owns it, ",
+            "so there is no other call to try — module-metadata calls return contracts, not files."
+        ),
+        path = path
     ))
 }
 
@@ -738,6 +778,41 @@ mod tests {
         assert!(c("frontend/server.js").is_err());
         assert!(c("/etc/passwd").is_err());
         assert!(c("user/../system/x").is_err());
+    }
+
+    /// A refusal is a next step or it is a dead end.
+    ///
+    /// The guard used to send EVERY unrecognised path to the module-metadata tools, which return
+    /// contracts and never files. That advice is right for exactly one shape and confidently wrong
+    /// for the rest — and a model follows a confident pointer. So each shape names the vehicle that
+    /// can actually reach it, and the shape that names nothing must not invent one.
+    #[test]
+    fn a_refused_path_names_the_vehicle_that_can_reach_it() {
+        let m = |p: &str| confine_to_user(p).unwrap_err();
+        // A module by file = the caller is trying to RUN it.
+        assert!(m("system/modules/kiwoom/index.mjs").contains("sysmod_kiwoom"));
+        // Product source that is not a module directory — the one shape the old advice fit.
+        assert!(m("system/prompts/tool_system.md").contains("get_skill"));
+        // Firebat's own storage. 실측 2026-08-19: sing handed back `data/sing/lrc/….lrc`, the
+        // model could not open it, and the refusal pointed at metadata tools — seventeen calls
+        // later it gave up and rewrote the lyrics by hand.
+        for p in ["data/sing/lrc/x.lrc", "data/vault.db", "data/app.db"] {
+            let e = m(p);
+            assert!(e.contains("contracts, not files"), "{p}: {e}");
+            assert!(!e.contains("get_action_schema"), "{p} still sent to metadata tools: {e}");
+        }
+        // …and it promises nothing it cannot deliver: the vault has no address to hand over,
+        // so the sentence about a produced file must stay conditional, never an instruction.
+        assert!(m("data/vault.db").contains("If you are after"));
+        // The caller's own runtime, not a Firebat path at all.
+        assert!(m("/root/.claude/tool-results/x.txt").contains("YOUR OWN"));
+        // Shape says nothing → name nothing, and say that too.
+        let unknown = m("firebat-core");
+        assert!(unknown.contains("user/"), "it must still say what IS reachable: {unknown}");
+        assert!(
+            !unknown.contains("get_action_schema"),
+            "a guess dressed as advice is the defect this test exists for: {unknown}"
+        );
     }
 
     #[test]
