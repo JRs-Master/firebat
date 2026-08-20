@@ -35,8 +35,29 @@ pub fn success_envelope(mut data: Value) -> Value {
         "data": data,
         "component": decl.get("component").and_then(Value::as_str).unwrap_or_default(),
         "props": props,
+        "note": DRAWN_ALREADY,
     })
 }
+
+/// What the model has to know the moment a component rides at the top: the card is already in the
+/// answer.
+///
+/// Nothing said so. The only sentence on the subject lived on `data.media[i].note`, it only
+/// spoke about attaching a FILE as a link, and a module that draws from data alone carries no
+/// media at all — so for those results the fact was stated nowhere. 실측 8/19 (karaoke): the
+/// answer came back with the card, a markdown link to the same wav, AND a hand-written
+/// `firebat-render` fence rebuilding the same component. The model was not disobeying; it was
+/// filling a silence.
+///
+/// This is a consumption-point line, not a resident rule — it arrives exactly when the fact is
+/// true, costs nothing on every other turn, and disappears the day a renderer can tell the model
+/// what it already drew.
+const DRAWN_ALREADY: &str = concat!(
+    "A component from this result is ALREADY rendered in your answer. Do not write a ",
+    "`firebat-render` fence for it, do not rebuild it as a table or a chart, and do not ",
+    "attach its files as links — that would show the same thing twice. Write only the ",
+    "prose around it: what it is and what is worth noticing."
+);
 
 /// A carried file's note tells the model to attach it as a markdown link, which is right until a
 /// component draws it — then the answer shows the same file twice, once as a card and once as a
@@ -45,9 +66,13 @@ pub fn success_envelope(mut data: Value) -> Value {
 fn retire_attach_note(data: &mut Value) {
     const DRAWN: &str = "Already drawn as a component in this answer — do NOT attach it as a link \
                          or a card again. The url is here only if you need to name the file.";
+    // Insert rather than replace-if-present. The guard was written when the note was assumed to
+    // be there — `_mediaImport` does always attach one — but a module that builds `data.media`
+    // itself carried none, and then the one place that says "already drawn" said nothing at all.
+    // Absence of the old sentence is not consent to attach it twice.
     let flip = |rec: &mut Value| {
         if let Some(obj) = rec.as_object_mut() {
-            if obj.contains_key("note") {
+            if obj.contains_key("url") || obj.contains_key("note") {
                 obj.insert("note".to_string(), Value::String(DRAWN.to_string()));
             }
         }
@@ -152,6 +177,30 @@ mod tests {
         for rec in env["data"]["media"].as_array().unwrap() {
             assert!(rec["note"].as_str().unwrap().contains("do NOT attach"));
         }
+    }
+
+    #[test]
+    fn lifting_a_component_says_so_at_the_top() {
+        // The only place that ever said "already drawn" was a media record's note, so a module
+        // that draws from data alone stated it nowhere and the model rebuilt the card by hand.
+        let env = success_envelope(json!({
+            "rows": [1, 2],
+            "_render": { "component": "table", "props": { "rows": [1, 2] } }
+        }));
+        let note = env["note"].as_str().unwrap();
+        assert!(note.contains("ALREADY rendered"));
+        assert!(note.contains("firebat-render"), "name the fence it must not write");
+    }
+
+    #[test]
+    fn a_hand_built_media_record_is_told_too() {
+        // `_mediaImport` always attaches a note, so replace-if-present covered every record it
+        // produced — and none that a module wrote itself. Silence is not consent to draw twice.
+        let env = success_envelope(json!({
+            "media": [{ "url": "/user/media/a.wav" }],
+            "_render": { "component": "karaoke", "props": { "audioUrl": { "$media": 0 } } }
+        }));
+        assert!(env["data"]["media"][0]["note"].as_str().unwrap().contains("do NOT attach"));
     }
 
     #[test]
