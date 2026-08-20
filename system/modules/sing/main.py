@@ -1471,6 +1471,58 @@ def events_beats(events):
     return sum(float(ev.get("gap") or 0.0) + sum(b for _, b in ev["segments"]) for ev in events)
 
 
+def recast_parts(rows, style, band=None, lead_row=None):
+    """The file's own parts, re-cast for a genre — every voice keeps its notes and takes the
+    instrument its ROLE calls for.
+
+    The arrangement path throws the score away: it reduces the piece to one line, derives chords
+    from it, and rebuilds a backing. That is right when you want the genre to play the song, and
+    wrong when the song already has five parts and you only wanted them dressed differently
+    (사용자 8/20: "악보에 나오는 악기들을 헤비메탈에 맞게 바꿔서 다 넣어줄 수 있나" — the model
+    could only approximate it with four layers of doubling, because this path did not exist).
+
+    Casting is derived, not declared: the part the reader chose as the tune sings, the lowest
+    voice plays bass, everyone else comps. Extra comping voices become chord2, chord3 … which
+    the pan and mix tables already resolve by name."""
+    voices = {}
+    for r in rows:
+        if "pitch" in r and not r.get("pedal"):
+            voices.setdefault(r["part"], []).append(r["pitch"])
+    if not voices:
+        return rows, {}
+    avg = {p: sum(v) / len(v) for p, v in voices.items()}
+    hire = dict(STYLE_BAND.get(style, STYLE_BAND["trot"]))
+    for part, name in (band or {}).items():
+        if part in hire and resolve_instrument(name) is not None:
+            hire[part] = name
+    lead = lead_row if lead_row in avg else max(avg, key=lambda x: avg[x])
+    low = min(avg, key=lambda x: avg[x])
+    roles, n = {}, 0
+    for part in sorted(avg, key=lambda x: -avg[x]):
+        if part == lead:
+            roles[part] = "melody"
+        elif part == low:
+            roles[part] = "bass"
+        else:
+            n += 1
+            roles[part] = "chord" if n == 1 else f"chord{n}"
+    out = []
+    for r in rows:
+        if r.get("part") == "drum":
+            out.append(r)
+            continue
+        role = roles.get(r.get("part"))
+        if role is None:
+            out.append(r)
+            continue
+        q = dict(r)
+        q["part"] = role
+        base = role if role in hire else ("chord" if role.startswith("chord") else role)
+        q["patch"], q["program"] = resolve_instrument(hire.get(base, "piano"))
+        out.append(q)
+    return out, {roles[k]: k for k in roles}
+
+
 def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     """Score -> flat list of {beat, beats, part, patch, pitch|drum, program, vel}. Beats, not
     samples: the renderers turn them into whatever they count in (samples here, MIDI ticks there).
@@ -1949,11 +2001,11 @@ def render_arrangement(arr, spb, total_beats, mixmap=None):
         # Constant-power pan: the band sits on a stage, not a point.
         pan_v = e.get("pan")
         if pan_v is None:
-            pan_v = PAN.get(key, 0.0)
+            pan_v = pan_of(key)
         theta = (pan_v + 1.0) * np.pi / 4.0
         out[i:i + m, 0] += seg * np.cos(theta)
         out[i:i + m, 1] += seg * np.sin(theta)
-        send[i:i + m] += seg * SEND.get(key, 0.1)
+        send[i:i + m] += seg * SEND.get(key, SEND.get(key.rstrip("0123456789"), 0.1))
     return out, send
 
 
@@ -1973,6 +2025,13 @@ def render_arrangement(arr, spb, total_beats, mixmap=None):
 MIX = {"melody": 1.0, "vocal": 1.0, "fill": 0.82, "bass": 0.80, "drum": 0.76,
        "chord": 0.58, "chord2": 0.58}
 MIX_TOP = 110          # GM's own default is 100; 110 leaves the lead room without clipping
+
+
+def pan_of(part):
+    """chord2, chord3 … all sit where chord sits unless they say otherwise."""
+    if part in PAN:
+        return PAN[part]
+    return PAN.get(part.rstrip("0123456789"), 0.0)
 
 
 def mix_of(part, over=None):
@@ -2093,7 +2152,7 @@ def write_midi(arr, bpm, path, mix=None):
                                    program=int((first_note or {}).get("program", 0)), time=0))
             pan = (first_note or {}).get("pan")
             if pan is None:
-                pan = PAN.get(part, 0.0)
+                pan = pan_of(part)
             tr.append(mido.Message("control_change", channel=ch, control=10,
                                    value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
         tr.append(mido.Message("control_change", channel=ch, control=7,
@@ -3380,6 +3439,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
                                  "id": part.get("id"), "name": name_of.get(part.get("id"), ""),
+                                 "row": f_part,
                                  "lyrics": sum(1 for n in notes if n["syl"]),
                                  "unp": sum(1 for n in notes if n.get("_unp"))})
     if not parsed_parts:
@@ -3449,6 +3509,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     # the render just sounded like a different song and nothing in the reply said why.
     if len(parsed_parts) > 1:
         score["_leadPart"] = best.get("name") or best.get("id") or ""
+        score["_leadRow"] = best.get("row")
         score["_partsSeen"] = [
             f"{pp.get('name') or pp.get('id') or '?'}({len(_pitched(pp['notes']))})"
             for pp in parsed_parts]
@@ -3950,6 +4011,7 @@ def action_render(inp):
     # Lift the reader's report off the score before it is parsed — it is about the FILE, not
     # about the music, and the caller needs it whether or not the parse succeeds.
     lead_part = score.pop("_leadPart", None) if isinstance(score, dict) else None
+    lead_row = score.pop("_leadRow", None) if isinstance(score, dict) else None
     parts_seen = score.pop("_partsSeen", None) if isinstance(score, dict) else None
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
@@ -3998,6 +4060,25 @@ def action_render(inp):
                              or inp.get("vocal") or str(inp.get("vocalPath") or "").strip())
     faithful = (parsed_from is not None and not wants_arrangement
                 and len(locals().get("faithful_rows") or []) > 0)
+    # ── the third way: keep the score's parts AND arrange them. faithful plays the file as
+    # written; arranged throws it away and rebuilds from one line. "Dress my five parts as a
+    # metal band" was neither, and until now the model could only fake it with doubling.
+    arrange_from = str(inp.get("arrangeFrom") or "").strip().lower()
+    if arrange_from and arrange_from not in ("melody", "score"):
+        return {"success": False,
+                "error": "arrangeFrom 은 melody | score 입니다 (생략 = melody: 한 줄로 줄여 "
+                         "장르 반주를 새로 짓기 / score: 악보 성부를 그대로 두고 역할별로 "
+                         "재의상 + 장르 리듬섹션)"}
+    recast = None
+    if (arrange_from == "score" and not faithful
+            and len(locals().get("faithful_rows") or []) > 0):
+        recast, cast_map = recast_parts(faithful_rows, style, band, lead_row)
+        # The genre's rhythm section, borrowed whole from the arrangement path so the kit, the
+        # fills and the crashes stay one implementation. Only the drums: the harmony is already
+        # in the score's own parts.
+        if not any(r.get("part") == "drum" for r in recast):
+            backing = build_arrangement([], chords, style, total_beats, band, feel)
+            recast += [r for r in backing if r.get("part") == "drum"]
     reinst_name = None
     if faithful and band:
         faithful_rows, reinst_name = reinstrument(faithful_rows, band)
@@ -4059,8 +4140,12 @@ def action_render(inp):
                     "error": f"kit {kit_name!r} 를 모릅니다 — 이 폰트가 가진 킷: "
                              + " | ".join(sorted(avail))}
         kit_prog, kit_label = pick, kit_name
-    arr = (sorted(faithful_rows, key=lambda r: (r["beat"], r["part"])) if faithful
-           else build_arrangement(events, chords, style, total_beats, band, feel))
+    if recast is not None:
+        arr = sorted(recast, key=lambda r: (r["beat"], r["part"]))
+    elif faithful:
+        arr = sorted(faithful_rows, key=lambda r: (r["beat"], r["part"]))
+    else:
+        arr = build_arrangement(events, chords, style, total_beats, band, feel)
     if kit_prog:
         for e in arr:
             if e.get("part") == "drum":
@@ -4183,7 +4268,7 @@ def action_render(inp):
         "vocal": bool(vocal_path),
         "backend": "pyworld" if (vocal_path and try_pyworld()) else "numpy",
         "engine": engine_used,
-        "mode": "faithful" if faithful else "arranged",
+        "mode": "faithful" if faithful else ("recast" if recast is not None else "arranged"),
     }
     if faithful and reinst_name:
         data["reInstrument"] = reinst_name
@@ -4712,6 +4797,38 @@ def action_selftest():
     ck("꺾기 lands on the line's end and the long note, not on every beat-long note",
        2, sum(1 for r in kmel if r.get("bend")),
        sum(1 for r in kmel if r.get("bend")) == 2 and len(kmel) == len(kev))
+    # Dressing the score instead of replacing it.
+    rrows = ([{"beat": float(i), "beats": 1.0, "part": "p1", "pitch": 72, "vel": 0.8,
+               "patch": "piano", "program": 0} for i in range(4)]
+             + [{"beat": float(i), "beats": 1.0, "part": "p2", "pitch": 60, "vel": 0.7,
+                 "patch": "piano", "program": 0} for i in range(4)]
+             + [{"beat": float(i), "beats": 1.0, "part": "p3", "pitch": 40, "vel": 0.7,
+                 "patch": "piano", "program": 0} for i in range(4)])
+    cast_rows, cast = recast_parts(rrows, "metal", None, "p1")
+    ck("recast keeps every part the score wrote", 3,
+       len({r["part"] for r in cast_rows}), len({r["part"] for r in cast_rows}) == 3)
+    ck("…and casts them by role: the tune, the floor, the comping",
+       ["bass", "chord", "melody"], sorted({r["part"] for r in cast_rows}),
+       sorted({r["part"] for r in cast_rows}) == ["bass", "chord", "melody"])
+    ck("…the reader's lead part is the one that sings", "p1", cast.get("melody"),
+       cast.get("melody") == "p1")
+    ck("…the lowest voice takes the bass", "p3", cast.get("bass"), cast.get("bass") == "p3")
+    lead_prog = next(r["program"] for r in cast_rows if r["part"] == "melody")
+    ck("…and each role wears the genre's instrument, not the file's", True,
+       (lead_prog, next(r["program"] for r in cast_rows if r["part"] == "chord")),
+       lead_prog == resolve_instrument(STYLE_BAND["metal"]["melody"])[1])
+    many = recast_parts(rrows + [{"beat": 0.0, "beats": 1.0, "part": "p4", "pitch": 64,
+                                  "vel": 0.7, "patch": "piano", "program": 0}], "metal",
+                        None, "p1")[0]
+    ck("a fourth voice comps as chord2, where the pan and mix tables can still find it",
+       True, sorted({r["part"] for r in many}),
+       "chord2" in {r["part"] for r in many} and pan_of("chord2") == PAN["chord2"]
+       and mix_of("chord3") == MIX["chord"])
+    bad_af = action_render({"action": "render", "score": score, "arrangeFrom": "웩"})
+    ck("an unknown arrangeFrom is refused with both ways", True,
+       (bad_af.get("error") or "")[:40],
+       not bad_af.get("success") and "melody" in (bad_af.get("error") or "")
+       and "score" in (bad_af.get("error") or ""))
     badkit = action_render({"action": "render", "score": score, "kit": "웩킷"})
     ck("an unknown kit is refused WITH this font's list", True, (badkit.get("error") or "")[:44],
        not badkit.get("success") and "standard" in (badkit.get("error") or ""))

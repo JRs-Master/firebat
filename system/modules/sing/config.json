@@ -401,6 +401,13 @@
           "null"
         ],
         "description": "Per-part loudness, {part: 0-1}: melody | vocal | fill | bass | drum | chord | chord2. The default already puts the tune on top and the comping underneath; set this only to carry something the person asked for (\"기타를 더 크게\", \"드럼 좀 줄여\"). Example: {\"chord\": 0.4}."
+      },
+      "arrangeFrom": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render, with scoreMediaPath] What a style is applied TO. melody (default) reduces the piece to its tune, derives the harmony and builds the genre's backing from scratch. score keeps every part the file wrote and re-casts them by role — the tune on the genre's lead instrument, the lowest voice on its bass, the rest comping — then adds the genre's drums. Use score when the person asked for the piece's OWN instruments in a new style (\"악보에 있는 악기들을 메탈로\"); use melody when they asked for the song in that genre."
       }
     }
   },
@@ -438,6 +445,7 @@
         "vocal",
         "lyrics",
         "style",
+        "arrangeFrom",
         "engine",
         "audioFormat",
         "bpm",
