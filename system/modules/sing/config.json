@@ -380,6 +380,13 @@
           "null"
         ],
         "description": "[render] Which drum kit plays: standard | room | power | electronic | tr808 | jazz | brush | orchestra, plus whatever else the installed SoundFont carries under its own name. An unknown one is refused with the list this font actually has. Omit for standard."
+      },
+      "melodyPart": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[render, with scoreMediaPath] Which part of a multi-part score carries the tune, by its name or id (\"Voice\", \"P1\"). Omit and the reader picks it: a part with lyrics, else one whose name says it is the song, else the busiest. The reply reports the pick as leadPart with partsSeen, so a wrong one is one call away."
       }
     }
   },
@@ -409,6 +416,7 @@
       "params": [
         "score",
         "scoreMediaPath",
+        "melodyPart",
         "lyricsMediaPath",
         "lyricsQuery",
         "lrc",

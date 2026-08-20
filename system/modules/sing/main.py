@@ -2468,7 +2468,7 @@ def midi_to_parts(path):
 
 
 
-def midi_to_score(path, lyrics=None):
+def midi_to_score(path, lyrics=None, want_part=None):
     """Karaoke/simple MIDI file -> {bpm, notes[], chords?} or (None, err).
 
     Melody pick: the track carrying lyric meta events wins; otherwise the busiest
@@ -2533,15 +2533,24 @@ def midi_to_score(path, lyrics=None):
             1 for i in range(len(ev) - 1) if ev[i + 1][1] < ev[i][1] + ev[i][2] * 0.5
         ) / max(1, len(ev) - 1)
         mean_pitch = sum(e[0] for e in ev) / len(ev)
+        tname = next((str(msg.name).strip() for msg in tr
+                      if getattr(msg, "type", "") == "track_name"), "")
         cands.append({"idx": idx, "ev": ev, "overlap": overlap, "mean": mean_pitch,
+                      "id": str(idx), "name": tname,
                       "lyrics": len(lyric_by_track[idx])})
     if not cands:
         return None, "no playable track found in the MIDI (need >= 8 notes on a non-drum track)"
 
     with_lyrics = [c for c in cands if c["lyrics"] >= 8]
     mono = [c for c in cands if c["overlap"] < 0.3]
-    melody = max(with_lyrics, key=lambda c: c["lyrics"]) if with_lyrics \
-        else max(mono or cands, key=lambda c: (len(c["ev"]), c["mean"]))
+    # Same order as the MusicXML reader: lyrics, then what the track calls itself, then size.
+    # A track name is the arranger's own label ("Voice", "MELODY", "Gtr1"), and it beats counting
+    # notes — counting hands the tune to the busiest accompaniment.
+    melody = _wanted_part(cands, want_part)
+    if melody is None:
+        melody = (max(with_lyrics, key=lambda c: c["lyrics"]) if with_lyrics
+                  else max(mono or cands, key=lambda c: (part_is_vocal(c.get("name")),
+                                                         len(c["ev"]), c["mean"])))
 
     # Monophonize (karaoke files sometimes double a note) and quantize beats.
     mel = []
@@ -2827,7 +2836,45 @@ def _ornament_rows(row, kind, up=2, down=2):
     return [row]
 
 
-def musicxml_to_score(path, lyrics=None, parts_out=None):
+# A part that says what it is. A multi-part score names its staves, and "Voice" is not a hint we
+# are guessing at — it is the arranger telling us which line is the song. Before this the lead was
+# picked by note COUNT among the lyric-less parts, so an accompaniment that plays more notes than
+# the singer sings won: 실측 8/20, 아로하 (Voice 536 notes vs Piano 968) came out with the piano's
+# right hand as the lead, in every style, and the melody wandered above and below the vocal line
+# because it was never the vocal line.
+VOCAL_PART_HINTS = ("voice", "vocal", "vox", "lead", "melody", "sing", "singer", "song", "tune",
+                    "노래", "보컬", "가창", "멜로디", "주선율", "리드")
+ACCOMP_PART_HINTS = ("piano", "guitar", "gtr", "bass", "drum", "perc", "strings", "synth",
+                     "organ", "pad", "accomp", "반주", "피아노", "기타", "베이스", "드럼")
+
+
+def part_is_vocal(name):
+    """2 = the part says it is the song · 1 = it says nothing · 0 = it names an instrument."""
+    n = "".join(ch for ch in str(name or "").casefold() if ch.isalnum() or ord(ch) > 127)
+    if not n:
+        return 1
+    if any(h in n for h in VOCAL_PART_HINTS):
+        return 2
+    if any(h in n for h in ACCOMP_PART_HINTS):
+        return 0
+    return 1
+
+
+def _wanted_part(parts, want):
+    """The caller naming a part by id or by (part of) its name. None = not asked, or no match."""
+    w = "".join(ch for ch in str(want or "").casefold() if ch.isalnum() or ord(ch) > 127)
+    if not w:
+        return None
+    for pp in parts:
+        pid = str(pp.get("id") or "").casefold()
+        nm = "".join(ch for ch in str(pp.get("name") or "").casefold()
+                     if ch.isalnum() or ord(ch) > 127)
+        if w == pid or (nm and (w in nm or nm in w)):
+            return pp
+    return None
+
+
+def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     """MusicXML (.musicxml/.xml/.mxl) -> score. The whole notation plays (사용자: "악보에 있는
     건 다 구현해줘"): repeats/voltas/D.C./D.S./coda/fine expand the playback order; tempo
     changes and metronome marks bend time onto one master tempo; 8va and transposing
@@ -2863,7 +2910,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
 
     prog_of, unp_of = {}, {}
     pl = kid(root, "part-list")
+    name_of = {}
     for sp in (kids(pl, "score-part") if pl is not None else []):
+        name_of[sp.get("id")] = (text_of(sp, "part-name") or "").strip()
         for mi2 in kids(sp, "midi-instrument"):
             mp = text_of(mi2, "midi-program")
             mu = text_of(mi2, "midi-unpitched")
@@ -3183,6 +3232,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
                     nrow["vel"] = round(v0 + (v1 - v0) * (nrow["_at"] - wstart) / span, 3)
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
+                                 "id": part.get("id"), "name": name_of.get(part.get("id"), ""),
                                  "lyrics": sum(1 for n in notes if n["syl"]),
                                  "unp": sum(1 for n in notes if n.get("_unp"))})
     if not parsed_parts:
@@ -3199,7 +3249,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
             rl = row.pop("_roll", 0)
             if rl:
                 row["beat"] = round(row["beat"] + rl * (0.022 / spb_w), 4)
-    best = max(parsed_parts, key=lambda pp: (pp["lyrics"], len(pp["notes"])))
+    # Lyrics first (a part with words IS the song), then what the part CALLS itself, and only
+    # then the note count. Count alone hands the tune to whoever plays the most notes.
+    best = (_wanted_part(parsed_parts, want_part)
+            or max(parsed_parts, key=lambda pp: (pp["lyrics"], part_is_vocal(pp["name"]),
+                                                 len(pp["notes"]))))
 
     lyr = list(str(lyrics or "").replace(" ", "").replace("\n", ""))
     has_own = best["lyrics"] > 0
@@ -3233,6 +3287,12 @@ def musicxml_to_score(path, lyrics=None, parts_out=None):
             row["vel"] = n["vel"]
         out_notes.append(row)
     score = {"bpm": max(20.0, min(300.0, master)), "notes": out_notes}
+    # Which line became the tune, and what else was on offer. A wrong pick used to be silent —
+    # the render just sounded like a different song and nothing in the reply said why.
+    if len(parsed_parts) > 1:
+        score["_leadPart"] = best.get("name") or best.get("id") or ""
+        score["_partsSeen"] = [f"{pp.get('name') or pp.get('id') or '?'}({len(pp['notes'])})"
+                               for pp in parsed_parts]
     if lyric_rows:
         score["_lyrics"] = lyric_rows
     if lyric_only:
@@ -3672,13 +3732,15 @@ def action_render(inp):
         if kind:
             faithful_rows = []
             if kind == "midi":
-                score, err = midi_to_score(media_path, lyrics=inp.get("lyrics"))
+                score, err = midi_to_score(media_path, lyrics=inp.get("lyrics"),
+                                           want_part=inp.get("melodyPart"))
                 if not err:
                     fr, fb, ferr = midi_to_parts(media_path)
                     if not ferr:
                         faithful_rows = fr
             else:
-                score, err = musicxml_to_score(media_path, lyrics=inp.get("lyrics"),
+                score, err = musicxml_to_score(media_path, want_part=inp.get("melodyPart"),
+                                               lyrics=inp.get("lyrics"),
                                                parts_out=faithful_rows)
             if err:
                 return {"success": False, "error": err}
@@ -3725,6 +3787,10 @@ def action_render(inp):
             return {"success": False,
                     "error": f"score media must be MIDI or MusicXML (got .{ext}, and the bytes "
                              "are neither MThd, zip nor XML) — hum-to-score is a later slice"}
+    # Lift the reader's report off the score before it is parsed — it is about the FILE, not
+    # about the music, and the caller needs it whether or not the parse succeeds.
+    lead_part = score.pop("_leadPart", None) if isinstance(score, dict) else None
+    parts_seen = score.pop("_partsSeen", None) if isinstance(score, dict) else None
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
@@ -4031,6 +4097,9 @@ def action_render(inp):
             "audioUrl": {"$media": 0},
             "lrcUrl": {"$media": len(imports) - 1},
         }}
+    if lead_part:
+        data["leadPart"] = lead_part
+        data["partsSeen"] = parts_seen
     if parsed_from:
         # The caller composed nothing — show what the MIDI became so the bridge (TTS lyric
         # order) and the user can see and correct the parse.
@@ -4605,6 +4674,45 @@ def action_selftest():
                '</measure>' + E)
     with open("data/sing/selftest-rep.musicxml", "w", encoding="utf-8") as fh:
         fh.write(rep_doc)
+    # Which part is the song. Counting notes gave the tune to whoever plays the most of them:
+    # 실측 8/20, 아로하's "Voice" (536 notes) lost to its "Piano" (968) and the lead was the
+    # piano's right hand in every style. The part names itself; we only had to read it.
+    def _mxpart(pid, pname, notes):
+        body = "".join(f'<note><pitch><step>{st}</step><octave>{oc}</octave></pitch>'
+                       f'<duration>1</duration><type>quarter</type></note>' for st, oc in notes)
+        return (f'<score-part id="{pid}"><part-name>{pname}</part-name></score-part>',
+                f'<part id="{pid}"><measure number="1"><attributes><divisions>1</divisions>'
+                f'</attributes>{body}</measure></part>')
+    v_hdr, v_body = _mxpart("P1", "Voice", [("C", 5), ("D", 5), ("E", 5)])
+    p_hdr, p_body = _mxpart("P2", "Piano", [("C", 3), ("D", 3), ("E", 3), ("F", 3),
+                                            ("G", 3), ("A", 3), ("B", 3), ("C", 4)])
+    two = ("<score-partwise><part-list>" + v_hdr + p_hdr + "</part-list>"
+           + v_body + p_body + "</score-partwise>")
+    with open("data/sing/selftest-parts.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(two)
+    tsc, terr = musicxml_to_score("data/sing/selftest-parts.musicxml")
+    lead = (tsc or {}).get("_leadPart")
+    ck("the part that calls itself the song gets the tune, not the busiest one",
+       "Voice", lead, terr is None and lead == "Voice")
+    ck("…and the reply says what else was on offer", True, (tsc or {}).get("_partsSeen"),
+       bool(tsc) and len(tsc.get("_partsSeen") or []) == 2)
+    osc, _ = musicxml_to_score("data/sing/selftest-parts.musicxml", want_part="Piano")
+    ck("melodyPart overrides the pick by name", "Piano", (osc or {}).get("_leadPart"),
+       bool(osc) and osc.get("_leadPart") == "Piano")
+    osc2, _ = musicxml_to_score("data/sing/selftest-parts.musicxml", want_part="P2")
+    ck("…and by id", "Piano", (osc2 or {}).get("_leadPart"),
+       bool(osc2) and osc2.get("_leadPart") == "Piano")
+    ck("an unmatched melodyPart falls back rather than failing", "Voice",
+       (musicxml_to_score("data/sing/selftest-parts.musicxml", want_part="Tuba")[0] or {}
+        ).get("_leadPart"),
+       (musicxml_to_score("data/sing/selftest-parts.musicxml", want_part="Tuba")[0] or {}
+        ).get("_leadPart") == "Voice")
+    ck("part_is_vocal reads the label, not the note count", [2, 0, 1],
+       [part_is_vocal("Voice"), part_is_vocal("Gtr1"), part_is_vocal("Staff 3")],
+       [part_is_vocal("Voice"), part_is_vocal("Gtr1"), part_is_vocal("Staff 3")] == [2, 0, 1])
+    if os.path.isfile("data/sing/selftest-parts.musicxml"):
+        os.remove("data/sing/selftest-parts.musicxml")
+
     rsc, rerr = musicxml_to_score("data/sing/selftest-rep.musicxml")
     ck("repeats and voltas expand the playback order (1,2,1,3)",
        ["C4", "D4", "C4", "E4"], [n["note"] for n in (rsc or {}).get("notes", [])],
