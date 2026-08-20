@@ -128,14 +128,25 @@ exercised.
 
 ## What you hand BACK (the same underscore boundary, outbound)
 
-Your reply is `{success, data}`. Inside `data`, an underscored key is addressed to the framework,
-not to the caller — it is consumed and never reaches the model.
+Your reply is `{success, data}`. The three keys below are addressed to the framework: it consumes
+them and they never reach the model. **Only these three.** An underscore you invent yourself is
+just a key with an underscore in it and the model reads it like any other — the framework's own
+`_cacheKey`/`_cacheMeta` are visible on purpose, for the same reason.
 
 | declare in `data` | the framework then |
 |---|---|
 | `_mediaImport: {path, contentType, filenameHint?}` | carries the file into the media store and leaves `data.media` (url, slug, bytes). An ARRAY imports several in order, and `data.media` comes back in that order |
 | `_render: {component, props}` | draws that component in the answer — see below |
 | `_prepare: {service, …, into}` | performs the service (e.g. `tts`), fills that input field and re-runs your action once |
+
+**Hand back no address the caller cannot open.** AI file access is confined to `user/`, so a
+workspace path in your `data` — `data/<you>/out.flac`, a scratch `.lrc`, a temp `.mid` — is an
+address the caller is refused at. It does not fail loudly: the model tries the file tool, gets
+turned away, and goes looking for another way in. Measured 8/19: one action led with such a path
+and the turn burned seventeen calls before the model gave up and rewrote the content by hand. So
+send the **content** in the field (a few lines of lyrics are cheaper than the detour), or send the
+file through `_mediaImport` and let the url come back. Your own paths stay in stderr and in this
+process's stdout, which is where a readout wants them anyway.
 
 **`_render` — say what your output IS.** A file is bytes; only your module knows that a backing
 track plus its synced lyric file is a karaoke stage, or that these rows are a candle chart. Say it
