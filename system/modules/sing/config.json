@@ -408,6 +408,13 @@
           "null"
         ],
         "description": "[render, with scoreMediaPath] What a style is applied TO. melody (default) reduces the piece to its tune, derives the harmony and builds the genre's backing from scratch. score keeps every part the file wrote and re-casts them by role — the tune on the genre's lead instrument, the lowest voice on its bass, the rest comping — then adds the genre's drums. Use score when the person asked for the piece's OWN instruments in a new style (\"악보에 있는 악기들을 메탈로\"); use melody when they asked for the song in that genre."
+      },
+      "vary": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "0-1: how much the rhythm section phrases instead of repeating. It shapes each four-bar group (leaning into its last bar) and leaves the last stroke of every eighth bar empty, the way a player breathes before the next phrase. 0 = every bar identical. Default 0.35; raise it for a looser feel, drop it for a machine."
       }
     }
   },
@@ -458,6 +465,7 @@
         "swing",
         "comp",
         "fill",
+        "vary",
         "mix",
         "bassline",
         "orn",

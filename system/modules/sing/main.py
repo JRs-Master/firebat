@@ -221,7 +221,8 @@ def parse_score(score):
     for key, hi, why in (("laidback", 0.5, "0 = 격자 위, 0.05 = R&B 의 그 여유"),
                          ("gate", 1.0, "0.55 = 끊어 치기, 1.0 = 이어 붙이기"),
                          ("double", 1.0, "0 = 한 대, 0.7 = 좌우로 벌린 두 대"),
-                         ("fill", 1.0, "0 = 안 받아침, 0.7 = 트로트 아코디언처럼 대답")):
+                         ("fill", 1.0, "0 = 안 받아침, 0.7 = 트로트 아코디언처럼 대답"),
+                         ("vary", 1.0, "0 = 매 마디 똑같이, 0.35 = 네 마디로 숨 쉬며")):
         raw = score.get(key)
         if raw is None:
             continue
@@ -318,7 +319,7 @@ def parse_score(score):
             "humanize": humanize, "pedal": pedal, "voicing": voicing,
             "orn": orn, "voicing_kind": chord_shape, "laidback": axes.get("laidback"),
             "gate": axes.get("gate"), "double": axes.get("double"),
-            "fill": axes.get("fill"), "mix": mixmap}
+            "fill": axes.get("fill"), "vary": axes.get("vary"), "mix": mixmap}
     return spb, events, chords, style, band, feel, None
 
 
@@ -1304,6 +1305,15 @@ BEND_CURVES = {
 # 장식마다 필요한 최소 길이. 꺾을 시간이 없는 음에 걸면 음정이 틀린 것처럼 들린다.
 ORN_MIN = {"scoop": 1.0, "bendin": 1.5, "kkeokgi": 2.0, "bend": 0.5, "grace": 0.5}
 
+# Music is phrased in fours. A comp pattern applied identically to every bar of a four-minute
+# piece is the same bar 120 times, and that is what it sounds like (사용자 8/20: "연주법이 하나가
+# 계속 반복되니까 뭔가 단조로운 느낌"). Players do two things about it without being asked: they
+# shape the four-bar group, leaning into its last bar, and they leave a hole before the next
+# phrase starts. Both are deterministic here — variety from the bar number, not from a die, so a
+# render is still byte-stable.
+PHRASE4 = (0.97, 0.92, 0.99, 1.08)   # 세기 — 넷째 마디로 기울어진다
+BREATH_EVERY = 8                     # 여덟 마디마다 마지막 타점을 비운다
+
 
 # (Hz, 반음 깊이, 언제부터) — 손가락 비브라토. 벤딩이 **도착**이라면 이건 **머무는 동안**이고,
 # 기타 솔로에서 긴 음이 살아 있는 이유가 이것이다. 곧게 뻗은 롱톤은 신디사이저처럼 들린다.
@@ -1564,6 +1574,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     gate = float(feel["gate"] if feel.get("gate") is not None else defaults.get("gate", 0.9))
     fill_amt = float(feel["fill"] if feel.get("fill") is not None
                      else FILL_STYLES.get(style, 0.0))
+    vary = float(feel["vary"] if feel.get("vary") is not None else 0.35)
     # Thickness is its own axis. It used to ride on `comp == "chug"`, so a caller who changed the
     # strumming hand silently lost the second guitar — the one thing that makes a wall a wall
     # (실측 8/19: `comp:"stabs"` on a metal render, and `chord2` was gone from the part list).
@@ -1655,9 +1666,17 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # 팜뮤트는 제일 낮은 줄 하나만 눌러 끊는다 — 세 음을 다 그으면 스트로크가 된다.
             struck = voicing[:1] if comp == "chug" else voicing
             spb_a = 60.0 / bpm
-            for hi, (off, dur, vel) in enumerate(_comp_hits(comp, beats, meter, spb=spb_a)):
+            hits_here = _comp_hits(comp, beats, meter, spb=spb_a)
+            for hi, (off, dur, vel) in enumerate(hits_here):
                 if pos + off >= total_beats:
                     break
+                bar = int((pos + off) // meter)
+                vel = round(vel * (1.0 + vary * (PHRASE4[bar % 4] - 1.0)), 3)
+                if vary > 0 and bar % BREATH_EVERY == BREATH_EVERY - 1:
+                    # the hole before the next phrase — the last stroke of the eighth bar
+                    nxt = hits_here[hi + 1] if hi + 1 < len(hits_here) else None
+                    if nxt is None or int((pos + nxt[0]) // meter) != bar:
+                        continue
                 for p in struck:
                     row = {"beat": pos + off, "beats": dur, "part": "chord",
                            "patch": patch_of["chord"], "pitch": p,
@@ -1681,6 +1700,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             next_rm = int(round(69 + 12 * math.log2(chords[idx + 1][0] / 440.0)))
         semis = CHORD_QUALITY.get(str(quality or "").strip(), CHORD_QUALITY[""])
         for off, dur, pitch, vel in _bass_line(bassline, rm, beats, next_rm, meter, semis):
+            vel = round(vel * (1.0 + vary * (PHRASE4[int((pos + off) // meter) % 4] - 1.0)), 3)
             if pos + off < total_beats:
                 out.append({"beat": pos + off, "beats": dur, "part": "bass",
                             "patch": patch_of["bass"], "pitch": pitch,
@@ -4824,6 +4844,28 @@ def action_selftest():
        True, sorted({r["part"] for r in many}),
        "chord2" in {r["part"] for r in many} and pan_of("chord2") == PAN["chord2"]
        and mix_of("chord3") == MIX["chord"])
+    # Phrasing: sixteen bars of the same chord must not be sixteen identical bars.
+    vscore = {"bpm": 120, "notes": [{"syl": "라", "note": "C5", "beats": 64}],
+              "chords": [{"root": "C3", "beats": 64}]}
+    _, vev, vch, _, vbd, vfl, _ = parse_score(dict(vscore, style="trot"))
+    varr = build_arrangement(vev, vch, "trot", 64, vbd, vfl)
+    vch_rows = [r for r in varr if r["part"] == "chord"]
+    vels = sorted({r["vel"] for r in vch_rows})
+    ck("the comp is not the same bar sixteen times", True, len(vels),
+       len(vels) >= 3)
+    bars = {int(r["beat"] // 4) for r in vch_rows}
+    ck("…and it breathes before the next phrase (a bar loses its last stroke)", True,
+       sorted(set(range(16)) - bars) or "매 마디 타점 있음",
+       any(sum(1 for r in vch_rows if int(r["beat"] // 4) == b)
+           < max(sum(1 for r in vch_rows if int(r["beat"] // 4) == c) for c in bars)
+           for b in bars))
+    _, sev, sch, _, sbd, sfl, _ = parse_score(dict(vscore, style="trot", vary=0))
+    flat = [r for r in build_arrangement(sev, sch, "trot", 64, sbd, sfl)
+            if r["part"] == "chord"]
+    ck("…and vary:0 is the machine again — every bar identical", 1,
+       len({r["vel"] for r in flat}), len({r["vel"] for r in flat}) == 1)
+    ck("…with every stroke back in place", True,
+       (len(flat), len(vch_rows)), len(flat) > len(vch_rows))
     bad_af = action_render({"action": "render", "score": score, "arrangeFrom": "웩"})
     ck("an unknown arrangeFrom is refused with both ways", True,
        (bad_af.get("error") or "")[:40],
