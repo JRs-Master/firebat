@@ -272,6 +272,20 @@ def parse_score(score):
                     return None, None, None, None, None, None,                         f"drumPattern 박 {off} 가 마디({meter}박) 밖입니다"
                 vel = float(row[2]) if len(row) > 2 and row[2] is not None else 0.7
                 drum_rows.append((dname, off, max(0.0, min(1.0, vel))))
+    mixmap = score.get("mix")
+    if mixmap is not None:
+        if not isinstance(mixmap, dict):
+            return (None, None, None, None, None, None,
+                    'mix 는 {"파트": 0~1} 입니다 — 예: {"chord": 0.4}')
+        clean = {}
+        for k, v in mixmap.items():
+            try:
+                clean[str(k)] = float(v)
+            except (TypeError, ValueError):
+                return (None, None, None, None, None, None, f"mix.{k} 는 0~1 숫자입니다")
+            if not (0.0 <= clean[str(k)] <= 1.0):
+                return (None, None, None, None, None, None, f"mix.{k} 는 0~1 사이여야 합니다")
+        mixmap = clean
     voicing = score.get("voicing")
     if voicing is not None:
         try:
@@ -304,7 +318,7 @@ def parse_score(score):
             "humanize": humanize, "pedal": pedal, "voicing": voicing,
             "orn": orn, "voicing_kind": chord_shape, "laidback": axes.get("laidback"),
             "gate": axes.get("gate"), "double": axes.get("double"),
-            "fill": axes.get("fill")}
+            "fill": axes.get("fill"), "mix": mixmap}
     return spb, events, chords, style, band, feel, None
 
 
@@ -1318,13 +1332,27 @@ def _comp_hits(kind, beats, meter, spb=0.5):
     """(offset, dur, vel) strokes for ONE chord segment — how the chord part moves.
     stabs = the 짝 of 쿵-짝(offbeats) · quarters = a march's on-beats · pad = the old whole note.
     (arp is built in the caller: it needs the voicing, not just a rhythm.)"""
+    # A stroke's length is a TIME, not a fraction of a beat. The chug branch below already said
+    # so and the rest of this table never got the message: "stabs" held 0.9 beats, which is 450ms
+    # at 120bpm and worse as the tempo drops. On an instrument that does not decay — accordion,
+    # organ, strings — 450ms of triad is not a chop, it is a honk, and it is what the user heard
+    # all through a trot render (8/20: "뺘악~ 뺘악~ 하는 소리가 어떤 노래라도 안 어울려").
+    # Compare the funk chank at 60ms. So every stroke is capped in milliseconds and never gets
+    # longer than the beat-based value it used to have: fast tempos are untouched, slow ones stop
+    # smearing.
+    def _short(beat_len, ms):
+        return max(0.02, min(beat_len, (ms / 1000.0) / max(1e-6, spb)))
+
     if kind == "stabs":
         step = 2.0 if meter == 4 else 1.0
-        return [(float(off), 0.9, 0.7) for off in np.arange(1.0, beats, step)]
+        d = _short(0.9, 170)
+        return [(float(off), d, 0.7) for off in np.arange(1.0, beats, step)]
     if kind == "quarters":
-        return [(float(b), 0.9, 0.74 if b % 2 == 0 else 0.64) for b in range(int(beats))]
+        d = _short(0.9, 240)
+        return [(float(b), d, 0.74 if b % 2 == 0 else 0.64) for b in range(int(beats))]
     if kind == "eighths":  # driving on-and-off strokes — the rock/pop rhythm guitar hand
-        return [(s * 0.5, 0.5, 0.68 if s % 2 == 0 else 0.55) for s in range(int(beats * 2))]
+        d = _short(0.5, 200)
+        return [(s * 0.5, d, 0.68 if s % 2 == 0 else 0.55) for s in range(int(beats * 2))]
     if kind == "charleston":
         # 재즈 컴핑은 박을 짚지 않는다 — 1박과 2박 뒤(찰스턴)에 짧게 놓고 비운다. 정박에 코드를
         # 깔면 워킹 베이스와 라이드가 이미 하고 있는 일을 세 번째로 반복하게 된다.
@@ -1332,7 +1360,7 @@ def _comp_hits(kind, beats, meter, spb=0.5):
         for bar0 in np.arange(0.0, beats, 4.0):
             for off, vel in ((0.0, 0.62), (1.5, 0.7)):
                 if bar0 + off < beats:
-                    hits.append((float(bar0 + off), 0.7, vel))
+                    hits.append((float(bar0 + off), _short(0.7, 200), vel))
         return hits
     if kind == "chug":
         # 팜뮤트 — 지지직. 손날로 줄을 눌러 아주 짧게 끊어 치는 소리이고, 울림이 없어서 화음이
@@ -1488,7 +1516,12 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     # Velocity is a phrase shape, not a constant: downbeats lean, offbeats step back.
     beat = 0.0
     mel_gaps = []
-    for ev in events:
+    for ei, ev in enumerate(events):
+        # 꺾기 belongs at the end of a line — where the singer breathes — and on notes long
+        # enough to hold. At the old 1.0-beat threshold it fired on 101 of 443 notes (실측
+        # 아로하): one flick every 2.4 seconds is a tic, not a 창법.
+        nxt = events[ei + 1] if ei + 1 < len(events) else None
+        phrase_end = nxt is None or float(nxt.get("gap") or 0.0) >= 1.0
         g_here = float(ev.get("gap") or 0.0)
         if g_here >= 1.0:
             mel_gaps.append((beat, g_here))
@@ -1532,7 +1565,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                 out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
                             "patch": patch_of["melody"], "pitch": m,
                             "program": prog["melody"], "vel": vel, "gate": gate})
-            elif lead_orn == "kkeokgi" and beats >= 1.0:
+            elif lead_orn == "kkeokgi" and (beats >= 2.0 or phrase_end):
                 # 꺾기 — 트로트를 트로트로 만드는 그 꺾는 창법. 긴 음의 **끝을** 한 음 떨어뜨렸다
                 # 놓는다(창법의 이름이 '꺾는다'인 자리가 거기다). 편곡만 뽕짝이고 가락이 곧게
                 # 뻗으면 "구수하다"가 안 산다(8/19 사용자: "뽕짝이 살짝 아쉽다").
@@ -1874,7 +1907,7 @@ def apply_performance(arr, feel, spb, total_beats):
     return arr
 
 
-def render_arrangement(arr, spb, total_beats):
+def render_arrangement(arr, spb, total_beats, mixmap=None):
     """The numpy backend — (stereo (n,2) array, mono reverb-send bus). The band is panned onto
     a stage and each voice contributes to one shared room (add_room applies it at the end)."""
     n_total = int(SR * spb * total_beats) + int(SR * 0.5)
@@ -1895,8 +1928,9 @@ def render_arrangement(arr, spb, total_beats):
         i = int(SR * spb * e["beat"])
         if i >= n_total:
             continue
+        lvl = mix_of(e["part"], mixmap)     # the same balance the .mid asks for with CC7
         if e["part"] == "drum":
-            seg = hits[e["drum"]] * float(e.get("vel", 0.8))
+            seg = hits[e["drum"]] * float(e.get("vel", 0.8)) * lvl
             key = e["drum"]
         else:
             held = e["beats"]
@@ -1907,7 +1941,7 @@ def render_arrangement(arr, spb, total_beats):
             seg = synth_note(freq_of_midi(e["pitch"]),
                              spb * held * float(e.get("gate", 1.0)),
                              e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)),
-                             bend=e.get("bend"), vib=e.get("vib"))
+                             bend=e.get("bend"), vib=e.get("vib")) * lvl
             key = e["part"]
         m = min(len(seg), n_total - i)
         seg = seg[:m]
@@ -1928,6 +1962,25 @@ def render_arrangement(arr, spb, total_beats):
 # 리듬 기타 두 대는 좌우 **끝**으로, 리드와 베이스와 킥은 센터. 저역과 가락이 가운데 서고
 # 벽이 양옆에 서는 것이 이 장르의 그림이다(팬은 파트 단위 = MIDI CC10 이라 두 대가 서로 다른
 # 파트여야 갈린다 — 그래서 두 번째 손이 `chord2` 라는 제 이름을 갖는다).
+# Who sits on top. The arrangement had roles and no BALANCE: the only MIDI controls we ever
+# wrote were pan and sustain, so on the sf2 engine the mix was whatever velocity and polyphony
+# happened to produce — and a comping part playing three notes at once beat a single-note lead
+# every time (실측 8/20 트로트: chord 3.00 voices at vel 0.70 vs melody 1.00 at 0.63; the user
+# heard accordion, then vocal, then drums, which is upside down). These are channel volumes:
+# the tune on top, the bass holding the floor, the comping underneath, and the fill up with the
+# lead because while it answers it IS the lead. `mix` overrides any of them.
+MIX = {"melody": 1.0, "vocal": 1.0, "fill": 0.82, "bass": 0.80, "drum": 0.76,
+       "chord": 0.58, "chord2": 0.58}
+MIX_TOP = 110          # GM's own default is 100; 110 leaves the lead room without clipping
+
+
+def mix_of(part, over=None):
+    base = MIX.get(part, MIX.get(part.rstrip("0123456789"), 0.85))
+    if over and part in over:
+        base = float(over[part])
+    return max(0.0, min(1.0, base))
+
+
 PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "fill": 0.30, "bass": 0.0, "vocal": 0.0,
        "kick": 0.0, "kick2": 0.0, "snare": 0.08, "snare2": 0.08, "rim": 0.05, "clap": 0.12,
        "hat": 0.32, "hat_pedal": 0.32, "ohat": 0.32,
@@ -1988,7 +2041,7 @@ def add_room(stereo, send, wet=0.9):
     return stereo
 
 
-def write_midi(arr, bpm, path):
+def write_midi(arr, bpm, path, mix=None):
     """The MIDI backend — the same arrangement as a .mid, for any synth worth more than ours.
 
     Optional dependency on purpose: this is the one output that needs no audio stack at all, so a
@@ -2042,6 +2095,9 @@ def write_midi(arr, bpm, path):
                 pan = PAN.get(part, 0.0)
             tr.append(mido.Message("control_change", channel=ch, control=10,
                                    value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
+        tr.append(mido.Message("control_change", channel=ch, control=7,
+                               value=max(1, min(127, int(round(MIX_TOP * mix_of(part, mix))))),
+                               time=0))
         # (tick, kind) marks in one time-ordered pass — MIDI deltas are relative, so note-offs
         # and pedal changes have to be interleaved rather than appended per event. kind: 0 =
         # note_off, 1 = note_on, 2 = CC64 (sustain — fluidsynth and every GM synth honor it),
@@ -2227,7 +2283,7 @@ def sf2_backend():
     return binp, font, None
 
 
-def render_sf2(arr, spb, binp, font):
+def render_sf2(arr, spb, binp, font, mixmap=None):
     """The arrangement through fluidsynth: the same .mid midiOut writes, played on the GM font.
 
     Returns (stereo, why_not) — any why_not drops the render back to the builtin synth, so a
@@ -2239,7 +2295,7 @@ def render_sf2(arr, spb, binp, font):
     mid_path = f"data/sing/tmp-{tag}.mid"
     wav_path = f"data/sing/tmp-{tag}.wav"
     try:
-        written, note = write_midi(arr, 60.0 / spb, mid_path)
+        written, note = write_midi(arr, 60.0 / spb, mid_path, mix=mixmap)
         if not written:
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
         # Stock settings on purpose (사용자: "우리가 임의적으로 하지 말고 미디 기본값으로") —
@@ -4044,7 +4100,7 @@ def action_render(inp):
         if engine == "sf2" and why:
             return {"success": False, "error": f"engine:sf2 사용 불가 — {why}"}
         if not why:
-            stereo, err = render_sf2(arr, spb, binp, font)
+            stereo, err = render_sf2(arr, spb, binp, font, mixmap=feel.get("mix"))
             if stereo is None:
                 engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
             else:
@@ -4054,7 +4110,7 @@ def action_render(inp):
                 stereo *= 0.45
                 mix, send = stereo, np.zeros(len(stereo), dtype=np.float32)
     if mix is None:
-        mix, send = render_arrangement(arr, spb, total_beats)
+        mix, send = render_arrangement(arr, spb, total_beats, mixmap=feel.get("mix"))
         mix *= 0.45
         send *= 0.45
     if vocal_path:
@@ -4589,6 +4645,51 @@ def action_selftest():
     ck("band.fill names who answers", True,
        any(r["part"] == "fill" and r["program"] == 0 for r in fb),
        any(r["part"] == "fill" and r["program"] == 0 for r in fb))
+    # A stroke is a time. The same comp at half the tempo must not hold twice as long.
+    fast = _comp_hits("stabs", 4.0, 4, spb=0.5)[0][1] * 0.5
+    slow = _comp_hits("stabs", 4.0, 4, spb=1.0)[0][1] * 1.0
+    ck("a stab lasts the same MILLISECONDS at any tempo", True,
+       (round(fast * 1000), round(slow * 1000)),
+       abs(fast - slow) < 0.01 and fast < 0.25)
+    ck("…and it is a chop, not a held chord", True, round(fast * 1000),
+       0.05 <= fast <= 0.25)
+    # Balance: the tune on top. Read it back out of the bytes, like the kit.
+    mrow = [{"beat": 0.0, "beats": 1.0, "part": "melody", "pitch": 72, "program": 0, "vel": 0.8},
+            {"beat": 0.0, "beats": 1.0, "part": "chord", "pitch": 60, "program": 21, "vel": 0.8}]
+    mpath = "data/sing/selftest-mix.mid"
+    os.makedirs("data/sing", exist_ok=True)
+    if write_midi(mrow, 120, mpath):
+        import mido as _md
+        vol = {}
+        for t in _md.MidiFile(mpath).tracks:
+            nm = next((x.name for x in t if x.type == "track_name"), "")
+            v = next((x.value for x in t if x.type == "control_change" and x.control == 7), None)
+            if v is not None:
+                vol[nm] = v
+        ck("every part carries a channel volume, and the tune is the loudest",
+           True, vol,
+           len(vol) == 2 and vol.get("melody", 0) > vol.get("chord", 999))
+        write_midi(mrow, 120, mpath, mix={"chord": 1.0, "melody": 0.3})
+        vol2 = {}
+        for t in _md.MidiFile(mpath).tracks:
+            nm = next((x.name for x in t if x.type == "track_name"), "")
+            v = next((x.value for x in t if x.type == "control_change" and x.control == 7), None)
+            if v is not None:
+                vol2[nm] = v
+        ck("…and `mix` turns it upside down when asked", True, vol2,
+           vol2.get("chord", 0) > vol2.get("melody", 999))
+        if os.path.isfile(mpath):
+            os.remove(mpath)
+    # 꺾기 at the end of a line, not every fourth note.
+    kk = {"bpm": 120, "chords": [{"root": "C3", "beats": 8}],
+          "notes": [{"syl": "라", "note": "C5", "beats": 1}] * 4
+                   + [{"syl": "라", "note": "E5", "beats": 1}, {"rest": True, "beats": 2},
+                      {"syl": "라", "note": "G5", "beats": 2}]}
+    _, kev, kch, _, kbd, kfl, _ = parse_score(dict(kk, style="trot"))
+    karr = build_arrangement(kev, kch, "trot", 11, kbd, kfl)
+    kmel = [r for r in karr if r["part"] == "melody"]
+    ck("꺾기 lands on the line's end and the long note, not on every beat-long note",
+       2, len(kmel) - len(kev), len(kmel) - len(kev) == 2)
     badkit = action_render({"action": "render", "score": score, "kit": "웩킷"})
     ck("an unknown kit is refused WITH this font's list", True, (badkit.get("error") or "")[:44],
        not badkit.get("success") and "standard" in (badkit.get("error") or ""))

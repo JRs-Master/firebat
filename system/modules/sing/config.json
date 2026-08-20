@@ -394,6 +394,13 @@
           "null"
         ],
         "description": "0-1: how much the band ANSWERS in the gaps where the melody rests — the accordion reply between trot phrases, the guitar lick between blues lines. It plays chord tones of the harmony under the breath and stops before the next entry. 0 = never. Genres whose face this is (trot, blues, rock'n'roll, jazz, country, r&b) already do it; omit for their default. `band.fill` names who answers (default: whoever is comping)."
+      },
+      "mix": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "Per-part loudness, {part: 0-1}: melody | vocal | fill | bass | drum | chord | chord2. The default already puts the tune on top and the comping underneath; set this only to carry something the person asked for (\"기타를 더 크게\", \"드럼 좀 줄여\"). Example: {\"chord\": 0.4}."
       }
     }
   },
@@ -443,6 +450,7 @@
         "swing",
         "comp",
         "fill",
+        "mix",
         "bassline",
         "orn",
         "chordShape",
