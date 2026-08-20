@@ -240,7 +240,7 @@ def _days_between(a, b):
 
 
 def _apply_bar_range(bars, bar_range, spec):
-    """Restrict the analysis to a slice of the bars.
+    """Restrict the analysis to a slice of the bars. Returns (bars, bar_range, err).
 
     A rule tuned on the same bars it is measured on will look excellent and mean nothing, so the
     honest way to compare candidates is to fit on one window and score on another. Slicing has to
@@ -248,39 +248,53 @@ def _apply_bar_range(bars, bar_range, spec):
     but cannot cut an array, and shipping two copies of six hundred candles to say "first 70%"
     would cost more than the analysis.
 
-    `{from, to}` are fractions when <= 1 (`{from: 0, to: 0.7}` = the oldest 70%) and bar indices
-    otherwise. Negative values count from the end, as elsewhere in this codebase.
+    `{from, to}` in **[-1, 1] is a fraction**, outside it a bar index; negatives count from the
+    end either way. `{from: 0, to: 0.7}` = the oldest 70%; `{from: 0.7}` = the newest 30%;
+    `{from: 300, to: 900}` = bars 300..900.
+
+    ⚠️ 1 and -1 are fractions, not indices. They used to be indices, because the test was
+    `is_integer()` — so `{from: 0.7, to: 1}` ("to the end", the obvious way to write it) resolved
+    to bar index 1, the window came out empty, and an empty window returned **the whole series**
+    with no complaint. 실측 2026-08-21: a holdout measured on 9,000 bars instead of 2,700 and read
+    as a plausible result; it was caught only because the holdout reported more trades than the
+    training window, which cannot happen. A window that cannot be honoured is now an error — the
+    one thing this function must never do is quietly answer a different question.
     """
     if not isinstance(spec, dict) or not bars:
-        return bars, bar_range
+        return bars, bar_range, None
     n = len(bars)
 
     def edge(v, default):
         if v is None:
-            return default
+            return default, None
         try:
             f = float(v)
         except (TypeError, ValueError):
-            return default
-        if -1.0 <= f <= 1.0 and not float(f).is_integer():
-            idx = int(round(f * n)) if f >= 0 else n + int(round(f * n))
-        else:
-            idx = int(f) if f >= 0 else n + int(f)
-        return max(0, min(n, idx))
+            return None, f"barRange 값은 숫자여야 합니다 — 받은 것: {v!r}"
+        idx = int(round(f * n)) if -1.0 <= f <= 1.0 else int(f)
+        if idx < 0:
+            idx += n
+        return max(0, min(n, idx)), None
 
-    start = edge(spec.get("from"), 0)
-    end = edge(spec.get("to"), n)
+    start, err = edge(spec.get("from"), 0)
+    if err:
+        return bars, bar_range, err
+    end, err = edge(spec.get("to"), n)
+    if err:
+        return bars, bar_range, err
     if end <= start:
-        return bars, bar_range
+        return bars, bar_range, (
+            f"barRange 가 빈 구간입니다 — from={spec.get('from')!r} to={spec.get('to')!r} 는 "
+            f"{n}봉에서 [{start}, {end}) 로 풀립니다. [-1,1] 은 비율이고 그 밖은 봉 번호입니다 "
+            f"(끝까지 = to 생략 또는 to:1)."
+        )
     sliced = bars[start:end]
-    if not sliced:
-        return bars, bar_range
     return sliced, {
         "count": len(sliced),
         "from": sliced[0].get("date", ""),
         "to": sliced[-1].get("date", ""),
         "slicedFrom": bar_range.get("count", n),
-    }
+    }, None
 
 
 def _bars_error(data):
@@ -1905,7 +1919,11 @@ def main():
         # 날짜**로 자른다(장 시작 전엔 전일이 마지막 세션이라 그대로 맞다). 지표는 잘린 구간만
         # 보고 계산하므로 warmup 이 부족할 수 있다 — 그 사실을 응답에 밝힌다.
         prev_close = _prev_session_close(bars)
-        bars, bar_range = _apply_bar_range(bars, bar_range, inp.get("barRange"))
+        bars, bar_range, br_err = _apply_bar_range(
+            bars, bar_range, inp.get("barRange"))
+        if br_err:
+            print(json.dumps({"success": False, "error": br_err}, ensure_ascii=False))
+            return
         bars, bar_range = _last_session(bars, bar_range) if inp.get("lastSessionOnly") else (bars, bar_range)
         # **규칙은 데이터로 받는다.** 전략을 모듈 코드에 넣으면 그 순간 프레임워크가 투자 의견을
         # 갖게 되고, 사용자가 바꾸려면 배포를 해야 한다. 여기가 하는 일은 딱 두 가지 —
