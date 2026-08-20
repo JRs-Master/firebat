@@ -4344,6 +4344,30 @@ def action_selftest():
             ck("the font's own preset names are callable", True,
                bool(_FONT_ALIASES) or bool(load_font_aliases(e_font)) or bool(_FONT_ALIASES),
                bool(_FONT_ALIASES))
+    # The one link nothing else watches: a kit is only chosen if the program change actually
+    # reaches channel 9. Read it back out of the bytes — a response that SAYS "kit: jazz" while
+    # the .mid stays on Standard is exactly the kind of quiet wrong we keep paying for.
+    # (Skips where mido is absent, like the sf2 checks skip where no font is installed.)
+    krow = [{"beat": 0.0, "beats": 1.0, "part": "drum", "drum": "kick", "vel": 0.9,
+             "program": 32}]
+    kpath = "data/sing/selftest-kit.mid"
+    os.makedirs("data/sing", exist_ok=True)
+    kwritten, _ = write_midi(krow, 120, kpath)
+    if kwritten:
+        import mido as _mido
+        msgs = [m for t in _mido.MidiFile(kpath).tracks for m in t
+                if m.type == "program_change"]
+        ck("the chosen kit reaches channel 9 as a program change", [(9, 32)],
+           [(m.channel, m.program) for m in msgs],
+           any(m.channel == 9 and m.program == 32 for m in msgs))
+        plain = [dict(krow[0])]
+        plain[0].pop("program")
+        write_midi(plain, 120, kpath)
+        msgs2 = [m for t in _mido.MidiFile(kpath).tracks for m in t
+                 if m.type == "program_change" and m.channel == 9]
+        ck("…and no kit asked for means no program change (Standard)", [], msgs2, not msgs2)
+        if os.path.isfile(kpath):
+            os.remove(kpath)
     badkit = action_render({"action": "render", "score": score, "kit": "웩킷"})
     ck("an unknown kit is refused WITH this font's list", True, (badkit.get("error") or "")[:44],
        not badkit.get("success") and "standard" in (badkit.get("error") or ""))
