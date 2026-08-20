@@ -1292,7 +1292,15 @@ BEND_CURVES = {
     # 도착 뒤에는 0 이라 가락은 악보 그대로 남는다 — 표현이지 이조가 아니다.
     "scoop":  [(0.0, -1.0), (0.18, 0.0), (1.0, 0.0)],   # 블루스 — 반음
     "bendin": [(0.0, -2.0), (0.22, 0.0), (1.0, 0.0)],   # 록 솔로 — 온음("띠요오옹")
+    # 트로트의 꺾기 — **한 음절 안에서** 목을 꺾었다 돌아온다. 사용자 8/20 정정: "소쩍새 슬피
+    # 우는" 이 "소~오쩍새 슬피이~ 우~느흔~" 이 되는 그것이고, 음이 **제자리로 돌아온다.**
+    # 옛 구현은 음을 둘로 쪼개 뒤쪽을 온음 아래에 두고 끝냈다 — 돌아오지 않으니 한 음절이 아니라
+    # 뒤에 붙은 별개의 짧은 음, 즉 "삐융" 으로 들렸다. 벤딩 통로가 생겼으니 이제 제 모양이 된다.
+    "kkeokgi": [(0.0, 0.0), (0.44, 0.0), (0.54, -2.0), (0.66, 0.0), (1.0, 0.0)],
 }
+
+# 장식마다 필요한 최소 길이. 꺾을 시간이 없는 음에 걸면 음정이 틀린 것처럼 들린다.
+ORN_MIN = {"scoop": 1.0, "bendin": 1.5, "kkeokgi": 2.0, "bend": 0.5, "grace": 0.5}
 
 
 # (Hz, 반음 깊이, 언제부터) — 손가락 비브라토. 벤딩이 **도착**이라면 이건 **머무는 동안**이고,
@@ -1535,7 +1543,10 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # curve only shapes notes that never declared one.
             own = vels[si] if si < len(vels) else None
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
-            if lead_orn in BEND_CURVES and beats >= 1.5:
+            # 꺾기는 소절 끝에서도 걸린다 — 창법이 사는 자리가 거기다. 다른 장식은 길이만 본다.
+            orn_ok = beats >= ORN_MIN.get(lead_orn, 1.5) or (
+                lead_orn == "kkeokgi" and phrase_end and beats >= 1.0)
+            if lead_orn in BEND_CURVES and orn_ok:
                 # 진짜 벤딩 — 음을 둘로 쪼개지 않고 음정이 음 안에서 움직인다.
                 row = {"beat": beat, "beats": beats, "part": "melody",
                        "patch": patch_of["melody"], "pitch": m,
@@ -1546,7 +1557,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                 if style in VIB_STYLES and beats >= 1.5:
                     row["vib"] = VIB_STYLES[style]
                 out.append(row)
-            elif lead_orn == "bend" and beats >= 0.5:
+            elif lead_orn == "bend" and beats >= ORN_MIN["bend"]:
                 # 블루스의 스쿠프 — 반음 아래에서 밀어 올려 음에 도착한다. 기타·하모니카의
                 # 그 손이고, 곧게 시작하면 블루스로 안 들린다.
                 lead = min(0.14, beats * 0.2)
@@ -1556,7 +1567,7 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                 out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
                             "patch": patch_of["melody"], "pitch": m,
                             "program": prog["melody"], "vel": vel, "gate": gate})
-            elif lead_orn == "grace" and beats >= 0.5:
+            elif lead_orn == "grace" and beats >= ORN_MIN["grace"]:
                 # 컨트리의 해머온 — 온음 아래를 스치고 본음을 때린다.
                 lead = min(0.12, beats * 0.18)
                 out.append({"beat": beat, "beats": lead, "part": "melody",
@@ -1565,18 +1576,6 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
                 out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
                             "patch": patch_of["melody"], "pitch": m,
                             "program": prog["melody"], "vel": vel, "gate": gate})
-            elif lead_orn == "kkeokgi" and (beats >= 2.0 or phrase_end):
-                # 꺾기 — 트로트를 트로트로 만드는 그 꺾는 창법. 긴 음의 **끝을** 한 음 떨어뜨렸다
-                # 놓는다(창법의 이름이 '꺾는다'인 자리가 거기다). 편곡만 뽕짝이고 가락이 곧게
-                # 뻗으면 "구수하다"가 안 산다(8/19 사용자: "뽕짝이 살짝 아쉽다").
-                # 폭은 온음 — 조표를 모르는 자리라 가장 흔한 폭을 쓴다.
-                flick = min(0.25, beats * 0.25)
-                out.append({"beat": beat, "beats": beats - flick, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": m,
-                            "program": prog["melody"], "vel": vel, "gate": gate})
-                out.append({"beat": beat + beats - flick, "beats": flick, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": max(0, m - 2),
-                            "program": prog["melody"], "vel": round(vel * 0.85, 3), "gate": gate})
             else:
                 out.append({"beat": beat, "beats": beats, "part": "melody", "patch": patch_of["melody"],
                             "pitch": m, "program": prog["melody"], "vel": vel, "gate": gate})
@@ -4447,13 +4446,23 @@ def action_selftest():
     ck("…and drops it when the caller asks for one guitar", False,
        any(e["part"] == "chord2" for e in thin),
        not any(e["part"] == "chord2" for e in thin))
-    straight = build_arrangement(events, [(note_freq("C3"), 4.0, "")], "trot", 4,
+    long_ev = [{"syl": "라", "segments": [(note_freq("C5"), 3.0)], "vels": [None]}]
+    straight = build_arrangement(long_ev, [(note_freq("C3"), 4.0, "")], "trot", 4,
                                  feel={"orn": "none"})
-    trot_lead = [e for e in straight if e["part"] == "melody"]
-    kkeok = build_arrangement(events, [(note_freq("C3"), 4.0, "")], "trot", 4)
+    kkeok = build_arrangement(long_ev, [(note_freq("C3"), 4.0, "")], "trot", 4)
+    bent = [e for e in kkeok if e["part"] == "melody" and e.get("bend")]
     ck("orn is a knob: 'none' plays the tune straight where the genre would flick it",
-       True, len(trot_lead) < len([e for e in kkeok if e["part"] == "melody"]),
-       len(trot_lead) < len([e for e in kkeok if e["part"] == "melody"]))
+       [0, 1], [len([e for e in straight if e["part"] == "melody" and e.get("bend")]), len(bent)],
+       not [e for e in straight if e.get("bend")] and len(bent) == 1)
+    # 꺾기 is one syllable whose pitch moves and COMES BACK. The old one split the note and left
+    # the tail a whole step down, which is a second short note — 사용자: "삐융".
+    ck("꺾기 bends inside the note and returns to it", True,
+       (len([e for e in kkeok if e["part"] == "melody"]), BEND_CURVES["kkeokgi"][-1]),
+       len([e for e in kkeok if e["part"] == "melody"]) == 1
+       and BEND_CURVES["kkeokgi"][-1] == (1.0, 0.0) and BEND_CURVES["kkeokgi"][0] == (0.0, 0.0))
+    ck("…and every curve we own ends where the score wrote it", [],
+       [k for k, c in BEND_CURVES.items() if c[-1][1] != 0.0],
+       all(c[-1][1] == 0.0 for c in BEND_CURVES.values()))
     badorn = parse_score({"bpm": 120, "orn": "웩", "notes": [{"syl": "라", "note": "C4",
                                                              "beats": 1}]})
     ck("an unknown orn is refused WITH the list", True, (badorn[-1] or "")[:40],
@@ -4689,7 +4698,8 @@ def action_selftest():
     karr = build_arrangement(kev, kch, "trot", 11, kbd, kfl)
     kmel = [r for r in karr if r["part"] == "melody"]
     ck("꺾기 lands on the line's end and the long note, not on every beat-long note",
-       2, len(kmel) - len(kev), len(kmel) - len(kev) == 2)
+       2, sum(1 for r in kmel if r.get("bend")),
+       sum(1 for r in kmel if r.get("bend")) == 2 and len(kmel) == len(kev))
     badkit = action_render({"action": "render", "score": score, "kit": "웩킷"})
     ck("an unknown kit is refused WITH this font's list", True, (badkit.get("error") or "")[:44],
        not badkit.get("success") and "standard" in (badkit.get("error") or ""))
