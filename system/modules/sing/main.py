@@ -2184,20 +2184,29 @@ SF2_GEN = {8: "filterFc", 15: "chorusSend", 16: "reverbSend", 17: "pan", 21: "de
            51: "coarseTune", 52: "fineTune", 53: "sampleID", 54: "sampleModes",
            56: "scaleTuning", 58: "overridingRootKey"}
 
-# ⚠️ **파일에 안 적혀 있어도 모든 SF2 가 갖는 것** (규격 §8.4.1 기본 모듈레이터). pmod/imod 만
-# 읽고 "이 폰트는 CC1 을 안 쓴다"고 말하면 그것이 오독이다 — 안 적힌 것이 없는 것이 아니다.
+# ⚠️ **파일에 안 적혀 있어도 걸리는 것.** pmod/imod 만 읽고 "이 폰트는 CC1 을 안 쓴다"고
+# 말하면 그것이 오독이다 — 안 적힌 것이 없는 것이 아니다.
+#
+# 다만 **출처가 둘**이라 열을 나눈다. 목록 하나로 뭉치면 "규격이 그렇다"와 "신디가 그렇게
+# 동작한다"가 섞이고, 그 섞인 표를 근거로 다음 판단을 하게 된다:
+#   spec  = SF2 2.04 §8.4.1 기본 모듈레이터 열 줄. 모듈레이터 기계 그 자체다
+#   synth = 모듈레이터가 아니라 신디의 음 수명·채널 처리. 규격 목록엔 없지만 실제로 걸린다
 SF2_DEFAULT_MODULATORS = (
-    ("velocity", "attenuation", "세게 칠수록 크게 (그리고 폰트의 벨로시티 레이어를 고른다)"),
-    ("velocity", "filterFc", "세게 칠수록 밝게"),
-    ("CC1", "vibLfoToPitch", "모듈레이션 휠 → 폰트 자기 비브라토 LFO (기본 ±50센트)"),
-    ("CC7", "attenuation", "채널 볼륨"),
-    ("CC10", "pan", "팬"),
-    ("CC11", "attenuation", "익스프레션"),
-    ("CC64", "hold", "서스테인 페달"),
-    ("CC91", "reverbSend", "리버브 센드"),
-    ("CC93", "chorusSend", "코러스 센드"),
-    ("pitchWheel", "fineTune", "피치 벤딩 (범위는 CC 없이 RPN0)"),
-    ("channelPressure", "vibLfoToPitch", "애프터터치 → 비브라토"),
+    ("velocity", "attenuation", "spec", "세게 칠수록 크게 (그리고 폰트의 벨로시티 레이어를 고른다)"),
+    ("velocity", "filterFc", "spec", "세게 칠수록 밝게"),
+    ("CC1", "vibLfoToPitch", "spec", "모듈레이션 휠 → 폰트 자기 비브라토 LFO (기본 ±50센트)"),
+    ("CC7", "attenuation", "spec", "채널 볼륨"),
+    ("CC10", "pan", "spec", "팬"),
+    ("CC11", "attenuation", "spec", "익스프레션"),
+    ("CC91", "reverbSend", "spec", "리버브 센드"),
+    ("CC93", "chorusSend", "spec", "코러스 센드"),
+    ("channelPressure", "vibLfoToPitch", "spec", "애프터터치 → 비브라토"),
+    # 규격의 목적지는 "Initial Pitch"(가상 목적지)이고 양은 피치휠 감도가 정한다 — gen 52
+    # fineTune 이라고 적었던 것은 내 오기였다.
+    ("pitchWheel", "initialPitch", "spec", "피치 벤딩 (폭은 RPN0 피치휠 감도)"),
+    # 서스테인은 **모듈레이터가 아니다.** 신디가 note-off 를 붙들고 있는 것이라 §8.4.1 목록에
+    # 없다. 그런데 실제로는 걸리므로 안 적으면 그것도 거짓말이다.
+    ("CC64", "hold", "synth", "서스테인 페달 — 신디가 음을 붙든다(모듈레이터 아님)"),
 )
 
 
@@ -5703,8 +5712,8 @@ def action_selftest():
        [["CC74", "filterFc"]], [list(m) for m in (_fi or {}).get("modulators") or []],
        [list(m) for m in (_fi or {}).get("modulators") or []] == [["CC74", "filterFc"]])
     ck("…그리고 규격 기본 모듈레이터는 따로 안다(파일엔 없지만 늘 걸린다)", True,
-       [a for a, _b, _c in SF2_DEFAULT_MODULATORS][:3],
-       any(a == "CC1" for a, _b, _c in SF2_DEFAULT_MODULATORS))
+       [a for a, _b, _w, _c in SF2_DEFAULT_MODULATORS][:3],
+       any(a == "CC1" and _w == "spec" for a, _b, _w, _c in SF2_DEFAULT_MODULATORS))
     # 배선 — 이름으로 부르면 뱅크가 따라오고, .mid 에 뱅크 셀렉트가 program_change **앞**에 선다.
     _FONT_ALIASES.clear()
     load_font_aliases(_fx)
@@ -6323,8 +6332,8 @@ def action_font(inp):
                              + ", ".join(str(b) for b in inv["banks"])}
         return {"success": True, "data": {"font": inv["name"], "preset": pre,
                                           "defaultModulators": [
-                                              {"from": a, "to": b, "what": c}
-                                              for a, b, c in SF2_DEFAULT_MODULATORS]}}
+                                              {"from": a, "to": b, "where": w, "what": c}
+                                              for a, b, w, c in SF2_DEFAULT_MODULATORS]}}
     by_bank = {}
     for p in inv["presets"].values():
         by_bank.setdefault(str(p["bank"]), 0)
@@ -6341,8 +6350,8 @@ def action_font(inp):
         "kits": sorted(inv["kits"]),
         # 이 폰트가 **파일에 적어 둔** 것. 아래 기본값은 파일에 없지만 모든 SF2 가 갖는다.
         "declaredModulators": [{"from": a, "to": b} for a, b in inv["modulators"]],
-        "defaultModulators": [{"from": a, "to": b, "what": c}
-                              for a, b, c in SF2_DEFAULT_MODULATORS],
+        "defaultModulators": [{"from": a, "to": b, "where": w, "what": c}
+                              for a, b, w, c in SF2_DEFAULT_MODULATORS],
         "note": ("이 폰트가 답하는 연주법은 declaredModulators 와 defaultModulators 의 합집합"
                  "입니다 — 기본 모듈레이터는 파일에 안 적혀 있어도 규격상 항상 걸립니다. "
                  "instrument 나 program 을 주면 그 프리셋 하나의 음역·벨로시티층·CC 를 봅니다."),
