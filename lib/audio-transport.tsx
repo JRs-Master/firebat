@@ -125,6 +125,24 @@ export function AudioTransport({
     return prev ? prev.end : t;
   };
 
+  // A new file is a new timeline, and the element does not tell us it stopped.
+  //
+  // Changing `src` runs the HTML media load algorithm, which sets `paused` to true **without
+  // firing `pause`** — the spec sets the attribute and queues no event. Our state is driven by
+  // the play/pause events, so it stayed on "playing" while the element sat silent, and the
+  // position and duration stayed on the previous track. 실측 2026-08-21 (사용자, 미디어 상세):
+  // "재생하고 다음껄로 넘어가면 소리는 안나오는데 플레이어는 재생중인듯".
+  //
+  // Speed, volume and loop are the listener's preferences and survive on purpose; the A-B pair
+  // does not, because those marks point at seconds of a track that is no longer loaded. When the
+  // parent owns them (karaoke) it is the parent's timeline, so we leave them alone.
+  useEffect(() => {
+    setPlaying(false);
+    setCur(0);
+    setDur(0);
+    if (!controlled) { setOwnA(null); setOwnB(null); }
+  }, [src, controlled]);
+
   useEffect(() => {
     const a = audioRef.current; if (!a) return;
     const onT = () => {

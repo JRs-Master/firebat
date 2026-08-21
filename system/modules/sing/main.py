@@ -2282,6 +2282,25 @@ MIX = {"melody": 1.0, "vocal": 1.0, "fill": 0.82, "bass": 0.80, "drum": 0.76,
 MIX_TOP = 110          # GM's own default is 100; 110 leaves the lead room without clipping
 
 
+def mix_cc7(level):
+    """A `mix` level (an AMPLITUDE ratio) → the CC7 byte that actually produces it.
+
+    Channel Volume is not a linear fader. The MIDI/DLS curve is `dB = 40·log10(cc/127)`, i.e. the
+    gain is the byte **squared** — so writing `MIX_TOP * mix` asked for mix² and every part below
+    the lead came out far quieter than the table says. Our own two engines disagreed because of
+    it: the builtin renderer multiplies the samples by `mix` (a true amplitude ratio) while the
+    .mid asked the SoundFont for its square.
+
+    실측 2026-08-21 (사용자: "파일 3개다 멜로디만 크고 나머지는 작아서 장르 차이가 있는지를
+    모르겠어"): three comping voices at mix 0.335 were written as CC7 37, which is −18.9 dB under
+    the lead — the table meant −9.5 dB. 9.4 dB of the accompaniment was thrown away by the mapping
+    alone, on top of it already being the quietest thing in the mix.
+
+    Inverting the curve keeps every ratio in MIX exactly as written, on both engines.
+    """
+    return max(1, min(127, int(round(MIX_TOP * math.sqrt(max(0.0, min(1.0, level)))))))
+
+
 def pan_of(part):
     """chord2, chord3 … all sit where chord sits unless they say otherwise."""
     if part in PAN:
@@ -2411,7 +2430,7 @@ def write_midi(arr, bpm, path, mix=None):
             tr.append(mido.Message("control_change", channel=ch, control=10,
                                    value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
         tr.append(mido.Message("control_change", channel=ch, control=7,
-                               value=max(1, min(127, int(round(MIX_TOP * mix_of(part, mix))))),
+                               value=mix_cc7(mix_of(part, mix)),
                                time=0))
         # (tick, kind) marks in one time-ordered pass — MIDI deltas are relative, so note-offs
         # and pedal changes have to be interleaved rather than appended per event. kind: 0 =
@@ -5206,6 +5225,17 @@ def action_selftest():
     ck("…and in parts mode it names the FILE's instrument, not the genre's", "grandpiano",
        (kept_cast.get("melody") or {}).get("instrument"),
        (kept_cast.get("melody") or {}).get("instrument") == gm_name(0))
+    # CC7 은 페이더가 아니다 — 규격이 dB = 40·log10(cc/127) 이라 게인은 바이트의 **제곱**이다.
+    # 선형으로 쓰면 표가 말하는 비율이 제곱으로 눌려, 리드 아래 전부가 훨씬 조용해진다.
+    _ratio = lambda part: (mix_cc7(MIX[part]) / 127.0) ** 2 / (mix_cc7(1.0) / 127.0) ** 2
+    for part in ("bass", "drum", "chord"):
+        ck("CC7 이 표의 비율을 그대로 낸다 (%s)" % part, MIX[part], round(_ratio(part), 2),
+           abs(_ratio(part) - MIX[part]) < 0.015)
+    # 그리고 두 엔진이 같은 값을 뜻해야 한다 — 내장 렌더는 mix 를 진폭에 그대로 곱한다.
+    ck("두 엔진이 같은 balance 를 뜻한다", True,
+       [round(_ratio("chord"), 3), MIX["chord"]],
+       abs(_ratio("chord") - mix_of("chord")) < 0.015)
+
     # 캐스팅 보고는 **파일이 부르는 이름**으로. 내부 행 id(p1·p3)를 그대로 대면 읽는 쪽이
     # 어느 성부인지 알 수 없다 — 8/21 실측에서 응답이 "chord ← p3" 라고만 말했다.
     named_cast = recast_parts(rrows, "metal", None, "p1",
