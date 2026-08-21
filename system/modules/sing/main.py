@@ -3361,8 +3361,19 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
 
     skipped = {}
 
-    def skip_mark(what):
-        skipped[what] = skipped.get(what, 0) + 1
+    def skip_mark(what, whose="us"):
+        """못 연주한 기호를 센다. `whose` 는 **누구 사정인지**를 가른다.
+
+        "us" = 우리가 아직 못 읽는 기호(트레몰로·글리산도…) — 우리가 고칠 것.
+        "file" = 파일이 스스로 어긋난 자리 — 고칠 데가 우리 코드에 없다. 둘을 한 통에
+        담고 "파서 미구현분" 이라고 적으면 파일 결함을 우리 결손으로 보고하는 셈이라,
+        사용자가 우리한테 고치라고 하고 우리는 고칠 게 없다. 실측 2026-08-21 아로하
+        보컬 28마디: 27마디 끝 C#5 에 붙임줄이 시작되는데 짝인 C#5 앞에 B4 가 한 음
+        끼어 있다(그 파트에 `<grace>` 는 0개 — 꾸밈음이 아니라 온전한 8분음표다).
+        붙임줄은 이웃한 두 음을 잇는 것이라 이건 이을 수 없다.
+        """
+        skipped.setdefault(whose, {})
+        skipped[whose][what] = skipped[whose].get(what, 0) + 1
 
     order = _playback_order([_measure_flags(m) for m in kids(parts[0], "measure")])
 
@@ -3724,7 +3735,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 # 수는 없다 — 따로 친다. **다만 조용히 하지는 않는다**: 실측
                                 # 2026-08-21 아로하 811개 중 5개가 그랬고, 그걸 알아내려고 내가
                                 # 원본 XML 을 손으로 세야 했다. 응답이 말하면 그럴 일이 없다.
-                                skip_mark("이음줄(붙일 앞 음 없음)")
+                                skip_mark("이음줄(짝이 이웃하지 않음)", "file")
                         if prev is not None:
                             prev["beats"] += dur
                         elif orn_kind:
@@ -4672,8 +4683,16 @@ def action_render(inp):
         data["reInstrument"] = reinst_name
     if parsed_from and locals().get("notation_skipped"):
         # Silence is not consent: what the parser could not play is SAID, next to the render.
-        data["notationNote"] = ("연주하지 못한 기호: " + ", ".join(
-            f"{k}×{v}" for k, v in notation_skipped.items()) + " — 파서 미구현분입니다")
+        _parts = []
+        _ours = notation_skipped.get("us") or {}
+        _theirs = notation_skipped.get("file") or {}
+        if _ours:
+            _parts.append("아직 못 읽는 기호: "
+                          + ", ".join(f"{k}×{v}" for k, v in _ours.items()))
+        if _theirs:
+            _parts.append("악보가 어긋난 자리(그대로 두고 연주했습니다): "
+                          + ", ".join(f"{k}×{v}" for k, v in _theirs.items()))
+        data["notationNote"] = " / ".join(_parts)
     _oor = notes_out_of_range(arr, sf2_font_path)
     if _oor:
         data["outOfRange"] = _oor[:20]
@@ -5692,7 +5711,27 @@ def action_selftest():
     ck("what the parser cannot play is SAID, not swallowed", True,
        (dsc or {}).get("_notation_skipped"),
        bool((dsc or {}).get("_notation_skipped"))
-       and any("글리산도" in k for k in dsc["_notation_skipped"]))
+       and any("글리산도" in k for k in (dsc["_notation_skipped"].get("us") or {})))
+
+    # …그리고 **누구 사정인지** 갈라서 말한다. 파일이 어긋난 자리를 "파서 미구현" 이라고
+    # 적으면 사용자는 우리한테 고치라 하고 우리에겐 고칠 게 없다. 실측 2026-08-21 아로하
+    # 보컬 28마디: 붙임줄의 두 짝 사이에 온전한 8분음표가 하나 끼어 있다(그 파트 <grace> 0).
+    _tw = (P + '<measure number="1"><attributes><divisions>2</divisions></attributes>'
+           '<note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration>'
+           '<tie type="start"/></note>'
+           '<note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration></note>'
+           '<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration>'
+           '<tie type="stop"/></note></measure>' + E)
+    with open("data/sing/selftest-tiegap.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_tw)
+    _tg = []
+    _tsc, _ = musicxml_to_score("data/sing/selftest-tiegap.musicxml", parts_out=_tg)
+    _sk = (_tsc or {}).get("_notation_skipped") or {}
+    ck("a tie whose partners are not adjacent is the FILE's, and is named as such",
+       ("file", 3),
+       (list(_sk), len([r for r in _tg if "pitch" in r])),
+       list(_sk) == ["file"] and len([r for r in _tg if "pitch" in r]) == 3)
+    os.remove("data/sing/selftest-tiegap.musicxml")
     os.remove("data/sing/selftest-drum.musicxml")
 
     import mido as _mido
