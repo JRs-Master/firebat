@@ -3367,8 +3367,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     meter = None
     tempo_events = []  # (raw beats, bpm) — collected on part 0's walk
     parsed_parts = []
-    # (파트, 음고) → 그 음이 마지막으로 울린 parts_out 인덱스. 이음줄이 붙을 자리를 찾는 데
-    # 쓴다 — 바로 앞 행으로 찾으면 화음 안에서 못 찾는다.
+    # (파트, 음고) → 그 음이 최근에 울린 parts_out 인덱스들. 이음줄이 붙을 자리를 찾는 데
+    # 쓴다 — 바로 앞 행으로 찾으면 화음 안에서 못 찾고, 하나만 들고 있으면 성부가 겹칠 때
+    # 아직 울리는 긴 음을 집는다.
     tie_open = {}
     for pi, part in enumerate(parts):
         divisions = 1.0
@@ -3632,7 +3633,14 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                                   "program": f_prog, "pitch": gp,
                                                   "vel": max(0.1, nvel - 0.1), "gate": 0.9})
                             stolen = take
-                        base_row = {"beat": onset + stolen, "beats": max(0.125, dur - stolen),
+                        # 여기에도 `max(0.125, …)` 가 있었다 — MIDI 리더에서 걷은 그 바닥이
+                        # MusicXML 쪽에 그대로 남아 있었다. 그리고 여기서는 값이 틀리는 것으로
+                        # 끝나지 않는다: 음이 늘어나면 **끝이 다음 음의 시작과 안 맞아 이음줄
+                        # 연속성 검사가 깨지고**, 이어져야 할 음이 다시 때려진다. 실측
+                        # 2026-08-21 아로하: 기타 두 파트에서 이음줄 37개가 그렇게 안 붙었다.
+                        # 바닥은 divisions 한 칸 — 길이 0 만 막는다.
+                        base_row = {"beat": onset + stolen,
+                                    "beats": max(1.0 / max(1.0, divisions), dur - stolen),
                                     "part": f_part, "patch": _patch_for_program(f_prog),
                                     "program": f_prog, "pitch": midi, "vel": nvel,
                                     "gate": gate, "staff": n_staff}
@@ -3647,17 +3655,38 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         # 단선율 Base 는 277/277 로 정확했는데 Gtr1(화음 2,440음)은 +358,
                         # Piano 는 +141 이 남았다 — 그 차이가 전부 안 이어진 이음줄이다.
                         # 연속성은 확인한다: 끝나는 자리에서 시작하는 음만 같은 음이다.
-                        prev_ix = tie_open.get((f_part, midi))
-                        prev = parts_out[prev_ix] if prev_ix is not None else None
-                        if (tie and prev is not None
-                                and abs(prev["beat"] + prev["beats"] - onset) < 1e-6):
+                        # 한 파트에 성부가 여럿이면 **같은 음이 동시에 여러 번 울린다** —
+                        # 온음표를 붙들고 있는 성부와, 그 위에서 이음줄로 이어지는 성부. 마지막
+                        # 행 하나만 들고 있으면 그 온음표를 집고 연속성 검사에서 떨어진다.
+                        # 실측 2026-08-21 아로하: 38건이 전부 그것이었고 어긋남이 **정확히
+                        # +4.0박(한 마디) 32건**이었다 — 아직 울리는 긴 음의 끝이다.
+                        # 그래서 후보를 여럿 들고 **끝이 이 음의 시작과 맞는 것**을 고른다.
+                        cand = tie_open.get((f_part, midi)) or []
+                        prev = None
+                        if tie:
+                            for _ix in reversed(cand):
+                                _r = parts_out[_ix]
+                                if abs(_r["beat"] + _r["beats"] - onset) < 1e-6:
+                                    prev = _r
+                                    break
+                            if prev is None:
+                                # 이음줄 끝인데 이 자리에서 끝나는 같은 음이 없다. 파일 쪽
+                                # 사정이고(성부를 건너뛴 이음줄, 시작이 빠진 이음줄) 짝을 지어낼
+                                # 수는 없다 — 따로 친다. **다만 조용히 하지는 않는다**: 실측
+                                # 2026-08-21 아로하 811개 중 5개가 그랬고, 그걸 알아내려고 내가
+                                # 원본 XML 을 손으로 세야 했다. 응답이 말하면 그럴 일이 없다.
+                                skip_mark("이음줄(붙일 앞 음 없음)")
+                        if prev is not None:
                             prev["beats"] += dur
                         elif orn_kind:
                             parts_out.extend(_ornament_rows(
                                 base_row, orn_kind,
                                 *_diatonic_neighbors(cur_fifths, midi)))
                         else:
-                            tie_open[(f_part, midi)] = len(parts_out)
+                            # 최근 것부터 여덟만 — 성부가 그보다 많이 겹치는 악보는 없다.
+                            q = tie_open.setdefault((f_part, midi), [])
+                            q.append(len(parts_out))
+                            del q[:-8]
                             parts_out.append(base_row)
                     graces = [] if not is_stack else graces
                     if is_stack:
@@ -5912,6 +5941,32 @@ def action_selftest():
     _retired = sorted(set(RETIRED_KNOBS) & ({p for r in _rows.values()
                                              for p in r.get("params", [])} | _declared))
     ck("걷은 노브는 어느 선언 표면에도 안 남는다", [], _retired, not _retired)
+
+    # 한 파트에 성부가 여럿이면 같은 음이 동시에 울린다 — 온음표를 붙든 성부와, 그 위에서
+    # 이음줄로 이어지는 성부. 마지막 행 하나만 들고 있으면 그 온음표를 집고 검사에서 떨어진다
+    # (실측 아로하: 어긋남이 정확히 +4.0박, 즉 아직 울리는 긴 음의 끝이었다).
+    _vd = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+           # 성부 1: 온음표 C4 가 네 박 내내 울린다
+           '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+           '<voice>1</voice></note>'
+           '<backup><duration>4</duration></backup>'
+           # 성부 2: 같은 C4 를 두 박 + 이음줄로 두 박 더
+           '<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration>'
+           '<voice>2</voice><tie type="start"/></note>'
+           '<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration>'
+           '<voice>2</voice><tie type="stop"/></note>'
+           '</measure></part></score-partwise>')
+    with open("data/sing/selftest-voice.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_vd)
+    _vr = []
+    _vs, _ = musicxml_to_score("data/sing/selftest-voice.musicxml", parts_out=_vr)
+    _c4 = sorted((round(r["beat"], 3), round(r["beats"], 3))
+                 for r in _vr if r.get("pitch") == 60)
+    ck("성부가 겹쳐도 이음줄은 제 짝을 찾는다 (아직 울리는 긴 음을 집지 않는다)",
+       [(0.0, 4.0), (0.0, 4.0)], _c4, _c4 == [(0.0, 4.0), (0.0, 4.0)])
+    ck("…붙일 앞 음이 없는 이음줄은 조용히 넘기지 않고 고지한다", True,
+       (_vs or {}).get("_notation_skipped"), True)
+    os.remove("data/sing/selftest-voice.musicxml")
 
     # 이음줄은 **화음 안에서도** 이어져야 한다. 바로 앞 행으로 찾던 시절 앞 행이 다른 성부라
     # 못 찾았고, 그 음은 이어지는 대신 다시 때려졌다 — 악보가 한 음이라고 적은 자리에서.
