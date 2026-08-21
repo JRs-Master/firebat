@@ -2099,6 +2099,18 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
         # CC11 부풀림, CC1 모듈레이션(폰트 자기 비브라토 LFO), CC64, CC91/93 센드… 무엇을
         # 뜻하는지 우리가 알 필요가 없다. 아는 쪽은 폰트다. 셋만 고르던 것이 손목록이었다.
         marks = []
+        # 5 = program_change. 리더는 트랙 중간 악기 변경을 읽는데(`_prog_at`) 라이터가 트랙당
+        # 하나만 써서, 도중에 바뀐 악기가 첫 악기로 되돌아가고 있었다 — 실측 2026-08-21 비발디
+        # 사계 봄: 4,054음 중 **218음이 다른 악기로** 났다. 읽기만 고치고 쓰기를 안 따라간 자리.
+        _pg_now = int((first_note or {}).get("program", 0)) if part != "drum" else None
+        if part != "drum":
+            for e in rows:
+                if e.get("pedal") or "program" not in e:
+                    continue
+                _p = int(e["program"])
+                if _p != _pg_now:
+                    marks.append((int(round(e["beat"] * tpb)), 5, _p, 0))
+                    _pg_now = _p
         _cs = (ctl or {}).get(part) or {}
         _skip = {CC_VOLUME} if (mix and part in mix) else set()   # 호출자가 덮은 페이더만 막는다
         for _num, _series in (_cs.get("cc") or {}).items():
@@ -2141,10 +2153,14 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
             marks.append((start, 1, pitch, vel))
             marks.append((start + max(1, int(round(length * tpb))), 0, pitch, 0))
         # 컨트롤러가 음보다 먼저 — 같은 틱에서 CC11 이 note_on 뒤에 오면 그 음은 옛 값으로 난다.
-        marks.sort(key=lambda m: (m[0], -1 if m[1] == 4 else m[1]))
+        # 컨트롤러와 프로그램이 음보다 먼저 — 같은 틱에서 뒤에 오면 그 음은 옛 값으로 난다.
+        marks.sort(key=lambda m: (m[0], {4: -2, 5: -1}.get(m[1], m[1])))
         prev = 0
         for tick, kind, a, b in marks:
-            if kind == 4:
+            if kind == 5:
+                tr.append(mido.Message("program_change", channel=ch,
+                                       program=max(0, min(127, a)), time=tick - prev))
+            elif kind == 4:
                 tr.append(mido.Message("control_change", channel=ch, control=b, value=a,
                                        time=tick - prev))
             elif kind == 3:
@@ -2822,7 +2838,8 @@ def midi_to_parts(path):
                         # 된다는 뜻은 아니다.
                         b0 = warp(start / tpb)
                         rows.append({"beat": b0,
-                                     "beats": max(0.03, warp((start + dur) / tpb) - b0),
+                                     "beats": max(1.0 / tpb,
+                                                  warp((start + dur) / tpb) - b0),
                                      "part": "drum", "drum": name,
                                      "vel": round(vel / 127.0, 3)})
                 continue
@@ -2834,7 +2851,12 @@ def midi_to_parts(path):
             for note, start, dur, vel in by_ch[ch]:
                 prog = _prog_at(c.get("prog") or [], start)
                 b0 = warp(start / tpb)
-                row = {"beat": b0, "beats": max(0.125, warp((start + dur) / tpb) - b0),
+                # 길이는 **파일이 적은 그대로**. `max(0.125, …)` 가 박혀 있었다 — 32분음표
+                # 보다 짧은 음을 전부 늘리는 내 숫자였고, 트레몰로 곡에서는 그게 대부분이다
+                # (실측 2026-08-21 알함브라: 2,727음 중 2,082음이 0.125 로 늘어나 있었다).
+                # 바닥은 **그 파일의 틱 하나** — 길이 0 인 음만 막고 그 위는 안 건드린다.
+                row = {"beat": b0,
+                       "beats": max(1.0 / tpb, warp((start + dur) / tpb) - b0),
                        "part": part, "patch": _patch_for_program(prog), "program": prog,
                        "pitch": int(note), "vel": round(vel / 127.0, 3), "gate": 1.0}
                 if pan is not None:
@@ -5603,6 +5625,38 @@ def action_selftest():
        and abs(wrows[1]["beats"] - 4.0) < 1e-6)
     os.remove("data/sing/selftest-warp.mid")
 
+    # 짧은 음은 짧게. `max(0.125, …)` 가 박혀 있어 32분음표보다 짧은 음이 전부 늘어났다 —
+    # 트레몰로 곡에서는 그게 대부분이다(실측 알함브라 2,727음 중 2,082음). 그리고 트랙 중간
+    # 악기 변경은 리더만 읽고 라이터가 안 써서 218음이 첫 악기로 났다(비발디).
+    _sh = _mido.MidiFile(ticks_per_beat=480)
+    _st2 = _mido.MidiTrack(); _sh.tracks.append(_st2)
+    _st2.append(_mido.Message("program_change", channel=0, program=0, time=0))
+    _st2.append(_mido.Message("note_on", channel=0, note=60, velocity=90, time=0))
+    _st2.append(_mido.Message("note_off", channel=0, note=60, velocity=0, time=30))   # 1/16박
+    _st2.append(_mido.Message("program_change", channel=0, program=42, time=90))
+    _st2.append(_mido.Message("note_on", channel=0, note=64, velocity=90, time=0))
+    _st2.append(_mido.Message("note_off", channel=0, note=64, velocity=0, time=480))
+    _sh.save("data/sing/selftest-short.mid")
+    _srows, _sb, _sm, _se = midi_to_parts("data/sing/selftest-short.mid")
+    _short = next((r for r in _srows or [] if r.get("pitch") == 60), None)
+    ck("짧은 음은 적힌 길이 그대로 — 우리 바닥값으로 늘리지 않는다", 0.0625,
+       round((_short or {}).get("beats", 0), 4),
+       _short is not None and abs(_short["beats"] - 30 / 480.0) < 1e-9)
+    ck("트랙 중간 악기 변경을 읽는다", [0, 42],
+       sorted({r["program"] for r in _srows or [] if "pitch" in r}),
+       sorted({r["program"] for r in _srows or [] if "pitch" in r}) == [0, 42])
+    if write_midi(_srows, _sb, "data/sing/selftest-short-out.mid")[0]:
+        _pgs = [x.program for t in _mido.MidiFile("data/sing/selftest-short-out.mid").tracks
+                for x in t if x.type == "program_change"]
+        ck("…그리고 그 변경을 .mid 에도 쓴다 (읽기만 고치면 첫 악기로 되돌아간다)", [0, 42],
+           _pgs, _pgs == [0, 42])
+        os.remove("data/sing/selftest-short-out.mid")
+    _svr = action_verify({"action": "verify",
+                          "scoreMediaPath": "data/sing/selftest-short.mid"}).get("data") or {}
+    ck("…verify 가 통째로 통과한다", True, [_svr.get("exact"), _svr.get("notes")],
+       bool(_svr.get("exact")))
+    os.remove("data/sing/selftest-short.mid")
+
     # 같은 음이 아직 울리는데 또 켜지면 — 트레몰로·반복음·페달 아르페지오 — 값 하나로 들고
     # 있던 시절 나중 것이 앞엣것을 덮고 그 음은 소리 없이 사라졌다(캐논 2,241음 중 209음).
     _ov = _mido.MidiFile(ticks_per_beat=480)
@@ -6730,17 +6784,45 @@ def action_verify(inp):
     by_place = {}
     for pit, at, dur, vel, pg, dr in src:
         by_place.setdefault((pit, at, dr), []).append((dur, vel, pg))
-    changed = []
+    # 같은 음 둘이 겹치면 **어느 note-off 가 어느 것을 닫는지 MIDI 가 정하지 않는다.** 우리도
+    # 원본도 먼저 켠 것부터 닫지만(FIFO), 출력의 note-off 순서가 원본과 다르면 길이가 서로
+    # 바뀐 채로 나온다 — 울리는 총 시간도 세기도 같고, 드럼은 원샷이라 들리지도 않는다.
+    # 실측 2026-08-21 Take Five: 5,435음 중 넷이 그것이었다. 결함이 아니라 규격의 모호성이라
+    # `changed` 와 갈라 놓는다 — 안 그러면 음악적으로 같은 파일이 영원히 빨강이다.
+    # 판정은 **음고별로 시작·끝·세기 집합**을 본다. 짝이 바뀐 것뿐이면 세 집합이 그대로다 —
+    # 시작 시각으로만 묶으면 끝이 서로 바뀐 쌍(시작이 다른 쌍)을 놓친다(실측 Take Five: 넷 중
+    # 둘만 잡혔다).
+    def _shape(rows_):
+        out = {}
+        for pit, at, dur, vel, _pg, dr in rows_:
+            k = (pit, dr)
+            e = out.setdefault(k, {"on": [], "off": [], "vel": []})
+            e["on"].append(at)
+            e["off"].append(_tick(at + dur))
+            e["vel"].append(vel)
+        for e in out.values():
+            for v in e.values():
+                v.sort()
+        return out
+
+    s_shape, g_shape = _shape(src), _shape(got)
+    changed, ambiguous = [], []
     for pit, at, dur, vel, pg, dr in added:
         was = by_place.get((pit, at, dr))
-        if was:
+        swapped = s_shape.get((pit, dr)) == g_shape.get((pit, dr))
+        if swapped:
+            ambiguous.append({"pitch": pit, "at": at})
+        elif was:
             changed.append({"pitch": pit, "at": at,
                             "was": {"dur": was[0][0], "vel": was[0][1], "program": was[0][2]},
                             "now": {"dur": dur, "vel": vel, "program": pg}})
+    _amb_pitch = {(c["pitch"],) for c in ambiguous}
     lost = [{"pitch": p, "at": t, "dur": d, "vel": v, "program": g, "drum": dr}
             for p, t, d, v, g, dr in missing
-            if (p, t, dr) not in by_place or not any(
-                c["pitch"] == p and c["at"] == t for c in changed)]
+            # 짝이 바뀐 음고는 사라진 게 아니다 — 시작·끝·세기 집합이 그대로임을 위에서 봤다.
+            if s_shape.get((p, dr)) != g_shape.get((p, dr))
+            and ((p, t, dr) not in by_place
+                 or not any(c["pitch"] == p and c["at"] == t for c in changed))]
     src_cc = sorted({c for _ch, c in src_ccs})
     got_cc = sorted({c for _ch, c in got_ccs})
     exact = not lost and not changed and len(src) == len(got) and src_cc == got_cc
@@ -6757,11 +6839,20 @@ def action_verify(inp):
                         "dropped": [c for c in src_cc if c not in got_cc],
                         "added": [c for c in got_cc if c not in src_cc]},
         "lost": lost[:40],
+        "lostCount": len(lost),
         "changed": changed[:40],
+        "changedCount": len(changed),
+        # 규격이 답을 안 정한 자리 — 결함이 아니다. 세면서 따로 둔다.
+        "ambiguousCount": len(ambiguous),
+        "ambiguous": ambiguous[:10],
     }
     if exact:
         data["note"] = ("음표·길이·세기·악기·컨트롤러가 원본과 같습니다 — 파일 그대로 "
                         "연주되고 소리는 폰트가 정합니다.")
+        if ambiguous:
+            data["note"] += (f" (겹친 같은 음 {len(ambiguous)}쌍은 어느 note-off 가 어느 것을 "
+                             "닫는지 MIDI 가 정하지 않는 자리라 짝이 바뀔 수 있습니다 — 울리는 "
+                             "시간도 세기도 같습니다.)")
     else:
         why = []
         if data["notes"]["source"] != data["notes"]["played"]:
