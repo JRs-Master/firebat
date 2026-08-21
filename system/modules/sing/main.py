@@ -2133,7 +2133,10 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
                 marks.append((b1, 3, 0, 0))
             start = int(round(e["beat"] * tpb))
             pitch = DRUM_NOTE.get(e["drum"], 42) if part == "drum" else e["pitch"]
-            vel = int(round(127 * float(e.get("vel", 0.71))))
+            # 벨로시티는 **바이트 그대로** 나간다 — 곡선도 스케일도 없다. 세게 친 음이 얼마나
+            # 커지고 어느 샘플 레이어를 고르는지는 폰트가 정한다(SF2 기본 모듈레이터
+            # velocity → attenuation). 여기서 우리가 손대면 그 판단을 두 번 하는 것이 된다.
+            vel = int(round(127 * float(e.get("vel", XML_DEFAULT_VEL))))
             length = e["beats"] * float(e.get("gate", 1.0))
             marks.append((start, 1, pitch, vel))
             marks.append((start + max(1, int(round(length * tpb))), 0, pitch, 0))
@@ -3007,8 +3010,17 @@ _XML_KIND = {"major": "", "minor": "m", "dominant": "7", "dominant-seventh": "7"
              "major-seventh": "maj7", "minor-seventh": "m7", "diminished": "dim",
              "augmented": "aug", "suspended-second": "sus2", "suspended-fourth": "sus4",
              "major-sixth": "6", "minor-sixth": "m6", "": ""}
-_XML_DYN = {"ppp": 0.2, "pp": 0.3, "p": 0.45, "mp": 0.55, "mf": 0.65,
-            "f": 0.78, "ff": 0.9, "fff": 0.97}
+# MusicXML 규격 §sound: `dynamics` 는 **벨로시티 90 에 대한 백분율**이고, 아무것도 안 적힌
+# 음의 벨로시티도 90 이다. 그래서 우리 기본값은 이 하나에서 나온다 — 내가 고른 수가 아니라.
+XML_DEFAULT_VEL = 90 / 127.0        # ≈ 0.709
+
+# 기호(p·f)만 있고 `<sound dynamics>` 가 없는 파일용 **폴백**. 규격은 기호와 벨로시티의 대응을
+# 정하지 않는다 — 정한 것은 표기 프로그램이고, 아래는 그중 가장 널리 깔린 MuseScore 의 값이다
+# (velocity/127). ⚠️ 여기 있던 표는 **내가 지어낸 숫자**였고 mf 를 0.65 로 두어 규격 기본값
+# 0.709 와도 어긋났다(사용자 2026-08-21: "니가 만든 숫자인가"). 파일이 숫자를 말하면 이 표는
+# 안 쓰인다 — 그게 정상이고, 이건 안 말한 파일에만 서는 자리다.
+_XML_DYN = {"ppp": 16 / 127.0, "pp": 33 / 127.0, "p": 49 / 127.0, "mp": 64 / 127.0,
+            "mf": 80 / 127.0, "f": 96 / 127.0, "ff": 112 / 127.0, "fff": 126 / 127.0}
 
 
 def _strip_ns(tag):
@@ -3379,10 +3391,23 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     snd = kid(el, "sound")
                     if snd is not None and snd.get("tempo") and pi == 0:
                         tempo_events.append((m_base + cur, float(snd.get("tempo"))))
+                    # 파일이 숫자를 말하면 그 숫자를 쓴다. `<sound dynamics="N">` = 벨로시티 90 에
+                    # 대한 백분율(규격). 기호를 우리 표로 옮기는 것보다 이쪽이 먼저다 — 월광에
+                    # 27개가 있는데 안 읽고 있었다.
+                    if snd is not None and snd.get("dynamics"):
+                        try:
+                            _sv = max(0.0, min(1.0, 90.0 * float(snd.get("dynamics"))
+                                               / 100.0 / 127.0))
+                            vel_by_staff[d_staff] = _sv
+                            dyn_events.append((m_base + cur, _sv, d_staff))
+                        except ValueError:
+                            pass
                     dt = kid(el, "direction-type")
                     if dt is not None:
                         dyn = kid(dt, "dynamics")
-                        if dyn is not None and len(dyn):
+                        # 기호는 파일이 숫자를 안 말했을 때만 — 말했으면 그 값이 이미 섰다.
+                        if (dyn is not None and len(dyn)
+                                and not (snd is not None and snd.get("dynamics"))):
                             v_new = _XML_DYN.get(_strip_ns(dyn[0].tag),
                                                  vel_by_staff.get(d_staff))
                             vel_by_staff[d_staff] = v_new
@@ -3477,13 +3502,20 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 nom = (12 * (d_oct + 1) + _XML_STEP.get(d_step, 0)
                                        + shift + transpose)
                                 notes.append({"midi": nom, "beats": dur, "syl": usyl,
-                                              "vel": uv if uv is not None else 0.65,
+                                              "vel": (uv if uv is not None
+                                                      else XML_DEFAULT_VEL),
                                               "_at": onset, "_st": u_staff, "_sung": dur,
                                               "_unp": True})
                         elif dname and parts_out is not None:
-                            parts_out.append({"beat": onset, "beats": 0.25, "part": "drum",
-                                              "drum": dname,
-                                              "vel": uv if uv is not None else 0.7})
+                            # `_src` = 이 드럼이 원래 어느 파트의 것인가. 드럼은 전부 한 채널로
+                            # 모이므로 파트 이름을 잃는데, **셈여림 쐐기는 파트 단위로 걸린다** —
+                            # 실측 2026-08-21 아로하: 크레셴도 셋이 전부 Drums 파트에 있었고
+                            # 램프가 `part == f_part` 로만 찾아 셋 다 버려졌다.
+                            # 길이도 적힌 대로. 0.25 가 박혀 있었다(MIDI 리더와 같은 자리).
+                            parts_out.append({"beat": onset, "beats": max(0.03, dur),
+                                              "part": "drum", "_src": f_part, "drum": dname,
+                                              "vel": (uv if uv is not None
+                                                      else XML_DEFAULT_VEL)})
                         elif parts_out is not None:
                             skip_mark("드럼(매핑 없음)")
                         if not st:
@@ -3559,7 +3591,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         last_onset = onset
                     n_staff = _xt(el, "staff", "1") or "1"
                     st_vel = vel_by_staff.get(n_staff, vel_by_staff.get("1"))
-                    nvel = min(1.0, (st_vel if st_vel is not None else 0.65) + vboost)
+                    nvel = min(1.0, (st_vel if st_vel is not None else XML_DEFAULT_VEL)
+                               + vboost)
                     if parts_out is not None:
                         stolen = 0.0
                         if graces and not is_stack:
@@ -3625,7 +3658,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                 continue
             wstop = next((t for t, k, st in wedges[wi + 1:] if k == "stop" and st == wstaff),
                          wstart + 4.0)
-            v0 = 0.65
+            v0 = XML_DEFAULT_VEL
             for t, v, st in dyn_events:
                 if t <= wstart and st == wstaff:
                     v0 = v
@@ -3634,8 +3667,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                       min(1.0, max(0.1, v0 + (0.15 if wkind == "c" else -0.15))))
             span = max(1e-9, wstop - wstart)
             for row in (parts_out or []):
-                if (row.get("part") == f_part and not row.get("pedal")
-                        and row.get("staff") == wstaff and wstart <= row["beat"] < wstop):
+                # 드럼 행은 `part` 가 "drum" 이라 자기 파트 이름을 `_src` 로 들고 있다.
+                if ((row.get("part") == f_part or row.get("_src") == f_part)
+                        and not row.get("pedal")
+                        and (row.get("staff") == wstaff or row.get("drum"))
+                        and wstart <= row["beat"] < wstop):
                     row["vel"] = round(v0 + (v1 - v0) * (row["beat"] - wstart) / span, 3)
             for nrow in notes:
                 if nrow.get("_st") == wstaff and wstart <= nrow.get("_at", -1) < wstop:
@@ -5756,6 +5792,26 @@ def action_selftest():
     _FONT_ALIASES.clear()
     os.remove(_fx)
 
+    # `<sound dynamics="N">` = 파일이 벨로시티를 **숫자로** 말하는 자리(규격: 90 에 대한 백분율).
+    # 월광에 27개가 있는데 안 읽고 기호를 우리 표로 옮기고 있었다 — 파일이 말한 것을 두고
+    # 우리 수를 쓰던 자리다.
+    _dyndoc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<direction><direction-type><dynamics><f/></dynamics></direction-type>'
+               '<sound dynamics="120"/></direction>'
+               '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>'
+               '</note></measure></part></score-partwise>')
+    with open("data/sing/selftest-dyn.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_dyndoc)
+    _drow = []
+    musicxml_to_score("data/sing/selftest-dyn.musicxml", parts_out=_drow)
+    _want = 90.0 * 120 / 100 / 127.0
+    _got = next((r["vel"] for r in _drow if "pitch" in r), None)
+    ck("파일이 숫자로 말한 세기를 그대로 쓴다 (<sound dynamics>, 기호 표보다 먼저)",
+       round(_want, 4), round(_got or 0, 4), _got is not None and abs(_got - _want) < 1e-9)
+    ck("…그리고 그 값은 기호 f 의 표값과 다르다 — 실제로 파일 쪽을 읽었다는 뜻", True,
+       [round(_want, 4), round(_XML_DYN["f"], 4)], abs(_want - _XML_DYN["f"]) > 0.01)
+    os.remove("data/sing/selftest-dyn.musicxml")
+
     # 선언 표면 셋이 서로를 가리킨다 — enum · 카탈로그 행 · input 속성. 어긋나면 조용하지
     # 않고 **계단이 거부한다**: `verify` 와 `font` 는 enum 에 넣고 행을 안 만들어서
     # get_action_schema 가 "no catalog entry" 로 막았다(2026-08-21 실측, 실호출에서 잡힘).
@@ -6005,12 +6061,19 @@ def action_selftest():
     xsc, xerr = musicxml_to_score("data/sing/selftest-x.musicxml")
     ck("MusicXML parses — the electronic score standard", None, xerr, xerr is None)
     if xsc:
+        # ⚠️ 벨로시티는 **우리가 고른 수가 아니어야 한다.** 여기 0.3 이 박혀 있었는데 그건 내가
+        # 지어낸 값이었다(사용자 2026-08-21: "니가 만든 숫자인가"). pp 는 표에서 나오고, 그 표는
+        # 널리 깔린 표기 프로그램의 값이지 우리 취향이 아니다 — 그래서 표를 참조해 단언한다.
         ck("MusicXML carries what MIDI only implies (meter, tempo, dynamics, lyric)",
-           (3, 80.0, 0.3, "사"),
-           (xsc.get("meter"), xsc.get("bpm"), xsc["notes"][0].get("vel"),
+           (3, 80.0, round(_XML_DYN["pp"], 4), "사"),
+           (xsc.get("meter"), xsc.get("bpm"), round(xsc["notes"][0].get("vel"), 4),
             xsc["notes"][0]["syl"]),
            xsc.get("meter") == 3 and xsc.get("bpm") == 80.0
-           and xsc["notes"][0].get("vel") == 0.3 and xsc["notes"][0]["syl"] == "사")
+           and abs(xsc["notes"][0].get("vel") - _XML_DYN["pp"]) < 1e-9
+           and xsc["notes"][0]["syl"] == "사")
+        # 그리고 규격이 정한 기본값 — 아무 셈여림도 안 적힌 음은 벨로시티 90 이다.
+        ck("아무것도 안 적힌 음의 세기는 규격이 정한다 (velocity 90)", 90,
+           round(XML_DEFAULT_VEL * 127), round(XML_DEFAULT_VEL * 127) == 90)
         # A rest is a row of its own now. It used to be added to the note before it, which held
         # every phrase through its own breath and — with nothing before it — deleted the intro.
         rows = [(n.get("note", "rest"), n["beats"]) for n in xsc["notes"]]
