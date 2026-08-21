@@ -58,6 +58,25 @@ def note_freq(name):
     return 440.0 * (2.0 ** ((midi - 69) / 12.0))
 
 
+# 숫자 축 — 0~N 다이얼 하나에 이유 하나. 이름은 SCORE_KNOBS 에서 파생된다(아래).
+NUMERIC_AXES = (("laidback", 0.5, "0 = 격자 위, 0.05 = R&B 의 그 여유"),
+                ("gate", 1.0, "0.55 = 끊어 치기, 1.0 = 이어 붙이기"),
+                ("double", 1.0, "0 = 한 대, 0.7 = 좌우로 벌린 두 대"),
+                ("fill", 1.0, "0 = 안 받아침, 0.7 = 트로트 아코디언처럼 대답"),
+                ("vary", 1.0, "0 = 매 마디 똑같이, 0.35 = 네 마디로 숨 쉬며"))
+
+# `parse_score` 가 **악보 안에서** 읽는 노브 전부. 파일 악보(scoreMediaPath)로 부르면 악보 dict 는
+# 파일에서 나오므로, 호출자가 top-level 로 준 이 이름들을 거기 얹어 줘야 한다.
+#
+# ⚠️ 이게 손목록이던 시절 열 개만 적혀 있었고, 8/20 에 축으로 열어 준 여덟(mix·orn·chordShape·
+# laidback·gate·double·fill·vary)이 전부 빠져 있었다. 선언은 `[render]` 라고 광고하는데 코드가
+# 조용히 버렸다 — 실측 8/21: `mix` 를 평평하게 넘긴 렌더가 기본값 렌더와 **바이트까지 동일**했다.
+# 그래서 지금은 숫자 축 표가 이 목록에서 파생되고, 감사가 둘의 어긋남을 잡는다.
+SCORE_KNOBS = ("style", "band", "drumPattern", "bpm", "humanize", "pedal", "voicing",
+               "swing", "comp", "bassline", "mix", "orn", "chordShape",
+               ) + tuple(k for k, _, _ in NUMERIC_AXES)
+
+
 def parse_score(score):
     """Normalize {bpm, notes[], chords?, style?, band?, meter?, swing?, comp?, bassline?}
     -> (spb, events, chords, style, band, feel, err).
@@ -219,11 +238,7 @@ def parse_score(score):
                 f"chordShape {chord_shape!r} 를 모릅니다 — 가능한 값: {' | '.join(CHORD_SHAPES)}")
     # The numeric axes share one gate because they share one shape: a 0~N dial with a reason.
     axes = {}
-    for key, hi, why in (("laidback", 0.5, "0 = 격자 위, 0.05 = R&B 의 그 여유"),
-                         ("gate", 1.0, "0.55 = 끊어 치기, 1.0 = 이어 붙이기"),
-                         ("double", 1.0, "0 = 한 대, 0.7 = 좌우로 벌린 두 대"),
-                         ("fill", 1.0, "0 = 안 받아침, 0.7 = 트로트 아코디언처럼 대답"),
-                         ("vary", 1.0, "0 = 매 마디 똑같이, 0.35 = 네 마디로 숨 쉬며")):
+    for key, hi, why in NUMERIC_AXES:
         raw = score.get(key)
         if raw is None:
             continue
@@ -4357,10 +4372,7 @@ def action_render(inp):
             # ONE call. While band lived only inside `score`, composing a fresh score was the
             # only one-call path to "피아노로" — measured: the model did exactly that (turn 31,
             # 48s 자작 while the shelf held the real piece and scores had just listed it).
-            for knob in ("style", "band", "drumPattern", "swing", "comp", "bassline",
-                         "bpm", "humanize", "pedal", "voicing"):
-                if inp.get(knob) is not None:
-                    score[knob] = inp[knob]
+            apply_top_level_knobs(score, inp)
             parsed_from = media_path
         else:
             ext = media_path.rsplit(".", 1)[-1].lower() if "." in media_path else "?"
@@ -4789,6 +4801,17 @@ def action_preview(inp):
     return {"success": True, "data": {"_mediaImport": imports, "cached": False,
                                       "note": "악보를 소리로 구웠습니다 — 브라우저는 MIDI 를 "
                                               "직접 재생하지 못합니다"}}
+
+
+def apply_top_level_knobs(score, inp):
+    """파일에서 읽어 온 악보 위에 호출자가 top-level 로 준 노브를 얹는다. 명시가 파일을 이긴다.
+
+    함수로 빼 둔 이유는 하나 — **테스트가 닿게 하려고**. 인라인 루프이던 시절 목록이 여덟 개
+    뒤처져 있었고, 그 사실을 알아챌 그물이 없었다."""
+    for knob in SCORE_KNOBS:
+        if inp.get(knob) is not None:
+            score[knob] = inp[knob]
+    return score
 
 
 def action_levels(inp):
@@ -5366,6 +5389,25 @@ def action_selftest():
     ck("두 엔진이 같은 balance 를 뜻한다", True,
        [round(_ratio("chord"), 3), MIX["chord"]],
        abs(_ratio("chord") - mix_of("chord")) < 0.015)
+
+    # 파일 악보 위에 얹히는 노브 — 목록이 뒤처지면 선언이 광고한 축이 **조용히** 사라진다.
+    _num = {k for k, _, _ in NUMERIC_AXES}
+    ck("숫자 축은 전부 파일 악보에도 얹힌다 (표가 목록에서 파생)", [],
+       sorted(_num - set(SCORE_KNOBS)), _num <= set(SCORE_KNOBS))
+    _sc = {"bpm": 100, "notes": [{"syl": "라", "note": "C4", "beats": 1}]}
+    _got = apply_top_level_knobs(dict(_sc), {"mix": {"chord": 1.0}, "orn": "pinch",
+                                             "gate": 0.5, "vary": 0.0, "style": "metal"})
+    ck("…그리고 실제로 얹힌다", ["gate", "mix", "orn", "style", "vary"],
+       sorted(k for k in _got if k not in _sc),
+       sorted(k for k in _got if k not in _sc) == ["gate", "mix", "orn", "style", "vary"])
+    # 파일이 이미 말한 것을 호출자가 덮는다 — 명시가 파일을 이긴다.
+    ck("…호출자가 파일을 이긴다", 140,
+       apply_top_level_knobs({"bpm": 99}, {"bpm": 140})["bpm"],
+       apply_top_level_knobs({"bpm": 99}, {"bpm": 140})["bpm"] == 140)
+    # 안 준 것은 안 건드린다.
+    ck("…안 준 노브는 파일 값 그대로", 99,
+       apply_top_level_knobs({"bpm": 99}, {"style": "rock"})["bpm"],
+       apply_top_level_knobs({"bpm": 99}, {"style": "rock"})["bpm"] == 99)
 
     # 캐스팅 보고는 **파일이 부르는 이름**으로. 내부 행 id(p1·p3)를 그대로 대면 읽는 쪽이
     # 어느 성부인지 알 수 없다 — 8/21 실측에서 응답이 "chord ← p3" 라고만 말했다.
