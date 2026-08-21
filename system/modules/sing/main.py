@@ -2623,19 +2623,29 @@ def font_inventory(path):
         # 묻는다** — INAM 과 같은 자리, 같은 이유. preset 존과 instrument 존의 감쇠는 더해진다.
         atten = {}
         for pi, (name, preset, bank, bagndx) in enumerate(phdr[:-1]):
-            if bank != 0:
+            if bank != 0 or preset in atten:
                 continue
-            cb, end = 0.0, (phdr[pi + 1][3] if pi + 1 < len(phdr) else len(pbag))
+            end = phdr[pi + 1][3] if pi + 1 < len(phdr) else len(pbag)
+            glob, zone = 0.0, None
+            # 존마다 값을 **더하면 안 된다** — 벨로시티·건반 스플릿이 많은 프리셋일수록 커져서
+            # 137 dB 같은 무음 값이 나온다(실측 8/21, 내 첫 구현). 규격상 감쇠는 프리셋의 글로벌
+            # 존 + 그 존이 가리키는 instrument 의 글로벌 존이 더해지는 것이고, 나머지 존은
+            # 대안이지 누적이 아니다. 대표로 **첫 실제 존** 하나만 본다.
             for bi in range(bagndx, min(end, len(pbag))):
                 gs = pbag[bi][0]
                 ge = pbag[bi + 1][0] if bi + 1 < len(pbag) else len(pgen)
+                cb, ref = 0.0, None
                 for gi in range(gs, min(ge, len(pgen))):
                     op, amt = pgen[gi]
                     if op == 48:
-                        cb += amt
-                    elif op == 41 and amt < len(inst):
-                        cb += inst_atten(amt)
-            atten.setdefault(preset, round(cb / 10.0, 2))   # 센티벨 → dB
+                        cb = float(amt)
+                    elif op == 41:
+                        ref = amt
+                if ref is None:
+                    glob = cb                      # instrument 를 안 가리키면 글로벌 존
+                elif zone is None:
+                    zone = cb + (inst_atten(ref) if ref < len(inst) else 0.0)
+            atten[preset] = round((glob + (zone or 0.0)) / 10.0, 2)   # 센티벨 → dB
         out = ({"programs": programs, "kits": kits, "name": title, "attenDb": atten}
                if programs or kits else None)
     except (OSError, ValueError, struct.error, IndexError):
