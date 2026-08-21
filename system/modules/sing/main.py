@@ -4233,6 +4233,194 @@ def read_wav_mono(path):
     return x
 
 
+# ── 크기 맞추기 ────────────────────────────────────────────────────────────────────────────────
+# 사용자: "인코딩할때 볼륨을 일정하게 하면 되는거 아닌가". 그것이 라우드니스 정규화이고,
+# 재생기의 "볼륨 일정하게"(Sound Check / ReplayGain)와 같은 기계다.
+#
+# ⚠️ 걷어낸 피크 정규화와 **다른 물건**이다. 피크 정규화는 게인을 표본 하나(제일 큰 순간)로
+# 정해서, 폰트 넷이 전부 −0.45 dBFS 로 나오고 어느 쪽이 큰 폰트인지 사라졌다. 이쪽은
+# **선언한 목표값**으로 맞춘다 — 곡이 달라도 같은 크기로 들리는 것이 목적이고, 그래서
+# 오히려 비교가 된다(같은 크기에서 비교해야 음색이 보인다. 큰 쪽이 늘 좋게 들린다).
+# 폰트끼리의 원래 레벨 차이는 `levels` 액션이 그대로 잰다 — 잃는 게 아니라 자리를 옮긴다.
+#
+# 실측 2026-08-21, 우리 여덟 렌더: 아로하 RMS −35 dBFS · 월광 −58 dBFS. **23.7 dB 차이**라
+# 월광은 재생기를 100% 로 올려도 안 들렸다. 곡이 pp 인 것은 맞지만 23 dB 는 연주의 여림이
+# 아니라 우리 출력의 결손이다.
+# 목표값은 관례에서 온다(사용자: "89dbSPL이 기본값이라는데"). ReplayGain 1.0 의 기준
+# 레벨이 **89 dB SPL** 이고, 같은 기준을 R128 로 다시 쓴 것이 ReplayGain 2.0 의 **−18 LUFS**
+# 다. 스트리밍 쪽은 더 크게 잡지만(Spotify·YouTube −14 · Apple −16) 그건 팝을 앞세운 값이고,
+# 우리는 솔로 피아노가 섞이므로 다이내믹이 남는 −18 이 맞다 — 목표가 높을수록 천장에 먼저
+# 걸려서 조용한 곡이 목표에 못 미친 채 나간다.
+LUFS_TARGET = -18.0
+PEAK_CEILING_DB = -1.0  # 목표를 맞추다 넘칠 것 같으면 여기서 멈춘다(자르지 않는다)
+
+
+# BS.1770 의 K-weighting 두 단. 규격이 싣는 것은 **48kHz 계수표**뿐이라 다른 표본율에서는
+# 같은 아날로그 원형을 그 율로 다시 설계해야 한다 — 표를 베끼면 44.1k 에서 조용히 틀린다.
+# 아래 상수 넷이 규격이 정한 원형이고, 계수는 RBJ 공식으로 파생된다(48k 에서 규격의 표와
+# 일치하는지는 selftest 가 대조한다).
+_K_SHELF = (1681.974450955533, 0.7071752369554196, 3.999843853973347)   # f0, Q, +dB
+_K_HPF = (38.13547087602444, 0.5003270373238773)                       # f0, Q
+
+
+def _kweight_biquads(sr):
+    """(b, a) 두 쌍 — 고역 셸프 다음 고역 통과. a[0] 로 이미 정규화돼 있다.
+
+    ⚠️ 이 셸프는 RBJ 쿡북의 고역 셸프가 **아니다**. 처음에 그걸로 설계했더니 48k 계수가
+    규격 표와 최대 0.056 어긋났다(대조 검사가 잡았다). BS.1770 은 자기 아날로그 원형을
+    쓰고, 쌍선형 변환 뒤 `Vb = Vh**0.4996667…` 라는 그 원형 고유의 지수가 남는다.
+    고역 통과 쪽도 규격은 분자를 [1, −2, 1] 로 두므로 RBJ 의 (1+cos w0)/2 배율을 안 쓴다
+    (−0.043 dB 상수차라 안 잡히기 쉽다 — 그래서 표와 대조한다).
+    """
+    out = []
+    f0, q, gdb = _K_SHELF
+    K = math.tan(math.pi * f0 / sr)
+    vh = 10.0 ** (gdb / 20.0)
+    vb = vh ** 0.499666774155
+    den = 1.0 + K / q + K * K
+    out.append(([(vh + vb * K / q + K * K) / den,
+                 2.0 * (K * K - vh) / den,
+                 (vh - vb * K / q + K * K) / den],
+                [1.0, 2.0 * (K * K - 1.0) / den, (1.0 - K / q + K * K) / den]))
+    f0, q = _K_HPF
+    K = math.tan(math.pi * f0 / sr)
+    den = 1.0 + K / q + K * K
+    out.append(([1.0, -2.0, 1.0],
+                [1.0, 2.0 * (K * K - 1.0) / den, (1.0 - K / q + K * K) / den]))
+    return out
+
+
+def _kweight_ir(sr, n=8192):
+    """K-weighting 을 임펄스 응답으로 — 두 biquad 를 임펄스에 한 번 돌려서 만든다.
+
+    재귀 필터라 numpy 로 곧장 못 돌리는데 scipy 는 이 서버에 없고 90MB 를 들일 값도 아니다.
+    대신 **응답이 짧다**는 성질을 쓴다: 38Hz 고역통과의 시정수가 4.2ms 라 8,192탭(170ms)
+    이면 남는 게 없다. 그 뒤는 FFT 합성곱이고 numpy 만으로 빠르다.
+    """
+    out = np.zeros(n, dtype=np.float64)
+    out[0] = 1.0
+    for b, a in _kweight_biquads(sr):
+        y = np.empty(n, dtype=np.float64)
+        x1 = x2 = y1 = y2 = 0.0
+        for i in range(n):
+            xv = out[i]
+            yv = b[0] * xv + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2
+            y[i] = yv
+            x2, x1, y2, y1 = x1, xv, y1, yv
+        out = y
+    return out
+
+
+def _hop_energy(x1, sr, hop):
+    """한 채널을 K-weighting 하고 hop(100ms) 칸마다 제곱합을 모은다.
+
+    조각으로 흘려 보낸다. 전 파형을 float64 로 펼치면 384초 스테레오가 그것만 295MB 이고,
+    거기에 필터 출력까지 얹히면 RSS 655MB 였다(실측 2026-08-21) — 949MB 서버에서 렌더와
+    겹치면 OOM 이다. 조각 크기를 hop 의 배수로 잡아 두면 칸 합계가 reshape 한 번이다.
+    """
+    ir = _kweight_ir(sr)
+    m = len(ir)
+    chunk = hop * 16
+    nfft = 1
+    while nfft < chunk + m - 1:
+        nfft <<= 1
+    H = np.fft.rfft(ir, nfft)
+    n = len(x1)
+    acc = np.zeros(n // hop + 1)          # 마지막 모자란 칸은 아래에서 버린다
+    tail = np.zeros(m - 1)
+    for i in range(0, n, chunk):
+        seg = np.asarray(x1[i:i + chunk], dtype=np.float64)
+        y = np.fft.irfft(np.fft.rfft(seg, nfft) * H, nfft)[:len(seg) + m - 1]
+        y[:m - 1] += tail
+        tail = np.zeros(m - 1)
+        tail[:len(y) - len(seg)] = y[len(seg):]
+        sq = y[:len(seg)] ** 2
+        j0 = i // hop
+        full = len(sq) // hop
+        if full:
+            acc[j0:j0 + full] += sq[:full * hop].reshape(full, hop).sum(axis=1)
+        if len(sq) % hop:
+            acc[j0 + full] += sq[full * hop:].sum()
+    return acc[:n // hop]                 # 온전한 칸만
+
+
+def integrated_lufs(x, sr):
+    """통합 라우드니스(LUFS). 400ms 블록 · 100ms 간격 · 두 단 게이팅(−70 절대, −10 상대)."""
+    if x.ndim == 1:
+        x = x[:, None]
+    hop = int(round(0.1 * sr))
+    bl = 4 * hop
+    if x.shape[0] < bl:
+        return None
+    per = [_hop_energy(x[:, c], sr, hop) for c in range(x.shape[1])]
+    nb = min(len(p) for p in per) - 3
+    if nb < 1:
+        return None
+    # 블록 = 이웃한 네 칸. G = 1.0 (L/R) — 서라운드가 아니라 가중이 필요 없다.
+    z = np.zeros((nb, len(per)))
+    for c, p in enumerate(per):
+        cs = np.concatenate(([0.0], np.cumsum(p)))
+        z[:, c] = (cs[np.arange(nb) + 4] - cs[np.arange(nb)]) / bl
+    tot = z.sum(axis=1)
+
+    def _l(rows):
+        e = tot[rows].mean() if len(rows) else 0.0
+        return -0.691 + 10 * math.log10(e) if e > 0 else -float("inf")
+
+    with np.errstate(divide="ignore"):
+        lj = np.where(tot > 0, -0.691 + 10 * np.log10(np.maximum(tot, 1e-300)),
+                      -float("inf"))
+    keep = np.flatnonzero(lj > -70.0)
+    if not len(keep):
+        return None
+    keep2 = keep[lj[keep] > _l(keep) - 10.0]
+    if not len(keep2):
+        keep2 = keep
+    v = _l(keep2)
+    return None if v == -float("inf") else v
+
+
+def _peak_of(x, chunk=1 << 20):
+    """조각 최대값 — abs() 사본을 통째로 만들지 않는다."""
+    pk = 0.0
+    for i in range(0, len(x), chunk):
+        pk = max(pk, float(np.abs(x[i:i + chunk]).max()))
+    return pk
+
+
+def match_loudness(x, sr=None):
+    """목표 라우드니스로 올린다. 넘칠 것 같으면 천장에서 멈추고, 멈췄다고 말한다.
+
+    ⚠️ **받은 배열을 제자리에서 곱한다** — 이 함수를 부르는 곳은 파일을 쓰기 직전이고,
+    그 뒤로 그 파형을 다시 쓰는 데가 없다. 사본을 뜨면 384초 스테레오마다 147MB 다.
+
+    자르지 않는다 — 리미터는 소리를 바꾸는 물건이라 '악보 그대로'와 어긋난다. 천장에
+    걸리면 목표에 못 미친 채로 두고 응답이 몇 dB 모자랐는지 적는다. 재생기의 클리핑
+    방지와 같은 처신이다(ReplayGain 도 넘칠 때 게인을 줄이지 리미터를 안 건다).
+    """
+    sr = sr or SR
+    x = np.asarray(x, dtype=np.float32)
+    lu = integrated_lufs(x, sr)
+    peak = _peak_of(x)
+    rep = {"target": LUFS_TARGET, "measured": None if lu is None else round(lu, 1),
+           "gainDb": 0.0, "peakDbfs": None, "ceilingHit": False}
+    if lu is None or peak <= 0:
+        rep["note"] = "너무 짧거나 무음이라 라우드니스를 못 쟀습니다 — 손대지 않았습니다"
+        return x, rep
+    want = 10.0 ** ((LUFS_TARGET - lu) / 20.0)
+    room = (10.0 ** (PEAK_CEILING_DB / 20.0)) / peak
+    g = min(want, room)
+    if g < want:
+        rep["ceilingHit"] = True
+        rep["shortByDb"] = round(20 * math.log10(want / g), 1)
+    for i in range(0, len(x), 1 << 20):
+        x[i:i + (1 << 20)] *= g
+    rep["gainDb"] = round(20 * math.log10(g), 1)
+    rep["achieved"] = round(lu + rep["gainDb"], 1)
+    rep["peakDbfs"] = round(20 * math.log10(min(1.0, peak * g)), 2)
+    return x, rep
+
+
 def write_wav(path, x):
     # soundfile picks the container from the extension — wav/flac ride PCM_16, mp3 goes through
     # libsndfile's LAME encoder (subtype MPEG_LAYER_III, its own default rate ~150 kbps VBR).
@@ -4244,12 +4432,13 @@ def write_wav(path, x):
     # 값이 흘러가는 다음 홉을 안 열면 앞에서 지운 것이 뒤에서 그대로 산다.
     import soundfile as sf
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    x = np.asarray(x, dtype=np.float32)
+    x, loud = match_loudness(np.asarray(x, dtype=np.float32))
     ext = path.rsplit(".", 1)[-1].lower()
     if ext == "opus":
         sf.write(path, x, SR, format="OGG", subtype="OPUS")
     else:
         sf.write(path, x, SR, subtype="MPEG_LAYER_III" if ext == "mp3" else "PCM_16")
+    return loud
 
 
 def action_lyrics(inp):
@@ -4650,11 +4839,12 @@ def action_render(inp):
         stem0, ext0 = out_path.rsplit(".", 1)
         for i, (a, b) in enumerate(bounds, 1):
             pp = f"{stem0}-{i}of{len(bounds)}.{ext0}"
-            write_wav(pp, mix[a:b])
+            # 악장마다 따로 맞춘다 — 한 곡이 여러 파일로 나가도 사이에서 크기가 안 튄다.
+            loud_report = write_wav(pp, mix[a:b])
             part_paths.append(pp)
         out_path = part_paths[0]
     else:
-        write_wav(out_path, mix)
+        loud_report = write_wav(out_path, mix)
     # The .mid beside the wav — same arrangement, played by whatever the listener owns. Our one
     # tone generator is the ceiling on the wav; it is not a ceiling on this.
     midi_out = str(inp.get("midiOutPath") or "").strip()
@@ -4693,6 +4883,8 @@ def action_render(inp):
             _parts.append("악보가 어긋난 자리(그대로 두고 연주했습니다): "
                           + ", ".join(f"{k}×{v}" for k, v in _theirs.items()))
         data["notationNote"] = " / ".join(_parts)
+    if locals().get("loud_report"):
+        data["loudness"] = loud_report
     _oor = notes_out_of_range(arr, sf2_font_path)
     if _oor:
         data["outOfRange"] = _oor[:20]
@@ -6203,6 +6395,48 @@ def action_selftest():
     # 따로 정규화하고 있어서 폰트 넷 × 곡 둘이 전부 peak −0.45 dBFS 로 같았다(2026-08-21 실측,
     # 0.95 가 그 값이다). 폰트가 다른데 피크가 같으면 그건 폰트 소리가 아니라 우리 소리다.
     _lvl = np.array([[0.3, 0.3], [0.6, 0.6], [-0.2, -0.2]], dtype="float32")
+    # ── 크기 맞추기 ────────────────────────────────────────────────────────────────────────
+    # ① 우리가 설계한 K-weighting 이 규격과 같은가. BS.1770-4 는 **48kHz 계수표**를 싣고
+    #    있으니, 같은 율로 설계해서 그 표와 대조한다. 다른 율은 표를 못 쓰므로 설계식이
+    #    맞다는 것을 여기서 한 번 증명해 두고 그 식을 쓴다.
+    _spec48 = (([1.53512485958697, -2.69169618940638, 1.19839281085285],
+                [1.0, -1.69065929318241, 0.73248077421585]),
+               ([1.0, -2.0, 1.0], [1.0, -1.99004745483398, 0.99007225036621]))
+    _mine48 = _kweight_biquads(48000)
+    _worst = max(abs(m - sp)
+                 for (mb, ma), (sb, sa) in zip(_mine48, _spec48)
+                 for m, sp in list(zip(mb, sb)) + list(zip(ma, sa)))
+    ck("our K-weighting is the spec's, re-derived for this sample rate",
+       True, ("48k 최대 계수차", round(_worst, 9)), _worst < 1e-8)
+
+    # ② 라우드니스는 선형이다 — 6.02dB 올리면 6.02 LUFS 오른다. 이게 깨지면 게이팅이 틀렸다.
+    _t = np.arange(int(3.0 * SR)) / SR
+    _sig = (0.1 * np.sin(2 * math.pi * 997.0 * _t)).astype(np.float32)
+    _sig = np.stack([_sig, _sig], axis=1)
+    _l1 = integrated_lufs(_sig, SR)
+    _l2 = integrated_lufs(_sig * 2.0, SR)
+    ck("loudness is linear in gain (x2 = +6.02 LUFS)", 6.02,
+       None if (_l1 is None or _l2 is None) else round(_l2 - _l1, 2),
+       _l1 is not None and abs((_l2 - _l1) - 6.0206) < 0.02)
+
+    # ③ 계약 그 자체 — 맞추고 나면 목표에 서 있어야 한다.
+    _q, _rep = match_loudness(_sig * 0.02)   # 아주 조용한 것
+    _got = integrated_lufs(_q, SR)
+    ck("a quiet render is brought TO the target, not near it", LUFS_TARGET,
+       None if _got is None else round(_got, 1),
+       _got is not None and abs(_got - LUFS_TARGET) < 0.1 and not _rep["ceilingHit"])
+
+    # ④ 천장이 먼저 걸리면 자르지 않고 멈추고, 멈췄다고 말한다. 성긴 클릭은 피크가 이미
+    #    가득한데 라우드니스는 한참 낮아서 목표까지 올리면 넘친다.
+    _clk = np.zeros((int(3.0 * SR), 2), dtype=np.float32)
+    _clk[::SR // 2] = 0.99
+    _cq, _crep = match_loudness(_clk)
+    ck("the peak ceiling stops the gain instead of clipping, and says so",
+       (True, True),
+       (_crep["ceilingHit"], float(np.max(np.abs(_cq))) <= 10 ** (PEAK_CEILING_DB / 20) + 1e-6),
+       _crep["ceilingHit"] and float(np.max(np.abs(_cq))) <= 10 ** (PEAK_CEILING_DB / 20) + 1e-6
+       and _crep.get("shortByDb", 0) > 0)
+
     write_wav("data/sing/selftest-level.wav", _lvl.copy())
     import soundfile as _sfmod
     _back, _ = _sfmod.read("data/sing/selftest-level.wav", dtype="float32", always_2d=True)
@@ -6685,8 +6919,16 @@ def action_selftest():
 # 0.2 → 0.9 = +13.1 dB 라 그 파일이 −1.1 dBFS 로 앉는다. 그 위는 클리핑이다.
 # ⚠️ 사용자 지적 2026-08-21: 기본 0.2 에서는 "볼륨 100% 해야 들린다". 일반 음악 파일의 RMS 가
 # −12~−18 dBFS 인데 월광이 −58 이었다.
-SYNTH_GAIN = 0.9
-BUILTIN_GAIN = SYNTH_GAIN / 0.2     # 내장 신디도 같은 배율 — 두 엔진이 같은 크기로 나와야 한다
+# fluidsynth 의 `-g` 는 **크기가 아니라 여유**다. 크기는 이제 라우드니스 정규화가 정한다
+# (match_loudness). 여기서 할 일은 하나뿐 — 엔진 안에서 안 잘리게 하는 것.
+# 실측 2026-08-21: 여덟 성부 fff 동시타를 게인 0.05 로 재고 선형 환산하면 게인 1.0 에서
+# Arachno +9.6 dBFS · FluidR3 +7.8 · MuseScore +6.4 · GeneralUser +2.9 — 즉 **0.9 에서
+# 제일 큰 폰트가 8.7 dB 넘게 잘린다.** fluidsynth 기본이 0.2 인 것이 이 이유다. 우리 실제
+# 렌더가 여태 안 잘린 건 재료가 fff 여덟 겹이 아니었을 뿐이고, 그건 안전이 아니라 운이다.
+# 0.16 = 제일 큰 폰트의 최악값을 −6 dBFS 에 두는 값. 폰트를 갈면 이 숫자를 다시 잰다
+# (스크래치패드 headroom.py — 폰트별로 재서 제일 작은 게인을 고른다).
+SYNTH_GAIN = 0.16
+BUILTIN_GAIN = SYNTH_GAIN / 0.2     # 내장 신디도 여유값을 같은 비율로 — 크기는 정규화가 정한다
 
 
 MIDI_TPB = 480          # write_midi 가 쓰는 격자. 대조는 이 눈금 위에서 한다

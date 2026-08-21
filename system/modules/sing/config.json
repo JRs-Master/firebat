@@ -404,7 +404,7 @@
     {
       "id": "render",
       "name": "곡 렌더 (악보 → 노래·연주)",
-      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다. 가사는 lyricsQuery('가수 곡명')로 인터넷(lrclib)에서 자동으로 찾아 붙일 수도 있습니다. 취향 노브(style·pedal·swing·comp·bassline·drumPattern·band·kit) = **사용자가 그 표현을 말했을 때 그 말을 옮기는 칸**입니다('락으로'→style, '기타로'→band). 그런 말이 없는 요청의 답은 **악보 그대로이고 소리는 폰트가 정합니다** — 우리가 얹는 레벨·팬·정규화는 없습니다.",
+      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다. 가사는 lyricsQuery('가수 곡명')로 인터넷(lrclib)에서 자동으로 찾아 붙일 수도 있습니다. 취향 노브(style·pedal·swing·comp·bassline·drumPattern·band·kit) = **사용자가 그 표현을 말했을 때 그 말을 옮기는 칸**입니다('락으로'→style, '기타로'→band). 그런 말이 없는 요청의 답은 **악보 그대로이고 소리는 폰트가 정합니다** — 악기 사이의 균형은 폰트와 악보의 것이고 우리가 얹는 레벨·팬은 없습니다. 전체 크기만 인코딩할 때 −18 LUFS(ReplayGain 기준 레벨 89 dB SPL)로 맞춰 곡이 달라도 같은 크기로 들립니다 — data.loudness 가 잰 값·건 게인·천장에 걸렸는지를 말합니다.",
       "params": [
         "score",
         "scoreMediaPath",
