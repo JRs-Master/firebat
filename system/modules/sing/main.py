@@ -1010,22 +1010,9 @@ def band_seats(style, band=None):
     return out
 
 
-def comping_stage(n):
-    """컴핑 N 목소리가 설 자리(−1 왼쪽 … +1 오른쪽). 하나면 지금 그 자리 그대로.
-
-    팬은 파트 이름으로만 정해졌고 `chord3` 는 숫자를 떼어 `chord` 값을 받았다 — 같은 자리에 두
-    대가 포개졌다. 이제 몇 대인가가 자리를 정한다.
-
-    ⚠️ **볼륨은 나누지 않는다.** 한때 √N 으로 나눴다(무상관 N 개는 √N 으로 합해지니 컴핑 전체를
-    예전 한 대 자리에 앉힌다는 계산). 그 계산은 **같은 것을 여러 번 낼 때** 맞고, 여기서는 성부마다
-    다른 음악이라 틀렸다 — 각자가 제 목소리이지 서로의 사본이 아니다. 그리고 우리 코드가 이미
-    그 반대로 말하고 있었다: 더블트래킹(정말 같은 리프를 두 번)은 chord+chord2 둘 다 0.58 로
-    보정이 **0** 인데, 서로 다른 다섯 성부는 내가 나누고 있었다. 앞뒤가 안 맞았고, 사용자가
-    들은 결과가 그것이다 — "보컬리드악기 말고 나머지는 묻히는건 비슷한데"(8/21).
-    """
-    if n <= 1:
-        return [PAN.get("chord", -0.25)]
-    return [round(-0.5 + i * (1.0 / (n - 1)), 3) for i in range(n)]
+# 여기 `comping_stage` 가 있었다 — 컴핑 N 목소리를 좌우로 벌려 앉히던 것. 포개지는 것을
+# 푼다는 이유였지만 **자리를 정한 것은 우리**였고, 그 자리는 파일에도 폰트에도 근거가 없다.
+# 이제 팬은 파일의 CC10 이 말할 때만 움직인다.
 
 
 # 쿵덕 for three bars, 두구두구 on the fourth, 쨍 on the downbeat after: every 4th bar keeps its
@@ -1578,8 +1565,6 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, 
     for role, name in (band or {}).items():
         if role in inst_for and resolve_instrument(name) is not None:
             inst_for[role] = name
-    stage = comping_stage(len(comping))
-    seat_at = {roles[p]: stage[i] for i, p in enumerate(comping)}
     out = []
     for r in rows:
         if r.get("part") == "drum":
@@ -1595,8 +1580,6 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, 
             got = resolve_instrument(inst_for.get(role, "piano"))
             if got is not None:
                 q["patch"], q["program"] = got
-        if role in seat_at:
-            q["pan"] = seat_at[role]
         out.append(q)
     # 누가 무엇을 연주하는지는 **응답이 말해야 한다.** 캐스팅은 파생이라 호출자가 짐작할 수 없고,
     # 사용자가 "이게 원래 악보상 악기를 쓴다는 말인가"를 물어야 했던 자리가 바로 이것이다(8/21).
@@ -1812,52 +1795,6 @@ def reinstrument(rows, band):
     return rows, inst
 
 
-def assimilate_triplets(arr):
-    """Two-against-three, resolved the way pianists resolve it: when a beat carries a LIVE
-    triplet grid (onsets at +1/3 AND +2/3), a dotted-figure sixteenth written at +3/4 snaps
-    onto the triplet's third note, and the dotted note ahead of it gives up the 1/12 beat.
-
-    실측 (월광 32s·54s 절뚝임): literal 3:1 put the sixteenth 113ms after the triplet note —
-    a mechanical flam the ear reads as 엇박 ("따↓단" vs the recordings' "따→단"). humanize was
-    0, so this was deterministic interpretation, not jitter. Beats with no triplet grid stay
-    literal 3:1 — a French-overture score keeps its dotting."""
-    eps = 0.02
-    thirds, two_thirds = set(), set()
-    for r in arr:
-        if r.get("pedal") or "pitch" not in r:
-            continue
-        k = math.floor(r["beat"] + eps)
-        f = r["beat"] - k
-        if r["beats"] <= 0.5 + eps:
-            if abs(f - 1 / 3) < eps:
-                thirds.add(k)
-            elif abs(f - 2 / 3) < eps:
-                two_thirds.add(k)
-    live = thirds & two_thirds
-    if not live:
-        return 0
-    moved = 0
-    for r in arr:
-        if r.get("pedal") or "pitch" not in r:
-            continue
-        k = math.floor(r["beat"] + eps)
-        if k in live and abs(r["beat"] - k - 0.75) < eps and r["beats"] <= 0.5 + eps:
-            delta = r["beat"] - (k + 2 / 3)
-            r["beat"] = k + 2 / 3
-            r["beats"] += delta  # the release stays where it was written
-            moved += 1
-    if moved:
-        for r in arr:
-            if r.get("pedal") or "pitch" not in r:
-                continue
-            end = r["beat"] + r["beats"]
-            ke = math.floor(end + eps)
-            if ke in live and abs(end - ke - 0.75) < eps and r["beats"] >= 0.5:
-                # the dotted note that led into the moved sixteenth ends with it
-                r["beats"] = max(0.06, r["beats"] - (end - (ke + 2 / 3)))
-    return moved
-
-
 def apply_performance(arr, feel, spb, total_beats):
     """The pedal layer, applied to ANY arr (faithful or arranged).
 
@@ -1930,32 +1867,25 @@ def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, ctl=Non
         m = min(len(seg), n_total - i)
         seg = seg[:m]
         # Constant-power pan: the band sits on a stage, not a point.
-        pan_v = e.get("pan")
-        if pan_v is None:
-            pan_v = pan_of(key)
+        pan_v = float(e.get("pan") or 0.0)     # 행이 말할 때만. 아니면 중앙 = GM 기본
         theta = (pan_v + 1.0) * np.pi / 4.0
         out[i:i + m, 0] += seg * np.cos(theta)
         out[i:i + m, 1] += seg * np.sin(theta)
-        send[i:i + m] += seg * SEND.get(key, SEND.get(key.rstrip("0123456789"), 0.1))
+        send[i:i + m] += seg * ROOM_SEND
     return out, send
 
 
-# Where each voice sits (−1 left … +1 right) and how much of it goes to the room. The dry mix
-# was mono and bone-dry, which doubled the synth-ness of everything: a stage and a little air
-# are half of "sounds like a record".
-# 리듬 기타 두 대는 좌우 **끝**으로, 리드와 베이스와 킥은 센터. 저역과 가락이 가운데 서고
-# 벽이 양옆에 서는 것이 이 장르의 그림이다(팬은 파트 단위 = MIDI CC10 이라 두 대가 서로 다른
-# 파트여야 갈린다 — 그래서 두 번째 손이 `chord2` 라는 제 이름을 갖는다).
-# Who sits on top. The arrangement had roles and no BALANCE: the only MIDI controls we ever
-# wrote were pan and sustain, so on the sf2 engine the mix was whatever velocity and polyphony
-# happened to produce — and a comping part playing three notes at once beat a single-note lead
-# every time (실측 8/20 트로트: chord 3.00 voices at vel 0.70 vs melody 1.00 at 0.63; the user
-# heard accordion, then vocal, then drums, which is upside down). These are channel volumes:
-# the tune on top, the bass holding the floor, the comping underneath, and the fill up with the
-# lead because while it answers it IS the lead. `mix` overrides any of them.
-MIX = {"melody": 1.0, "vocal": 1.0, "bass": 0.80, "drum": 0.76,
-       "chord": 0.58, "chord2": 0.58}
-MIX_TOP = 110          # GM's own default is 100; 110 leaves the lead room without clipping
+# ── 아무도 안 말했으면 아무 말도 안 한다 ───────────────────────────────────────────────────
+# 여기 `MIX`(멜로디 1.0 · 베이스 0.80 · 컴핑 0.58 …) 표가 있었다. 그 숫자는 **우리가 지어낸
+# 것**이고, 표를 하나 들고 있는 한 파일이 뭐라 쓰든 우리 결정이 그 위에 얹힌다
+# (사용자 2026-08-21: *"니가 임의로 설정한 값들은 다 폰트 디폴트로"*).
+#
+# 규격은 아무도 안 보냈을 때의 답을 이미 갖고 있다 — GM 채널 볼륨 100, 팬 중앙, 리버브 센드 40.
+# 그리고 폰트는 **그 기본 위에서** 목소리들의 음량이 맞도록 잡혀 있다.
+# **안 보낸 컨트롤러는 결손이 아니라 그 답에 맡긴 것이다.**
+#
+# 남은 출처 둘 = 호출자의 `mix` · 파일의 CC7. 둘 다 없으면 침묵.
+MIX_TOP = 127          # 호출자가 mix 1.0 이라 하면 그것은 페이더 끝이다 — 우리 여유분이 아니라
 
 
 def mix_cc7(level):
@@ -1967,28 +1897,17 @@ def mix_cc7(level):
     it: the builtin renderer multiplies the samples by `mix` (a true amplitude ratio) while the
     .mid asked the SoundFont for its square.
 
-    실측 2026-08-21 (사용자: "파일 3개다 멜로디만 크고 나머지는 작아서 장르 차이가 있는지를
-    모르겠어"): three comping voices at mix 0.335 were written as CC7 37, which is −18.9 dB under
-    the lead — the table meant −9.5 dB. 9.4 dB of the accompaniment was thrown away by the mapping
-    alone, on top of it already being the quietest thing in the mix.
-
-    Inverting the curve keeps every ratio in MIX exactly as written, on both engines.
+    실측 2026-08-21: mix 0.335 를 선형으로 쓰면 CC7 37 = 리드보다 −18.9 dB 인데 부른 값은
+    −9.5 dB 였다. 곡선을 뒤집어야 호출자가 말한 비율이 두 엔진에서 그대로 난다.
     """
     return max(1, min(127, int(round(MIX_TOP * math.sqrt(max(0.0, min(1.0, level)))))))
 
 
-def pan_of(part):
-    """chord2, chord3 … all sit where chord sits unless they say otherwise."""
-    if part in PAN:
-        return PAN[part]
-    return PAN.get(part.rstrip("0123456789"), 0.0)
-
-
 def mix_of(part, over=None):
-    base = MIX.get(part, MIX.get(part.rstrip("0123456789"), 0.85))
+    """The caller's level for this part, or **None**. 표는 없다 — 아무도 안 말하면 없는 것이다."""
     if over and part in over:
-        base = float(over[part])
-    return max(0.0, min(1.0, base))
+        return max(0.0, min(1.0, float(over[part])))
+    return None
 
 
 # ── 볼륨은 표 하나가 아니라 층 셋이고, 각자 일과 출처가 다르다 ─────────────────────────────────
@@ -1997,22 +1916,23 @@ def mix_of(part, over=None):
 #   CC11     = 그 파트 **안에서의 부풀림**(크레셴도). 시간에 따라 움직인다.        출처 = 파일
 # 셋을 하나로 뭉개면 어느 층이 틀렸는지 못 가른다 — 8/21 하루가 그것이었다.
 def part_cc7(part, mixmap=None, filecc7=None):
-    """The fader byte for this part. 호출자의 mix 가 먼저, 없으면 **파일이 쓴 바이트 그대로**,
-    그것도 없으면 우리 표. 파일 값을 우리 0~1 로 환산했다가 되돌리면 반올림과 MIX_TOP 상한에서
-    값이 변한다 — 파일이 127 이라고 썼으면 127 이 나가야 한다."""
+    """The fader byte for this part, or **None when nobody said one**.
+
+    호출자의 mix 가 먼저, 없으면 **파일이 쓴 바이트
+    그대로**, 그것도 없으면 **None** — 그러면 CC7 을 아예 안 보내고 신디 기본값(GM 100)이 선다.
+    예전엔 여기서 우리 표가 답했고, 그 표가 곡의 균형을 정하고 있었다."""
     if mixmap and part in mixmap:
         return mix_cc7(max(0.0, min(1.0, float(mixmap[part]))))
     if filecc7 and filecc7.get(part) is not None:
         return max(0, min(127, int(filecc7[part])))
-    return mix_cc7(mix_of(part))
+    return None
 
 
 def part_gain(part, mixmap=None, filecc7=None):
-    """같은 판정을 내장 신디용 진폭(0~1)으로. **MIX_TOP 기준**이라 파일도 표도 안 준 파트는
-    옛 값과 바이트까지 같다 — 두 엔진이 같은 balance 를 뜻한다는 감사가 그 위에 서 있다.
-    ⚠️ 파일이 MIX_TOP(110)보다 큰 페이더를 쓰면 내장 신디에서만 1.0 으로 눌린다. sf2 는 바이트
-    그대로 나가므로 기본 엔진의 충실도는 안 잃는다."""
-    return min(1.0, (part_cc7(part, mixmap, filecc7) / MIX_TOP) ** 2)
+    """같은 판정을 내장 신디용 진폭(0~1)으로. 아무도 안 말했으면 **1.0** — sf2 쪽에서 CC7 을
+    안 보내는 것과 같은 뜻이다(둘 다 '건드리지 않는다')."""
+    byte = part_cc7(part, mixmap, filecc7)
+    return 1.0 if byte is None else min(1.0, (byte / 127.0) ** 2)
 
 
 def expr_at(series, beat):
@@ -2027,29 +1947,11 @@ def expr_at(series, beat):
     return (max(0, min(127, int(val))) / 127.0) ** 2
 
 
-PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "bass": 0.0, "vocal": 0.0,
-       "kick": 0.0, "kick2": 0.0, "snare": 0.08, "snare2": 0.08, "rim": 0.05, "clap": 0.12,
-       "hat": 0.32, "hat_pedal": 0.32, "ohat": 0.32,
-       "tom_hi": -0.28, "tom_himid": -0.15, "tom_mid": 0.0, "tom_lo": 0.28,
-       "tom_floor_hi": 0.32, "tom_floor_lo": 0.36,
-       "crash": -0.32, "crash2": 0.42, "splash": -0.22, "china": -0.45,
-       "ride": 0.38, "ride2": 0.38, "ridebell": 0.38,
-       "tamb": -0.35, "cowbell": -0.22, "vibraslap": -0.30,
-       "bongo_hi": 0.44, "bongo_lo": 0.44, "conga_mute": -0.44, "conga_open": -0.44,
-       "conga_lo": -0.44, "timbale_hi": 0.26, "timbale_lo": 0.26,
-       "agogo_hi": -0.30, "agogo_lo": -0.30, "cabasa": 0.34, "maracas": 0.30,
-       "guiro_short": -0.26, "guiro_long": -0.26, "claves": 0.18,
-       "woodblock_hi": 0.18, "woodblock_lo": 0.18, "cuica_mute": 0.15, "cuica_open": 0.15,
-       "triangle_mute": -0.18, "triangle_open": -0.18,
-       "whistle_short": -0.10, "whistle_long": -0.10}
-SEND = {"melody": 0.22, "chord": 0.16, "chord2": 0.16, "bass": 0.04,
-        "kick": 0.05, "kick2": 0.05, "snare": 0.14, "snare2": 0.14, "rim": 0.08, "clap": 0.16,
-        "hat": 0.08, "hat_pedal": 0.06, "ohat": 0.10,
-        "tom_hi": 0.16, "tom_himid": 0.16, "tom_mid": 0.16, "tom_lo": 0.16,
-        "tom_floor_hi": 0.16, "tom_floor_lo": 0.16,
-        "crash": 0.30, "crash2": 0.30, "splash": 0.26, "china": 0.28,
-        "ride": 0.18, "ride2": 0.18, "ridebell": 0.16,
-        "triangle_mute": 0.20, "triangle_open": 0.28}
+# 여기 `PAN`(파트·드럼 보이스마다 좌우 자리) 과 `SEND`(파트마다 리버브 양) 표가 있었다. 둘 다
+# 우리가 지어낸 것이고, **SF2 는 존마다 자기 팬을 선언한다**(generator 17) — 우리가 CC10 을
+# 보내면 그 선언을 덮는다. 이제 팬은 **행이 말할 때만** 나가고(파일의 CC10 이 그 출처),
+# 리버브는 파트를 안 가린다. 내장 신디의 방도 하나 — GM 기본 센드(CC91 = 40)를 균일하게.
+ROOM_SEND = 40 / 127.0     # GM Level 1 이 정한 기본값. 파트별 차등은 우리 취향이었다
 
 
 def _reverb_ir(seconds, seed):
@@ -2136,18 +2038,20 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
             first_note = next((e for e in rows if not e.get("pedal")), None)
             tr.append(mido.Message("program_change", channel=ch,
                                    program=int((first_note or {}).get("program", 0)), time=0))
+            # 팬도 **행이 말할 때만**. SF2 는 존마다 자기 팬을 선언하고(gen 17) CC10 을 보내면
+            # 그 선언을 덮는다 — 우리 표가 하던 일이 그것이다.
             pan = (first_note or {}).get("pan")
-            if pan is None:
-                pan = pan_of(part)
-            tr.append(mido.Message("control_change", channel=ch, control=10,
-                                   value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
+            if pan is not None:
+                tr.append(mido.Message("control_change", channel=ch, control=10,
+                                       value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
         # 페이더를 여기서 놓는 것은 **아무도 안 말했을 때뿐**이다. 파일이 CC7 을 썼으면 그 시리즈가
         # 아래 패스스루로 그대로 지나간다 — 우리가 t=0 에 첫 값을 미리 놓으면, 4박에서 페이더를
         # 내리는 파일의 앞 4박이 조용히 그 값으로 바뀐다(그리고 같은 바이트가 두 번 나간다).
         _file_fader = bool(((ctl or {}).get(part) or {}).get("cc", {}).get(CC_VOLUME))
-        if not (_file_fader and not (mix and part in mix)):
+        _fader = part_cc7(part, mix, filecc7)
+        if _fader is not None and not (_file_fader and not (mix and part in mix)):
             tr.append(mido.Message("control_change", channel=ch, control=7,
-                                   value=part_cc7(part, mix, filecc7), time=0))
+                                   value=_fader, time=0))
         # (tick, kind) marks in one time-ordered pass — MIDI deltas are relative, so note-offs
         # and pedal changes have to be interleaved rather than appended per event. kind: 0 =
         # note_off, 1 = note_on, 2 = CC64 (sustain — fluidsynth and every GM synth honor it),
@@ -2413,7 +2317,7 @@ def sf2_backend():
     return binp, font, None
 
 
-def render_sf2(arr, spb, binp, font, mixmap=None, normalize=True, filecc7=None, ctl=None):
+def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None):
     """The arrangement through fluidsynth: the same .mid midiOut writes, played on the GM font.
 
     Returns (stereo, why_not) — any why_not drops the render back to the builtin synth, so a
@@ -2431,7 +2335,9 @@ def render_sf2(arr, spb, binp, font, mixmap=None, normalize=True, filecc7=None, 
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
         # Stock settings on purpose (사용자: "우리가 임의적으로 하지 말고 미디 기본값으로") —
         # the reference sound is what any GM player makes of the same .mid, reverb included.
-        r = subprocess.run([binp, "-ni", "-g", "0.5", "-r", str(SR), "-F", wav_path, font,
+        # `-g` 를 안 준다 — fluidsynth 기본 게인이 곧 "폰트 설정 그대로"다. 0.5 는 우리가
+        # 고른 값이었고(기본 0.2), 그만큼 모든 렌더가 우리 손을 한 번 거친 소리였다.
+        r = subprocess.run([binp, "-ni", "-r", str(SR), "-F", wav_path, font,
                             mid_path],
                            capture_output=True, timeout=600)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1024:
@@ -2445,11 +2351,9 @@ def render_sf2(arr, spb, binp, font, mixmap=None, normalize=True, filecc7=None, 
         if sr != SR:
             data = np.stack([resample_linear(data[:, 0], SR / sr),
                              resample_linear(data[:, 1], SR / sr)], axis=1).astype(np.float32)
-        if normalize:
-            # ⚠️ 파트별 레벨을 재려면 이걸 끄고 불러야 한다 — 솔로마다 자기 피크로 나누면
-            # 모든 파트가 0 dBFS 가 되어 비교가 통째로 사라진다.
-            peak = float(np.max(np.abs(data))) or 1.0
-            data /= peak
+        # 정규화 없음. 피크를 1.0 에 맞추는 것도 넘칠 때만 내리는 것도 **우리 결정**이라,
+        # 폰트와 fluidsynth 가 정한 레벨을 그대로 둔다 (사용자 2026-08-21: "넘치는거 그런거도
+        # 하지말고 일단 폰트 그 자체로 들어보자").
         return data, None
     except subprocess.TimeoutExpired:
         return None, "fluidsynth timed out"
@@ -4336,7 +4240,6 @@ def action_render(inp):
         for e in arr:
             if e.get("part") == "drum":
                 e["program"] = kit_prog
-    assim = assimilate_triplets(arr)
     arr = apply_performance(arr, feel, spb, total_beats)
     vocal_path = str(inp.get("vocalPath") or "").strip()
     # The melody doubles the voice when there is one, so it steps aside; with no vocal it IS the
@@ -4466,9 +4369,6 @@ def action_render(inp):
         # Silence is not consent: what the parser could not play is SAID, next to the render.
         data["notationNote"] = ("연주하지 못한 기호: " + ", ".join(
             f"{k}×{v}" for k, v in notation_skipped.items()) + " — 파서 미구현분입니다")
-    if assim:
-        data["performanceNote"] = (f"셋잇단 동화: 점리듬 16분음표 {assim}개를 같은 박의 "
-                                   "셋잇단 셋째 음(2/3)에 정렬했습니다 — 관례적 2:3 처리")
     if sf2_font:
         data["soundfont"] = sf2_font
         # 파일명은 심링크 이름일 수 있다(default-GM.sf2 = update-alternatives). 어느 폰트가
@@ -4649,14 +4549,14 @@ def action_levels(inp):
     for part in sorted({r["part"] for r in arr}):
         solo = [r for r in arr if r["part"] == part]
         if use_sf2:
-            stereo, ferr = render_sf2(solo, spb, binp, font, mixmap=None, normalize=False)
+            stereo, ferr = render_sf2(solo, spb, binp, font, mixmap=None)
             if ferr:
                 return {"success": False, "error": ferr}
         else:
             stereo, _ = render_arrangement(solo, spb, 32, mixmap=None)
         mono = stereo.mean(axis=1)
         rms, pk = float(np.sqrt((mono ** 2).mean())), float(np.abs(mono).max())
-        rows.append({"part": part, "mix": mix_of(part),
+        rows.append({"part": part, "mix": mix_of(part, mixmap),
                      "rmsDb": dbfs(rms), "peakDb": dbfs(pk),
                      "crestDb": (None if dbfs(rms) is None or dbfs(pk) is None
                                  else round(dbfs(pk) - dbfs(rms), 1))})
@@ -4762,8 +4662,14 @@ def action_selftest():
        bool(np.max(np.abs(audio)) > 0.01), np.max(np.abs(audio)) > 0.01 and not np.any(np.isnan(audio)))
     ck("the band plays on a stereo stage", (len(audio), 2), audio.shape,
        audio.ndim == 2 and audio.shape[1] == 2)
-    ck("panning actually separates the channels", True,
-       not np.allclose(audio[:, 0], audio[:, 1]), not np.allclose(audio[:, 0], audio[:, 1]))
+    # 팬은 **아무도 안 말하면 중앙**이다. 예전엔 파트마다 자리를 가진 표가 있어서 무대가
+    # 저절로 넓어졌는데, 그 자리를 정한 건 파일도 폰트도 아닌 우리였다.
+    ck("아무도 팬을 안 말했으면 두 채널이 같다 — 무대는 우리가 만드는 게 아니다", True,
+       np.allclose(audio[:, 0], audio[:, 1]), np.allclose(audio[:, 0], audio[:, 1]))
+    _panned = [dict(e, pan=(-0.9 if e["part"] == "bass" else 0.9)) for e in arr]
+    _pa, _ = render_arrangement(_panned, spb, 4)
+    ck("…행이 말하면 실제로 갈린다", True,
+       not np.allclose(_pa[:, 0], _pa[:, 1]), not np.allclose(_pa[:, 0], _pa[:, 1]))
     wet = add_room(audio.copy(), room)
     ck("the room adds energy the dry mix did not have", True,
        float(np.sum(np.abs(wet))) > float(np.sum(np.abs(audio))),
@@ -4984,9 +4890,9 @@ def action_selftest():
             v = next((x.value for x in t if x.type == "control_change" and x.control == 7), None)
             if v is not None:
                 vol[nm] = v
-        ck("every part carries a channel volume, and the tune is the loudest",
-           True, vol,
-           len(vol) == 2 and vol.get("melody", 0) > vol.get("chord", 999))
+        # ⭐ 예전엔 여기서 "모든 파트가 채널 볼륨을 갖고, 가락이 제일 크다"를 쟀다. 그 서열을
+        # 정한 표가 우리 것이었다 — 이제 아무도 안 말한 파트에는 CC7 이 아예 안 나간다.
+        ck("선언이 없으면 채널 볼륨을 한 줄도 안 보낸다", {}, vol, not vol)
         write_midi(mrow, 120, mpath, mix={"chord": 1.0, "melody": 0.3})
         vol2 = {}
         for t in _md.MidiFile(mpath).tracks:
@@ -5057,15 +4963,22 @@ def action_selftest():
        (kept_cast.get("melody") or {}).get("instrument"),
        (kept_cast.get("melody") or {}).get("instrument") == gm_name(0))
     # CC7 은 페이더가 아니다 — 규격이 dB = 40·log10(cc/127) 이라 게인은 바이트의 **제곱**이다.
-    # 선형으로 쓰면 표가 말하는 비율이 제곱으로 눌려, 리드 아래 전부가 훨씬 조용해진다.
-    _ratio = lambda part: (mix_cc7(MIX[part]) / 127.0) ** 2 / (mix_cc7(1.0) / 127.0) ** 2
-    for part in ("bass", "drum", "chord"):
-        ck("CC7 이 표의 비율을 그대로 낸다 (%s)" % part, MIX[part], round(_ratio(part), 2),
-           abs(_ratio(part) - MIX[part]) < 0.015)
-    # 그리고 두 엔진이 같은 값을 뜻해야 한다 — 내장 렌더는 mix 를 진폭에 그대로 곱한다.
+    # 선형으로 쓰면 호출자가 부른 비율이 제곱으로 눌린다.
+    _ratio = lambda lv: (mix_cc7(lv) / 127.0) ** 2
+    for _lv in (0.80, 0.58, 0.25):
+        ck("CC7 이 호출자가 부른 비율을 그대로 낸다 (%.2f)" % _lv, _lv, round(_ratio(_lv), 2),
+           abs(_ratio(_lv) - _lv) < 0.015)
+    ck("…mix 1.0 은 페이더 끝(127)이다 — 우리 여유분을 몰래 빼지 않는다", 127, mix_cc7(1.0),
+       mix_cc7(1.0) == 127)
+    # 그리고 두 엔진이 같은 값을 뜻해야 한다 — 내장 렌더는 같은 바이트를 진폭으로 되돌린다.
     ck("두 엔진이 같은 balance 를 뜻한다", True,
-       [round(_ratio("chord"), 3), MIX["chord"]],
-       abs(_ratio("chord") - mix_of("chord")) < 0.015)
+       [round(part_gain("chord", {"chord": 0.58}), 3), 0.58],
+       abs(part_gain("chord", {"chord": 0.58}) - 0.58) < 0.015)
+    # ⭐ 아무도 안 말하면 아무 말도 안 한다 — 여기 우리 표가 답하던 자리다.
+    ck("아무 선언도 없으면 CC7 을 아예 안 보낸다 (신디 기본값이 선다)", None,
+       part_cc7("chord"), part_cc7("chord") is None)
+    ck("…그리고 내장 신디도 손대지 않는다(1.0)", 1.0, part_gain("chord"),
+       part_gain("chord") == 1.0)
 
     # 파일 악보 위에 얹히는 노브 — 목록이 뒤처지면 선언이 광고한 축이 **조용히** 사라진다.
     _sc = {"bpm": 100, "notes": [{"syl": "라", "note": "C4", "beats": 1}]}
@@ -5094,26 +5007,22 @@ def action_selftest():
     ck("…and each role wears the genre's instrument, not the file's", True,
        (lead_prog, next(r["program"] for r in cast_rows if r["part"] == "chord")),
        lead_prog == resolve_instrument(STYLE_BAND["metal"]["melody"])[1])
-    ck("one comping voice keeps the seat it always had", PAN["chord"],
-       next(r["pan"] for r in cast_rows if r["part"] == "chord"),
-       next(r["pan"] for r in cast_rows if r["part"] == "chord") == PAN["chord"])
+    # 팬은 우리가 정하지 않는다 — SF2 는 존마다 자기 팬을 선언하고(gen 17), CC10 을 보내면
+    # 그 선언을 덮는다. 캐스팅이 자리를 배정하던 시절 그 덮개가 늘 씌워져 있었다.
+    ck("캐스팅은 자리를 정하지 않는다 — 팬은 파일이나 폰트 몫", [],
+       sorted({r.get("pan") for r in cast_rows} - {None}),
+       not [r for r in cast_rows if r.get("pan") is not None])
     p4 = [{"beat": 0.0, "beats": 1.0, "part": "p4", "pitch": 64,
            "vel": 0.7, "patch": "piano", "program": 0}]
     many, _ = recast_parts(rrows + p4, "metal", None, "p1")
-    ck("a fourth voice comps as chord2, where the pan and mix tables can still find it",
+    ck("a fourth voice comps as chord2 — its own part, so a caller can name it",
        True, sorted({r["part"] for r in many}), "chord2" in {r["part"] for r in many})
-    # 같은 자리에 두 대가 포개지지 않는다 — 팬은 파트 이름이 아니라 **몇 대인가**가 정한다.
-    seats_used = sorted({r["pan"] for r in many if str(r["part"]).startswith("chord")})
-    ck("…and two comping voices stand apart instead of stacking on one spot",
-       [-0.5, 0.5], seats_used, seats_used == [-0.5, 0.5])
-    # ⚠️ 볼륨은 **안 나눈다.** 성부마다 다른 음악이라 서로의 사본이 아니고, 우리 코드가 이미
-    # 그렇게 말하고 있었다 — 진짜 사본인 더블트래킹(chord+chord2)조차 보정이 0 이다. 한때
-    # 여기만 √N 으로 나눠서 반주가 통째로 묻혔다(사용자 8/21).
-    ck("컴핑이 여럿이어도 각자는 자기 자리 볼륨 그대로 — 사본이 아니니 나누지 않는다",
-       [MIX["chord"], MIX["chord"]], [mix_of("chord"), mix_of("chord2")],
-       mix_of("chord") == MIX["chord"] and mix_of("chord2") == MIX["chord"])
-    ck("…그리고 진짜 사본인 더블트래킹도 같은 규칙을 쓴다(둘 다 chord 레벨)", True,
-       mix_of("chord2") == mix_of("chord"), mix_of("chord2") == mix_of("chord"))
+    # ⚠️ 볼륨도 나누지 않는다. 한때 √N 으로 나눴는데(무상관 N 개는 √N 으로 합해진다는 계산)
+    # 그건 **같은 것을 여러 번 낼 때** 맞고 성부마다 다른 음악에는 틀렸다. 이제는 아예 표가
+    # 없으니 나눌 것도 없다 — 컴핑이 몇이든 전부 폰트 기본값에서 시작한다.
+    ck("컴핑이 몇이든 우리가 레벨을 손대지 않는다", [None, None],
+       [part_cc7("chord"), part_cc7("chord2")],
+       part_cc7("chord") is None and part_cc7("chord2") is None)
     # 둘째 손을 이름으로 부를 수 있다. 자리에만 걸려 있던 시절 이 인자는 조용히 버려졌다.
     named = recast_parts(rrows + p4, "metal", {"chord2": "piano"}, "p1")[0]
     ck("…and the caller can name the SECOND comping hand, which used to be dropped",
@@ -5539,8 +5448,8 @@ def action_selftest():
     # 파일 값을 우리 0~1 로 환산했다 되돌리면 반올림과 MIX_TOP 상한에서 값이 변한다.
     ck("…그리고 그 바이트가 그대로 나간다 (환산은 또 하나의 결정이다)", [[100], [64]],
        [_cc("p1", 7), _cc("p2", 7)], _cc("p1", 7) == [100] and _cc("p2", 7) == [64])
-    ck("…선언이 없는 파트만 우리 표가 답한다", [mix_cc7(mix_of("drum"))], _cc("drum", 7),
-       _cc("drum", 7) == [mix_cc7(mix_of("drum"))])
+    ck("…선언이 없는 파트에는 CC7 을 아예 안 보낸다 (예전엔 우리 표가 답했다)", [],
+       _cc("drum", 7), _cc("drum", 7) == [])
     ck("CC11 익스프레션이 실린다 — 크레셴도가 사는 층", [40], _cc("p1", 11),
        _cc("p1", 11) == [40])
     # 컨트롤러는 고르지 않는다. 우리가 뜻을 아는 것만 나른다면 그건 손목록이고, 그 목록에 없는
@@ -5561,8 +5470,8 @@ def action_selftest():
     # 내장 신디도 이제 **같은 정수 바이트**를 거쳐 나온다 — 옛 경로는 sf2 만 반올림하고 내장은
     # 실수 그대로 써서 둘이 미세하게 다른 값을 뜻하고 있었다. 오차는 CC7 한 눈금(≈0.006)뿐이다.
     ck("…그리고 두 엔진이 여전히 같은 balance 를 뜻한다", True,
-       [round(part_gain("chord"), 4), mix_of("chord")],
-       abs(part_gain("chord") - mix_of("chord")) < 0.015)
+       [round(part_gain("p1", None, _zcc), 4), (100 / 127.0) ** 2],
+       abs(part_gain("p1", None, _zcc) - (100 / 127.0) ** 2) < 0.001)
     # 그리고 덮었으면 파일의 페이더 자동화는 통째로 빠져야 한다 — 남으면 우리 값을 되돌린다.
     _zok2, _ = write_midi(zrows, 120, "data/sing/selftest-t0-mix.mid",
                           mix={"p1": 0.25}, filecc7=_zcc, ctl=_zct)
@@ -5638,24 +5547,9 @@ def action_selftest():
         if pth and os.path.isfile(pth):
             os.remove(pth)
 
-    def _tri(beat, beats, pitch):
-        return {"beat": beat, "beats": beats, "part": "melody", "patch": "piano",
-                "program": 0, "pitch": pitch, "vel": 0.5, "gate": 1.0}
-
-    tri_rows = [_tri(0.0, 1 / 3, 60), _tri(1 / 3, 1 / 3, 62), _tri(2 / 3, 1 / 3, 64),
-                _tri(0.0, 0.75, 72), _tri(0.75, 0.25, 72)]
-    tri_n = assimilate_triplets(tri_rows)
-    tri_six = next(r for r in tri_rows if r["pitch"] == 72 and r["beat"] > 0)
-    tri_dot = next(r for r in tri_rows if r["pitch"] == 72 and r["beat"] == 0.0)
-    ck("a dotted sixteenth against a live triplet grid joins the third triplet note",
-       (1, True), (tri_n, abs(tri_six["beat"] - 2 / 3) < 1e-9),
-       tri_n == 1 and abs(tri_six["beat"] - 2 / 3) < 1e-9
-       and abs(tri_six["beats"] - 1 / 3) < 1e-9 and abs(tri_dot["beats"] - 2 / 3) < 1e-9)
-    lit_rows = [_tri(0.0, 0.75, 72), _tri(0.75, 0.25, 72), _tri(0.0, 1.0, 48)]
-    lit_n = assimilate_triplets(lit_rows)
-    ck("with no triplet grid the dotting stays literal 3:1",
-       (0, 0.75), (lit_n, lit_rows[1]["beat"]),
-       lit_n == 0 and lit_rows[1]["beat"] == 0.75)
+    # 여기 셋잇단 동화 시험 둘이 있었다 — 점리듬 16분음표를 셋잇단 셋째 음에 붙이던 것.
+    # 월광에서는 그것이 맞는 해석이었지만 **해석이지 악보가 아니다**(사용자 2026-08-21:
+    # "이거도 원래 디폴트로 돌려보자"). 지금은 적힌 3:1 을 그대로 친다.
 
     dn = _diatonic_neighbors(4, 68)   # E major (월광's signature), G#
     ck("ornament neighbors are diatonic (E major: G#-A up a semitone, G#-F# down a tone)",
