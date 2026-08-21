@@ -138,26 +138,12 @@
             ],
             "description": "Bar count when the piece is longer than its notes/chords — with drumPattern and NO notes this makes a drum solo."
           },
-          "humanize": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "description": "0-1 human feel: deterministic micro timing/velocity jitter and chord rolls. '사람처럼' ≈ 0.5-0.7. Omit = exact grid."
-          },
           "pedal": {
             "type": [
               "boolean",
               "null"
             ],
             "description": "Sustain pedal, three states: omit = play exactly what the score writes (marks become real CC64 automatically); true = ALSO pedal bar-by-bar when the score has no marks (월광 어법); false = dry — strip even the written marks."
-          },
-          "voicing": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "description": "0-1 pianist's voicing: the top line sings out, inner voices step back, the bass supports quietly. '살랑살랑/은은하게/부드럽게' ≈ 0.6-0.8 (pairs well with humanize and pedal). Omit = the score's flat balance, which is what any GM player does — measured on Moonlight, the flat balance reads as gloom because the bass ends up loudest."
           }
         }
       },
@@ -418,7 +404,7 @@
     {
       "id": "render",
       "name": "곡 렌더 (악보 → 노래·연주)",
-      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다. 가사는 lyricsQuery('가수 곡명')로 인터넷(lrclib)에서 자동으로 찾아 붙일 수도 있습니다. 취향 노브(style·humanize·voicing·pedal·swing·comp·bassline·drumPattern) = **사용자가 그 표현을 말했을 때 그 말을 옮기는 칸**입니다('사람처럼'→humanize, '락으로'→style). 그런 말이 없는 요청의 답은 악보와 미디 기본값 그대로입니다.",
+      "description": "score 또는 scoreMediaPath 를 wav 로 렌더합니다 — 노래(vocal:true)·연주곡·장르 반주. data.media 가 재생 URL 을 돌려줍니다. 노래방 = 반주 악보(scoreMediaPath)로 MR 을, 가사 악보나 .lrc(lyricsMediaPath)로 싱크 가사 .lrc 를 한 콜에 만듭니다. 가사는 lyricsQuery('가수 곡명')로 인터넷(lrclib)에서 자동으로 찾아 붙일 수도 있습니다. 취향 노브(style·pedal·swing·comp·bassline·drumPattern·band·kit) = **사용자가 그 표현을 말했을 때 그 말을 옮기는 칸**입니다('락으로'→style, '기타로'→band). 그런 말이 없는 요청의 답은 **악보 그대로이고 소리는 폰트가 정합니다** — 우리가 얹는 레벨·팬·정규화는 없습니다.",
       "params": [
         "score",
         "scoreMediaPath",
@@ -435,23 +421,14 @@
         "engine",
         "audioFormat",
         "bpm",
-        "humanize",
-        "voicing",
         "pedal",
         "band",
         "drumPattern",
         "kit",
         "swing",
         "comp",
-        "fill",
-        "vary",
         "mix",
         "bassline",
-        "orn",
-        "chordShape",
-        "laidback",
-        "gate",
-        "double",
         "midiOut",
         "midiOutPath",
         "outPath",
@@ -529,6 +506,39 @@
       "params": [
         "style",
         "engine"
+      ]
+    },
+    {
+      "id": "verify",
+      "name": "연주 정확도 대조 (.mid)",
+      "desc": "업로드한 .mid 를 그대로 연주하는지 대조합니다 — 원본의 음표·자리·길이·세기·악기·컨트롤러 대 우리가 신디에 넘기는 .mid. 소리가 아니라 전달을 잽니다(소리는 폰트가 정합니다). 무엇이 사라지고 무엇이 달라졌는지 목록으로 돌려줍니다.",
+      "tags": [
+        "대조",
+        "정확도",
+        "전달검증",
+        "이음줄",
+        "누락"
+      ],
+      "params": [
+        "scoreMediaPath"
+      ]
+    },
+    {
+      "id": "font",
+      "name": "사운드폰트 선언 조회",
+      "desc": "설치된 사운드폰트가 선언한 것 전부 — 뱅크·프리셋 수·각 프리셋의 음역과 벨로시티 범위·존·감쇠·팬·루프·답하는 컨트롤러. probe:true 면 실제로 렌더해서 어느 컨트롤러가 걸리는지 측정합니다.",
+      "tags": [
+        "사운드폰트",
+        "프리셋",
+        "음역",
+        "모듈레이터",
+        "뱅크"
+      ],
+      "params": [
+        "instrument",
+        "program",
+        "bank",
+        "probe"
       ]
     }
   ]
