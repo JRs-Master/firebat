@@ -1650,7 +1650,7 @@ def events_beats(events):
     return sum(float(ev.get("gap") or 0.0) + sum(b for _, b in ev["segments"]) for ev in events)
 
 
-def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False):
+def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, names=None):
     """The file's own parts, re-cast for a genre — every voice keeps its notes and takes the
     instrument its ROLE and REGISTER call for. Returns (rows, cast_map, mix_overlay).
 
@@ -1733,7 +1733,7 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False):
     for src, role in roles.items():
         name = (gm_name(src_prog.get(src)) if keep_instruments
                 else inst_for.get(role, "piano"))
-        cast[role] = {"part": src, "instrument": name}
+        cast[role] = {"part": (names or {}).get(src, src), "instrument": name}
     return out, cast, mix_over
 
 
@@ -2507,7 +2507,25 @@ def font_inventory(path):
                 cid = hdr[:4].decode("latin1")
                 sz = struct.unpack("<I", hdr[4:])[0]
                 if cid == "LIST":
-                    if f.read(4) == b"pdta":
+                    kind = f.read(4)
+                    # 폰트 자기 이름(INFO/INAM). 파일명은 `default-GM.sf2` 라는 **심링크 이름**일
+                    # 뿐이라(update-alternatives) 어느 폰트가 울렸는지 응답이 말을 못 했다 —
+                    # 8/21 실측에서 내가 "Arachno 가 아니다"라고 오독할 뻔했다. INFO 는 sdta 앞에
+                    # 있어 읽는 값이 공짜다.
+                    if kind == b"INFO":
+                        stop = f.tell() + sz - 4
+                        while f.tell() < stop - 8:
+                            h2 = f.read(8)
+                            s2 = h2[:4].decode("latin1")
+                            z2 = struct.unpack("<I", h2[4:])[0]
+                            blob = f.read(z2)
+                            if z2 & 1:
+                                f.read(1)
+                            if s2 == "INAM":
+                                raw["_name"] = blob
+                        f.seek(stop + (sz & 1))
+                        continue
+                    if kind == b"pdta":
                         end = f.tell() + sz - 4
                         while f.tell() < end - 8:
                             h = f.read(8)
@@ -2520,6 +2538,7 @@ def font_inventory(path):
                     f.seek(sz - 4 + (sz & 1), 1)
                 else:
                     f.seek(sz + (sz & 1), 1)
+        title = raw.pop("_name", b"").split(bytes([0]))[0].decode("latin1", "replace").strip()
         if not {"phdr", "pbag", "pgen", "inst", "ibag", "igen"} <= set(raw):
             return None
 
@@ -2562,7 +2581,8 @@ def font_inventory(path):
                     if op == 41 and amt < len(inst):              # instrument
                         keys |= inst_keys(amt)
             kits[preset] = {"name": name, "keys": keys}
-        out = {"programs": programs, "kits": kits} if programs or kits else None
+        out = ({"programs": programs, "kits": kits, "name": title}
+               if programs or kits else None)
     except (OSError, ValueError, struct.error, IndexError):
         out = None
     _FONT_CACHE[ck] = out
@@ -3774,6 +3794,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     if len(parsed_parts) > 1:
         score["_leadPart"] = best.get("name") or best.get("id") or ""
         score["_leadRow"] = best.get("row")
+        # 행의 파트 id(p1·p3)는 우리 내부 번호다. 캐스팅 보고가 그걸 그대로 대면 읽는 쪽이
+        # 어느 성부인지 알 수 없다 — 이름은 파일이 이미 말해 준다.
+        score["_partNames"] = {pp["row"]: (pp.get("name") or pp.get("id") or pp["row"])
+                               for pp in parsed_parts if pp.get("row")}
         score["_partsSeen"] = [
             f"{pp.get('name') or pp.get('id') or '?'}({len(_pitched(pp['notes']))})"
             for pp in parsed_parts]
@@ -4277,6 +4301,7 @@ def action_render(inp):
     lead_part = score.pop("_leadPart", None) if isinstance(score, dict) else None
     lead_row = score.pop("_leadRow", None) if isinstance(score, dict) else None
     parts_seen = score.pop("_partsSeen", None) if isinstance(score, dict) else None
+    part_names = score.pop("_partNames", None) if isinstance(score, dict) else None
     spb, events, chords, style, band, feel, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
@@ -4357,7 +4382,8 @@ def action_render(inp):
     if (arrange_from in ("score", "parts") and not faithful
             and len(locals().get("faithful_rows") or []) > 0):
         recast, cast_map, mix_over = recast_parts(faithful_rows, style, band, lead_row,
-                                                  keep_instruments=arrange_from == "parts")
+                                                  keep_instruments=arrange_from == "parts",
+                                                  names=part_names)
         # The genre's rhythm section, borrowed whole from the arrangement path so the kit, the
         # fills and the crashes stay one implementation. Only the drums: the harmony is already
         # in the score's own parts.
@@ -4471,6 +4497,7 @@ def action_render(inp):
         return {"success": False,
                 "error": "engine must be sf2 | builtin (omit = auto: sf2 when installed)"}
     engine_used, engine_note, sf2_font = "builtin", None, None
+    sf2_font_path = None
     mix = send = None
     if engine != "builtin":
         binp, font, why = _fbin, _ffont, _fwhy
@@ -4482,6 +4509,7 @@ def action_render(inp):
                 engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
             else:
                 engine_used, sf2_font = "sf2", os.path.basename(font)
+                sf2_font_path = font
                 # The engine's own space is the MIDI default — we add no room of ours on top.
                 # (The vocal overlay still sends to add_room below: that voice is OUR sound.)
                 stereo *= 0.45
@@ -4572,6 +4600,11 @@ def action_render(inp):
                                    "셋잇단 셋째 음(2/3)에 정렬했습니다 — 관례적 2:3 처리")
     if sf2_font:
         data["soundfont"] = sf2_font
+        # 파일명은 심링크 이름일 수 있다(default-GM.sf2 = update-alternatives). 어느 폰트가
+        # 실제로 울렸는지는 폰트 자신이 말한다.
+        _inv = font_inventory(sf2_font_path) if sf2_font_path else None
+        if _inv and _inv.get("name"):
+            data["soundfont"] = "%s (%s)" % (_inv["name"], sf2_font)
     if kit_label:
         data["kit"] = kit_label
     if swapped and engine_used == "sf2":
@@ -5173,6 +5206,13 @@ def action_selftest():
     ck("…and in parts mode it names the FILE's instrument, not the genre's", "grandpiano",
        (kept_cast.get("melody") or {}).get("instrument"),
        (kept_cast.get("melody") or {}).get("instrument") == gm_name(0))
+    # 캐스팅 보고는 **파일이 부르는 이름**으로. 내부 행 id(p1·p3)를 그대로 대면 읽는 쪽이
+    # 어느 성부인지 알 수 없다 — 8/21 실측에서 응답이 "chord ← p3" 라고만 말했다.
+    named_cast = recast_parts(rrows, "metal", None, "p1",
+                              names={"p1": "Voice", "p2": "Piano", "p3": "Base"})[1]
+    ck("the cast calls each part what the FILE calls it, not our row id", "Voice",
+       (named_cast.get("melody") or {}).get("part"),
+       (named_cast.get("melody") or {}).get("part") == "Voice")
     lead_prog = next(r["program"] for r in cast_rows if r["part"] == "melody")
     ck("…and each role wears the genre's instrument, not the file's", True,
        (lead_prog, next(r["program"] for r in cast_rows if r["part"] == "chord")),
