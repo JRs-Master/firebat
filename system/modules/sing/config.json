@@ -295,20 +295,6 @@
         ],
         "description": "[render, with scoreMediaPath] Override the file's tempo (quarter-note BPM, 20-300). '템포 빠르게' = a higher number."
       },
-      "humanize": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "description": "0-1 human feel: deterministic micro timing/velocity jitter and chord rolls. '사람처럼' ≈ 0.5-0.7. Omit = exact grid."
-      },
-      "voicing": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "description": "[render, with scoreMediaPath] 0-1 pianist's voicing: the top line sings out, inner voices step back, the bass supports quietly. '살랑살랑/은은하게/부드럽게' ≈ 0.6-0.8 (pairs well with humanize and pedal). Omit = the score's own balance, which is what any GM player does and the default here."
-      },
       "pedal": {
         "type": [
           "boolean",
@@ -350,41 +336,6 @@
         ],
         "description": "[render] Which TTS voice sings, by the server provider's own voice name. Omit to use the voice configured in settings. Set it only to carry a request that was made in words (\"여자 목소리로\", \"낮은 남자 목소리로\") — the singer is not the model's choice. Choosing a voice that fits the song's register is the real fix for a melody that sits too high or too low; the octave fold is only the safety net under it."
       },
-      "orn": {
-        "type": [
-          "string",
-          "null"
-        ],
-        "description": "How the lead hand shapes a long note: scoop (arrive from a semitone below — blues) | bendin (whole-step bend into the note — rock solos) | bend (stepped semitone approach) | grace (hammer-on from a whole step below — country) | kkeokgi (the trot flick: a long note's tail drops a step and lets go) | pinch (pinch harmonic — the fundamental dies and a squealing 5th-partial rides on top, metal) | harmonic (the same touch an octave up, gentler) | none (straight). Omit for the style's default."
-      },
-      "chordShape": {
-        "type": [
-          "string",
-          "null"
-        ],
-        "description": "What a chord contains: power (root+fifth+octave, no third — what a distorted guitar plays) | full (the written quality). Omit for the style's default."
-      },
-      "laidback": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "description": "0-0.5: how far behind the grid the MELODY sits while the rhythm section stays on it — the R&B/hiphop drag (those rows use 0.04-0.05). Omit for the style's default."
-      },
-      "gate": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "description": "0.1-1.0: how much of each written note actually sounds. 0.55 clips (funk), 1.0 sings through (ballad, a metal lead). Omit for the style's default."
-      },
-      "double": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "description": "0-1: double-tracked rhythm guitar — the same riff played a second time and spread to this much stereo width (metal's row uses 0.7). 0 = one guitar. Omit for the style's default."
-      },
       "kit": {
         "type": [
           "string",
@@ -399,13 +350,6 @@
         ],
         "description": "[render, with scoreMediaPath] Which part of a multi-part score carries the tune, by its name or id (\"Voice\", \"P1\"). Omit and the reader picks it: a part with lyrics, else one whose name says it is the song, else the busiest. The reply reports the pick as leadPart with partsSeen, so a wrong one is one call away."
       },
-      "fill": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "description": "0-1: how much the band ANSWERS in the gaps where the melody rests — the accordion reply between trot phrases, the guitar lick between blues lines. It plays chord tones of the harmony under the breath and stops before the next entry. 0 = never. Genres whose face this is (trot, blues, rock'n'roll, jazz, country, r&b) already do it; omit for their default. `band.fill` names who answers (default: whoever is comping)."
-      },
       "mix": {
         "type": [
           "object",
@@ -419,13 +363,6 @@
           "null"
         ],
         "description": "[render, with scoreMediaPath] How much of the score survives a style. melody (default) keeps only the tune, derives the harmony and builds the genre's backing from scratch — \"이 노래를 뽕짝으로\". score keeps every part the file wrote and re-casts them by role and register — the tune on the genre's lead, the lowest voice on its bass, the rest comping on the genre's hands in register order — then adds the genre's drums: \"악보에 나오는 악기들을 메탈로\". parts keeps the parts AND the instruments the file declared, and only adds the genre's rhythm section: \"악보 악기 그대로 두고 뽕짝 리듬만\". Pick by which of the three the person actually said; 살려서/그대로 usually means parts."
-      },
-      "vary": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "description": "0-1: how much the rhythm section phrases instead of repeating. It shapes each four-bar group (leaning into its last bar) and leaves the last stroke of every eighth bar empty, the way a player breathes before the next phrase. 0 = every bar identical. Default 0.35; raise it for a looser feel, drop it for a machine."
       }
     }
   },

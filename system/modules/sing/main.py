@@ -58,23 +58,42 @@ def note_freq(name):
     return 440.0 * (2.0 ** ((midi - 69) / 12.0))
 
 
-# 숫자 축 — 0~N 다이얼 하나에 이유 하나. 이름은 SCORE_KNOBS 에서 파생된다(아래).
-NUMERIC_AXES = (("laidback", 0.5, "0 = 격자 위, 0.05 = R&B 의 그 여유"),
-                ("gate", 1.0, "0.55 = 끊어 치기, 1.0 = 이어 붙이기"),
-                ("double", 1.0, "0 = 한 대, 0.7 = 좌우로 벌린 두 대"),
-                ("fill", 1.0, "0 = 안 받아침, 0.7 = 트로트 아코디언처럼 대답"),
-                ("vary", 1.0, "0 = 매 마디 똑같이, 0.35 = 네 마디로 숨 쉬며"))
-
-# `parse_score` 가 **악보 안에서** 읽는 노브 전부. 파일 악보(scoreMediaPath)로 부르면 악보 dict 는
-# 파일에서 나오므로, 호출자가 top-level 로 준 이 이름들을 거기 얹어 줘야 한다.
+# `parse_score` 가 **악보 안에서** 읽는 노브 전부. 파일 악보(scoreMediaPath)로 부르면 악보
+# dict 는 파일에서 나오므로, 호출자가 top-level 로 준 이 이름들을 거기 얹어 줘야 한다.
 #
-# ⚠️ 이게 손목록이던 시절 열 개만 적혀 있었고, 8/20 에 축으로 열어 준 여덟(mix·orn·chordShape·
-# laidback·gate·double·fill·vary)이 전부 빠져 있었다. 선언은 `[render]` 라고 광고하는데 코드가
-# 조용히 버렸다 — 실측 8/21: `mix` 를 평평하게 넘긴 렌더가 기본값 렌더와 **바이트까지 동일**했다.
-# 그래서 지금은 숫자 축 표가 이 목록에서 파생되고, 감사가 둘의 어긋남을 잡는다.
-SCORE_KNOBS = ("style", "band", "drumPattern", "bpm", "humanize", "pedal", "voicing",
-               "swing", "comp", "bassline", "mix", "orn", "chordShape",
-               ) + tuple(k for k, _, _ in NUMERIC_AXES)
+# ⚠️ 2026-08-21 로 이 목록이 짧아졌다. 여기 있던 기교 노브 아홉(orn·chordShape·humanize·
+# voicing·laidback·gate·double·fill·vary)은 **우리가 지어낸 주법**이었고, 폰트가 원래 하는
+# 연주법(프로그램 번호·CC1·피치휠·CC7/11)을 부르는 대신 그 자리를 차지하고 있었다.
+# 장르 기본값(STYLE_FEEL)은 남는다 — 걷은 것은 호출자가 돌리던 다이얼이다.
+SCORE_KNOBS = ("style", "band", "drumPattern", "bpm", "pedal",
+               "swing", "comp", "bassline", "mix")
+
+
+# 걷은 노브 — 값이 아니라 **부재**가 답이면 모델은 성공했다고 믿는다. 어느 인자가 조용히
+# 무시되는지는 호출자가 알 방법이 없으므로, 걷은 이름은 자기가 걷혔다고 말하고 다음 수를 준다.
+# (`lrc` 를 흡수할 때와 같은 자리 — 옛 이름이 오면 파서가 대답한다.)
+RETIRED_KNOBS = {
+    "orn":        "장식은 이제 악보가 적은 것만 연주합니다(트릴·꾸밈음·아르페지오)",
+    "chordShape": "코드 모양은 장르가 정합니다 — rock·punk·metal 이 파워코드입니다",
+    "humanize":   "루바토는 걷었습니다 — 적힌 자리에서 연주합니다",
+    "voicing":    "성부 균형은 mix 로 주세요 — 예: mix {\"chord\": 0.5}",
+    "laidback":   "뒤로 눕히기는 걷었습니다",
+    "gate":       "음 길이는 장르가 정합니다(comp 로 주법을 고르세요)",
+    "double":     "겹치기는 band.doubles 로 선언하세요 — 어느 성부를 무슨 악기로 몇 옥타브",
+    "fill":       "받아침은 걷었습니다",
+    "vary":       "마디별 세기 변화는 걷었습니다",
+}
+
+
+def retired_notice(d):
+    """The one-line refusal for a knob we no longer play, or None."""
+    if not isinstance(d, dict):
+        return None
+    for k in RETIRED_KNOBS:
+        if d.get(k) is not None:
+            return (f"{k} 는 2026-08-21 에 걷은 인자입니다 — 우리가 코드로 지어낸 주법이라, "
+                    f"폰트가 원래 하는 연주법으로 갈아탔습니다. {RETIRED_KNOBS[k]}")
+    return None
 
 
 def parse_score(score):
@@ -85,6 +104,9 @@ def parse_score(score):
     pitches (a melisma) — for the MVP the extension keeps the first pitch's duration math simple:
     each event carries a list of (freq, beats) segments.
     """
+    gone = retired_notice(score)
+    if gone:
+        return None, None, None, None, None, None, gone
     if not isinstance(score, dict):
         return None, None, None, None, None, None, "score 가 객체가 아닙니다"
     bpm = float(score.get("bpm") or 0)
@@ -228,28 +250,6 @@ def parse_score(score):
     if bassline is not None and bassline not in BASS_KINDS:
         return None, None, None, None, None, None, \
             f"bassline {bassline!r} 를 모릅니다 — 가능한 값: {' | '.join(BASS_KINDS)}"
-    orn = str(score.get("orn") or "").strip().lower() or None
-    if orn is not None and orn not in ORN_KINDS:
-        return (None, None, None, None, None, None,
-                f"orn {orn!r} 를 모릅니다 — 가능한 값: {' | '.join(ORN_KINDS)}")
-    chord_shape = str(score.get("chordShape") or "").strip().lower() or None
-    if chord_shape is not None and chord_shape not in CHORD_SHAPES:
-        return (None, None, None, None, None, None,
-                f"chordShape {chord_shape!r} 를 모릅니다 — 가능한 값: {' | '.join(CHORD_SHAPES)}")
-    # The numeric axes share one gate because they share one shape: a 0~N dial with a reason.
-    axes = {}
-    for key, hi, why in NUMERIC_AXES:
-        raw = score.get(key)
-        if raw is None:
-            continue
-        try:
-            axes[key] = float(raw)
-        except (TypeError, ValueError):
-            return (None, None, None, None, None, None,
-                    f"{key} 는 0~{hi} 숫자입니다 ({why})")
-        if not (0.0 <= axes[key] <= hi):
-            return (None, None, None, None, None, None,
-                    f"{key} 는 0~{hi} 사이여야 합니다 ({why})")
     drums = score.get("drumPattern")
     drum_rows = None
     if drums is not None:
@@ -303,22 +303,6 @@ def parse_score(score):
             if not (0.0 <= clean[str(k)] <= 1.0):
                 return (None, None, None, None, None, None, f"mix.{k} 는 0~1 사이여야 합니다")
         mixmap = clean
-    voicing = score.get("voicing")
-    if voicing is not None:
-        try:
-            voicing = float(voicing)
-        except (TypeError, ValueError):
-            return None, None, None, None, None, None, "voicing 은 0~1 숫자입니다"
-        if not (0.0 <= voicing <= 1.0):
-            return None, None, None, None, None, None, "voicing 은 0~1 사이여야 합니다"
-    humanize = score.get("humanize")
-    if humanize is not None:
-        try:
-            humanize = float(humanize)
-        except (TypeError, ValueError):
-            return None, None, None, None, None, None, "humanize 는 0~1 숫자입니다"
-        if not (0.0 <= humanize <= 1.0):
-            return None, None, None, None, None, None, "humanize 는 0~1 사이여야 합니다"
     pedal = score.get("pedal")
     if pedal is not None and not isinstance(pedal, bool):
         return None, None, None, None, None, None, "pedal 은 true/false 입니다"
@@ -332,10 +316,7 @@ def parse_score(score):
             return None, None, None, None, None, None, "bars 는 1~256 마디입니다"
     feel = {"meter": meter, "swing": swing, "comp": comp, "bass": bassline,
             "drums": drum_rows, "bars": bars, "bpm": bpm, "doubles": doubles,
-            "humanize": humanize, "pedal": pedal, "voicing": voicing,
-            "orn": orn, "voicing_kind": chord_shape, "laidback": axes.get("laidback"),
-            "gate": axes.get("gate"), "double": axes.get("double"),
-            "fill": axes.get("fill"), "vary": axes.get("vary"), "mix": mixmap}
+            "pedal": pedal, "mix": mixmap}
     return spb, events, chords, style, band, feel, None
 
 
@@ -553,12 +534,6 @@ PATCHES = {
     # 리드 기타 — 리듬(dguitar)과 **다른 소리여야 한다**. 같은 파형으로 리프도 치고 가락도
     # 치면 가락이 벽에 묻힌다. 게인은 그대로 높되 덜 부서지고(shape↓) 더 길게 남는다(hdecay↑):
     # 오버드라이브(GM 29)가 리드를, 디스토션(30)이 리듬을 맡는 그 배치다.
-    # 핀치 하모닉의 소리 — 기본음이 죽고 배음만 남은 그 유리질. harm[0] 이 낮은 것이 정체고,
-    # 그래서 같은 음고를 눌러도 기타가 아니라 "끼이익" 으로 들린다. 내장 신디 전용이다(sf2 는
-    # 음색을 못 바꾸므로 거기선 같은 기타가 배음 자리를 짚는다 — 아래 PINCH_HARMONICS 참조).
-    "pinchharm":  {"harm": [0.14, 0.42, 1.0, 0.74, 0.52, 0.34, 0.20], "hdecay": 2.8,
-                   "hslope": 1.0, "detune": 0.002, "noise": 0.035, "shape": 2.2,
-                   "atk": 0.005, "rel": 0.24, "gain": 0.22, "gm": 30},
     "lguitar":    {"harm": [1.0, 0.70, 0.42, 0.26, 0.16, 0.09], "hdecay": 2.2, "hslope": 0.95,
                    "detune": 0.003, "noise": 0.04, "shape": 3.2, "atk": 0.004, "rel": 0.16,
                    "gain": 0.30, "gm": 29},
@@ -595,12 +570,11 @@ PATCHES = {
 }
 
 
-def synth_note(freq, dur, patch="bass", vel=0.8, bend=None, vib=None):
+def synth_note(freq, dur, patch="bass", vel=0.8, bend=None):
     """One note of `patch` — float array of `dur` seconds, peak-normalised to the patch gain.
 
-    `bend` = BEND_CURVES 의 한 줄. 음 하나 안에서 음정이 움직인다(벤딩). 물리모델(ks) 패치는
-    줄 길이가 곧 음정이라 이 경로로는 못 휘고, 가산합성 패치만 휜다 — 일렉/디스토션 기타가
-    거기 있으니 정작 필요한 자리는 덮인다."""
+    `bend` = [(음 길이의 몇 %, 반음), …]. 음 하나 안에서 음정이 움직인다. 물리모델(ks) 패치는
+    줄 길이가 곧 음정이라 이 경로로는 못 휘고, 가산합성 패치만 휜다."""
     p = PATCHES.get(patch, PATCHES["bass"])
     n = max(1, int(SR * dur))
     t = np.arange(n) / SR
@@ -615,16 +589,9 @@ def synth_note(freq, dur, patch="bass", vel=0.8, bend=None, vib=None):
         # 벤딩과 비브라토는 같은 자리에서 만난다 — 둘 다 순간 주파수를 흔드는 일이라,
         # 하나의 위상 램프에 곱해 두면 서로를 지우지 않는다.
         curve = np.ones(n)
-        if bend or vib:
-            semis = np.zeros(n)
-            if bend:
-                fr = t / max(1e-6, dur)
-                semis += np.array([bend_at(bend, float(x)) for x in fr])
-            if vib:
-                rate, depth, onset = vib
-                start = onset * dur
-                ease = np.clip((t - start) / 0.12, 0.0, 1.0)
-                semis += depth * ease * np.sin(2 * np.pi * rate * np.maximum(0.0, t - start))
+        if bend:
+            fr = t / max(1e-6, dur)
+            semis = np.array([bend_at(bend, float(x)) for x in fr])
             curve = np.power(2.0, semis / 12.0)
         if p.get("vib"):
             rate, depth = p["vib"]
@@ -632,7 +599,7 @@ def synth_note(freq, dur, patch="bass", vel=0.8, bend=None, vib=None):
             onset = np.minimum(1.0, t / 0.18)
             inst = freq * curve * (1.0 + depth * onset * np.sin(2 * np.pi * rate * t))
             ph = 2 * np.pi * np.cumsum(inst) / SR
-        elif bend or vib:
+        elif bend:
             ph = 2 * np.pi * np.cumsum(freq * curve) / SR
         else:
             ph = 2 * np.pi * freq * t
@@ -1037,14 +1004,9 @@ def band_seats(style, band=None):
     """
     out = {part: ([v] if isinstance(v, str) else [x for x in v if x])
            for part, v in STYLE_BAND.get(style, STYLE_BAND["trot"]).items()}
-    # 대답하는 목소리는 기본적으로 컴핑하는 손이다. 자리를 먼저 만들어 둬야 호출자의 `fill` 이
-    # 걸린다 — 덮어쓰기 뒤에 만들면 그 이름이 조용히 버려진다.
-    out.setdefault("fill", list(out.get("chord") or ["piano"]))
     for part, name in (band or {}).items():
         if part in out and resolve_instrument(name) is not None:
             out[part] = [name]
-    if not (band or {}).get("fill"):
-        out["fill"] = list(out.get("chord") or ["piano"])
     return out
 
 
@@ -1298,12 +1260,12 @@ STYLE_FEEL = {
     "march":     {"comp": "quarters", "bass": "alt", "swing": 0.0, "gate": 0.7},
     "rock":      {"voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.8},
     "metal":     {"voicing_kind": "power", "comp": "chug", "bass": "drive",
-                  "double": 0.7, "swing": 0.0, "gate": 1.0},
+                  "swing": 0.0, "gate": 1.0},
     "pop":       {"comp": "eighths", "bass": "alt", "swing": 0.0, "gate": 0.85},
     "dance":     {"comp": "stabs", "bass": "offbeat", "swing": 0.0, "gate": 0.7},
-    "rnb":       {"laidback": 0.04, "comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
+    "rnb":       {"comp": "arp", "bass": "hold", "swing": 0.45, "gate": 0.9},
     "rocknroll": {"comp": "quarters", "bass": "boogie", "swing": 0.6, "gate": 0.75},
-    "hiphop":    {"laidback": 0.05, "comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
+    "hiphop":    {"comp": "pad", "bass": "hold", "swing": 0.45, "gate": 0.85},
     "country":   {"comp": "stabs", "bass": "twobeat", "swing": 0.0, "gate": 0.8},
     "funk":      {"comp": "chank", "bass": "funk16", "swing": 0.0, "gate": 0.55},
     "punk":      {"voicing_kind": "power", "comp": "eighths", "bass": "drive", "swing": 0.0, "gate": 0.6},
@@ -1327,17 +1289,8 @@ STYLE_FEEL = {
 # accordion spent a whole trot playing block chords on a grid — 사용자 8/20: "아코디언은 멜로디가
 # 있는 악기잖아 왜 뺘악~ 뺘악만 해". The material for the second only arrived with rests: until the
 # reader kept them, nothing in the data said where the singer stops.
-# 0 = never answer. The rows below are the genres whose face this is.
-FILL_STYLES = {"trot": 0.7, "blues": 0.6, "rocknroll": 0.55, "jazz": 0.45, "country": 0.4,
-               "rnb": 0.3}
 COMP_KINDS = ("pad", "stabs", "arp", "quarters", "eighths", "chug", "charleston", "chank")
 BASS_KINDS = ("hold", "twobeat", "alt", "walk", "drive", "offbeat", "funk16", "boogie")
-# How the lead hand shapes a long note, and what a chord actually contains. A genre IS these axes
-# together — naming them is what lets a caller assemble one we never listed instead of asking us
-# for another row.
-ORN_KINDS = ("none", "scoop", "bend", "bendin", "grace", "kkeokgi", "pinch", "harmonic")
-CHORD_SHAPES = ("full", "power")
-
 # 3/4 grooves — a waltz bar is not a trimmed 4/4 bar, so the tables are their own.
 DRUM_PATTERNS_3 = {
     "trot":   [("kick", 0.0, 0.9), ("hat", 0.5, 0.4), ("snare", 1.0, 0.65), ("hat", 1.5, 0.4),
@@ -1418,109 +1371,9 @@ def smooth_voicing(notes, prev):
     return sorted(min((n - 12, n, n + 12), key=lambda c: abs(c - center)) for n in notes)
 
 
-BEND_CURVES = {
-    # (음 길이의 몇 %, 반음 단위 편차) — 음 안에서 음정이 움직이는 길. 기타리스트가 목표음을
-    # 곧게 짚지 않고 **아래에서 밀어 올려 도착**하는 그 손이고, 록 솔로와 블루스의 얼굴이다.
-    # 도착 뒤에는 0 이라 가락은 악보 그대로 남는다 — 표현이지 이조가 아니다.
-    "scoop":  [(0.0, -1.0), (0.18, 0.0), (1.0, 0.0)],   # 블루스 — 반음
-    "bendin": [(0.0, -2.0), (0.22, 0.0), (1.0, 0.0)],   # 록 솔로 — 온음("띠요오옹")
-    # 트로트의 꺾기 — 사용자 8/20: "소쩍새 슬피 우는" 이 "소~오쩍새 슬피이~ 우~느흔~".
-    # **두 상태다**: 소 를 끌다가 오 로 꺾고 거기서 끝난다. 돌아오면 소~오~소 가 되어 상태가
-    # 셋이 된다(사용자 재정정: "돌아오면 소오~가 아니고 소오~오 되는거 아닌가").
-    # 그러면 "삐융" 의 원인은 돌아오지 않은 것이 아니라 **음을 다시 때린 것**이었다 — 옛 구현이
-    # 음을 둘로 쪼개 아래 음에 새 어택을 줬고, 관악기에서 새 어택은 별개의 음으로 들린다.
-    # 그래서 어택은 하나, 음정만 꺾여 내려가 그대로 끝난다. 한 숨, 한 음절, 두 상태.
-    "kkeokgi": [(0.0, 0.0), (0.60, 0.0), (0.70, -2.0), (1.0, -2.0)],
-}
-
-# 장식마다 필요한 최소 길이. 꺾을 시간이 없는 음에 걸면 음정이 틀린 것처럼 들린다.
-ORN_MIN = {"scoop": 1.0, "bendin": 1.5, "kkeokgi": 2.0, "bend": 0.5, "grace": 0.5,
-           "pinch": 1.0, "harmonic": 1.0}
-
-# 핀치 하모닉 — 픽을 쥔 엄지가 친 직후 줄을 스쳐 **기본음을 죽이고 배음만 남긴다**. 메탈의 그
-# "끼이익" 이고, 우리 벤딩 통로로는 못 낸다: 움직이는 것이 음정이 아니라 **배음 구조**라서다.
-# 두 엔진 다 음 하나의 음색을 도중에 못 바꾸므로 배음을 **자기 행**으로 낸다 — 그러면 내장
-# 신디는 유리질 패치(pinchharm)를 쓰고 sf2 는 같은 기타로 그 배음 자리를 짚는다. 한 구현이 두
-# 엔진을 덮고, 엔진 안에 분기가 하나도 안 생긴다.
-#   (배음 반음, 음의 몇 %에서 물리나, 배음 세기, 그동안 기본음이 남는 정도)
-PINCH_HARMONICS = {
-    "pinch":    (19, 0.30, 0.95, 0.38),   # 5배음(옥타브+5도) — 비명에 가까운 그 소리
-    "harmonic": (12, 0.25, 0.80, 0.50),   # 2배음 — 스치듯 부드러운 자연 하모닉
-}
-# 배음은 잡히면서 위로 밀려 올라간다 — 곧게 서 있으면 그냥 높은 음이지 비명이 아니다.
-PINCH_RISE = [(0.0, 0.0), (0.30, 0.45), (1.0, 0.9)]
-
-# Music is phrased in fours. A comp pattern applied identically to every bar of a four-minute
-# piece is the same bar 120 times, and that is what it sounds like (사용자 8/20: "연주법이 하나가
-# 계속 반복되니까 뭔가 단조로운 느낌"). Players do two things about it without being asked: they
-# shape the four-bar group, leaning into its last bar, and they leave a hole before the next
-# phrase starts. Both are deterministic here — variety from the bar number, not from a die, so a
-# render is still byte-stable.
-PHRASE4 = (0.97, 0.92, 0.99, 1.08)   # 세기 — 넷째 마디로 기울어진다
-BREATH_EVERY = 8                     # 여덟 마디마다 마지막 타점을 비운다
-
-
-# (Hz, 반음 깊이, 언제부터) — 손가락 비브라토. 벤딩이 **도착**이라면 이건 **머무는 동안**이고,
-# 기타 솔로에서 긴 음이 살아 있는 이유가 이것이다. 곧게 뻗은 롱톤은 신디사이저처럼 들린다.
-# 속도는 시간(Hz)이지 박이 아니다 — 느린 곡이라고 천천히 떨지 않는다.
-VIB_STYLES = {
-    "rock":  (5.5, 0.28, 0.35),   # 노래하는 비브라토 — 얕고 고르게
-    "metal": (5.5, 0.48, 0.22),  # 더 넓고 더 일찍 — 노래가 아니라 울음이다
-    "blues": (5.0, 0.42, 0.30),   # 더 넓고 느리게 — 블루스의 그 울음
-    "trot":  (5.0, 0.35, 0.40),   # 트로트의 떨기 — 늦게 걸려 길게 떤다
-    "rocknroll": (5.2, 0.25, 0.35),
-    "rnb":   (4.6, 0.22, 0.45),   # 늦고 얕게 — 소울의 그 흔들림
-    "jazz":  (4.8, 0.20, 0.45),
-    "country": (5.0, 0.24, 0.40),
-}
-
-# 한 창법만 반복하면 그것도 하나의 기계다 — 사용자 8/20: "뽕짝에 꺾기만 들어가니까 단조로워진다".
-# 트로트 가수는 꺾기만 하지 않는다: 소절 끝에서 꺾고, 긴 음은 떨고, 위로 도약해 도착한 음은 밀어
-# 올린다. 어느 것을 쓸지는 **그 음이 어디 있느냐**가 정한다 — 난수가 아니라 문맥이라 재현된다.
-#   end  = 소절 끝(뒤에 쉼이 오는 음) · long = 소절 안의 긴 음 · leap = 위로 도약해 닿은 음
-ORN_SET = {
-    "trot":      {"end": "kkeokgi", "long": "vib", "leap": "scoop"},
-    "blues":     {"end": "bend", "long": "vib", "leap": "scoop"},
-    "rock":      {"end": "bendin", "long": "vib", "leap": "bendin"},
-    # 메탈은 도약해 닿은 음에서 핀치를 물린다. end 와 leap 이 둘 다 bendin 이던 시절 이 장르의
-    # 기교는 사실상 둘뿐이었다 — 자리가 셋인데 손이 둘이면 그것도 반복이다.
-    "metal":     {"end": "bendin", "long": "vib", "leap": "pinch"},
-    "punk":      {"end": "bendin"},
-    "country":   {"end": "grace", "long": "vib", "leap": "grace"},
-    "rocknroll": {"end": "bend", "long": "vib"},
-    "rnb":       {"long": "vib", "leap": "scoop"},
-    "jazz":      {"long": "vib"},
-}
-LEAP_UP = 3          # 반음 — 3도 이상 뛰어 올라 닿은 음이 "도약"이다
-
-
-def pick_orn(style, pinned, beats, phrase_end, leap_up):
-    """Which ornament this note gets. `pinned` (the caller's `orn`) wins everywhere; otherwise
-    the genre's repertoire answers by position. Returns "" for a plain note."""
-    if pinned == "none":
-        return ""
-    if pinned:
-        ok = beats >= ORN_MIN.get(pinned, 1.5) or (
-            pinned == "kkeokgi" and phrase_end and beats >= 1.0)
-        return pinned if ok else ""
-    rep = ORN_SET.get(style) or {}
-    if phrase_end and rep.get("end") and beats >= 1.0:
-        return rep["end"]
-    if leap_up and rep.get("leap") and beats >= ORN_MIN.get(rep["leap"], 1.0):
-        return rep["leap"]
-    if rep.get("long") and beats >= 1.5:
-        return rep["long"]
-    return ""
-
-
-def vib_at(vib, t, dur):
-    """t초에서의 흔들림(반음). onset 전에는 0, 그 뒤로 서서히 열린다 — 처음부터 떨면 사이렌."""
-    rate, depth, onset = vib
-    start = onset * dur
-    if t <= start:
-        return 0.0
-    ease = min(1.0, (t - start) / max(1e-6, 0.12))
-    return depth * ease * math.sin(2 * math.pi * rate * (t - start))
+# 벤딩의 통로는 남는다 — 움직이는 것은 **악보가 적은 벤딩**이지 우리가 고른 곡선이 아니다.
+# 행의 `bend` = [(음 길이의 몇 %, 반음), …]. sf2 는 피치휠로, 내장 신디는 위상 램프로 낸다.
+# ⚠️ 2026-08-21 현재 이 칸을 채우는 곳이 없다 — 파서가 악보의 벤딩을 읽기 시작하면 산다.
 
 
 def bend_at(curve, frac):
@@ -1778,27 +1631,14 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     voicing_kind = feel.get("voicing_kind") or defaults.get("voicing_kind", "")
     if voicing_kind == "full":       # an explicit "not power" is the plain quality voicing
         voicing_kind = ""
-    # "none" survives as itself — it is the caller saying "play it straight", and pick_orn has
-    # to hear that rather than an empty string, which now means "use the genre's repertoire".
-    lead_orn = feel.get("orn") or defaults.get("orn", "")
-    laidback = float(feel["laidback"] if feel.get("laidback") is not None
-                     else defaults.get("laidback", 0.0))
     meter = int(feel.get("meter") or 4)
     swing = float(feel.get("swing") if feel.get("swing") is not None else defaults["swing"])
     comp = feel.get("comp") or defaults["comp"]
     bassline = feel.get("bass") or defaults["bass"]
-    # Articulation: how much of a written note actually SOUNDS. Velocity alone made every
-    # style press notes the same shape — funk clips, a ballad sings through (실측·사용자:
-    # "리듬에 어울리게 안 나오냐").
-    gate = float(feel["gate"] if feel.get("gate") is not None else defaults.get("gate", 0.9))
-    fill_amt = float(feel["fill"] if feel.get("fill") is not None
-                     else FILL_STYLES.get(style, 0.0))
-    vary = float(feel["vary"] if feel.get("vary") is not None else 0.35)
-    # Thickness is its own axis. It used to ride on `comp == "chug"`, so a caller who changed the
-    # strumming hand silently lost the second guitar — the one thing that makes a wall a wall
-    # (실측 8/19: `comp:"stabs"` on a metal render, and `chord2` was gone from the part list).
-    double = float(feel["double"] if feel.get("double") is not None
-                   else defaults.get("double", 0.0))
+    # Articulation: how much of a written note actually SOUNDS — the genre's own value, not a
+    # dial. Velocity alone made every style press notes the same shape (funk clips, a ballad
+    # sings through), so the row keeps saying it; the caller no longer overrides it.
+    gate = float(defaults.get("gate", 0.9))
     # A machine-gun roll belongs to uptempo music: a slow piece keeps its soft fill even in a
     # rolling genre (실측: pop-style 캐논 at a slow bpm rolled, and it fit nothing).
     bpm = float(feel.get("bpm") or 120.0)
@@ -1827,63 +1667,9 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             # curve only shapes notes that never declared one.
             own = vels[si] if si < len(vels) else None
             vel = own if own is not None else (0.82 if on_down else (0.74 if on_beat else 0.64))
-            # 어느 기교를 쓸지는 그 음의 자리가 정한다 — 소절 끝인가, 긴 음인가, 뛰어 올라
-            # 닿았는가. 호출자가 `orn` 을 지목하면 그것 하나로 고정된다.
-            leap_up = prev_m is not None and (m - prev_m) >= LEAP_UP
-            use_orn = pick_orn(style, lead_orn, beats, phrase_end, leap_up)
-            prev_m = m
-            if use_orn == "vib" and style in VIB_STYLES:
-                out.append({"beat": beat, "beats": beats, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": m,
-                            "program": prog["melody"], "vel": vel, "gate": gate,
-                            "vib": VIB_STYLES[style]})
-            elif use_orn in BEND_CURVES:
-                # 진짜 벤딩 — 음을 둘로 쪼개지 않고 음정이 음 안에서 움직인다.
-                row = {"beat": beat, "beats": beats, "part": "melody",
-                       "patch": patch_of["melody"], "pitch": m,
-                       "program": prog["melody"], "vel": vel, "gate": gate,
-                       "bend": BEND_CURVES[use_orn]}
-                # 흔들림은 **긴 음에만** — 짧은 음에 걸면 떨 시간이 없어 음정만 흔들린 것처럼
-                # 들린다. 기타리스트도 롱톤에서만 손목을 쓴다.
-                if style in VIB_STYLES and beats >= 1.5:
-                    row["vib"] = VIB_STYLES[style]
-                out.append(row)
-            elif use_orn in PINCH_HARMONICS:
-                # 기본음은 계속 울리되 죽고, 그 위에 배음이 얹혀 밀려 올라간다. 음을 쪼개
-                # 새로 때리는 게 아니라(그건 별개의 음으로 들린다 — 꺾기에서 배운 것) 같은
-                # 어택 위에 배음이 **더해지는** 것이라 두 행이 겹쳐 산다.
-                semis, at, hgain, duck = PINCH_HARMONICS[use_orn]
-                out.append({"beat": beat, "beats": beats, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": m,
-                            "program": prog["melody"], "vel": round(vel * duck, 3),
-                            "gate": gate})
-                lead = beats * at
-                out.append({"beat": beat + lead, "beats": max(0.05, beats - lead),
-                            "part": "melody", "patch": "pinchharm",
-                            "pitch": min(127, m + semis), "program": prog["melody"],
-                            "vel": round(vel * hgain, 3), "gate": 1.0, "bend": PINCH_RISE})
-            elif use_orn == "bend":
-                # 블루스의 스쿠프 — 반음 아래에서 밀어 올려 음에 도착한다. 기타·하모니카의
-                # 그 손이고, 곧게 시작하면 블루스로 안 들린다.
-                lead = min(0.14, beats * 0.2)
-                out.append({"beat": beat, "beats": lead, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": max(0, m - 1),
-                            "program": prog["melody"], "vel": round(vel * 0.7, 3), "gate": gate})
-                out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": m,
-                            "program": prog["melody"], "vel": vel, "gate": gate})
-            elif use_orn == "grace":
-                # 컨트리의 해머온 — 온음 아래를 스치고 본음을 때린다.
-                lead = min(0.12, beats * 0.18)
-                out.append({"beat": beat, "beats": lead, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": max(0, m - 2),
-                            "program": prog["melody"], "vel": round(vel * 0.72, 3), "gate": gate})
-                out.append({"beat": beat + lead, "beats": beats - lead, "part": "melody",
-                            "patch": patch_of["melody"], "pitch": m,
-                            "program": prog["melody"], "vel": vel, "gate": gate})
-            else:
-                out.append({"beat": beat, "beats": beats, "part": "melody", "patch": patch_of["melody"],
-                            "pitch": m, "program": prog["melody"], "vel": vel, "gate": gate})
+            out.append({"beat": beat, "beats": beats, "part": "melody",
+                        "patch": patch_of["melody"], "pitch": m,
+                        "program": prog["melody"], "vel": vel, "gate": gate})
             beat += beats
     pos = 0.0
     prev_voicing = None
@@ -1910,32 +1696,15 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
             for hi, (off, dur, vel) in enumerate(hits_here):
                 if pos + off >= total_beats:
                     break
-                bar = int((pos + off) // meter)
-                vel = round(vel * (1.0 + vary * (PHRASE4[bar % 4] - 1.0)), 3)
                 for p in struck:
-                    row = {"beat": pos + off, "beats": dur, "part": "chord",
-                           "patch": patch_of["chord"], "pitch": p,
-                           "program": prog["chord"], "vel": vel}
-                    if double > 0:
-                        row["pan"] = -double   # 벽의 왼쪽 절반
-                    out.append(row)
-                    if double <= 0:
-                        continue
-                    # 더블트래킹 — 메탈의 두께는 게인이 아니라 **같은 리프를 두 번 따로 쳐서
-                    # 좌우 끝으로 벌리는 것**에서 나온다. 한 대는 아무리 세게 쳐도 얇다.
-                    # 두 번째 손은 사람이라 몇 밀리초씩 어긋나고 세기도 다르다 — 그 어긋남이
-                    # 두께의 정체라, 완전히 같은 음을 복사하면 그냥 볼륨만 커진다.
-                    nudge = ((hi % 3) - 1) * (0.007 / spb_a)
-                    out.append({"beat": max(0.0, pos + off + nudge), "beats": dur,
-                                "part": "chord2", "patch": patch_of["chord"], "pitch": p,
-                                "program": prog["chord"], "pan": double,
-                                "vel": round(vel * (0.94 if hi % 2 else 1.0), 3)})
+                    out.append({"beat": pos + off, "beats": dur, "part": "chord",
+                                "patch": patch_of["chord"], "pitch": p,
+                                "program": prog["chord"], "vel": vel})
         next_rm = None
         if idx + 1 < len(chords):
             next_rm = int(round(69 + 12 * math.log2(chords[idx + 1][0] / 440.0)))
         semis = CHORD_QUALITY.get(str(quality or "").strip(), CHORD_QUALITY[""])
         for off, dur, pitch, vel in _bass_line(bassline, rm, beats, next_rm, meter, semis):
-            vel = round(vel * (1.0 + vary * (PHRASE4[int((pos + off) // meter) % 4] - 1.0)), 3)
             if pos + off < total_beats:
                 out.append({"beat": pos + off, "beats": dur, "part": "bass",
                             "patch": patch_of["bass"], "pitch": pitch,
@@ -1943,59 +1712,6 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         pos += beats
         if pos >= total_beats:
             break
-    if vary > 0:
-        # The breath is the last stroke OF THE BAR, so it has to be chosen once the bar is whole.
-        # Deciding it inside the chord loop only ever saw one chord's strokes: a chord that ended
-        # mid-bar looked like the end of the bar and a bar whose last stroke belonged to the next
-        # chord was never touched. 실측 8/20 아로하: six breaths across 88 bars where the rule
-        # asks for eleven. Nothing about the rule was wrong — it was being asked the wrong scope.
-        by_bar = {}
-        for r in out:
-            if str(r.get("part", "")).startswith("chord"):
-                b = int(r["beat"] // meter)
-                if b % BREATH_EVERY == BREATH_EVERY - 1:
-                    by_bar.setdefault((b, r["part"]), []).append(r)
-        for rows in by_bar.values():
-            last = max(r["beat"] for r in rows)
-            for r in rows:
-                if abs(r["beat"] - last) < 1e-6:
-                    r["_breath"] = True
-        out = [r for r in out if not r.pop("_breath", False)]
-    if fill_amt > 0 and mel_gaps and chords:
-        # Where the harmony is, so the answer belongs to the song and not to a scale we picked.
-        spans, cpos = [], 0.0
-        for c_root, c_beats, c_qual in chords:
-            spans.append((cpos, cpos + c_beats, c_root, c_qual))
-            cpos += c_beats
-        step = 0.5
-        for gi, (g_at, g_len) in enumerate(mel_gaps):
-            # A fill answers INTO the next entry: it sits at the END of the breath and stops
-            # just short of it. Landing early leaves a hole; overrunning steps on the singer.
-            room = g_len - 0.5
-            if room < 1.0:
-                continue
-            span = min(room, 1.0 + 3.0 * fill_amt)
-            at = g_at + g_len - 0.5 - span
-            # Up on one breath, down on the next — a player does not repeat the same shape all
-            # night, and alternating is the cheapest honest variety (no randomness to reproduce).
-            climb = (gi % 2 == 0)
-            i = 0
-            limit = g_at + g_len - 0.5
-            # The whole note has to fit, not just its onset: a fill that ends ON the entry is a
-            # fill that steps on the singer.
-            while at + step <= limit + 1e-9 and at < total_beats:
-                cs = next((sp for sp in spans if sp[0] <= at < sp[1]), None)
-                if cs is None:
-                    break
-                rm_f = int(round(69 + 12 * math.log2(cs[2] / 440.0)))
-                tones = chord_voicing(rm_f + 12, cs[3], voicing_kind)
-                pick = tones[(i if climb else len(tones) - 1 - i) % len(tones)]
-                out.append({"beat": round(at, 4), "beats": step * 0.9, "part": "fill",
-                            "patch": patch_of["fill"], "pitch": pick,
-                            "program": prog["fill"], "gate": gate,
-                            "vel": round(0.42 + 0.22 * fill_amt, 3)})
-                at += step
-                i += 1
     doubles = feel.get("doubles")
     if doubles is None:
         doubles = STYLE_DOUBLES.get(style, [])
@@ -2073,20 +1789,8 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         for e in out:
             if e["part"] != "melody" and e.get("double_of") != "melody"                     and abs(e["beat"] % 1.0 - 0.5) < 1e-6:
                 e["beat"] += shift
-    _lay_back(out, laidback)
     out.sort(key=lambda e: (e["beat"], e["part"]))
     return out
-
-
-def _lay_back(rows, amount):
-    """R&B·힙합의 그 느낌 — **가락만** 박 뒤로 조금 눕는다. 리듬 섹션은 격자에 그대로 있고
-    노래가 그 뒤를 걷기 때문에 생기는 여유라, 전부 같이 밀면 그냥 느린 곡이 된다."""
-    if amount <= 0:
-        return rows
-    for r in rows:
-        if r.get("part") == "melody":
-            r["beat"] = round(r["beat"] + amount, 4)
-    return rows
 
 
 def reinstrument(rows, band):
@@ -2155,13 +1859,15 @@ def assimilate_triplets(arr):
 
 
 def apply_performance(arr, feel, spb, total_beats):
-    """The asked-for performance layer, applied to ANY arr (faithful or arranged).
+    """The pedal layer, applied to ANY arr (faithful or arranged).
 
     pedal:true — when the score carries no pedal marks of its own, generate the pianist's
-    default: press at每 bar, release at the barline (re-pedal — the standard way to keep the
+    default: press at every bar, release at the barline (re-pedal — the standard way to keep the
     wash without smearing harmonies; 월광's own marks are famously absent from transcriptions).
-    humanize 0-1 — deterministic micro jitter: timing (~12ms at 1.0), velocity (~7%), and
-    chord-stack rolls (~10ms per voice). 사람처럼, but the same request renders the same bytes.
+    pedal:false plays a marked score dry; unasked plays exactly what is written.
+
+    ⚠️ humanize·voicing 이 여기 있었다 — 랜덤워크 루바토와 성부별 세기 재조정. 둘 다 우리가
+    지어낸 연주였고 2026-08-21 에 걷었다. 세기는 이제 악보가 적은 것과 볼륨 층이 정한다.
     """
     meter = int((feel or {}).get("meter") or 4)
     if (feel or {}).get("pedal") is False:
@@ -2176,60 +1882,6 @@ def apply_performance(arr, feel, spb, total_beats):
             for part in pitched_parts:
                 arr.append({"beat": bar, "beats": span, "part": part, "pedal": True})
             bar += meter
-    # Voicing — the pianist's balance (실측 월광: 저음 0.44 > 반주 0.375 > 멜로디 0.36, 정확히
-    # 거꾸로. 그 소리가 "좌절 절망"이었다). The top line sings, inner voices step back, the
-    # bass supports. A GM player's flat balance stays the default; the knob is the human.
-    v_amt = float((feel or {}).get("voicing") or 0.0)
-    if v_amt > 0:
-        vb = {}
-        for e in arr:
-            if "pitch" in e and not e.get("pedal"):
-                vb.setdefault(int(e["beat"] * 2), []).append(e)
-        for rs in vb.values():
-            if len(rs) < 2:
-                continue
-            top = max(rs, key=lambda r: r["pitch"])
-            low = min(rs, key=lambda r: r["pitch"])
-            for r in rs:
-                if r is top:
-                    r["vel"] = min(1.0, r["vel"] * (1 + 0.18 * v_amt))
-                elif r is low and len(rs) > 2:
-                    r["vel"] = max(0.08, r["vel"] * (1 - 0.30 * v_amt))
-                else:
-                    r["vel"] = max(0.08, r["vel"] * (1 - 0.22 * v_amt))
-    amount = float((feel or {}).get("humanize") or 0.0)
-    if amount > 0:
-        rng = np.random.default_rng(1729 + len(arr))
-        jt = 0.012 * amount / spb
-        # Rubato is a DRIFT, not noise: adjacent moments carry almost the same offset and the
-        # push-pull happens over phrases (random walk, decayed, clipped). Independent offsets
-        # per moment limped on an even triplet pulse (실측: 간격 438↔473ms 널뜀, "절름발이");
-        # a 20ms bucket also merges ghost moments a few ms apart so voices stay glued.
-        pitched = sorted((x for x in arr if not x.get("pedal")),
-                         key=lambda x: (x["beat"], x.get("pitch", 0)))
-        # One musical instant = one cluster (onsets chained within 0.03 beats), sharing one
-        # offset — fixed buckets split ghost pairs straddling an edge (실측: 5-7ms 유령 간격).
-        uniq = sorted({x["beat"] for x in pitched})
-        cluster_of, anchor = {}, None
-        for b in uniq:
-            if anchor is None or b - anchor > 0.03:
-                anchor = b
-            cluster_of[b] = anchor
-        # No synthetic chord rolls at all: written arpeggio signs already roll in the parser,
-        # and a few-ms smear on unmarked chords reads as a flam, not a pianist (실측 3연속:
-        # 독립 지터 → 순간 널뜀 → 스택 롤, 셋 다 "절름발이"의 얼굴이었다). Humanize is now
-        # ONLY the shared drift and the touch (velocity) — nothing that splits an instant.
-        moments = {}
-        walk = 0.0
-        for a in sorted(set(cluster_of.values())):
-            walk = walk * 0.9 + float(rng.normal(0, jt * 0.45))
-            moments[a] = max(-2.2 * jt, min(2.2 * jt, walk))
-        for e in pitched:
-            e["beat"] = max(0.0, e["beat"] + moments[cluster_of[e["beat"]]])
-            e["vel"] = float(min(1.0, max(0.08,
-                                          e.get("vel", 0.7)
-                                          * (1 + float(rng.normal(0, 0.07)) * amount))))
-        arr.sort(key=lambda x: (x["beat"], x["part"]))
     return arr
 
 
@@ -2267,7 +1919,7 @@ def render_arrangement(arr, spb, total_beats, mixmap=None):
             seg = synth_note(freq_of_midi(e["pitch"]),
                              spb * held * float(e.get("gate", 1.0)),
                              e.get("patch", e["part"]), vel=float(e.get("vel", 0.8)),
-                             bend=e.get("bend"), vib=e.get("vib")) * lvl
+                             bend=e.get("bend")) * lvl
             key = e["part"]
         m = min(len(seg), n_total - i)
         seg = seg[:m]
@@ -2295,7 +1947,7 @@ def render_arrangement(arr, spb, total_beats, mixmap=None):
 # heard accordion, then vocal, then drums, which is upside down). These are channel volumes:
 # the tune on top, the bass holding the floor, the comping underneath, and the fill up with the
 # lead because while it answers it IS the lead. `mix` overrides any of them.
-MIX = {"melody": 1.0, "vocal": 1.0, "fill": 0.82, "bass": 0.80, "drum": 0.76,
+MIX = {"melody": 1.0, "vocal": 1.0, "bass": 0.80, "drum": 0.76,
        "chord": 0.58, "chord2": 0.58}
 MIX_TOP = 110          # GM's own default is 100; 110 leaves the lead room without clipping
 
@@ -2333,7 +1985,7 @@ def mix_of(part, over=None):
     return max(0.0, min(1.0, base))
 
 
-PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "fill": 0.30, "bass": 0.0, "vocal": 0.0,
+PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "bass": 0.0, "vocal": 0.0,
        "kick": 0.0, "kick2": 0.0, "snare": 0.08, "snare2": 0.08, "rim": 0.05, "clap": 0.12,
        "hat": 0.32, "hat_pedal": 0.32, "ohat": 0.32,
        "tom_hi": -0.28, "tom_himid": -0.15, "tom_mid": 0.0, "tom_lo": 0.28,
@@ -2348,7 +2000,7 @@ PAN = {"melody": 0.0, "chord": -0.25, "chord2": 0.7, "fill": 0.30, "bass": 0.0, 
        "woodblock_hi": 0.18, "woodblock_lo": 0.18, "cuica_mute": 0.15, "cuica_open": 0.15,
        "triangle_mute": -0.18, "triangle_open": -0.18,
        "whistle_short": -0.10, "whistle_long": -0.10}
-SEND = {"melody": 0.22, "chord": 0.16, "chord2": 0.16, "fill": 0.20, "bass": 0.04,
+SEND = {"melody": 0.22, "chord": 0.16, "chord2": 0.16, "bass": 0.04,
         "kick": 0.05, "kick2": 0.05, "snare": 0.14, "snare2": 0.14, "rim": 0.08, "clap": 0.16,
         "hat": 0.08, "hat_pedal": 0.06, "ohat": 0.10,
         "tom_hi": 0.16, "tom_himid": 0.16, "tom_mid": 0.16, "tom_lo": 0.16,
@@ -2462,11 +2114,11 @@ def write_midi(arr, bpm, path, mix=None):
                 marks.append((start, 2, 127, 0))
                 marks.append((end, 2, 0, 0))
                 continue
-            curve, vib = e.get("bend"), e.get("vib")
-            if (curve or vib) and part != "drum":
+            curve = e.get("bend")
+            if curve and part != "drum":
                 # GM 의 휠 기본 범위는 ±2반음 — 록의 온음 벤딩이 마침 그 끝이다. 끝나면 0 으로
-                # 돌려 다음 음을 오염시키지 않는다. **시간 격자로** 훑는 이유는 비브라토가
-                # 박이 아니라 초로 떨기 때문 — 음을 n등분하면 느린 곡에서 흔들림이 늘어진다.
+                # 돌려 다음 음을 오염시키지 않는다. **시간 격자로** 훑는 이유는 벤딩이
+                # 박이 아니라 초로 움직이기 때문 — 음을 n등분하면 느린 곡에서 늘어진다.
                 spb_w = 60.0 / max(1e-6, bpm)
                 dur_s = e["beats"] * spb_w
                 b0 = int(round(e["beat"] * tpb))
@@ -2474,9 +2126,7 @@ def write_midi(arr, bpm, path, mix=None):
                 steps = max(8, min(240, int(dur_s / 0.025)))
                 for k in range(steps + 1):
                     frac = k / steps
-                    semis = bend_at(curve, frac) if curve else 0.0
-                    if vib:
-                        semis += vib_at(vib, frac * dur_s, dur_s)
+                    semis = bend_at(curve, frac)
                     val = max(-8192, min(8191, int(round(semis / 2.0 * 8192))))
                     marks.append((b0 + int((b1 - b0) * frac), 3, val, 0))
                 marks.append((b1, 3, 0, 0))
@@ -4310,6 +3960,9 @@ def action_lyrics(inp):
 
 
 def action_render(inp):
+    gone = retired_notice(inp)
+    if gone:
+        return {"success": False, "error": gone}
     score = inp.get("score")
     parsed_from = None
     own_lyrics = None
@@ -5031,54 +4684,6 @@ def action_selftest():
     missing_doc += [k for k in BASS_KINDS
                     if k not in str(props.get("bassline", {}).get("description"))]
     ck("the schema prints every value the gate accepts", [], missing_doc, not missing_doc)
-    undeclared = [k for k in ("orn", "chordShape", "laidback", "gate", "double")
-                  if k not in props]
-    ck("every feel axis is an argument, not a genre-only secret", [], undeclared,
-       not undeclared)
-
-    # Caller first, genre second: naming ONE hand must not strip the others. Thickness used to
-    # ride on comp, so asking for a different strum silently removed the second guitar.
-    wall = build_arrangement(events, [(note_freq("E2"), 4.0, "")], "metal", 4,
-                             feel={"comp": "stabs"})
-    ck("a metal render keeps its double-tracked wall when the strum changes", True,
-       any(e["part"] == "chord2" for e in wall),
-       any(e["part"] == "chord2" for e in wall))
-    thin = build_arrangement(events, [(note_freq("E2"), 4.0, "")], "metal", 4,
-                             feel={"double": 0.0})
-    ck("…and drops it when the caller asks for one guitar", False,
-       any(e["part"] == "chord2" for e in thin),
-       not any(e["part"] == "chord2" for e in thin))
-    long_ev = [{"syl": "라", "segments": [(note_freq("C5"), 3.0)], "vels": [None]}]
-    straight = build_arrangement(long_ev, [(note_freq("C3"), 4.0, "")], "trot", 4,
-                                 feel={"orn": "none"})
-    kkeok = build_arrangement(long_ev, [(note_freq("C3"), 4.0, "")], "trot", 4)
-    bent = [e for e in kkeok if e["part"] == "melody" and e.get("bend")]
-    ck("orn is a knob: 'none' plays the tune straight where the genre would flick it",
-       [0, 1], [len([e for e in straight if e["part"] == "melody" and e.get("bend")]), len(bent)],
-       not [e for e in straight if e.get("bend")] and len(bent) == 1)
-    # 꺾기 is one syllable whose pitch moves and COMES BACK. The old one split the note and left
-    # the tail a whole step down, which is a second short note — 사용자: "삐융".
-    ck("꺾기 is ONE note whose pitch breaks — no second attack", 1,
-       len([e for e in kkeok if e["part"] == "melody"]),
-       len([e for e in kkeok if e["part"] == "melody"]) == 1)
-    ck("…and it stays where it broke: two states, not three", (0.0, -2.0),
-       (BEND_CURVES["kkeokgi"][0][1], BEND_CURVES["kkeokgi"][-1][1]),
-       BEND_CURVES["kkeokgi"][0][1] == 0.0 and BEND_CURVES["kkeokgi"][-1][1] < 0)
-    # An ornament is a deviation, not a transposition: most of the note has to be the note.
-    # (Both shapes qualify — an arrival bend starts away and lands, a 꺾기 sits and then leaves.)
-    def _at_pitch(curve):
-        span = 0.0
-        for (t0, v0), (t1, v1) in zip(curve, curve[1:]):
-            if v0 == 0.0 and v1 == 0.0:
-                span += t1 - t0
-        return span
-    ck("every curve leaves the written pitch alone for most of the note", [],
-       [k for k, c in BEND_CURVES.items() if _at_pitch(c) < 0.5],
-       all(_at_pitch(c) >= 0.5 for c in BEND_CURVES.values()))
-    badorn = parse_score({"bpm": 120, "orn": "웩", "notes": [{"syl": "라", "note": "C4",
-                                                             "beats": 1}]})
-    ck("an unknown orn is refused WITH the list", True, (badorn[-1] or "")[:40],
-       bool(badorn[-1]) and "kkeokgi" in (badorn[-1] or ""))
     chug = parse_score({"bpm": 120, "comp": "chug", "bassline": "drive",
                         "notes": [{"syl": "라", "note": "C4", "beats": 1}]})
     ck("the new hands are callable by argument", ("chug", "drive"),
@@ -5217,55 +4822,6 @@ def action_selftest():
         ck("…and no kit asked for means no program change (Standard)", [], msgs2, not msgs2)
         if os.path.isfile(kpath):
             os.remove(kpath)
-    # The answer in the breath. A melody that rests gets replied to; one that never rests does
-    # not, and no genre answers unless its row says it does.
-    fscore = {"bpm": 120,
-              "notes": [{"syl": "라", "note": "C5", "beats": 2},
-                        {"rest": True, "beats": 6},
-                        {"syl": "라", "note": "E5", "beats": 2}],
-              "chords": [{"root": "C3", "beats": 5}, {"root": "G2", "beats": 5}]}
-    _, fev, fch, _, fbd, ffl, ferr = parse_score(dict(fscore, style="trot"))
-    farr = build_arrangement(fev, fch, "trot", 10, fbd, ffl)
-    fills = [r for r in farr if r["part"] == "fill"]
-    ck("trot answers the singer in the gap", True, len(fills) > 0, bool(fills))
-    if fills:
-        lo, hi = min(r["beat"] for r in fills), max(r["beat"] + r["beats"] for r in fills)
-        ck("…inside the breath, and out of the way before the next entry", True,
-           (round(lo, 2), round(hi, 2)),
-           lo >= 2.0 - 1e-6 and hi <= 8.0 - 0.5 + 1e-6)
-        ck("…on chord tones of the harmony under it", [],
-           sorted({r["pitch"] % 12 for r in fills} - {0, 4, 7, 2, 11}),
-           {r["pitch"] % 12 for r in fills} <= {0, 4, 7, 2, 11})
-    _, bev, bch, _, bbd, bfl, _ = parse_score(dict(fscore, style="ballad"))
-    ck("a genre that does not answer stays quiet", 0,
-       len([r for r in build_arrangement(bev, bch, "ballad", 10, bbd, bfl)
-            if r["part"] == "fill"]),
-       not [r for r in build_arrangement(bev, bch, "ballad", 10, bbd, bfl)
-            if r["part"] == "fill"])
-    _, oev, och, _, obd, ofl, _ = parse_score(dict(fscore, style="ballad", fill=0.8))
-    ck("…until the caller asks it to", True,
-       bool([r for r in build_arrangement(oev, och, "ballad", 10, obd, ofl)
-             if r["part"] == "fill"]),
-       bool([r for r in build_arrangement(oev, och, "ballad", 10, obd, ofl)
-             if r["part"] == "fill"]))
-    _, qev, qch, _, qbd, qfl, _ = parse_score(dict(fscore, style="trot", fill=0.0))
-    ck("…and off means off", 0,
-       len([r for r in build_arrangement(qev, qch, "trot", 10, qbd, qfl)
-            if r["part"] == "fill"]),
-       not [r for r in build_arrangement(qev, qch, "trot", 10, qbd, qfl)
-            if r["part"] == "fill"])
-    _, nev, nch, _, nbd, nfl, _ = parse_score({"bpm": 120, "style": "trot",
-                                               "notes": [{"syl": "라", "note": "C5", "beats": 1}] * 8,
-                                               "chords": [{"root": "C3", "beats": 8}]})
-    ck("a singer who never breathes is never answered over", 0,
-       len([r for r in build_arrangement(nev, nch, "trot", 8, nbd, nfl)
-            if r["part"] == "fill"]),
-       not [r for r in build_arrangement(nev, nch, "trot", 8, nbd, nfl)
-            if r["part"] == "fill"])
-    fb = build_arrangement(fev, fch, "trot", 10, {"fill": "piano"}, ffl)
-    ck("band.fill names who answers", True,
-       any(r["part"] == "fill" and r["program"] == 0 for r in fb),
-       any(r["part"] == "fill" and r["program"] == 0 for r in fb))
     # A stroke is a time. The same comp at half the tempo must not hold twice as long.
     fast = _comp_hits("stabs", 4.0, 4, spb=0.5)[0][1] * 0.5
     slow = _comp_hits("stabs", 4.0, 4, spb=1.0)[0][1] * 1.0
@@ -5301,40 +4857,6 @@ def action_selftest():
            vol2.get("chord", 0) > vol2.get("melody", 999))
         if os.path.isfile(mpath):
             os.remove(mpath)
-    # 꺾기 at the end of a line, not every fourth note.
-    kk = {"bpm": 120, "chords": [{"root": "C3", "beats": 8}],
-          "notes": [{"syl": "라", "note": "C5", "beats": 1}] * 4
-                   + [{"syl": "라", "note": "E5", "beats": 1}, {"rest": True, "beats": 2},
-                      {"syl": "라", "note": "G5", "beats": 2}]}
-    _, kev, kch, _, kbd, kfl, _ = parse_score(dict(kk, style="trot"))
-    karr = build_arrangement(kev, kch, "trot", 11, kbd, kfl)
-    kmel = [r for r in karr if r["part"] == "melody"]
-    ck("꺾기 lands on the line's end and the long note, not on every beat-long note",
-       2, sum(1 for r in kmel if r.get("bend")),
-       sum(1 for r in kmel if r.get("bend")) == 2 and len(kmel) == len(kev))
-    # 핀치 하모닉 — 배음이 자기 행으로 나오고, 기본음은 죽되 **다시 때리지 않는다**.
-    pk = {"bpm": 100, "style": "metal", "chords": [{"root": "E2", "beats": 8}],
-          "notes": [{"syl": "라", "note": "E3", "beats": 1},
-                    {"syl": "라", "note": "B3", "beats": 3},
-                    {"syl": "라", "note": "E3", "beats": 4}]}
-    _, pev, pch, _, pbd, pfl, _ = parse_score(pk)
-    pmel = [r for r in build_arrangement(pev, pch, "metal", 8, pbd, pfl)
-            if r["part"] == "melody"]
-    harm = [r for r in pmel if r.get("patch") == "pinchharm"]
-    fund = [r for r in pmel if r.get("pitch") == 59 and r.get("patch") != "pinchharm"]
-    ck("메탈의 도약음에 핀치 하모닉이 물린다 — 배음이 자기 행으로", 1, len(harm), len(harm) == 1)
-    ck("…배음은 5배음(+19반음) 자리이고 위로 밀려 올라간다", [78, True],
-       [harm[0]["pitch"] if harm else None, bool(harm and harm[0].get("bend"))],
-       bool(harm) and harm[0]["pitch"] == 59 + 19 and bool(harm[0].get("bend")))
-    ck("…기본음은 한 번만 울린다 — 쪼개서 다시 때리면 별개의 음으로 들린다(꺾기에서 배운 것)",
-       1, len(fund), len(fund) == 1)
-    ck("…배음은 음이 시작한 뒤에 물린다", True,
-       [round(harm[0]["beat"], 2) if harm else None, round(fund[0]["beat"], 2) if fund else None],
-       bool(harm and fund) and harm[0]["beat"] > fund[0]["beat"]
-       and harm[0]["beat"] < fund[0]["beat"] + fund[0]["beats"])
-    ck("…그리고 호출자가 orn 으로 직접 부를 수 있다", True, "pinch" in ORN_KINDS,
-       "pinch" in ORN_KINDS and "harmonic" in ORN_KINDS)
-
     # 가사 칸은 이름이 하는 일을 말해야 한다 — 옛 `lrc` 는 데이터처럼 읽히고 파생 스위치였다.
     _lsc = {"bpm": 120, "notes": [{"syl": "가", "note": "C4", "beats": 1},
                                   {"syl": "나", "note": "D4", "beats": 1}]}
@@ -5352,6 +4874,20 @@ def action_selftest():
        True, (_lb.get("error") or "")[:24],
        not _lb.get("success") and "lrcText" in (_lb.get("error") or "")
        and "lyricsMediaPath" in (_lb.get("error") or ""))
+
+    # 걷은 노브는 **자기가 걷혔다고 말한다**. 조용히 무시되면 모델은 성공했다고 믿고, 다음 턴에
+    # 또 같은 인자를 보낸다 — 값이 아니라 부재가 답인 자리가 우리가 제일 자주 밟는 함정이다.
+    _silent = [k for k in RETIRED_KNOBS
+               if not str(parse_score(dict(_lsc, **{k: 0.5}))[-1] or "").startswith(k + " ")]
+    ck("걷은 인자 아홉은 전부 자기 이름을 대며 거부한다", [], _silent, not _silent)
+    _mute = [k for k in RETIRED_KNOBS
+             if action_render({"action": "render", "score": _lsc, k: 0.5}).get("success")]
+    ck("…top-level 로 와도 같은 대답 — 두 입구가 한 판정을 쓴다", [], _mute, not _mute)
+    _nxt = [k for k, why in RETIRED_KNOBS.items() if len(why) < 10]
+    ck("…그리고 거부는 다음 수를 말한다(빈 사유 금지)", [], _nxt, not _nxt)
+    # 그리고 살아 있는 인자는 통과해야 한다 — 은퇴 목록이 넓어지면 이게 먼저 빨개진다.
+    _live = parse_score(dict(_lsc, style="trot", comp="arp", bassline="walk", swing=0.3))
+    ck("…살아 있는 장르 인자는 그대로 통과한다", None, _live[-1], _live[-1] is None)
 
     # Dressing the score instead of replacing it.
     rrows = ([{"beat": float(i), "beats": 1.0, "part": "p1", "pitch": 72, "vel": 0.8,
@@ -5391,15 +4927,12 @@ def action_selftest():
        abs(_ratio("chord") - mix_of("chord")) < 0.015)
 
     # 파일 악보 위에 얹히는 노브 — 목록이 뒤처지면 선언이 광고한 축이 **조용히** 사라진다.
-    _num = {k for k, _, _ in NUMERIC_AXES}
-    ck("숫자 축은 전부 파일 악보에도 얹힌다 (표가 목록에서 파생)", [],
-       sorted(_num - set(SCORE_KNOBS)), _num <= set(SCORE_KNOBS))
     _sc = {"bpm": 100, "notes": [{"syl": "라", "note": "C4", "beats": 1}]}
-    _got = apply_top_level_knobs(dict(_sc), {"mix": {"chord": 1.0}, "orn": "pinch",
-                                             "gate": 0.5, "vary": 0.0, "style": "metal"})
-    ck("…그리고 실제로 얹힌다", ["gate", "mix", "orn", "style", "vary"],
+    _got = apply_top_level_knobs(dict(_sc), {"mix": {"chord": 1.0}, "comp": "arp",
+                                             "style": "metal"})
+    ck("호출자가 준 노브가 파일 악보 위에 얹힌다", ["comp", "mix", "style"],
        sorted(k for k in _got if k not in _sc),
-       sorted(k for k in _got if k not in _sc) == ["gate", "mix", "orn", "style", "vary"])
+       sorted(k for k in _got if k not in _sc) == ["comp", "mix", "style"])
     # 파일이 이미 말한 것을 호출자가 덮는다 — 명시가 파일을 이긴다.
     ck("…호출자가 파일을 이긴다", 140,
        apply_top_level_knobs({"bpm": 99}, {"bpm": 140})["bpm"],
@@ -5452,60 +4985,6 @@ def action_selftest():
     ck("parts mode leaves every instrument the file declared", [0],
        sorted({r["program"] for r in kept if "pitch" in r}),
        sorted({r["program"] for r in kept if "pitch" in r}) == [0])
-    # 기교도 하나면 기계다. 같은 장르 안에서 자리에 따라 다른 창법이 걸려야 한다.
-    oscore = {"bpm": 100, "chords": [{"root": "C3", "beats": 24}], "notes": [
-        {"syl": "가", "note": "C4", "beats": 2},          # 소절 안 긴 음 → 떨기
-        {"syl": "나", "note": "G4", "beats": 2},          # 5도 위로 도약 → 밀어 올리기
-        {"syl": "다", "note": "E4", "beats": 2},          # 소절 끝(뒤에 쉼) → 꺾기
-        {"rest": True, "beats": 4},
-        {"syl": "라", "note": "C4", "beats": 0.5},        # 짧은 음 → 맨몸
-    ]}
-    _, oev, och, _, obd, ofl, _ = parse_score(dict(oscore, style="trot"))
-    oarr = [r for r in build_arrangement(oev, och, "trot", 24, obd, ofl)
-            if r["part"] == "melody"]
-    def _kind(r):
-        b = r.get("bend")
-        tag = "plain"
-        if b is not None:
-            tag = next((k for k, c in BEND_CURVES.items() if c == b), "bend")
-        return tag + ("+vib" if r.get("vib") else "")
-    kinds = [_kind(r) for r in oarr]
-    ck("one genre, more than one 기교 — the note's place picks it", True,
-       kinds, len(set(kinds)) >= 3)
-    ck("…the short note is left alone", "plain", kinds[-1] if kinds else None,
-       bool(kinds) and kinds[-1] == "plain")
-    pinned = [r for r in build_arrangement(oev, och, "trot", 24, obd,
-                                           dict(ofl, orn="kkeokgi"))
-              if r["part"] == "melody"]
-    pin_curves = {tuple(map(tuple, r["bend"])) for r in pinned if r.get("bend")}
-    ck("…and pinning `orn` goes back to one technique everywhere", 1,
-       len(pin_curves),
-       len(pin_curves) == 1
-       and pin_curves == {tuple(map(tuple, BEND_CURVES["kkeokgi"]))})
-    ck("ORN_SET is the only place a genre names its 기교", [],
-       [k for k, v in STYLE_FEEL.items() if "orn" in v],
-       not any("orn" in v for v in STYLE_FEEL.values()))
-    # Phrasing: sixteen bars of the same chord must not be sixteen identical bars.
-    vscore = {"bpm": 120, "notes": [{"syl": "라", "note": "C5", "beats": 64}],
-              "chords": [{"root": "C3", "beats": 64}]}
-    _, vev, vch, _, vbd, vfl, _ = parse_score(dict(vscore, style="trot"))
-    varr = build_arrangement(vev, vch, "trot", 64, vbd, vfl)
-    vch_rows = [r for r in varr if r["part"] == "chord"]
-    vels = sorted({r["vel"] for r in vch_rows})
-    ck("the comp is not the same bar sixteen times", True, len(vels),
-       len(vels) >= 3)
-    per_bar = collections.Counter(int(r["beat"] // 4) for r in vch_rows)
-    full = max(per_bar.values())
-    short_bars = sorted(b for b, n in per_bar.items() if n < full)
-    ck("…and it breathes before every phrase — bar 8 and bar 16, not whichever the chord ended on",
-       [7, 15], short_bars, short_bars == [7, 15])
-    _, sev, sch, _, sbd, sfl, _ = parse_score(dict(vscore, style="trot", vary=0))
-    flat = [r for r in build_arrangement(sev, sch, "trot", 64, sbd, sfl)
-            if r["part"] == "chord"]
-    ck("…and vary:0 is the machine again — every bar identical", 1,
-       len({r["vel"] for r in flat}), len({r["vel"] for r in flat}) == 1)
-    ck("…with every stroke back in place", True,
-       (len(flat), len(vch_rows)), len(flat) > len(vch_rows))
     bad_af = action_render({"action": "render", "score": score, "arrangeFrom": "웩"})
     ck("an unknown arrangeFrom is refused with both ways", True,
        (bad_af.get("error") or "")[:40],
@@ -5608,17 +5087,6 @@ def action_selftest():
                           "score": {"bpm": 120, "bars": 2, "style": "rock",
                                     "drumPattern": [["kick", 0.0, 0.9], ["snare", 1.0],
                                                     ["conga_open", 2.5, 0.6]]}})
-    vc = [{"beat": 0.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
-           "pitch": 76, "vel": 0.4, "gate": 1.0},
-          {"beat": 0.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
-           "pitch": 64, "vel": 0.4, "gate": 1.0},
-          {"beat": 0.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
-           "pitch": 40, "vel": 0.44, "gate": 1.0}]
-    vc = apply_performance(vc, {"meter": 4, "voicing": 0.8}, 0.5, 1)
-    by_pitch = {r["pitch"]: r["vel"] for r in vc}
-    ck("voicing puts the top line in front and the bass behind (월광 실측 처방)", True,
-       {k: round(v, 2) for k, v in by_pitch.items()},
-       by_pitch[76] > 0.4 and by_pitch[40] < 0.44 and by_pitch[64] < 0.4)
     pfirst = [{"beat": 0.0, "beats": 4.0, "part": "p1", "pedal": True},
               {"beat": 0.01, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
                "pitch": 60, "vel": 0.5, "gate": 1.0}]
@@ -5633,33 +5101,13 @@ def action_selftest():
                             {"meter": 4, "pedal": False}, 0.5, 4)
     ck("pedal:false plays a marked score dry", 0, len([e for e in dry if e.get("pedal")]),
        not [e for e in dry if e.get("pedal")])
-    perf = parse_score(dict(score, pedal=True, humanize=0.5))
-    ck("pedal/humanize are legal performance knobs", None, perf[6], perf[6] is None)
+    perf = parse_score(dict(score, pedal=True))
+    ck("pedal is a legal performance knob", None, perf[6], perf[6] is None)
     parr = build_arrangement(perf[1], perf[2], "none", 4, None, perf[5])
     parr = apply_performance(parr, perf[5], 0.5, 4)
     ck("pedal:true lays a bar-long damper span per pitched part", True,
        len([e for e in parr if e.get("pedal")]),
        any(e.get("pedal") and e["beats"] == 4.0 for e in parr))
-    h1 = apply_performance(build_arrangement(perf[1], perf[2], "none", 4, None, perf[5]),
-                           perf[5], 0.5, 4)
-    h2 = apply_performance(build_arrangement(perf[1], perf[2], "none", 4, None, perf[5]),
-                           perf[5], 0.5, 4)
-    duo = apply_performance(
-        [{"beat": 1.0, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
-          "pitch": 72, "vel": 0.5, "gate": 1.0},
-         {"beat": 1.0, "beats": 1.0, "part": "p2", "patch": "piano", "program": 0,
-          "pitch": 48, "vel": 0.5, "gate": 1.0}],
-        {"meter": 4, "humanize": 0.7}, 0.5, 2)
-    ck("human hands wobble TOGETHER — same moment, same drift (절뚝임 실측 처방)",
-       True, [round(e["beat"], 4) for e in duo],
-       abs(duo[0]["beat"] - duo[1]["beat"]) < 1e-9 and duo[0]["beat"] != 1.0)
-    ck("humanize is deterministic — same ask, same bytes",
-       True, h1 == h2, h1 == h2)
-    ck("...and actually moves off the grid", True,
-       any(abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-9
-           for e in h1 if not e.get("pedal")),
-       any(abs(e["beat"] * 4 - round(e["beat"] * 4)) > 1e-9
-           for e in h1 if not e.get("pedal")))
     huge_len = action_render({"action": "render",
                               "score": {"bpm": 20, "bars": 256,
                                         "drumPattern": [["kick", 0.0]]}})
