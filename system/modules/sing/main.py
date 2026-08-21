@@ -814,6 +814,25 @@ def resolve_instrument(name):
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
 
 
+_GM_REVERSE = None
+
+
+def gm_name(program):
+    """GM 번호 → 사람이 읽는 이름. 보고 전용 — 있는 표를 뒤집을 뿐 새 목록이 아니다.
+    짧은 이름(우리 어휘)이 있으면 그것, 없으면 규격 이름, 둘 다 없으면 번호."""
+    global _GM_REVERSE
+    if program is None:
+        return "?"
+    if _GM_REVERSE is None:
+        rev = {}
+        for k, v in GM_OFFICIAL.items():
+            rev.setdefault(v, k)
+        for k, v in GM_NAMES.items():
+            rev[v] = k          # 짧은 이름이 이긴다
+        _GM_REVERSE = rev
+    return _GM_REVERSE.get(int(program), "GM%d" % program)
+
+
 def named_program(name):
     """파트 이름이 악기를 말하면 그 GM 번호, 아니면 None.
 
@@ -1675,6 +1694,10 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False):
     hands = seats.get("chord") or ["piano"]
     inst_for = {"melody": (seats.get("melody") or ["piano"])[0],
                 "bass": (seats.get("bass") or ["bass"])[0]}
+    src_prog = {}
+    for r in rows:
+        if "pitch" in r and r.get("part") in avg and r["part"] not in src_prog:
+            src_prog[r["part"]] = r.get("program")
     for i, part in enumerate(comping):
         inst_for[roles[part]] = hands[i % len(hands)]
     # 역할 단위 지목 — `band: {"chord2": "piano"}` 는 자리가 아니라 **둘째 컴핑**을 말한다.
@@ -1704,7 +1727,14 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False):
         if role in seat_at:
             q["pan"] = seat_at[role]
         out.append(q)
-    return out, {roles[k]: k for k in roles}, mix_over
+    # 누가 무엇을 연주하는지는 **응답이 말해야 한다.** 캐스팅은 파생이라 호출자가 짐작할 수 없고,
+    # 사용자가 "이게 원래 악보상 악기를 쓴다는 말인가"를 물어야 했던 자리가 바로 이것이다(8/21).
+    cast = {}
+    for src, role in roles.items():
+        name = (gm_name(src_prog.get(src)) if keep_instruments
+                else inst_for.get(role, "piano"))
+        cast[role] = {"part": src, "instrument": name}
+    return out, cast, mix_over
 
 
 def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
@@ -4606,6 +4636,11 @@ def action_render(inp):
     if lead_part:
         data["leadPart"] = lead_part
         data["partsSeen"] = parts_seen
+    if recast is not None and cast_map:
+        # 역할 ← 악보 파트 · 그 역할이 든 악기. 한 줄씩이라 응답을 읽는 쪽이 바로 확인한다.
+        order = ["melody", "bass"] + sorted(r for r in cast_map if r.startswith("chord"))
+        data["cast"] = ["%s ← %s · %s" % (r, cast_map[r]["part"], cast_map[r]["instrument"])
+                        for r in order if r in cast_map]
     if parsed_from:
         # The caller composed nothing — show what the MIDI became so the bridge (TTS lyric
         # order) and the user can see and correct the parse.
@@ -5125,9 +5160,19 @@ def action_selftest():
     ck("…and casts them by role: the tune, the floor, the comping",
        ["bass", "chord", "melody"], sorted({r["part"] for r in cast_rows}),
        sorted({r["part"] for r in cast_rows}) == ["bass", "chord", "melody"])
-    ck("…the reader's lead part is the one that sings", "p1", cast.get("melody"),
-       cast.get("melody") == "p1")
-    ck("…the lowest voice takes the bass", "p3", cast.get("bass"), cast.get("bass") == "p3")
+    ck("…the reader's lead part is the one that sings", "p1",
+       (cast.get("melody") or {}).get("part"), (cast.get("melody") or {}).get("part") == "p1")
+    ck("…the lowest voice takes the bass", "p3",
+       (cast.get("bass") or {}).get("part"), (cast.get("bass") or {}).get("part") == "p3")
+    # 캐스팅은 파생이라 호출자가 짐작할 수 없다 — 응답이 누가 무엇을 연주하는지 말해야 한다.
+    ck("…and the cast says which instrument each role took",
+       resolve_instrument(STYLE_BAND["metal"]["melody"])[1],
+       (cast.get("melody") or {}).get("instrument"),
+       (cast.get("melody") or {}).get("instrument") == STYLE_BAND["metal"]["melody"])
+    kept_cast = recast_parts(rrows, "metal", None, "p1", keep_instruments=True)[1]
+    ck("…and in parts mode it names the FILE's instrument, not the genre's", "grandpiano",
+       (kept_cast.get("melody") or {}).get("instrument"),
+       (kept_cast.get("melody") or {}).get("instrument") == gm_name(0))
     lead_prog = next(r["program"] for r in cast_rows if r["part"] == "melody")
     ck("…and each role wears the genre's instrument, not the file's", True,
        (lead_prog, next(r["program"] for r in cast_rows if r["part"] == "chord")),
