@@ -170,13 +170,16 @@ export function GalleryPanel({
   const searchId = useId();
   const t = useTranslations();
   const [items, setItems] = useState<MediaItem[]>([]);
+  // 안정적인 콜백(SSE 핸들러)이 지금 길이를 보려면 ref 여야 한다 — 의존성에 넣으면
+  // 목록이 바뀔 때마다 구독이 다시 걸린다.
+  const itemsRef = useRef<MediaItem[]>([]);
+  itemsRef.current = items;
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [scope, setScope] = useState<'all' | 'user' | 'system'>('user');
   const [kind, setKind] = useState<KindChip>('all');
   const [sort, setSort] = useState<SortKey>('newest');
   const [search, setSearch] = useState('');
-  const [offset, setOffset] = useState(0);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Track the selection by index so prev/next navigation works.
@@ -186,9 +189,9 @@ export function GalleryPanel({
 
   // Owner-injected backend — admin REST (/api/media/*) vs hub op (GET/DELETE/POST{op}) diverge inside each method only.
   const backend = useMemo(() => ({
-    async list(opts: { offset: number; search: string; scope: string; kind: string; sort: string }): Promise<{ success: boolean; items: MediaItem[]; total?: number } | null> {
+    async list(opts: { offset: number; search: string; scope: string; kind: string; sort: string; limit?: number }): Promise<{ success: boolean; items: MediaItem[]; total?: number } | null> {
       const params = new URLSearchParams();
-      params.set('limit', String(PAGE_SIZE));
+      params.set('limit', String(opts.limit ?? PAGE_SIZE));
       params.set('offset', String(opts.offset));
       if (opts.search) params.set('search', opts.search);
       if (opts.kind !== 'all') params.set('kind', opts.kind);
@@ -233,27 +236,41 @@ export function GalleryPanel({
     },
   }), [hubContext, t]);
 
-  const fetchList = useCallback(async (reset: boolean) => {
+  // offset 은 **인자**다. 상태에서 읽으면 setOffset 직후의 호출이 옛 값을 들고 가서 같은
+  // 페이지를 또 가져온다 — 더보기가 첫 페이지를 두 벌 만들던 뿌리가 그것이고, 키가 겹치니
+  // 새로 붙은 카드가 안 눌렸다.
+  //
+  // 그리고 응답에는 순번을 단다. 필터를 바꾸는 순간에도 앞 요청이 날아가고 있고, 그게 나중에
+  // 도착하면 `[...prev, ...]` 로 **다른 필터의 결과가 지금 목록에 붙는다** — 음악만 보고 있는데
+  // 이미지가 딸려 나온 것이 이것이다. 늦게 온 것은 조용히 버린다.
+  const reqSeq = useRef(0);
+  const fetchList = useCallback(async (opts: { offset: number; append?: boolean; limit?: number }) => {
+    const seq = ++reqSeq.current;
     setLoading(true);
     try {
-      const data = await backend.list({ offset: reset ? 0 : offset, search, scope, kind, sort });
+      const data = await backend.list({ offset: opts.offset, limit: opts.limit, search, scope, kind, sort });
+      if (seq !== reqSeq.current) return;      // 지나간 요청 — 지금 화면의 필터가 아니다
       if (data?.success) {
-        setItems(prev => reset ? data!.items : [...prev, ...data!.items]);
+        setItems(prev => opts.append ? [...prev, ...data!.items] : data!.items);
         setTotal(data.total || 0);
-      } else {
-        if (reset) { setItems([]); setTotal(0); }
+      } else if (!opts.append) {
+        setItems([]); setTotal(0);
       }
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
-  }, [backend, offset, search, scope, kind, sort]);
+  }, [backend, search, scope, kind, sort]);
+
+  /** 지금 보고 있는 만큼 그대로 다시 — 새로고침이 더보기로 쌓은 페이지를 걷어가지 않는다. */
+  const refetchAll = useCallback(() => {
+    fetchList({ offset: 0, limit: Math.max(PAGE_SIZE, itemsRef.current.length) });
+  }, [fetchList]);
 
   // Reset on filter change — debounced for search.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setOffset(0);
-      fetchList(true);
+      fetchList({ offset: 0 });
     }, 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -286,8 +303,7 @@ export function GalleryPanel({
         return;
       }
       // Hub has no SSE gallery:refresh — refetch directly (harmless double on admin).
-      setOffset(0);
-      fetchList(true);
+      refetchAll();
     } finally {
       setUploading(false);
     }
@@ -295,17 +311,11 @@ export function GalleryPanel({
 
   // SSE `gallery:refresh` subscription — auto-refresh on image_gen completion, media delete, regenerate.
   // Keeps the current scope/search and resets to page one so a new image shows immediately.
-  useEvents(['gallery:refresh'], () => {
-    setOffset(0);
-    fetchList(true);
-  });
+  useEvents(['gallery:refresh'], () => { refetchAll(); });
 
-  const handleLoadMore = () => {
-    const newOffset = offset + PAGE_SIZE;
-    setOffset(newOffset);
-    // Call fetchList without reset after the offset change — directly, not via the next useEffect.
-    setTimeout(() => fetchList(false), 0);
-  };
+  // 다음 offset = **이미 받은 개수**. 따로 세는 상태를 두면 그 상태와 목록이 어긋나고, 어긋난
+  // 쪽이 이기면 같은 페이지가 두 번 붙는다 (파생이지 손유지가 아니다).
+  const handleLoadMore = () => { fetchList({ offset: items.length, append: true }); };
 
   // Where the selected media is used — cached + auto-refetched via React Query.
   const { data: usageData } = useQuery({
@@ -329,9 +339,12 @@ export function GalleryPanel({
     try {
       const data = await backend.remove(slug);
       if (data.success) {
+        // 지운 자리로 다음 파일이 당겨진다 — 인덱스를 그대로 두면 상세가 그 다음 것을
+        // 보여주므로 연속 삭제가 된다. 닫는 것은 **마지막 한 장을 지웠을 때뿐**.
+        const left = items.length - 1;
         setItems(prev => prev.filter(i => i.slug !== slug));
         setTotal(prev => Math.max(0, prev - 1));
-        setSelectedIndex(null);
+        setSelectedIndex(cur => (cur === null || left <= 0) ? null : Math.min(cur, left - 1));
       } else {
         await alertDialog({ title: t('gallery.delete_failed'), message: data.error || 'unknown', danger: true });
       }
