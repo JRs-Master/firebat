@@ -2645,7 +2645,10 @@ def font_inventory(path):
                     glob = cb                      # instrument 를 안 가리키면 글로벌 존
                 elif zone is None:
                     zone = cb + (inst_atten(ref) if ref < len(inst) else 0.0)
-            atten[preset] = round((glob + (zone or 0.0)) / 10.0, 2)   # 센티벨 → dB
+            # ⚠️ 규격은 센티벨(0.1 dB/단위)이라 적혀 있지만 **신디는 0.04 를 쓴다** — 원조
+            # 사운드블래스터가 0.4 를 더 곱했고 호환 때문에 그대로 굳었다(FluidSynth 도 동일:
+            # gain = 10^(cb/-200)). 규격 문자만 읽고 /10 을 쓰면 값이 2.5배 커진다.
+            atten[preset] = round((glob + (zone or 0.0)) * 0.04, 2)
         out = ({"programs": programs, "kits": kits, "name": title, "attenDb": atten}
                if programs or kits else None)
     except (OSError, ValueError, struct.error, IndexError):
