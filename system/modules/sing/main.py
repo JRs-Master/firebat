@@ -3367,9 +3367,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     meter = None
     tempo_events = []  # (raw beats, bpm) — collected on part 0's walk
     parsed_parts = []
-    # (파트, 음고) → 그 음이 최근에 울린 parts_out 인덱스들. 이음줄이 붙을 자리를 찾는 데
-    # 쓴다 — 바로 앞 행으로 찾으면 화음 안에서 못 찾고, 하나만 들고 있으면 성부가 겹칠 때
-    # 아직 울리는 긴 음을 집는다.
+    # (파트, **성부**, 음고) → 그 음이 최근에 울린 parts_out 인덱스들. 붙임줄이 붙을 자리를
+    # 찾는 데 쓴다. 셋 다 필요하다: 바로 앞 행으로 찾으면 화음 안에서 못 찾고, 하나만 들고
+    # 있으면 아직 울리는 긴 음을 집고, 성부를 빼면 같은 음악을 든 다른 성부의 것을 집는다.
     tie_open = {}
     for pi, part in enumerate(parts):
         divisions = 1.0
@@ -3618,6 +3618,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     if not is_stack:
                         last_onset = onset
                     n_staff = _xt(el, "staff", "1") or "1"
+                    # 붙임줄은 **자기 성부 안에서** 이어진다. 한 파트가 같은 음악을 두 성부로
+                    # 들고 있으면(악보+타브 쌍) 같은 음의 붙임줄이 동시에 둘 걸리고, 성부를
+                    # 안 보면 남의 것을 집는다 — 실측 2026-08-21 아로하 Gtr1 41→42마디:
+                    # 성부 1 과 성부 5 가 A2·E3·G3·D4 에 똑같이 붙임줄을 걸어 놓았다.
+                    n_voice = _xt(el, "voice", "1") or "1"
                     st_vel = vel_by_staff.get(n_staff, vel_by_staff.get("1"))
                     nvel = min(1.0, (st_vel if st_vel is not None else XML_DEFAULT_VEL)
                                + vboost)
@@ -3643,7 +3648,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                     "beats": max(1.0 / max(1.0, divisions), dur - stolen),
                                     "part": f_part, "patch": _patch_for_program(f_prog),
                                     "program": f_prog, "pitch": midi, "vel": nvel,
-                                    "gate": gate, "staff": n_staff}
+                                    # 성부도 싣는다 — 파일이 선언한 값이고, 붙임줄이 제 성부에
+                                    # 붙었는지 **밖에서 확인할 방법**이 이것뿐이다. staff 와 같은 층.
+                                    "gate": gate, "staff": n_staff, "voice": n_voice}
                         if roll_n:
                             # A rolled chord is a hand gesture — constant in TIME. The old
                             # 0.04-beat step made 월광 (bpm 44) roll 55ms per voice; applied
@@ -3661,7 +3668,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         # 실측 2026-08-21 아로하: 38건이 전부 그것이었고 어긋남이 **정확히
                         # +4.0박(한 마디) 32건**이었다 — 아직 울리는 긴 음의 끝이다.
                         # 그래서 후보를 여럿 들고 **끝이 이 음의 시작과 맞는 것**을 고른다.
-                        cand = tie_open.get((f_part, midi)) or []
+                        cand = tie_open.get((f_part, n_voice, midi)) or []
                         prev = None
                         if tie:
                             for _ix in reversed(cand):
@@ -3684,7 +3691,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 *_diatonic_neighbors(cur_fifths, midi)))
                         else:
                             # 최근 것부터 여덟만 — 성부가 그보다 많이 겹치는 악보는 없다.
-                            q = tie_open.setdefault((f_part, midi), [])
+                            q = tie_open.setdefault((f_part, n_voice, midi), [])
                             q.append(len(parts_out))
                             del q[:-8]
                             parts_out.append(base_row)
@@ -5972,6 +5979,28 @@ def action_selftest():
     # 마지막(성부 1)을 집으면 안 붙어서 **셋**이 된다.
     ck("성부가 겹쳐도 이음줄은 제 짝을 찾는다 (목록 끝의 다른 성부를 집지 않는다)",
        [(0.0, 3.0), (2.0, 4.0)], _c4, _c4 == [(0.0, 3.0), (2.0, 4.0)])
+    # 그리고 **어느 성부의 붙임줄인지**. 둘이 같은 자리에서 끝나면 후보 검사만으로는 못 가른다 —
+    # 실측 2026-08-21 아로하 Gtr1: 성부 1 과 성부 5 가 같은 음악을 들고 있어서 41→42마디의
+    # 붙임줄이 남의 성부에 붙었다. 여기서는 성부 1 이 이어지고 성부 2 는 안 이어진다.
+    _vd2 = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+            '<voice>1</voice><tie type="start"/></note>'
+            '<backup><duration>4</duration></backup>'
+            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+            '<voice>2</voice></note>'
+            '</measure><measure number="2">'
+            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+            '<voice>1</voice><tie type="stop"/></note>'
+            '</measure></part></score-partwise>')
+    with open("data/sing/selftest-voice2.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_vd2)
+    _vr2 = []
+    musicxml_to_score("data/sing/selftest-voice2.musicxml", parts_out=_vr2)
+    # ⚠️ 길이만 정렬해 보면 못 가른다 — 어느 쪽이 늘어났든 [4, 8] 이다. **성부별로** 봐야 한다.
+    _byv = {r.get("voice"): round(r["beats"], 3) for r in _vr2 if r.get("pitch") == 60}
+    ck("…그리고 이어지는 쪽은 그 붙임줄을 쓴 성부다 (길이가 남의 성부로 가지 않는다)",
+       {"1": 8.0, "2": 4.0}, _byv, _byv == {"1": 8.0, "2": 4.0})
+    os.remove("data/sing/selftest-voice2.musicxml")
     os.remove("data/sing/selftest-voice.musicxml")
 
     # 이음줄은 **화음 안에서도** 이어져야 한다. 바로 앞 행으로 찾던 시절 앞 행이 다른 성부라
