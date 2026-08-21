@@ -3375,6 +3375,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     tie_open = {}
     for pi, part in enumerate(parts):
         divisions = 1.0
+        vel_any = [None]   # 이 파트에서 마지막으로 선 셈여림 — 보표를 안 가린다
         vel_by_staff = {}  # dynamics are written PER STAFF (실측 월광: pp 는 오른손 보표의
         # 것인데 문서 순서대로 전 성부에 들러붙어 왼손이 더 커졌다 — 악보가 아니라 우리
         # 부산물). staff 없는 지시는 "1" 로.
@@ -3390,6 +3391,18 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         graces = []    # pending grace pitches awaiting their host note
         wedges = []    # (raw pos, "c"|"d"|"stop")
         dyn_events = []  # (raw pos, vel)
+        def _staff_vel(staff):
+            """이 보표에 지금 걸려 있는 셈여림. 자기 것이 없으면 **파트의 것**을 쓴다.
+
+            셈여림은 대보표 사이에 한 번 적고 두 손에 다 건다 — 실측 2026-08-21 월광:
+            파일의 셈여림 27개 중 26개가 오른손 보표(1)에 달려 있고 왼손(2)엔 42마디
+            하나뿐이다. 보표별로만 보면 왼손은 42마디 전까지 셈여림이 없는 손이 된다.
+            """
+            v = vel_by_staff.get(staff)
+            if v is None:
+                v = vel_any[0]
+            return XML_DEFAULT_VEL if v is None else v
+
         measures = kids(part, "measure")
         for mi_idx in (order if len(order) else range(len(measures))):
             meas = measures[mi_idx]
@@ -3442,6 +3455,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             _sv = max(0.0, min(1.0, 90.0 * float(snd.get("dynamics"))
                                                / 100.0 / 127.0))
                             vel_by_staff[d_staff] = _sv
+                            vel_any[0] = _sv
                             dyn_events.append((m_base + cur, _sv, d_staff))
                         except ValueError:
                             pass
@@ -3454,6 +3468,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             v_new = _XML_DYN.get(_strip_ns(dyn[0].tag),
                                                  vel_by_staff.get(d_staff))
                             vel_by_staff[d_staff] = v_new
+                            if v_new is not None:
+                                vel_any[0] = v_new
                             dyn_events.append((m_base + cur, v_new, d_staff))
                         met = kid(dt, "metronome")
                         if met is not None and pi == 0 and snd is None:
@@ -3522,7 +3538,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         uly = kid(el, "lyric")
                         usyl = (text_of(uly, "text") or "").strip() if uly is not None else ""
                         u_staff = _xt(el, "staff", "1") or "1"
-                        uv = vel_by_staff.get(u_staff, vel_by_staff.get("1"))
+                        uv = _staff_vel(u_staff)
                         if usyl:
                             # A rhythm-lyric lead sheet (실측 아로하: 가사 344개가 슬래시 음표에
                             # 얹혀 멜로디 음고가 없다): the slash carries WHEN, the lyric carries
@@ -3648,9 +3664,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # 안 보면 남의 것을 집는다 — 실측 2026-08-21 아로하 Gtr1 41→42마디:
                     # 성부 1 과 성부 5 가 A2·E3·G3·D4 에 똑같이 붙임줄을 걸어 놓았다.
                     n_voice = _xt(el, "voice", "1") or "1"
-                    st_vel = vel_by_staff.get(n_staff, vel_by_staff.get("1"))
-                    nvel = min(1.0, (st_vel if st_vel is not None else XML_DEFAULT_VEL)
-                               + vboost)
+                    nvel = min(1.0, _staff_vel(n_staff) + vboost)
                     if parts_out is not None and not is_tab:
                         stolen = 0.0
                         if graces and not is_stack:
@@ -3749,13 +3763,19 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                 continue
             wstop = next((t for t, k, st in wedges[wi + 1:] if k == "stop" and st == wstaff),
                          wstart + 4.0)
-            v0 = XML_DEFAULT_VEL
-            for t, v, st in dyn_events:
-                if t <= wstart and st == wstaff:
-                    v0 = v
+            # 시작값·목표값도 자기 보표에서 못 찾으면 파트에서 찾는다. 이 폴백이 없어서
+            # 월광 왼손의 크레센도 둘(16·18마디)이 pp 가 아니라 **기본값 90** 에서
+            # 출발했다 — 사용자가 "왜 피아노 부서지도록 치노" 라고 짚은 그 자리다.
+            # 음표 경로는 이미 폴백하고 있었으므로 어긋난 건 쐐기 하나였다.
+            v0 = next((v for t, v, st in reversed(dyn_events)
+                       if t <= wstart and st == wstaff and v is not None),
+                      next((v for t, v, st in reversed(dyn_events)
+                            if t <= wstart and v is not None), XML_DEFAULT_VEL))
             v1 = next((v for t, v, st in dyn_events
-                       if t >= wstop - 0.25 and st == wstaff),
-                      min(1.0, max(0.1, v0 + (0.15 if wkind == "c" else -0.15))))
+                       if t >= wstop - 0.25 and st == wstaff and v is not None),
+                      next((v for t, v, st in dyn_events
+                            if t >= wstop - 0.25 and v is not None),
+                           min(1.0, max(0.1, v0 + (0.15 if wkind == "c" else -0.15)))))
             span = max(1e-9, wstop - wstart)
             for row in (parts_out or []):
                 # 드럼 행은 `part` 가 "drum" 이라 자기 파트 이름을 `_src` 로 들고 있다.
@@ -6029,6 +6049,36 @@ def action_selftest():
        next((r["pitch"] for r in _cr if "pitch" in r), None),
        next((r["pitch"] for r in _cr if "pitch" in r), None) == 60)
     os.remove("data/sing/selftest-clefoct.musicxml")
+
+    # 셈여림은 대보표 사이에 한 번 적고 두 손에 다 건다. 오른손에만 pp 가 있고 왼손에
+    # 크레센도가 걸리면 그 크레센도는 pp 에서 출발해야 한다 — 실측 2026-08-21 월광
+    # 16·18마디가 기본값 90 에서 출발해 "피아노 부서지도록" 들렸다. 음표 경로는 이미
+    # 폴백하고 있었고 어긋난 건 쐐기 하나였으니, 둘을 한 판정기로 묶고 여기서 잠근다.
+    _wd = (P + '<measure number="1"><attributes><divisions>1</divisions>'
+           '<staves>2</staves></attributes>'
+           '<direction><direction-type><dynamics><pp/></dynamics></direction-type>'
+           '<staff>1</staff></direction>'
+           '<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration>'
+           '<voice>1</voice><staff>1</staff></note>'
+           '<backup><duration>4</duration></backup>'
+           '<direction><direction-type><wedge type="crescendo"/></direction-type>'
+           '<staff>2</staff></direction>'
+           '<note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration>'
+           '<voice>5</voice><staff>2</staff></note>'
+           '<note><pitch><step>E</step><octave>3</octave></pitch><duration>2</duration>'
+           '<voice>5</voice><staff>2</staff></note>'
+           '</measure>' + E)
+    with open("data/sing/selftest-wedge2.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_wd)
+    _wr = []
+    musicxml_to_score("data/sing/selftest-wedge2.musicxml", parts_out=_wr)
+    _lh = [r for r in _wr if r.get("staff") == "2" and "pitch" in r]
+    ck("a wedge on the other hand starts from the part's dynamic, not from the default",
+       round(_XML_DYN["pp"], 3),
+       round(_lh[0]["vel"], 3) if _lh else None,
+       len(_lh) == 2 and abs(_lh[0]["vel"] - _XML_DYN["pp"]) < 0.02
+       and _lh[1]["vel"] > _lh[0]["vel"])
+    os.remove("data/sing/selftest-wedge2.musicxml")
 
     # 한 파트에 성부가 여럿이면 같은 음이 동시에 울린다 — 온음표를 붙든 성부와, 그 위에서
     # 이음줄로 이어지는 성부. 마지막 행 하나만 들고 있으면 그 온음표를 집고 검사에서 떨어진다
