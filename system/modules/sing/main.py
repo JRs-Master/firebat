@@ -2701,16 +2701,21 @@ def _track_events(track):
 
     Keyed by **(channel, note)**, not by note. One track can carry several channels — a type-0
     file carries all sixteen — and two channels sounding the same note number would otherwise
-    close each other's notes."""
+    close each other's notes.
+
+    그리고 같은 (채널, 음)이 **겹치면 줄로 쌓는다.** 아직 울리는 음을 또 켜는 일은 흔하다 —
+    트레몰로, 반복음, 페달 밟은 아르페지오. 값 하나로 들고 있으면 나중 것이 앞엣것을 덮고
+    note_off 하나가 하나만 닫아, 덮인 음은 **소리 없이 사라진다**. 실측 2026-08-21 캐논:
+    2,241음 중 209음(9%)이 그렇게 없어졌고 verify 가 그 자리를 짚었다. 먼저 켠 것부터 닫는다."""
     events, t, on = [], 0, {}
     for msg in track:
         t += msg.time
         ch = int(getattr(msg, "channel", 0))
         if msg.type == "note_on" and msg.velocity > 0:
-            on[(ch, msg.note)] = (t, msg.velocity)
+            on.setdefault((ch, msg.note), []).append((t, msg.velocity))
         elif (msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0)) \
-                and (ch, msg.note) in on:
-            start, vel = on.pop((ch, msg.note))
+                and on.get((ch, msg.note)):
+            start, vel = on[(ch, msg.note)].pop(0)
             events.append([msg.note, start, t - start, vel, ch])
     events.sort(key=lambda e: e[1])
     return events
@@ -5598,6 +5603,27 @@ def action_selftest():
        and abs(wrows[1]["beats"] - 4.0) < 1e-6)
     os.remove("data/sing/selftest-warp.mid")
 
+    # 같은 음이 아직 울리는데 또 켜지면 — 트레몰로·반복음·페달 아르페지오 — 값 하나로 들고
+    # 있던 시절 나중 것이 앞엣것을 덮고 그 음은 소리 없이 사라졌다(캐논 2,241음 중 209음).
+    _ov = _mido.MidiFile(ticks_per_beat=480)
+    _ot = _mido.MidiTrack(); _ov.tracks.append(_ot)
+    _ot.append(_mido.Message("note_on", channel=0, note=72, velocity=90, time=0))
+    _ot.append(_mido.Message("note_on", channel=0, note=72, velocity=80, time=120))  # 겹쳐 시작
+    _ot.append(_mido.Message("note_off", channel=0, note=72, velocity=0, time=120))
+    _ot.append(_mido.Message("note_off", channel=0, note=72, velocity=0, time=240))
+    _ov.save("data/sing/selftest-overlap.mid")
+    _orows, _ob, _om, _oe = midi_to_parts("data/sing/selftest-overlap.mid")
+    ck("겹친 같은 음은 둘 다 산다 — 나중 것이 앞엣것을 덮지 않는다", 2, len(_orows or []),
+       _oe is None and len(_orows) == 2)
+    ck("…먼저 켠 것이 먼저 닫힌다 (세기로 확인)", [90, 80],
+       [round(r["vel"] * 127) for r in sorted(_orows or [], key=lambda r: r["beat"])],
+       [round(r["vel"] * 127) for r in sorted(_orows or [], key=lambda r: r["beat"])] == [90, 80])
+    _ovr = action_verify({"action": "verify",
+                          "scoreMediaPath": "data/sing/selftest-overlap.mid"}).get("data") or {}
+    ck("…그리고 verify 가 통째로 통과한다", True,
+       [_ovr.get("exact"), _ovr.get("notes")], bool(_ovr.get("exact")))
+    os.remove("data/sing/selftest-overlap.mid")
+
     # 트랙이 아니라 채널이 파트다. type-0 파일은 열여섯 채널이 한 트랙에 들어 있어서, 트랙의
     # 첫 program_change 를 그 트랙의 악기라고 읽으면 곡이 통째로 한 악기가 되고 킥이 피아노 음이
     # 된다 — 실측 2026-08-21: 3채널 12음 파일이 `p1 program=0 x12` 로 나왔다.
@@ -6337,6 +6363,16 @@ def action_selftest():
                                             "pyworld": try_pyworld() is not None}}
 
 
+MIDI_TPB = 480          # write_midi 가 쓰는 격자. 대조는 이 눈금 위에서 한다
+
+
+def _tick(beats):
+    """비교용 시간 — **틱 격자**로 반올림. 원본 쪽은 템포맵을 실수로 편 값이고 우리 쪽은 정수
+    틱에서 나온 값이라, 소수 넷째 자리로 비교하면 같은 음이 0.1328 대 0.1333 으로 갈린다.
+    그러면 멀쩡한 음이 '달라졌다'로 찍혀 진짜 차이가 그 안에 묻힌다."""
+    return round(round(beats * MIDI_TPB) / MIDI_TPB, 6)
+
+
 def _raw_midi_notes(path):
     """(pitch, onset_beat, dur_beat, velocity, program, is_drum) 목록 — **파서를 안 거치고**
     파일에서 직접. 템포맵만 우리 warp 로 펴서 두 쪽을 같은 시간 축에 둔다.
@@ -6368,12 +6404,13 @@ def _raw_midi_notes(path):
             elif msg.type == "control_change":
                 ccs.add((int(ch), int(msg.control)))
             elif msg.type == "note_on" and msg.velocity > 0:
-                on[(int(ch), msg.note)] = (t, msg.velocity, prog.get(int(ch), 0))
+                on.setdefault((int(ch), msg.note), []).append(
+                    (t, msg.velocity, prog.get(int(ch), 0)))
             elif (msg.type == "note_off"
-                  or (msg.type == "note_on" and msg.velocity == 0)) and (int(ch), msg.note) in on:
-                st, vel, pg = on.pop((int(ch), msg.note))
+                  or (msg.type == "note_on" and msg.velocity == 0)) and on.get((int(ch), msg.note)):
+                st, vel, pg = on[(int(ch), msg.note)].pop(0)
                 b0 = warp(st / tpb)
-                out.append((int(msg.note), round(b0, 4), round(warp(t / tpb) - b0, 4),
+                out.append((int(msg.note), _tick(b0), _tick(warp(t / tpb) - b0),
                             int(vel), (0 if ch == 9 else pg), ch == 9))
     return out, bpm, ccs
 
@@ -6394,11 +6431,12 @@ def _emitted_notes(path):
             elif msg.type == "control_change":
                 ccs.add((int(ch), int(msg.control)))
             elif msg.type == "note_on" and msg.velocity > 0:
-                on[(int(ch), msg.note)] = (t, msg.velocity, prog.get(int(ch), 0))
+                on.setdefault((int(ch), msg.note), []).append(
+                    (t, msg.velocity, prog.get(int(ch), 0)))
             elif (msg.type == "note_off"
-                  or (msg.type == "note_on" and msg.velocity == 0)) and (int(ch), msg.note) in on:
-                st, vel, pg = on.pop((int(ch), msg.note))
-                out.append((int(msg.note), round(st / tpb, 4), round((t - st) / tpb, 4),
+                  or (msg.type == "note_on" and msg.velocity == 0)) and on.get((int(ch), msg.note)):
+                st, vel, pg = on[(int(ch), msg.note)].pop(0)
+                out.append((int(msg.note), _tick(st / tpb), _tick((t - st) / tpb),
                             int(vel), (0 if ch == 9 else pg), ch == 9))
     return out, ccs
 
