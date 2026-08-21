@@ -133,7 +133,22 @@ impl IMediaIntakePort for MediaIntake {
         content_type: &str,
         opts: MediaSaveOptions,
     ) -> InfraResult<MediaSaveResult> {
-        self.0.save(&binary, content_type, opts).await
+        let saved = self.0.save(&binary, content_type, opts).await?;
+        // The gallery listens for `gallery:refresh` and image generation, upload and delete all
+        // announce themselves — a module's product did not, so a rendered track or a generated
+        // deck landed in the store and the grid kept showing what it had until a reload
+        // (사용자 2026-08-21: "미디어에 새 파일 f5해야 나오는듯 실시간 갱신안되고").
+        //
+        // It goes here rather than in `save`, which uploads also use and whose caller already
+        // emits — one announcement per arrival, and this narrow port is the one every module
+        // product comes through, so every module gets it without declaring anything.
+        if let Some(event) = &self.0.event {
+            event.notify_gallery(serde_json::json!({
+                "slug": saved.slug,
+                "source": "module",
+            }));
+        }
+        Ok(saved)
     }
 }
 
