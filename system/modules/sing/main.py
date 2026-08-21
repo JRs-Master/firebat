@@ -5945,16 +5945,22 @@ def action_selftest():
     # 한 파트에 성부가 여럿이면 같은 음이 동시에 울린다 — 온음표를 붙든 성부와, 그 위에서
     # 이음줄로 이어지는 성부. 마지막 행 하나만 들고 있으면 그 온음표를 집고 검사에서 떨어진다
     # (실측 아로하: 어긋남이 정확히 +4.0박, 즉 아직 울리는 긴 음의 끝이었다).
+    # ⚠️ 순서가 핵심이다. 이음줄 시작 **뒤에** 같은 음의 다른 성부가 붙어야 목록의 마지막이
+    # 틀린 후보가 된다 — 첫 픽스처는 그 순서를 못 만들어서 카나리아가 안 터졌다(실제 파일로는
+    # 4,688 → 4,721 로 터진다). 성부 2 가 3박부터 이음줄을 걸고, 그 뒤 성부 1 이 3박짜리
+    # 음을 놓아 목록 끝을 차지한다.
     _vd = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
-           # 성부 1: 온음표 C4 가 네 박 내내 울린다
-           '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
-           '<voice>1</voice></note>'
-           '<backup><duration>4</duration></backup>'
-           # 성부 2: 같은 C4 를 두 박 + 이음줄로 두 박 더
+           '<note><rest/><duration>2</duration><voice>2</voice></note>'
            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration>'
            '<voice>2</voice><tie type="start"/></note>'
+           '<backup><duration>4</duration></backup>'
+           '<note><pitch><step>C</step><octave>4</octave></pitch><duration>3</duration>'
+           '<voice>1</voice></note>'
+           '<note><rest/><duration>1</duration><voice>1</voice></note>'
+           '</measure><measure number="2">'
            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration>'
            '<voice>2</voice><tie type="stop"/></note>'
+           '<note><rest/><duration>2</duration><voice>2</voice></note>'
            '</measure></part></score-partwise>')
     with open("data/sing/selftest-voice.musicxml", "w", encoding="utf-8") as _fh:
         _fh.write(_vd)
@@ -5962,10 +5968,10 @@ def action_selftest():
     _vs, _ = musicxml_to_score("data/sing/selftest-voice.musicxml", parts_out=_vr)
     _c4 = sorted((round(r["beat"], 3), round(r["beats"], 3))
                  for r in _vr if r.get("pitch") == 60)
-    ck("성부가 겹쳐도 이음줄은 제 짝을 찾는다 (아직 울리는 긴 음을 집지 않는다)",
-       [(0.0, 4.0), (0.0, 4.0)], _c4, _c4 == [(0.0, 4.0), (0.0, 4.0)])
-    ck("…붙일 앞 음이 없는 이음줄은 조용히 넘기지 않고 고지한다", True,
-       (_vs or {}).get("_notation_skipped"), True)
+    # 성부 1 의 3박 음 하나 + 성부 2 의 이음줄이 합쳐진 4박 음 하나 = 둘. 이음줄이 목록의
+    # 마지막(성부 1)을 집으면 안 붙어서 **셋**이 된다.
+    ck("성부가 겹쳐도 이음줄은 제 짝을 찾는다 (목록 끝의 다른 성부를 집지 않는다)",
+       [(0.0, 3.0), (2.0, 4.0)], _c4, _c4 == [(0.0, 3.0), (2.0, 4.0)])
     os.remove("data/sing/selftest-voice.musicxml")
 
     # 이음줄은 **화음 안에서도** 이어져야 한다. 바로 앞 행으로 찾던 시절 앞 행이 다른 성부라
