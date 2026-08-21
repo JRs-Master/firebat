@@ -3328,6 +3328,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     meter = None
     tempo_events = []  # (raw beats, bpm) — collected on part 0's walk
     parsed_parts = []
+    # (파트, 음고) → 그 음이 마지막으로 울린 parts_out 인덱스. 이음줄이 붙을 자리를 찾는 데
+    # 쓴다 — 바로 앞 행으로 찾으면 화음 안에서 못 찾는다.
+    tie_open = {}
     for pi, part in enumerate(parts):
         divisions = 1.0
         vel_by_staff = {}  # dynamics are written PER STAFF (실측 월광: pp 는 오른손 보표의
@@ -3578,15 +3581,23 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             # 0.04-beat step made 월광 (bpm 44) roll 55ms per voice; applied
                             # after the warp below, in seconds.
                             base_row["_roll"] = roll_n
-                        if (tie and parts_out and parts_out[-1]["part"] == f_part
-                                and parts_out[-1].get("pitch") == midi
-                                and not parts_out[-1].get("pedal")):
-                            parts_out[-1]["beats"] += dur
+                        # 이음줄은 **그 음이 마지막으로 울린 행**으로 이어진다 — 바로 앞 행이
+                        # 아니라. 화음 안에서는 앞 행이 다른 성부라 붙을 자리를 못 찾았고, 그
+                        # 음은 이어지는 대신 **다시 때려졌다**. 실측 2026-08-21 아로하:
+                        # 단선율 Base 는 277/277 로 정확했는데 Gtr1(화음 2,440음)은 +358,
+                        # Piano 는 +141 이 남았다 — 그 차이가 전부 안 이어진 이음줄이다.
+                        # 연속성은 확인한다: 끝나는 자리에서 시작하는 음만 같은 음이다.
+                        prev_ix = tie_open.get((f_part, midi))
+                        prev = parts_out[prev_ix] if prev_ix is not None else None
+                        if (tie and prev is not None
+                                and abs(prev["beat"] + prev["beats"] - onset) < 1e-6):
+                            prev["beats"] += dur
                         elif orn_kind:
                             parts_out.extend(_ornament_rows(
                                 base_row, orn_kind,
                                 *_diatonic_neighbors(cur_fifths, midi)))
                         else:
+                            tie_open[(f_part, midi)] = len(parts_out)
                             parts_out.append(base_row)
                     graces = [] if not is_stack else graces
                     if is_stack:
@@ -5744,6 +5755,32 @@ def action_selftest():
         [{"part": "melody", "program": 0, "pitch": 60, "beat": 0.0, "beats": 1.0, "vel": 0.7}], _fx))
     _FONT_ALIASES.clear()
     os.remove(_fx)
+
+    # 이음줄은 **화음 안에서도** 이어져야 한다. 바로 앞 행으로 찾던 시절 앞 행이 다른 성부라
+    # 못 찾았고, 그 음은 이어지는 대신 다시 때려졌다 — 악보가 한 음이라고 적은 자리에서.
+    # 실측 2026-08-21 아로하: 단선율 Base 는 정확했고 화음 파트만 어긋났다.
+    _tdoc = (P + '<measure number="1"><attributes><divisions>2</divisions></attributes>'
+             '<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration>'
+             '<tie type="start"/></note>'
+             '<note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration>'
+             '</note>'
+             '<note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration>'
+             '<tie type="stop"/></note>'
+             '<note><chord/><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration>'
+             '</note>'
+             '</measure></part></score-partwise>')
+    with open("data/sing/selftest-tie.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_tdoc)
+    _trows = []
+    musicxml_to_score("data/sing/selftest-tie.musicxml", parts_out=_trows)
+    _c4 = [r for r in _trows if r.get("pitch") == 60]
+    ck("이음줄은 화음 속에서도 한 음이다 — 다시 때리지 않는다", [1, 2.0],
+       [len(_c4), _c4[0]["beats"] if _c4 else None],
+       len(_c4) == 1 and abs(_c4[0]["beats"] - 2.0) < 1e-6)
+    ck("…같은 음이라도 이어지지 않으면 따로 친다(연속성 확인)", 2,
+       len([r for r in _trows if r.get("pitch") in (64, 67)]),
+       len([r for r in _trows if r.get("pitch") in (64, 67)]) == 2)
+    os.remove("data/sing/selftest-tie.musicxml")
 
     # 출력 레벨을 정하는 건 **파일을 쓰는 마지막 자리**다. 렌더 쪽 정규화를 걷고도 여기가
     # 따로 정규화하고 있어서 폰트 넷 × 곡 둘이 전부 peak −0.45 dBFS 로 같았다(2026-08-21 실측,
