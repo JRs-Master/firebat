@@ -594,6 +594,10 @@ function MediaDetailModal({
   const t = useTranslations();
   const isError = item.status === 'error';
   const itemKind = kindOf(item.contentType, item.ext);
+  // 화살표를 미리보기 위에 띄우는 건 **그림일 때뿐**이다. 오디오·악보 미리보기는 그 자리가
+  // 컨트롤이라, 세로 중앙에 뜬 화살표가 재생 버튼 위에 앉는다(모바일 실측 2026-08-21).
+  // 그림이 아니면 화살표는 헤더로 간다 — 모바일에서도.
+  const floatNav = itemKind === 'image';
   const HeaderIcon = KIND_ICON[itemKind];
   const canRegenerate = !!item.prompt; // a prompt is required to re-run
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -642,7 +646,7 @@ function MediaDetailModal({
               <button
                 onClick={onPrev}
                 disabled={!hasPrev}
-                className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                className={`${floatNav ? 'hidden md:inline-flex' : 'inline-flex'} p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors`}
                 aria-label={t('media.aria_prev')}
               >
                 <ChevronLeft size={18} />
@@ -652,7 +656,7 @@ function MediaDetailModal({
               <button
                 onClick={onNext}
                 disabled={!hasNext}
-                className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                className={`${floatNav ? 'hidden md:inline-flex' : 'inline-flex'} p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors`}
                 aria-label={t('media.aria_next')}
               >
                 <ChevronRight size={18} />
@@ -720,8 +724,8 @@ function MediaDetailModal({
                 className="max-w-full max-h-full object-contain rounded"
               />
             )}
-            {/* mobile floating prev/next — mobile only (header arrows are desktop only; no duplicates).
-                Always rendered for stable placement — disabled just lowers opacity (no cursor change). */}
+            {/* 그림 위에만 띄운다 — 다른 종류는 이 자리가 컨트롤이다(위 floatNav). */}
+            {floatNav && (<>
             <button
               onClick={onPrev}
               disabled={!hasPrev}
@@ -738,6 +742,7 @@ function MediaDetailModal({
             >
               <ChevronRight size={20} />
             </button>
+            </>)}
           </div>
 
           {/* right column — only desktop scrolls the prompt; mobile flows naturally (body scroll owns it) */}
