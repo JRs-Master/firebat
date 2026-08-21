@@ -45,7 +45,8 @@
           "preview",
           "scores",
           "lyrics",
-          "selftest"
+          "selftest",
+          "levels"
         ],
         "description": "render = score -> song. Returns data.media with the wav url (put it in a `listening` component's audioUrl) and, with midiOut, the .mid beside it. scores = list the shelved scores (alias + filename) — check it FIRST when the user refers to an uploaded/shelved piece, then pass the alias as render's scoreMediaPath. You cannot recall a real melody from memory: an existing song plays from a MIDI (scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one. selftest = self-checks, no files needed."
       },
@@ -271,7 +272,7 @@
           "string",
           "null"
         ],
-        "description": "[render] sf2 = system FluidSynth + GM SoundFont — realistic instruments; the server enables it with `apt install fluidsynth fluid-soundfont-gm` and the module finds both on its own. builtin = the module's own synth. Omit = auto: sf2 when installed, else builtin."
+        "description": "[render] sf2 = system FluidSynth + GM SoundFont — realistic instruments; the server enables it with `apt install fluidsynth fluid-soundfont-gm` and the module finds both on its own. builtin = the module's own synth. Omit = auto: sf2 when installed, else builtin. [levels] which engine to measure; omit for whichever would actually render."
       },
       "audioFormat": {
         "type": [
@@ -542,6 +543,26 @@
       "name": "셀프테스트",
       "description": "Offline checks over the synth, arrangement and shelf logic. No files, no network.",
       "params": []
+    },
+    {
+      "id": "levels",
+      "name": "파트별 실제 음량 측정",
+      "desc": "한 파트씩만 켜서 실제로 난 소리 크기를 잽니다 — RMS·피크·크레스트, 그리고 MIX 표가 뜻한 레벨과 얼마나 어긋났는지(offByDb). 밸런스를 귀나 감으로 고치기 전에 숫자를 보는 자리이고, 사운드폰트를 갈면 다시 재야 합니다. 소리 파일은 만들지 않습니다.",
+      "tags": [
+        "믹스",
+        "밸런스",
+        "음량",
+        "레벨",
+        "측정",
+        "보정",
+        "mix",
+        "balance",
+        "level"
+      ],
+      "params": [
+        "style",
+        "engine"
+      ]
     }
   ]
 }

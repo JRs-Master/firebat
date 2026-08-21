@@ -2637,7 +2637,7 @@ def sf2_backend():
     return binp, font, None
 
 
-def render_sf2(arr, spb, binp, font, mixmap=None):
+def render_sf2(arr, spb, binp, font, mixmap=None, normalize=True):
     """The arrangement through fluidsynth: the same .mid midiOut writes, played on the GM font.
 
     Returns (stereo, why_not) — any why_not drops the render back to the builtin synth, so a
@@ -2668,8 +2668,11 @@ def render_sf2(arr, spb, binp, font, mixmap=None):
         if sr != SR:
             data = np.stack([resample_linear(data[:, 0], SR / sr),
                              resample_linear(data[:, 1], SR / sr)], axis=1).astype(np.float32)
-        peak = float(np.max(np.abs(data))) or 1.0
-        data /= peak
+        if normalize:
+            # ⚠️ 파트별 레벨을 재려면 이걸 끄고 불러야 한다 — 솔로마다 자기 피크로 나누면
+            # 모든 파트가 0 dBFS 가 되어 비교가 통째로 사라진다.
+            peak = float(np.max(np.abs(data))) or 1.0
+            data /= peak
         return data, None
     except subprocess.TimeoutExpired:
         return None, "fluidsynth timed out"
@@ -4745,6 +4748,82 @@ def action_preview(inp):
                                               "직접 재생하지 못합니다"}}
 
 
+def action_levels(inp):
+    """파트마다 실제로 얼마나 큰 소리가 나는지 — 한 파트씩만 켜서 잰다.
+
+    `MIX` 는 최종 밸런스가 아니라 **트림**이다. 그 위에 음표 벨로시티, 악기 자체의 샘플 레벨,
+    그리고 크레스트(드럼은 순간음, 가락은 지속음)가 얹히고, 셋 다 우리 표보다 크다. 실측
+    2026-08-21 (내장 엔진): 표는 드럼을 리드보다 −2.4 dB 로 두라 했는데 실제로는 RMS **+6.6 dB**,
+    피크 **+18.1 dB** 로 났다. 출력은 마지막에 피크로 정규화되므로 그 피크를 정하는 드럼 순간음이
+    나머지 전부를 같이 눌러 내린다 — 사용자가 "멜로디만 크고 나머지는 작다"고 들은 것과
+    "드럼이 제일 크다"가 동시에 참인 이유다.
+
+    폰트를 갈면 숫자가 바뀌므로 표에 적어 두지 않는다. 재는 도구를 두고 그때 잰다.
+    """
+    style = str(inp.get("style") or "trot").strip().lower()
+    style = STYLE_ALIASES.get(style, style)
+    if style not in DRUM_PATTERNS:
+        return {"success": False,
+                "error": f"style {style!r} 를 모릅니다 — {' | '.join(sorted(DRUM_PATTERNS))}"}
+    # 고정 탐침 — 재는 값이 곡이 아니라 편성에 대한 것이어야 하므로 악보를 인자로 받지 않는다.
+    probe = {"bpm": 100, "style": style,
+             "chords": [{"root": "A2", "beats": 4}] * 8,
+             "notes": [{"syl": "라", "note": n, "beats": 1}
+                       for n in ["A4", "B4", "C5", "B4", "A4", "G4", "A4", "E4"] * 4]}
+    spb, ev, ch, st, bd, fl, err = parse_score(probe)
+    if err:
+        return {"success": False, "error": err}
+    arr = apply_performance(build_arrangement(ev, ch, st, 32, bd, fl), fl, spb, 32)
+    want = str(inp.get("engine") or "").strip().lower()
+    binp, font, why = sf2_backend()
+    use_sf2 = (want == "sf2" or (not want and binp and font))
+    if want == "sf2" and why:
+        return {"success": False, "error": why}
+    if want and want not in ("sf2", "builtin"):
+        return {"success": False, "error": "engine 은 sf2 | builtin 입니다"}
+
+    def dbfs(v):
+        return None if v <= 1e-9 else round(20 * math.log10(v), 1)
+
+    rows = []
+    for part in sorted({r["part"] for r in arr}):
+        solo = [r for r in arr if r["part"] == part]
+        if use_sf2:
+            stereo, ferr = render_sf2(solo, spb, binp, font, mixmap=None, normalize=False)
+            if ferr:
+                return {"success": False, "error": ferr}
+        else:
+            stereo, _ = render_arrangement(solo, spb, 32, mixmap=None)
+        mono = stereo.mean(axis=1)
+        rms, pk = float(np.sqrt((mono ** 2).mean())), float(np.abs(mono).max())
+        rows.append({"part": part, "mix": mix_of(part),
+                     "rmsDb": dbfs(rms), "peakDb": dbfs(pk),
+                     "crestDb": (None if dbfs(rms) is None or dbfs(pk) is None
+                                 else round(dbfs(pk) - dbfs(rms), 1))})
+    lead = next((r for r in rows if r["part"] in ("melody", "vocal")), None)
+    for r in rows:
+        for k, ref in (("rmsDb", "rmsDb"), ("peakDb", "peakDb")):
+            if lead and r[k] is not None and lead[ref] is not None:
+                r[k.replace("Db", "VsLead")] = round(r[k] - lead[ref], 1)
+        # 표가 뜻한 값과 실제로 난 값의 차 — 0 이면 MIX 가 말한 대로 났다는 뜻이다.
+        if r.get("rmsVsLead") is not None and r["mix"] > 0:
+            r["tableSaysDb"] = round(20 * math.log10(r["mix"]), 1)
+            r["offByDb"] = round(r["rmsVsLead"] - r["tableSaysDb"], 1)
+    inv = font_inventory(font) if (use_sf2 and font) else None
+    return {"success": True, "data": {
+        "engine": "sf2" if use_sf2 else "builtin",
+        "soundfont": ("%s (%s)" % (inv["name"], os.path.basename(font))
+                      if inv and inv.get("name") else
+                      (os.path.basename(font) if use_sf2 and font else None)),
+        "style": style,
+        "parts": rows,
+        "note": ("한 파트씩만 켜서 잰 절대 레벨입니다(정규화 끔). `offByDb` = MIX 표가 뜻한 "
+                 "레벨과 실제로 난 레벨의 차 — 0 이 아니면 그만큼 표가 결과를 못 잡고 있다는 "
+                 "뜻입니다. 크레스트가 큰 파트(드럼)는 RMS 가 작아도 피크로 전체 정규화를 "
+                 "지배하므로 RMS 와 peak 를 같이 보세요. 폰트를 갈면 숫자가 바뀝니다."),
+    }}
+
+
 def action_selftest():
     checks = []
 
@@ -6170,10 +6249,12 @@ def main():
         out = action_lyrics(inp)
     elif action == "preview":
         out = action_preview(inp)
+    elif action == "levels":
+        out = action_levels(inp)
     else:
         out = {"success": False,
                "error": f"unknown action {action!r} — one of: render, preview, scores, lyrics, "
-                        "selftest"}
+                        "levels, selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False)).encode("utf-8"))
