@@ -6298,6 +6298,130 @@ def notes_out_of_range(arr, font_path):
     return out
 
 
+# 무엇을 어떻게 재는가. `metric` 은 두 구간(낮은 값 / 높은 값)을 받아 하나의 수를 낸다 —
+# 그 수가 유의하게 다르면 그 컨트롤러가 이 신디·이 폰트에서 실제로 걸린 것이다.
+#   level = RMS · balance = 좌우 에너지 차 · pitch = FFT 최대 피크 · wobble = 순간 피크의 흔들림
+#   tail  = 음이 끝난 뒤에 남는 에너지 (센드와 서스테인이 사는 자리)
+CC_PROBES = (
+    (7,   "level",   "채널 볼륨"),
+    (11,  "level",   "익스프레션"),
+    (10,  "balance", "팬"),
+    (1,   "wobble",  "모듈레이션 휠 → 비브라토"),
+    (91,  "tail",    "리버브 센드"),
+    (93,  "tail",    "코러스 센드"),
+    (64,  "tail",    "서스테인 페달"),
+    (74,  "level",   "필터 컷오프(밝기) — 규격 기본이 아니라 폰트가 선언했을 때만 걸린다"),
+)
+
+
+def _probe_metric(kind, seg):
+    """한 구간의 값 하나. 구간은 (n,2) 스테레오."""
+    mono = seg.mean(axis=1)
+    if kind == "level":
+        return float(np.sqrt((mono ** 2).mean()))
+    if kind == "balance":
+        l, r = float(np.sqrt((seg[:, 0] ** 2).mean())), float(np.sqrt((seg[:, 1] ** 2).mean()))
+        return (l - r) / max(1e-9, l + r)
+    if kind == "tail":
+        # 음이 끝난 뒤 뒤쪽 30% 에 남는 에너지 — 리버브 꼬리도 붙들린 음도 여기 산다
+        cut = int(len(mono) * 0.7)
+        head = float(np.sqrt((mono[:cut] ** 2).mean())) or 1e-9
+        return float(np.sqrt((mono[cut:] ** 2).mean())) / head
+    if kind in ("pitch", "wobble"):
+        # 창을 여러 개로 잘라 각 창의 FFT 최대 피크를 본다. pitch = 평균, wobble = 표준편차.
+        win = max(512, len(mono) // 24)
+        peaks = []
+        for i in range(0, len(mono) - win, win):
+            w = mono[i:i + win] * np.hanning(win)
+            if not np.any(w):
+                continue
+            sp = np.abs(np.fft.rfft(w))
+            if sp[1:].max() <= 0:
+                continue
+            peaks.append(float(np.argmax(sp[1:]) + 1) * SR / win)
+        if len(peaks) < 4:
+            return 0.0
+        return float(np.mean(peaks)) if kind == "pitch" else float(np.std(peaks))
+    return 0.0
+
+
+def probe_controllers(program=0, bank=0):
+    """이 신디·이 폰트가 **실제로 답하는** 컨트롤러. 손으로 적은 표가 아니라 측정이다.
+
+    반환 [{cc, what, metric, low, high, responds}]. fluidsynth 가 없으면 (None, 이유)."""
+    binp, font, why = sf2_backend()
+    if why:
+        return None, why
+    try:
+        import mido
+    except ImportError:
+        return None, "mido 미설치 — 프로브는 .mid 를 씁니다"
+    import subprocess
+    os.makedirs("data/sing", exist_ok=True)
+    tag = f"{os.getpid()}-probe"
+    mid_path, wav_path = f"data/sing/{tag}.mid", f"data/sing/{tag}.wav"
+    tpb, note_beats = 480, 2.0        # 120bpm 기준 1초. 뒤 30% 가 꼬리 구간이 된다
+    try:
+        mf = mido.MidiFile(ticks_per_beat=tpb)
+        tr = mido.MidiTrack(); mf.tracks.append(tr)
+        tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(120), time=0))
+        if bank:
+            tr.append(mido.Message("control_change", channel=0, control=0, value=bank, time=0))
+        tr.append(mido.Message("program_change", channel=0, program=program, time=0))
+        step = int(tpb * note_beats)
+        slots = []
+        for cc, _kind, _what in CC_PROBES:
+            for value in (0, 127):
+                slots.append((cc, value))
+        for i, (cc, value) in enumerate(slots):
+            # 매번 기본 상태로 되돌린 뒤 이 하나만 바꾼다 — 앞 프로브가 남기면 다음이 오염된다.
+            for rcc, rval in ((7, 100), (11, 127), (10, 64), (1, 0), (91, 40), (93, 0), (64, 0),
+                              (74, 64)):
+                tr.append(mido.Message("control_change", channel=0, control=rcc, value=rval,
+                                       time=0))
+            tr.append(mido.Message("control_change", channel=0, control=cc, value=value, time=0))
+            tr.append(mido.Message("note_on", channel=0, note=60, velocity=100, time=0))
+            # 음은 슬롯의 절반만 울리고 나머지는 꼬리 — 센드와 서스테인은 거기서만 보인다.
+            tr.append(mido.Message("note_off", channel=0, note=60, velocity=0, time=step // 2))
+            if i < len(slots) - 1:
+                tr.append(mido.Message("control_change", channel=0, control=123, value=0,
+                                       time=step - step // 2))
+        mf.save(mid_path)
+        r = subprocess.run([binp, "-ni", "-r", str(SR), "-F", wav_path, font, mid_path],
+                           capture_output=True, timeout=300)
+        if r.returncode != 0 or not os.path.isfile(wav_path):
+            tail = (r.stderr or b"")[-200:].decode("utf-8", "replace").strip()
+            return None, f"fluidsynth exit {r.returncode}: {tail}"
+        import soundfile as sf
+        data, sr = sf.read(wav_path, dtype="float32", always_2d=True)
+        if data.shape[1] == 1:
+            data = np.repeat(data, 2, axis=1)
+        per = int(sr * (note_beats * 60.0 / 120.0))
+        out = []
+        for i, (cc, kind, what) in enumerate(CC_PROBES):
+            segs = []
+            for j in (2 * i, 2 * i + 1):
+                a, b = j * per, min((j + 1) * per, len(data))
+                segs.append(data[a:b, :2] if b > a else np.zeros((2, 2), dtype="float32"))
+            lo, hi = (_probe_metric(kind, sg) for sg in segs)
+            # 문턱은 지표마다 다르다 — balance 는 −1~1, 나머지는 비율이라 상대차로 본다.
+            if kind == "balance":
+                responds = abs(hi - lo) > 0.08
+            else:
+                responds = abs(hi - lo) / max(1e-9, abs(lo), abs(hi)) > 0.08
+            out.append({"cc": cc, "what": what, "metric": kind,
+                        "low": round(lo, 5), "high": round(hi, 5), "responds": bool(responds)})
+        return out, None
+    except subprocess.TimeoutExpired:
+        return None, "fluidsynth timed out"
+    finally:
+        for pth in (mid_path, wav_path):
+            try:
+                os.remove(pth)
+            except OSError:
+                pass
+
+
 def action_font(inp):
     """설치된 폰트가 **선언한 것 전부**. 우리 표가 아니라 폰트에게 물어서 나오는 답이다.
 
@@ -6311,6 +6435,24 @@ def action_font(inp):
     if not inv:
         return {"success": False, "error": f"폰트를 못 읽었습니다: {font}"}
     load_font_aliases(font)
+    if inp.get("probe"):
+        # ⭐ 표를 읽는 대신 **물어본다.** 규격 기본 모듈레이터는 파일에 없어서 파싱할 원본이
+        # 없고, 그래서 우리 표는 손으로 옮겨 적은 사본이다(실제로 두 줄이 틀려 있었다).
+        # 이 신디와 이 폰트가 답하는지는 재면 알 수 있다.
+        want_p = inp.get("program")
+        rows, perr = probe_controllers(int(want_p or 0), int(inp.get("bank") or 0))
+        if perr:
+            return {"success": False, "error": f"프로브 실패 — {perr}"}
+        yes = [r for r in rows if r["responds"]]
+        return {"success": True, "data": {
+            "font": inv["name"], "program": int(want_p or 0), "bank": int(inp.get("bank") or 0),
+            "probes": rows,
+            "responds": [r["cc"] for r in yes],
+            "silent": [r["cc"] for r in rows if not r["responds"]],
+            "note": ("측정입니다 — 이 폰트를 이 신디로 실제 렌더해서 컨트롤러를 0 과 127 로 두고 "
+                     "비교했습니다. 우리가 옮겨 적은 규격 표가 아니라 여기서 나는 소리입니다. "
+                     "CC74 는 규격 기본이 아니라 폰트가 선언했을 때만 걸립니다."),
+        }}
     want = str(inp.get("instrument") or "").strip()
     prog = inp.get("program")
     if want or prog is not None:
