@@ -46,10 +46,11 @@
           "scores",
           "lyrics",
           "verify",
+          "font",
           "selftest",
           "levels"
         ],
-        "description": "render = score -> song. Returns data.media with the wav url (put it in a `listening` component's audioUrl) and, with midiOut, the .mid beside it. scores = list the shelved scores (alias + filename) — check it FIRST when the user refers to an uploaded/shelved piece, then pass the alias as render's scoreMediaPath. You cannot recall a real melody from memory: an existing song plays from a MIDI (scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one. selftest = self-checks, no files needed. verify = 업로드한 .mid 가 그대로 연주되는지 대조합니다 — 원본의 음표·자리·길이·세기·악기·컨트롤러 대 우리가 신디에 넘기는 .mid. 소리가 아니라 전달을 재는 자리이고, 소리는 폰트가 정합니다. scoreMediaPath 로 파일을 지목하세요."
+        "description": "render = score -> song. Returns data.media with the wav url (put it in a `listening` component's audioUrl) and, with midiOut, the .mid beside it. scores = list the shelved scores (alias + filename) — check it FIRST when the user refers to an uploaded/shelved piece, then pass the alias as render's scoreMediaPath. You cannot recall a real melody from memory: an existing song plays from a MIDI (scoreMediaPath); a score you write yourself is a NEW composition and must be presented as one. selftest = self-checks, no files needed. verify = 업로드한 .mid 가 그대로 연주되는지 대조합니다 — 원본의 음표·자리·길이·세기·악기·컨트롤러 대 우리가 신디에 넘기는 .mid. 소리가 아니라 전달을 재는 자리이고, 소리는 폰트가 정합니다. scoreMediaPath 로 파일을 지목하세요. font = 설치된 사운드폰트가 선언한 것 전부 — 뱅크·프리셋 수·각 프리셋의 음역과 벨로시티 범위·존·감쇠·팬·루프·답하는 CC. 우리 표가 아니라 폰트에게 물은 답입니다."
       },
       "vocal": {
         "type": [
@@ -364,6 +365,27 @@
           "null"
         ],
         "description": "[render, with scoreMediaPath] How much of the score survives a style. melody (default) keeps only the tune, derives the harmony and builds the genre's backing from scratch — \"이 노래를 뽕짝으로\". score keeps every part the file wrote and re-casts them by role and register — the tune on the genre's lead, the lowest voice on its bass, the rest comping on the genre's hands in register order — then adds the genre's drums: \"악보에 나오는 악기들을 메탈로\". parts keeps the parts AND the instruments the file declared, and only adds the genre's rhythm section: \"악보 악기 그대로 두고 뽕짝 리듬만\". Pick by which of the three the person actually said; 살려서/그대로 usually means parts."
+      },
+      "instrument": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "[font] One preset to look at, by the font's own preset name or a GM name. Omit for the summary."
+      },
+      "program": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "description": "[font] One preset by GM program number (0-127). Pair with `bank` for a variation bank."
+      },
+      "bank": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "description": "[font] Bank number for `program`. 0 = melodic (default), 128 = drum kits, anything else = this font's variation banks."
       }
     }
   },

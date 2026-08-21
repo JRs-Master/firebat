@@ -311,9 +311,7 @@ export function MediaPanel({
 
   // SSE `media:refresh` subscription — auto-refresh on image_gen completion, media delete, regenerate.
   // Keeps the current scope/search and resets to page one so a new image shows immediately.
-  // 옛 이름도 같이 듣는다 — Rust 와 프론트가 다른 채널로 배포되므로 한쪽이 먼저 나가도
-  // 자동 갱신이 안 죽는다. Rust(`media:refresh`)가 서버에 오르면 옛 이름을 지운다.
-  useEvents(['media:refresh', 'media:refresh'], () => { refetchAll(); });
+  useEvents(['media:refresh'], () => { refetchAll(); });
 
   // 다음 offset = **이미 받은 개수**. 따로 세는 상태를 두면 그 상태와 목록이 어긋나고, 어긋난
   // 쪽이 이기면 같은 페이지가 두 번 붙는다 (파생이지 손유지가 아니다).

@@ -759,10 +759,15 @@ def load_font_aliases(font_path):
     inv = font_inventory(font_path) if font_path else None
     if not inv:
         return
-    for prog, name in inv["programs"].items():
-        k = _norm_inst(name)
-        if k:
-            _FONT_ALIASES.setdefault(k, prog)
+    # 뱅크 0 이 먼저 자리를 잡고(같은 이름이면 그쪽이 이긴다), 그 다음 나머지 멜로디 뱅크.
+    # 예전엔 0 만 등록해서 GS/XG 변형 뱅크의 프리셋은 **이름이 있어도 부를 방법이 없었다.**
+    for bank in [0] + [b for b in inv["banks"] if b not in (0, 128)]:
+        for p in inv["presets"].values():
+            if p["bank"] != bank:
+                continue
+            k = _norm_inst(p["name"])
+            if k:
+                _FONT_ALIASES.setdefault(k, (p["bank"], p["program"]))
 
 
 def resolve_instrument(name):
@@ -787,13 +792,27 @@ def resolve_instrument(name):
         # underneath, so whatever is installed can be asked for the way it calls itself.
         g = _FONT_ALIASES.get(key)
         if g is not None:
-            hit = ("gm", g)
+            hit = ("font", g)                              # (뱅크, 프로그램)
     if hit is None:
         return None
     if hit[0] == "patch":
         return hit[1], PATCHES[hit[1]].get("gm", 0)
+    if hit[0] == "font":
+        bank, g = hit[1]
+        # 뱅크는 세 번째 값으로만 나간다 — 두 값을 받는 호출부가 많고, 뱅크 0 이 대부분이라
+        # 계약을 넓히는 대신 필요한 쪽이 `font_bank_of` 로 묻는다.
+        return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
     g = hit[1]
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
+
+
+def font_bank_of(name):
+    """그 이름이 뱅크 0 이 아닌 프리셋을 가리키면 뱅크 번호, 아니면 None.
+    .mid 를 쓸 때만 필요하다 — 뱅크 셀렉트(CC0)가 program_change 앞에 서야 한다."""
+    hit = _FONT_ALIASES.get(_norm_inst(name))
+    if isinstance(hit, tuple) and hit[0] not in (0, None):
+        return hit[0]
+    return None
 
 
 _GM_REVERSE = None
@@ -1577,9 +1596,13 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, 
         q = dict(r)
         q["part"] = role
         if not keep_instruments:
-            got = resolve_instrument(inst_for.get(role, "piano"))
+            _nm = inst_for.get(role, "piano")
+            got = resolve_instrument(_nm)
             if got is not None:
                 q["patch"], q["program"] = got
+                _bk = font_bank_of(_nm)
+                if _bk:
+                    q["bank"] = _bk
         out.append(q)
     # 누가 무엇을 연주하는지는 **응답이 말해야 한다.** 캐스팅은 파생이라 호출자가 짐작할 수 없고,
     # 사용자가 "이게 원래 악보상 악기를 쓴다는 말인가"를 물어야 했던 자리가 바로 이것이다(8/21).
@@ -1604,9 +1627,10 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
     hire = {k: v[0] for k, v in band_seats(style, band).items() if v}
     # Two faces per instrument: the GM program (what the .mid and the sf2 engine mean) and the
     # builtin patch (what numpy can play). PATCHES names are native to both; GM names degrade.
-    patch_of, prog = {}, {}
+    patch_of, prog, bank_of = {}, {}, {}
     for part, name in hire.items():
         patch_of[part], prog[part] = resolve_instrument(name)
+        bank_of[part] = font_bank_of(name)
     defaults = STYLE_FEEL.get(style, STYLE_FEEL["trot"])
     feel = feel or {}
     # Caller first, genre second — for every axis. A genre row is a bundle of defaults, not a
@@ -1772,6 +1796,11 @@ def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
         for e in out:
             if e["part"] != "melody" and e.get("double_of") != "melody"                     and abs(e["beat"] % 1.0 - 0.5) < 1e-6:
                 e["beat"] += shift
+    # 뱅크는 여기서 한 번 얹는다 — emit 자리마다 붙이면 새 emit 이 생길 때마다 빠진다.
+    for e in out:
+        b = bank_of.get(e.get("part"))
+        if b:
+            e["bank"] = b
     out.sort(key=lambda e: (e["beat"], e["part"]))
     return out
 
@@ -1789,9 +1818,12 @@ def reinstrument(rows, band):
     if resolved is None:
         return rows, None
     patch, prog = resolved
+    bank = font_bank_of(inst)
     for r in rows:
         if "pitch" in r and not r.get("pedal"):
             r["patch"], r["program"] = patch, prog
+            if bank:
+                r["bank"] = bank
     return rows, inst
 
 
@@ -2036,6 +2068,13 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
             # first note past 0.0 and sort a pedal row (which has no program) to the front —
             # 실측: 월광 pedal+humanize 가 여기서 KeyError 로 죽었다.
             first_note = next((e for e in rows if not e.get("pedal")), None)
+            # 뱅크 셀렉트가 program_change **앞**에 서야 한다 — 뒤에 오면 다음 프로그램부터
+            # 걸린다. 뱅크 0 이면 아무 말도 안 한다(기본값). 이게 없던 동안 폰트의 GS/XG 변형
+            # 뱅크는 이름이 있어도 부를 방법이 없었다.
+            _bank = int((first_note or {}).get("bank") or 0)
+            if _bank:
+                tr.append(mido.Message("control_change", channel=ch, control=0,
+                                       value=max(0, min(127, _bank)), time=0))
             tr.append(mido.Message("program_change", channel=ch,
                                    program=int((first_note or {}).get("program", 0)), time=0))
             # 팬도 **행이 말할 때만**. SF2 는 존마다 자기 팬을 선언하고(gen 17) CC10 을 보내면
@@ -2137,11 +2176,79 @@ SF2_DIRS = ("/usr/share/sounds/sf2", "/usr/local/share/sounds/sf2")
 _FONT_CACHE = {}
 
 
+# SF2 제너레이터 — 규격 §8.1. 뜻을 아는 것에 이름을 붙이되 **모르는 것도 번호로 싣는다**:
+# 아는 것만 나르면 그게 손목록이고, 폰트가 선언한 무엇이 조용히 사라진다.
+SF2_GEN = {8: "filterFc", 15: "chorusSend", 16: "reverbSend", 17: "pan", 21: "delayVolEnv",
+           23: "holdVolEnv", 24: "decayVolEnv", 25: "sustainVolEnv", 26: "releaseVolEnv",
+           41: "instrument", 43: "keyRange", 44: "velRange", 48: "attenuation",
+           51: "coarseTune", 52: "fineTune", 53: "sampleID", 54: "sampleModes",
+           56: "scaleTuning", 58: "overridingRootKey"}
+
+# ⚠️ **파일에 안 적혀 있어도 모든 SF2 가 갖는 것** (규격 §8.4.1 기본 모듈레이터). pmod/imod 만
+# 읽고 "이 폰트는 CC1 을 안 쓴다"고 말하면 그것이 오독이다 — 안 적힌 것이 없는 것이 아니다.
+SF2_DEFAULT_MODULATORS = (
+    ("velocity", "attenuation", "세게 칠수록 크게 (그리고 폰트의 벨로시티 레이어를 고른다)"),
+    ("velocity", "filterFc", "세게 칠수록 밝게"),
+    ("CC1", "vibLfoToPitch", "모듈레이션 휠 → 폰트 자기 비브라토 LFO (기본 ±50센트)"),
+    ("CC7", "attenuation", "채널 볼륨"),
+    ("CC10", "pan", "팬"),
+    ("CC11", "attenuation", "익스프레션"),
+    ("CC64", "hold", "서스테인 페달"),
+    ("CC91", "reverbSend", "리버브 센드"),
+    ("CC93", "chorusSend", "코러스 센드"),
+    ("pitchWheel", "fineTune", "피치 벤딩 (범위는 CC 없이 RPN0)"),
+    ("channelPressure", "vibLfoToPitch", "애프터터치 → 비브라토"),
+)
+
+
+def _mod_source(word):
+    """모듈레이터 소스 워드 → 이름. bit7 이 서면 그 아래 7비트가 **MIDI CC 번호**다."""
+    idx = word & 0x7F
+    if word & 0x80:
+        return f"CC{idx}"
+    return {0: "none", 2: "velocity", 3: "key", 10: "polyPressure",
+            13: "channelPressure", 14: "pitchWheel", 16: "pitchWheelSens"}.get(idx, f"src{idx}")
+
+
+def _zone_gens(bag, gen, bi, n_bag):
+    """한 존의 제너레이터 {번호: 값}. 존 경계는 bag 의 인접 인덱스가 정한다."""
+    gs = bag[bi][0]
+    ge = bag[bi + 1][0] if bi + 1 < n_bag else len(gen)
+    return {op: amt for op, amt in gen[gs:min(ge, len(gen))]}
+
+
+def _zone_mods(bag, mod, bi, n_bag):
+    """한 존이 **선언한** 모듈레이터 [(소스, 목적지, 양)]."""
+    ms = bag[bi][1]
+    me = bag[bi + 1][1] if bi + 1 < n_bag else len(mod)
+    out = []
+    for src, dest, amt, _amtsrc, _trans in mod[ms:min(me, len(mod))]:
+        out.append((_mod_source(src), SF2_GEN.get(dest, f"gen{dest}"), amt))
+    return out
+
+
+def _merge_range(a, b):
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return [min(a[0], b[0]), max(a[1], b[1])]
+
+
 def font_inventory(path):
-    """{'programs': {program: preset name}, 'kits': {program: {'name', 'keys'}}} for the font at
-    `path`, or None if it cannot be read. Melodic = bank 0, kits = bank 128 (the GM convention).
-    Keys are the notes a kit actually answers to — that is the difference between a drum that
-    sounds and one that is silently nothing."""
+    """폰트가 **선언한 전부**. None = 못 읽음.
+
+    돌려주는 것:
+      name            폰트 자기 이름(INFO/INAM). 파일명은 심링크일 수 있다
+      banks           들어 있는 뱅크 번호 전부 — 0·128 만 보던 시절 GS/XG 변형 뱅크가 안 보였다
+      presets         "뱅크:프로그램" → {name, keys, vels, zones, attenDb, pan, loop, cc, gens}
+      programs/kits   뱅크 0 / 뱅크 128 — 옛 계약 그대로(호출자 다수), presets 에서 파생
+      attenDb         프로그램별 감쇠(dB)
+      modulators      이 폰트가 **선언한** (소스→목적지) 집합. 규격 기본값은 별도(그건 파일에 없다)
+      samples         샘플 헤더 수
+
+    sdta 는 seek 로 건너뛴다 — 155MB 폰트에서 실제로 읽는 것은 pdta 뿐이라 렌더마다 물어도
+    싸고, 그래서 우리 표를 들고 있을 이유가 없다."""
     try:
         st = os.stat(path)
     except OSError:
@@ -2150,7 +2257,7 @@ def font_inventory(path):
     if ck in _FONT_CACHE:
         return _FONT_CACHE[ck]
     try:
-        raw = {}
+        raw, info = {}, {}
         with open(path, "rb") as f:
             f.seek(12)
             while True:
@@ -2161,11 +2268,9 @@ def font_inventory(path):
                 sz = struct.unpack("<I", hdr[4:])[0]
                 if cid == "LIST":
                     kind = f.read(4)
-                    # 폰트 자기 이름(INFO/INAM). 파일명은 `default-GM.sf2` 라는 **심링크 이름**일
-                    # 뿐이라(update-alternatives) 어느 폰트가 울렸는지 응답이 말을 못 했다 —
-                    # 8/21 실측에서 내가 "Arachno 가 아니다"라고 오독할 뻔했다. INFO 는 sdta 앞에
-                    # 있어 읽는 값이 공짜다.
                     if kind == b"INFO":
+                        # INFO 는 통째로 — 이름만 꺼내던 자리다. 폰트 제작자·도구·설명·규격
+                        # 버전이 전부 여기 있고, 어느 폰트가 울렸는지 응답이 말할 재료다.
                         stop = f.tell() + sz - 4
                         while f.tell() < stop - 8:
                             h2 = f.read(8)
@@ -2174,8 +2279,7 @@ def font_inventory(path):
                             blob = f.read(z2)
                             if z2 & 1:
                                 f.read(1)
-                            if s2 == "INAM":
-                                raw["_name"] = blob
+                            info[s2] = blob
                         f.seek(stop + (sz & 1))
                         continue
                     if kind == b"pdta":
@@ -2191,97 +2295,121 @@ def font_inventory(path):
                     f.seek(sz - 4 + (sz & 1), 1)
                 else:
                     f.seek(sz + (sz & 1), 1)
-        title = raw.pop("_name", b"").split(bytes([0]))[0].decode("latin1", "replace").strip()
+
+        def text(key):
+            return info.get(key, b"").split(bytes([0]))[0].decode("latin1", "replace").strip()
+
         if not {"phdr", "pbag", "pgen", "inst", "ibag", "igen"} <= set(raw):
             return None
 
-        def inst_atten(ix):
-            """그 instrument 의 첫 존이 선언한 감쇠(센티벨). 존마다 다르면 첫 값만 본다 —
-            우리는 절대 보정이 아니라 **프리셋 사이의 차**를 알고 싶은 것이라 대표값이면 된다."""
-            bag0 = inst[ix][1]
-            bend = inst[ix + 1][1] if ix + 1 < len(inst) else len(ibag)
-            for bi in range(bag0, min(bend, len(ibag))):
-                gs = ibag[bi][0]
-                ge = ibag[bi + 1][0] if bi + 1 < len(ibag) else len(igen)
-                for gi in range(gs, min(ge, len(igen))):
-                    op, amt = igen[gi]
-                    if op == 48:
-                        return float(amt)
-            return 0.0
-
         def recs(name, fmt, size):
-            b = raw[name]
+            b = raw.get(name, b"")
             return [struct.unpack_from(fmt, b, i * size) for i in range(len(b) // size)]
 
         phdr = [(n.split(bytes([0]))[0].decode("latin1", "replace"), pr, bk, bg)
                 for n, pr, bk, bg, *_ in recs("phdr", "<20sHHHIII", 38)]
         pbag, pgen = recs("pbag", "<HH", 4), recs("pgen", "<HH", 4)
-        inst = [(n, bg) for n, bg in recs("inst", "<20sH", 22)]
+        pmod = recs("pmod", "<HHhHH", 10)
+        inst = [(n.split(bytes([0]))[0].decode("latin1", "replace"), bg)
+                for n, bg in recs("inst", "<20sH", 22)]
         ibag, igen = recs("ibag", "<HH", 4), recs("igen", "<HH", 4)
+        imod = recs("imod", "<HHhHH", 10)
+        shdr = recs("shdr", "<20sIIIIIBbHH", 46)
 
-        def inst_keys(ix):
-            keys, start = set(), inst[ix][1]
-            end = inst[ix + 1][1] if ix + 1 < len(inst) else len(ibag)
-            for bi in range(start, min(end, len(ibag))):
-                gs = ibag[bi][0]
-                ge = ibag[bi + 1][0] if bi + 1 < len(ibag) else len(igen)
-                for gi in range(gs, min(ge, len(igen))):
-                    op, amt = igen[gi]
-                    if op == 43:                                  # keyRange
-                        keys.update(range(amt & 0xFF, ((amt >> 8) & 0xFF) + 1))
-            return keys
+        # ── instrument 단위로 한 번만 집계한다 (프리셋마다 다시 걸으면 O(n²)) ──────────────
+        n_ibag = len(ibag)
+        inst_agg = []
+        for ix in range(len(inst)):
+            start = inst[ix][1]
+            stop = inst[ix + 1][1] if ix + 1 < len(inst) else n_ibag
+            keys = vels = None
+            atten, pan, loop, mods, gens = None, None, False, [], set()
+            for bi in range(start, min(stop, n_ibag)):
+                g = _zone_gens(ibag, igen, bi, n_ibag)
+                gens |= set(g)
+                if 43 in g:
+                    keys = _merge_range(keys, [g[43] & 0xFF, (g[43] >> 8) & 0xFF])
+                if 44 in g:
+                    vels = _merge_range(vels, [g[44] & 0xFF, (g[44] >> 8) & 0xFF])
+                if 48 in g and atten is None:
+                    atten = float(g[48])
+                if 17 in g and pan is None:
+                    pan = g[17] - 65536 if g[17] > 32767 else g[17]
+                if g.get(54, 0) in (1, 3):
+                    loop = True
+                mods += _zone_mods(ibag, imod, bi, n_ibag)
+            inst_agg.append({"name": inst[ix][0], "keys": keys, "vels": vels, "atten": atten,
+                             "pan": pan, "loop": loop, "mods": mods, "gens": gens})
 
-        programs, kits = {}, {}
-        for pi, (name, preset, bank, bagndx) in enumerate(phdr):
-            if bank not in (0, 128):
-                continue
-            if bank == 0:
-                programs[preset] = name
-                continue
-            end = phdr[pi + 1][3] if pi + 1 < len(phdr) else len(pbag)
-            keys = set()
-            for bi in range(bagndx, min(end, len(pbag))):
-                gs = pbag[bi][0]
-                ge = pbag[bi + 1][0] if bi + 1 < len(pbag) else len(pgen)
-                for gi in range(gs, min(ge, len(pgen))):
-                    op, amt = pgen[gi]
-                    if op == 41 and amt < len(inst):              # instrument
-                        keys |= inst_keys(amt)
-            kits[preset] = {"name": name, "keys": keys}
-        # 폰트가 스스로 대는 감쇠(gen 48 initialAttenuation, 센티벨). 프리셋 레벨이 제각각인 것이
-        # 밸런스가 표대로 안 나는 이유인데(실측 8/21: Arachno 의 Distortion Guitar 가 Overdriven
-        # 보다 10.7 dB 조용하다), 그 값을 표에 박으면 폰트를 갈 때 조용히 틀린다. **폰트에게
-        # 묻는다** — INAM 과 같은 자리, 같은 이유. preset 존과 instrument 존의 감쇠는 더해진다.
-        atten = {}
-        for pi, (name, preset, bank, bagndx) in enumerate(phdr[:-1]):
-            if bank != 0 or preset in atten:
-                continue
-            end = phdr[pi + 1][3] if pi + 1 < len(phdr) else len(pbag)
-            glob, zone = 0.0, None
-            # 존마다 값을 **더하면 안 된다** — 벨로시티·건반 스플릿이 많은 프리셋일수록 커져서
-            # 137 dB 같은 무음 값이 나온다(실측 8/21, 내 첫 구현). 규격상 감쇠는 프리셋의 글로벌
-            # 존 + 그 존이 가리키는 instrument 의 글로벌 존이 더해지는 것이고, 나머지 존은
-            # 대안이지 누적이 아니다. 대표로 **첫 실제 존** 하나만 본다.
-            for bi in range(bagndx, min(end, len(pbag))):
-                gs = pbag[bi][0]
-                ge = pbag[bi + 1][0] if bi + 1 < len(pbag) else len(pgen)
-                cb, ref = 0.0, None
-                for gi in range(gs, min(ge, len(pgen))):
-                    op, amt = pgen[gi]
-                    if op == 48:
-                        cb = float(amt)
-                    elif op == 41:
-                        ref = amt
+        # ── 프리셋 — **뱅크를 안 가린다** ─────────────────────────────────────────────────
+        n_pbag = len(pbag)
+        presets, banks = {}, set()
+        for pi in range(len(phdr)):
+            name, program, bank, bagndx = phdr[pi]
+            if name == "EOP" and pi == len(phdr) - 1:
+                continue                                   # 규격이 붙이는 종료 레코드
+            stop = phdr[pi + 1][3] if pi + 1 < len(phdr) else n_pbag
+            keys = vels = None
+            glob_at, zone_at, pan, loop = 0.0, None, None, False
+            mods, gens, zones = [], set(), 0
+            for bi in range(bagndx, min(stop, n_pbag)):
+                zones += 1
+                g = _zone_gens(pbag, pgen, bi, n_pbag)
+                gens |= set(g)
+                mods += _zone_mods(pbag, pmod, bi, n_pbag)
+                if 43 in g:
+                    keys = _merge_range(keys, [g[43] & 0xFF, (g[43] >> 8) & 0xFF])
+                if 44 in g:
+                    vels = _merge_range(vels, [g[44] & 0xFF, (g[44] >> 8) & 0xFF])
+                ref = g.get(41)
                 if ref is None:
-                    glob = cb                      # instrument 를 안 가리키면 글로벌 존
-                elif zone is None:
-                    zone = cb + (inst_atten(ref) if ref < len(inst) else 0.0)
-            # ⚠️ 규격은 센티벨(0.1 dB/단위)이라 적혀 있지만 **신디는 0.04 를 쓴다** — 원조
-            # 사운드블래스터가 0.4 를 더 곱했고 호환 때문에 그대로 굳었다(FluidSynth 도 동일:
-            # gain = 10^(cb/-200)). 규격 문자만 읽고 /10 을 쓰면 값이 2.5배 커진다.
-            atten[preset] = round((glob + (zone or 0.0)) * 0.04, 2)
-        out = ({"programs": programs, "kits": kits, "name": title, "attenDb": atten}
-               if programs or kits else None)
+                    glob_at = float(g.get(48, 0.0))        # instrument 를 안 가리키면 글로벌 존
+                    continue
+                if ref < len(inst_agg):
+                    ia = inst_agg[ref]
+                    keys = _merge_range(keys, ia["keys"])
+                    vels = _merge_range(vels, ia["vels"])
+                    mods += ia["mods"]
+                    gens |= ia["gens"]
+                    loop = loop or ia["loop"]
+                    if pan is None and ia["pan"] is not None:
+                        pan = ia["pan"]
+                    if zone_at is None:
+                        # 존은 **대안이지 누적이 아니다** — 다 더하면 스플릿이 많은 프리셋이
+                        # 137 dB 같은 무음 값을 낸다(8/21 실측, 내 첫 구현).
+                        zone_at = float(g.get(48, 0.0)) + (ia["atten"] or 0.0)
+            banks.add(bank)
+            # ⚠️ 규격은 센티벨(0.1 dB/단위)이라 적지만 **신디는 0.04 를 쓴다** — 사운드블래스터
+            # 유산이고 fluidsynth 도 같다(gain = 10^(cb/−200)). /10 을 쓰면 2.5배 커진다.
+            presets[f"{bank}:{program}"] = {
+                "bank": bank, "program": program, "name": name, "zones": zones,
+                "keys": keys, "vels": vels, "loop": loop,
+                "pan": None if pan is None else round(pan / 1000.0, 3),
+                "attenDb": round((glob_at + (zone_at or 0.0)) * 0.04, 2),
+                "cc": sorted({m[0] for m in mods if m[0].startswith("CC")},
+                             key=lambda c: int(c[2:])),
+                "mods": sorted({(m[0], m[1]) for m in mods}),
+                "gens": sorted(SF2_GEN.get(n, f"gen{n}") for n in gens),
+            }
+        if not presets:
+            return None
+        programs = {p["program"]: p["name"] for p in presets.values() if p["bank"] == 0}
+        kits = {p["program"]: {"name": p["name"],
+                               "keys": set(range(p["keys"][0], p["keys"][1] + 1))
+                               if p["keys"] else set()}
+                for p in presets.values() if p["bank"] == 128}
+        out = {
+            "name": text("INAM"),
+            "info": {k: text(k) for k in ("INAM", "IENG", "IPRD", "ICOP", "ICMT", "ISFT", "ICRD")
+                     if text(k)},
+            "banks": sorted(banks),
+            "presets": presets,
+            "programs": programs,
+            "kits": kits,
+            "attenDb": {p["program"]: p["attenDb"] for p in presets.values() if p["bank"] == 0},
+            "modulators": sorted({m for p in presets.values() for m in p["mods"]}),
+            "samples": max(0, len(shdr) - 1),              # 마지막은 EOS 종료 레코드
+        }
     except (OSError, ValueError, struct.error, IndexError):
         out = None
     _FONT_CACHE[ck] = out
@@ -4376,6 +4504,12 @@ def action_render(inp):
         # Silence is not consent: what the parser could not play is SAID, next to the render.
         data["notationNote"] = ("연주하지 못한 기호: " + ", ".join(
             f"{k}×{v}" for k, v in notation_skipped.items()) + " — 파서 미구현분입니다")
+    _oor = notes_out_of_range(arr, sf2_font_path)
+    if _oor:
+        data["outOfRange"] = _oor[:20]
+        data["outOfRangeNote"] = (
+            f"{sum(r['count'] for r in _oor)}개 음이 그 프리셋의 선언된 음역 밖이라 폰트가 "
+            "답하지 않습니다 — 소리가 안 납니다. 악기를 바꾸거나(band) 옥타브를 옮기세요.")
     if sf2_font:
         data["soundfont"] = sf2_font
         # 파일명은 심링크 이름일 수 있다(default-GM.sf2 = update-alternatives). 어느 폰트가
@@ -5498,6 +5632,107 @@ def action_selftest():
         if os.path.exists(_f):
             os.remove(_f)
 
+    # ── 폰트 리더 — 선언된 것을 전부 읽나 ──────────────────────────────────────────────────
+    # 실제 폰트는 서버에만 있다. 규칙은 픽스처로 잰다: 뱅크 셋(0·1·128)·키 범위·벨로시티 범위·
+    # 팬·루프·**선언된 모듈레이터**를 담은 최소 SF2 를 만들어 우리 리더에게 물어본다.
+    def _sf2_fixture(path):
+        def chunk(cid, body):
+            pad = b"\x00" if len(body) & 1 else b""
+            return cid + struct.pack("<I", len(body)) + body + pad
+
+        def zstr(t, n=20):
+            b = t.encode("latin1")[: n - 1]
+            return b + bytes(n - len(b))
+
+        info = (b"INFO"
+                + chunk(b"ifil", struct.pack("<HH", 2, 1))
+                + chunk(b"isng", b"EMU8000\x00")
+                + chunk(b"INAM", b"Fixture Font\x00")
+                + chunk(b"IENG", b"selftest\x00"))
+        sdta = b"sdta" + chunk(b"smpl", bytes(96))
+        # 프리셋 셋: 뱅크0/prog0, **뱅크1/prog0**(변형 뱅크 — 예전엔 안 보였다), 뱅크128/prog0
+        phdr = b"".join(struct.pack("<20sHHHIII", zstr(n), pr, bk, bg, 0, 0, 0)
+                        for n, pr, bk, bg in (("Fix Piano", 0, 0, 0), ("Fix Piano Var", 0, 1, 1),
+                                              ("Fix Kit", 0, 128, 2), ("EOP", 0, 0, 3)))
+        pbag = b"".join(struct.pack("<HH", g, m) for g, m in ((0, 0), (1, 1), (2, 1), (3, 1)))
+        # 뱅크1 프리셋만 모듈레이터를 선언한다: CC74 → filterFc (파일이 적은 연주법)
+        pmod = struct.pack("<HHhHH", 0x80 | 74, 8, 3000, 0, 0) + bytes(10)
+        pgen = b"".join(struct.pack("<HH", o, a)
+                        for o, a in ((41, 0), (41, 0), (41, 0), (0, 0)))
+        inst = (struct.pack("<20sH", zstr("Fix Inst"), 0)
+                + struct.pack("<20sH", zstr("EOI"), 1))
+        ibag = struct.pack("<HH", 0, 0) + struct.pack("<HH", 6, 0)
+        imod = bytes(10)
+        igen = b"".join(struct.pack("<HH", o, a) for o, a in (
+            (43, 36 | (84 << 8)),      # keyRange 36-84
+            (44, 20 | (110 << 8)),     # velRange 20-110
+            (48, 150),                 # initialAttenuation 150cb -> 6.0dB (0.04/단위)
+            (17, -250 & 0xFFFF),       # pan -250 -> -0.25
+            (54, 1),                   # sampleModes = loop
+            (53, 0),                   # sampleID
+            (0, 0)))
+        shdr = (struct.pack("<20sIIIIIBbHH", zstr("Fix Sample"), 0, 16, 4, 12, 44100, 60, 0, 0, 1)
+                + struct.pack("<20sIIIIIBbHH", zstr("EOS"), 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        pdta = (b"pdta" + chunk(b"phdr", phdr) + chunk(b"pbag", pbag) + chunk(b"pmod", pmod)
+                + chunk(b"pgen", pgen) + chunk(b"inst", inst) + chunk(b"ibag", ibag)
+                + chunk(b"imod", imod) + chunk(b"igen", igen) + chunk(b"shdr", shdr))
+        body = b"sfbk" + chunk(b"LIST", info) + chunk(b"LIST", sdta) + chunk(b"LIST", pdta)
+        with open(path, "wb") as fh:
+            fh.write(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+    _fx = "data/sing/selftest-font.sf2"
+    _sf2_fixture(_fx)
+    _fi = font_inventory(_fx)
+    ck("폰트 이름을 폰트에게서 읽는다 (파일명은 심링크일 수 있다)", "Fixture Font",
+       (_fi or {}).get("name"), bool(_fi) and _fi["name"] == "Fixture Font")
+    ck("**뱅크를 안 가린다** — 0·128 만 보던 시절 변형 뱅크는 통째로 안 보였다", [0, 1, 128],
+       (_fi or {}).get("banks"), bool(_fi) and _fi["banks"] == [0, 1, 128])
+    _p1 = (_fi or {}).get("presets", {}).get("1:0") or {}
+    ck("…그 변형 뱅크 프리셋이 실제로 잡힌다", "Fix Piano Var", _p1.get("name"),
+       _p1.get("name") == "Fix Piano Var")
+    _p0 = (_fi or {}).get("presets", {}).get("0:0") or {}
+    ck("멜로디 프리셋의 **음역**을 읽는다 (예전엔 킷만 쟀다)", [36, 84], _p0.get("keys"),
+       _p0.get("keys") == [36, 84])
+    ck("벨로시티 범위도 — 그 프리셋이 다이내믹을 어디까지 받나", [20, 110], _p0.get("vels"),
+       _p0.get("vels") == [20, 110])
+    ck("존이 선언한 팬과 루프 여부", [-0.25, True], [_p0.get("pan"), _p0.get("loop")],
+       _p0.get("pan") == -0.25 and _p0.get("loop") is True)
+    ck("감쇠는 센티벨 ×0.04 — 규격 문자(0.1)를 쓰면 2.5배 커진다", 6.0, _p0.get("attenDb"),
+       abs((_p0.get("attenDb") or 0) - 6.0) < 0.01)
+    ck("⭐ 폰트가 **선언한 모듈레이터**를 읽는다 — 어느 CC 가 무엇을 하는지의 원본",
+       [["CC74", "filterFc"]], [list(m) for m in (_fi or {}).get("modulators") or []],
+       [list(m) for m in (_fi or {}).get("modulators") or []] == [["CC74", "filterFc"]])
+    ck("…그리고 규격 기본 모듈레이터는 따로 안다(파일엔 없지만 늘 걸린다)", True,
+       [a for a, _b, _c in SF2_DEFAULT_MODULATORS][:3],
+       any(a == "CC1" for a, _b, _c in SF2_DEFAULT_MODULATORS))
+    # 배선 — 이름으로 부르면 뱅크가 따라오고, .mid 에 뱅크 셀렉트가 program_change **앞**에 선다.
+    _FONT_ALIASES.clear()
+    load_font_aliases(_fx)
+    ck("변형 뱅크 프리셋을 그 이름으로 부를 수 있다", 1, font_bank_of("Fix Piano Var"),
+       font_bank_of("Fix Piano Var") == 1)
+    _brow = [{"beat": 0.0, "beats": 1.0, "part": "melody", "patch": "piano", "program": 0,
+              "bank": 1, "pitch": 60, "vel": 0.7, "gate": 1.0}]
+    if write_midi(_brow, 120, "data/sing/selftest-bank.mid")[0]:
+        _bt = _mido.MidiFile("data/sing/selftest-bank.mid").tracks[0]
+        _order = [m.type for m in _bt if m.type in ("control_change", "program_change")]
+        ck("…뱅크 셀렉트가 program_change 앞에 선다 (뒤면 다음 프로그램부터 걸린다)",
+           ["control_change", "program_change"], _order,
+           _order[:2] == ["control_change", "program_change"]
+           and next(m.control for m in _bt if m.type == "control_change") == 0)
+        os.remove("data/sing/selftest-bank.mid")
+    # 음역 밖 = 무음. 우리가 아는 것을 응답이 말해야 한다.
+    _oo = notes_out_of_range([{"part": "melody", "program": 0, "pitch": 20, "beat": 0.0,
+                               "beats": 1.0, "vel": 0.7}], _fx)
+    ck("선언된 음역 밖 음은 무음이라고 말한다", [1, [36, 84]],
+       [len(_oo), _oo[0]["range"] if _oo else None],
+       len(_oo) == 1 and _oo[0]["range"] == [36, 84])
+    ck("…음역 안은 조용히 통과한다", [], notes_out_of_range(
+        [{"part": "melody", "program": 0, "pitch": 60, "beat": 0.0, "beats": 1.0, "vel": 0.7}],
+        _fx), not notes_out_of_range(
+        [{"part": "melody", "program": 0, "pitch": 60, "beat": 0.0, "beats": 1.0, "vel": 0.7}], _fx))
+    _FONT_ALIASES.clear()
+    os.remove(_fx)
+
     # ── verify: 그대로 연주되는지 재는 자리 ────────────────────────────────────────────────
     # ⚠️ 이 액션은 midi_to_parts 를 비교의 **한쪽에만** 쓴다. 양쪽에 쓰면 우리 리더와 우리
     # 라이터의 왕복만 증명되고, 리더가 통째로 틀려도 초록이 뜬다 — type-0 파일이 한 악기로
@@ -6023,6 +6258,97 @@ def _emitted_notes(path):
     return out, ccs
 
 
+def notes_out_of_range(arr, font_path):
+    """폰트가 **답하지 않는** 음. 프리셋마다 키 범위가 선언돼 있고 그 밖은 소리가 안 난다 —
+    그리고 무음은 믹싱 결정처럼 들린다. 우리가 아는 것을 안 말해 주는 자리라 응답에 싣는다.
+
+    반환 = [{part, program, preset, pitch, range, count}]. 폰트를 못 읽으면 빈 목록(추측 금지)."""
+    inv = font_inventory(font_path) if font_path else None
+    if not inv:
+        return []
+    seen, out = {}, []
+    for e in arr:
+        if "pitch" not in e or e.get("pedal") or e.get("part") == "drum":
+            continue
+        key = f"{int(e.get('bank') or 0)}:{int(e.get('program') or 0)}"
+        pre = inv["presets"].get(key)
+        rng = (pre or {}).get("keys")
+        if not pre or not rng:
+            continue
+        p = int(e["pitch"])
+        if rng[0] <= p <= rng[1]:
+            continue
+        k = (e.get("part"), key, p)
+        if k in seen:
+            seen[k]["count"] += 1
+            continue
+        row = {"part": e.get("part"), "program": pre["program"], "preset": pre["name"],
+               "pitch": p, "range": rng, "count": 1}
+        seen[k] = row
+        out.append(row)
+    return out
+
+
+def action_font(inp):
+    """설치된 폰트가 **선언한 것 전부**. 우리 표가 아니라 폰트에게 물어서 나오는 답이다.
+
+    인자 없이 = 요약(이름·뱅크·프리셋 수·이 폰트가 선언한 컨트롤러·규격 기본 모듈레이터).
+    `instrument` 또는 `program`(+`bank`) = 그 프리셋 하나의 전부 — 키 범위·벨로시티 범위·존 수·
+    감쇠·팬·루프 여부·답하는 CC·선언된 제너레이터."""
+    _bin, font, why = sf2_backend()
+    if why:
+        return {"success": False, "error": f"사운드폰트를 못 씁니다 — {why}"}
+    inv = font_inventory(font)
+    if not inv:
+        return {"success": False, "error": f"폰트를 못 읽었습니다: {font}"}
+    load_font_aliases(font)
+    want = str(inp.get("instrument") or "").strip()
+    prog = inp.get("program")
+    if want or prog is not None:
+        if want:
+            got = resolve_instrument(want)
+            if got is None:
+                return {"success": False,
+                        "error": f"악기 {want!r} 를 모릅니다 — 폰트 프리셋 이름이나 GM 이름으로 "
+                                 "주세요. 이름 목록은 인자 없이 이 액션을 부르면 나옵니다"}
+            bank = font_bank_of(want) or int(inp.get("bank") or 0)
+            prog = got[1]
+        else:
+            bank = int(inp.get("bank") or 0)
+            prog = int(prog)
+        pre = inv["presets"].get(f"{bank}:{prog}")
+        if not pre:
+            return {"success": False,
+                    "error": f"이 폰트에 뱅크 {bank} 프로그램 {prog} 이 없습니다 — 있는 뱅크: "
+                             + ", ".join(str(b) for b in inv["banks"])}
+        return {"success": True, "data": {"font": inv["name"], "preset": pre,
+                                          "defaultModulators": [
+                                              {"from": a, "to": b, "what": c}
+                                              for a, b, c in SF2_DEFAULT_MODULATORS]}}
+    by_bank = {}
+    for p in inv["presets"].values():
+        by_bank.setdefault(str(p["bank"]), 0)
+        by_bank[str(p["bank"])] += 1
+    return {"success": True, "data": {
+        "font": inv["name"],
+        "info": inv["info"],
+        "path": font,
+        "banks": inv["banks"],
+        "presetsByBank": by_bank,
+        "presets": len(inv["presets"]),
+        "samples": inv["samples"],
+        "melodic": len(inv["programs"]),
+        "kits": sorted(inv["kits"]),
+        # 이 폰트가 **파일에 적어 둔** 것. 아래 기본값은 파일에 없지만 모든 SF2 가 갖는다.
+        "declaredModulators": [{"from": a, "to": b} for a, b in inv["modulators"]],
+        "defaultModulators": [{"from": a, "to": b, "what": c}
+                              for a, b, c in SF2_DEFAULT_MODULATORS],
+        "note": ("이 폰트가 답하는 연주법은 declaredModulators 와 defaultModulators 의 합집합"
+                 "입니다 — 기본 모듈레이터는 파일에 안 적혀 있어도 규격상 항상 걸립니다. "
+                 "instrument 나 program 을 주면 그 프리셋 하나의 음역·벨로시티층·CC 를 봅니다."),
+    }}
+
+
 def action_verify(inp):
     """원본 파일과 **우리가 신디에 주는 .mid** 를 대조한다 — 그대로 연주되고 있나.
 
@@ -6154,10 +6480,12 @@ def main():
         out = action_levels(inp)
     elif action == "verify":
         out = action_verify(inp)
+    elif action == "font":
+        out = action_font(inp)
     else:
         out = {"success": False,
                "error": f"unknown action {action!r} — one of: render, preview, scores, lyrics, "
-                        "levels, verify, selftest"}
+                        "levels, verify, font, selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False)).encode("utf-8"))
