@@ -1904,6 +1904,9 @@ def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, ctl=Non
         out[i:i + m, 0] += seg * np.cos(theta)
         out[i:i + m, 1] += seg * np.sin(theta)
         send[i:i + m] += seg * ROOM_SEND
+    # 내장 신디도 같은 마스터 페이더를 지난다 — 엔진을 바꿨다고 크기가 달라지면 안 된다.
+    out *= BUILTIN_GAIN
+    send *= BUILTIN_GAIN
     return out, send
 
 
@@ -2491,9 +2494,8 @@ def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None):
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
         # Stock settings on purpose (사용자: "우리가 임의적으로 하지 말고 미디 기본값으로") —
         # the reference sound is what any GM player makes of the same .mid, reverb included.
-        # `-g` 를 안 준다 — fluidsynth 기본 게인이 곧 "폰트 설정 그대로"다. 0.5 는 우리가
-        # 고른 값이었고(기본 0.2), 그만큼 모든 렌더가 우리 손을 한 번 거친 소리였다.
-        r = subprocess.run([binp, "-ni", "-r", str(SR), "-F", wav_path, font,
+        r = subprocess.run([binp, "-ni", "-g", str(SYNTH_GAIN), "-r", str(SR),
+                            "-F", wav_path, font,
                             mid_path],
                            capture_output=True, timeout=600)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1024:
@@ -3382,7 +3384,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         f_part = f"p{pi + 1}"
         last_onset, stack_n, arp_here = 0.0, 0, False
         pedal_down = None
-        shift = 0      # octave-shift (8va/8vb), in semitones
+        oct_events = []   # (자리, 보표, 반음) — 8va 는 후처리에서 자리로 얹는다
+        tab_staves = set()   # 타브 보표 번호 — 오선의 사본이라 소리로 내지 않는다
         cur_fifths = 0  # key signature — ornament neighbors are DIATONIC, not fixed intervals
         transpose = 0  # transposing instruments, in semitones
         graces = []    # pending grace pitches awaiting their host note
@@ -3411,6 +3414,19 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             meter = nnum if 2 <= nnum <= 12 else meter
                         except ValueError:
                             pass
+                    # 타브 보표를 찾아 둔다. 기타 파트는 오선 + 타브 한 쌍으로 적히고, 그
+                    # **둘은 같은 연주**다 — 표기 방식만 다르다. 둘 다 소리로 내면 기타가 두 번
+                    # 울린다(실측 2026-08-21 아로하 Gtr1: 오선 1,617음 · 타브 1,617음, 음 수가
+                    # 정확히 같다). 파일이 스스로 말해 준다: 타브 보표는 <staff-tuning> 으로
+                    # 줄 조율을 적거나 <clef><sign>TAB</sign> 을 단다.
+                    # ⚠️ 보표가 둘이라고 다 타브가 아니다 — 피아노 대보표는 양손이 서로 다른
+                    # 음악이라 둘 다 울려야 한다. 그래서 '보표 수'가 아니라 이 표시로 가른다.
+                    for sd in _xk(el, "staff-details"):
+                        if _xk1(sd, "staff-tuning") is not None:
+                            tab_staves.add(sd.get("number") or "1")
+                    for cl in _xk(el, "clef"):
+                        if (text_of(cl, "sign") or "").strip().upper() == "TAB":
+                            tab_staves.add(cl.get("number") or "1")
                     tr_el = kid(el, "transpose")
                     if tr_el is not None:
                         transpose = int(float(text_of(tr_el, "chromatic") or 0))                             + 12 * int(float(text_of(tr_el, "octave-change") or 0))
@@ -3468,8 +3484,15 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             ot = (osh.get("type") or "").lower()
                             size = int(float(osh.get("size") or 8))
                             semis = 12 if size <= 8 else 24
-                            # spec: type="down" = 8va bracket, notes SOUND higher
-                            shift = semis if ot == "down" else (-semis if ot == "up" else 0)
+                            # spec: type="down" = 8va bracket, notes SOUND higher.
+                            # **자리와 보표로** 모은다. 흐르는 변수 하나로 두면 `<backup>` 이
+                            # 성부를 되감을 때 나중 성부의 **앞선** 음이 이미 처리된 stop 을
+                            # 본다 — 실측 2026-08-21 아로하 Gtr2 54마디: 성부 1 의 stop(4박)이
+                            # 처리된 뒤 성부 5 의 0박 음이 8va 밖으로 나가 D5 대신 D4 가 났고,
+                            # 그래서 53마디에서 넘어온 붙임줄도 짝을 잃었다.
+                            oct_events.append((m_base + cur, d_staff,
+                                               semis if ot == "down"
+                                               else (-semis if ot == "up" else 0)))
                         ped = kid(dt, "pedal") if dt is not None else None
                         if ped is not None and parts_out is not None:
                             ptype = (ped.get("type") or "start").lower()
@@ -3528,7 +3551,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 d_step = (text_of(unp, "display-step") or "B").strip().upper()
                                 d_oct = int(text_of(unp, "display-octave") or 4)
                                 nom = (12 * (d_oct + 1) + _XML_STEP.get(d_step, 0)
-                                       + shift + transpose)
+                                       + transpose)
                                 notes.append({"midi": nom, "beats": dur, "syl": usyl,
                                               "vel": (uv if uv is not None
                                                       else XML_DEFAULT_VEL),
@@ -3571,7 +3594,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     step = (text_of(p2, "step") or "C").strip().upper()
                     octave = int(text_of(p2, "octave") or 4)
                     alter = int(float(text_of(p2, "alter") or 0))
-                    midi = 12 * (octave + 1) + _XML_STEP.get(step, 0) + alter                         + shift + transpose
+                    # 8va 는 여기서 안 얹는다 — 아래 후처리가 자리·보표로 얹는다. 붙임줄이
+                    # **적힌 음고**로 짝을 찾게 되는 것은 덤이 아니라 맞는 순서다: 붙임줄은
+                    # 같은 줄에 그린 두 음표를 잇는 것이고, 8va 는 그 뒤에 걸린다.
+                    midi = 12 * (octave + 1) + _XML_STEP.get(step, 0) + alter + transpose
                     if is_grace:
                         graces.append(midi)
                         continue
@@ -3618,6 +3644,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     if not is_stack:
                         last_onset = onset
                     n_staff = _xt(el, "staff", "1") or "1"
+                    # 타브 보표의 음은 자리 계산에는 참여하되(cur 는 그대로 흐른다) 소리로는
+                    # 안 낸다. 여기서 continue 하면 <backup> 과 박 계산이 어긋난다.
+                    is_tab = n_staff in tab_staves
                     # 붙임줄은 **자기 성부 안에서** 이어진다. 한 파트가 같은 음악을 두 성부로
                     # 들고 있으면(악보+타브 쌍) 같은 음의 붙임줄이 동시에 둘 걸리고, 성부를
                     # 안 보면 남의 것을 집는다 — 실측 2026-08-21 아로하 Gtr1 41→42마디:
@@ -3626,17 +3655,20 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     st_vel = vel_by_staff.get(n_staff, vel_by_staff.get("1"))
                     nvel = min(1.0, (st_vel if st_vel is not None else XML_DEFAULT_VEL)
                                + vboost)
-                    if parts_out is not None:
+                    if parts_out is not None and not is_tab:
                         stolen = 0.0
                         if graces and not is_stack:
                             take = min(0.1 * len(graces), dur * 0.4)
                             per = take / len(graces)
                             for gi, gp in enumerate(graces):
+                                # 꾸밈음도 보표·성부를 단다 — 8va 후처리와 쐐기 램프가 그걸
+                                # 보고 고른다. 없으면 그 음만 옥타브도 셈여림도 안 받는다.
                                 parts_out.append({"beat": onset + gi * per, "beats": per,
                                                   "part": f_part,
                                                   "patch": _patch_for_program(f_prog),
                                                   "program": f_prog, "pitch": gp,
-                                                  "vel": max(0.1, nvel - 0.1), "gate": 0.9})
+                                                  "vel": max(0.1, nvel - 0.1), "gate": 0.9,
+                                                  "staff": n_staff, "voice": n_voice})
                             stolen = take
                         # 여기에도 `max(0.125, …)` 가 있었다 — MIDI 리더에서 걷은 그 바닥이
                         # MusicXML 쪽에 그대로 남아 있었다. 그리고 여기서는 값이 틀리는 것으로
@@ -3715,6 +3747,28 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         if pedal_down is not None and parts_out is not None and pos > pedal_down:
             parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
                               "part": f_part, "pedal": True})
+        # 8va — 자리와 보표로. 한 음의 시작 시점에 그 보표에서 마지막으로 선언된 값을 쓴다.
+        if oct_events:
+            oct_events.sort(key=lambda e: e[0])
+
+            def _oct_at(pos, st):
+                v = 0
+                for at, ost, semis in oct_events:
+                    if at > pos + 1e-9:
+                        break
+                    if ost == st:
+                        v = semis
+                return v
+
+            for row in (parts_out or []):
+                if (row.get("part") == f_part and "pitch" in row and not row.get("pedal")):
+                    sh = _oct_at(row["beat"], row.get("staff"))
+                    if sh:
+                        row["pitch"] = max(0, min(127, row["pitch"] + sh))
+            for nrow in notes:
+                sh = _oct_at(nrow.get("_at", 0.0), nrow.get("_st"))
+                if sh:
+                    nrow["midi"] = max(0, min(127, nrow["midi"] + sh))
         # wedges ramp between the stepped dynamics on either side
         for wi, (wstart, wkind, wstaff) in enumerate(wedges):
             if wkind == "stop":
@@ -5949,6 +6003,37 @@ def action_selftest():
                                              for p in r.get("params", [])} | _declared))
     ck("걷은 노브는 어느 선언 표면에도 안 남는다", [], _retired, not _retired)
 
+    # 타브 보표는 오선의 사본이다 — 같은 연주를 프렛 번호로 다시 적은 것뿐이라 소리는 한 번만
+    # 나야 한다. 실측 2026-08-21 아로하 Gtr1: 오선 1,617음 · 타브 1,617음으로 정확히 같았고,
+    # 우리는 둘 다 울려 기타를 두 배로 내고 있었다. ⚠️ 보표가 둘이라고 다 타브가 아니다 —
+    # 피아노 대보표는 양손이 다른 음악이라 둘 다 울려야 한다. 파일이 <staff-tuning>/TAB
+    # 음자리표로 스스로 가른다.
+    _tabdoc = (P.replace("<part-list>", "<part-list>")
+               + '<measure number="1"><attributes><divisions>1</divisions>'
+                 '<staves>2</staves>'
+                 '<clef number="1"><sign>G</sign><line>2</line></clef>'
+                 '<clef number="2"><sign>TAB</sign><line>5</line></clef>'
+                 '<staff-details number="2"><staff-lines>6</staff-lines>'
+                 '<staff-tuning line="1"><tuning-step>E</tuning-step>'
+                 '<tuning-octave>2</tuning-octave></staff-tuning></staff-details>'
+                 '</attributes>'
+                 '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+                 '<voice>1</voice><staff>1</staff></note>'
+                 '<backup><duration>4</duration></backup>'
+                 '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+                 '<voice>5</voice><staff>2</staff></note>'
+                 '</measure></part></score-partwise>')
+    with open("data/sing/selftest-tab.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_tabdoc)
+    _tr = []
+    musicxml_to_score("data/sing/selftest-tab.musicxml", parts_out=_tr)
+    ck("타브 보표는 소리를 안 낸다 — 오선의 사본이지 두 번째 기타가 아니다", 1,
+       len([r for r in _tr if "pitch" in r]), len([r for r in _tr if "pitch" in r]) == 1)
+    ck("…그리고 남는 것은 오선 쪽이다", "1",
+       next((r.get("staff") for r in _tr if "pitch" in r), None),
+       next((r.get("staff") for r in _tr if "pitch" in r), None) == "1")
+    os.remove("data/sing/selftest-tab.musicxml")
+
     # 한 파트에 성부가 여럿이면 같은 음이 동시에 울린다 — 온음표를 붙든 성부와, 그 위에서
     # 이음줄로 이어지는 성부. 마지막 행 하나만 들고 있으면 그 온음표를 집고 검사에서 떨어진다
     # (실측 아로하: 어긋남이 정확히 +4.0박, 즉 아직 울리는 긴 음의 끝이었다).
@@ -6505,6 +6590,18 @@ def action_selftest():
     return {"success": not failed, "data": {"checks": checks, "total": len(checks),
                                             "failed": len(failed),
                                             "pyworld": try_pyworld() is not None}}
+
+
+# 마스터 게인 — **페이더 하나가 전체에 똑같이 걸린다.** 파일마다 다시 재는 정규화가 아니라서
+# 폰트와 악보가 만든 세기 차이는 그대로 남는다(pp 곡은 pp 로 남는다).
+#
+# 값은 **제일 큰 렌더가 정한다** — 그 파일이 0 dBFS 를 넘으면 깨지므로 거기가 천장이다.
+# 실측 2026-08-21 (fluidsynth 기본 0.2 에서): 제일 큰 아로하-musescore 가 peak −14.2 dBFS.
+# 0.2 → 0.9 = +13.1 dB 라 그 파일이 −1.1 dBFS 로 앉는다. 그 위는 클리핑이다.
+# ⚠️ 사용자 지적 2026-08-21: 기본 0.2 에서는 "볼륨 100% 해야 들린다". 일반 음악 파일의 RMS 가
+# −12~−18 dBFS 인데 월광이 −58 이었다.
+SYNTH_GAIN = 0.9
+BUILTIN_GAIN = SYNTH_GAIN / 0.2     # 내장 신디도 같은 배율 — 두 엔진이 같은 크기로 나와야 한다
 
 
 MIDI_TPB = 480          # write_midi 가 쓰는 격자. 대조는 이 눈금 위에서 한다
