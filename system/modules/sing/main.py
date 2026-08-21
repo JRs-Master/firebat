@@ -2671,8 +2671,15 @@ def midi_to_parts(path):
                 for note, start, dur, vel in by_ch[ch]:
                     name = _NOTE_DRUM.get(note)
                     if name:
-                        rows.append({"beat": warp(start / tpb), "beats": 0.25, "part": "drum",
-                                     "drum": name, "vel": round(vel / 127.0, 3)})
+                        # 길이도 파일이 적은 그대로. `0.25` 가 박혀 있었다 — 대부분의 킷은
+                        # 원샷이라 안 들리지만 그건 우리가 고른 값이었고, verify 를 처음 돌린
+                        # 자리에서 바로 잡혔다(원본 0.5 → 우리 0.25). 안 들린다는 것이 고쳐도
+                        # 된다는 뜻은 아니다.
+                        b0 = warp(start / tpb)
+                        rows.append({"beat": b0,
+                                     "beats": max(0.03, warp((start + dur) / tpb) - b0),
+                                     "part": "drum", "drum": name,
+                                     "vel": round(vel / 127.0, 3)})
                 continue
             pidx += 1
             part = f"p{pidx}"
@@ -5491,6 +5498,57 @@ def action_selftest():
         if os.path.exists(_f):
             os.remove(_f)
 
+    # ── verify: 그대로 연주되는지 재는 자리 ────────────────────────────────────────────────
+    # ⚠️ 이 액션은 midi_to_parts 를 비교의 **한쪽에만** 쓴다. 양쪽에 쓰면 우리 리더와 우리
+    # 라이터의 왕복만 증명되고, 리더가 통째로 틀려도 초록이 뜬다 — type-0 파일이 한 악기로
+    # 무너져 있던 동안 selftest 는 내내 초록이었다.
+    _vf = _mido.MidiFile(ticks_per_beat=480)
+    _v1 = _mido.MidiTrack(); _vf.tracks.append(_v1)
+    _v1.append(_mido.MetaMessage("track_name", name="Piano", time=0))
+    _v1.append(_mido.Message("program_change", channel=0, program=0, time=0))
+    _v1.append(_mido.Message("control_change", channel=0, control=7, value=100, time=0))
+    _v1.append(_mido.Message("control_change", channel=0, control=1, value=40, time=0))
+    for _i in range(6):
+        _v1.append(_mido.Message("note_on", channel=0, note=60 + _i, velocity=90, time=0))
+        _v1.append(_mido.Message("note_off", channel=0, note=60 + _i, velocity=0, time=480))
+    _v2 = _mido.MidiTrack(); _vf.tracks.append(_v2)
+    _v2.append(_mido.Message("program_change", channel=1, program=33, time=0))
+    for _i in range(6):
+        _v2.append(_mido.Message("note_on", channel=1, note=36, velocity=100, time=0))
+        _v2.append(_mido.Message("note_off", channel=1, note=36, velocity=0, time=480))
+    _v3 = _mido.MidiTrack(); _vf.tracks.append(_v3)
+    for _i in range(8):
+        _v3.append(_mido.Message("note_on", channel=9, note=36, velocity=110, time=0))
+        _v3.append(_mido.Message("note_off", channel=9, note=36, velocity=0, time=240))
+    _vf.save("data/sing/selftest-verify.mid")
+    _vr = action_verify({"action": "verify",
+                         "scoreMediaPath": "data/sing/selftest-verify.mid"})
+    _vd = _vr.get("data") or {}
+    ck("verify: 평범한 파일은 음표·악기·컨트롤러가 통째로 그대로 간다", True,
+       [_vd.get("exact"), _vd.get("notes"), _vd.get("controllers", {}).get("dropped")],
+       bool(_vd.get("exact")))
+    ck("…드럼 길이도 파일이 적은 대로 (0.25 가 박혀 있었고 verify 첫 실행이 잡았다)", [],
+       _vd.get("changed"), not _vd.get("changed"))
+    # 그물이 실제로 잡나 — 우리 드럼 표에 없는 키는 리더가 조용히 버린다. 그 침묵을 봐야 한다.
+    _v3.append(_mido.Message("note_on", channel=9, note=13, velocity=100, time=0))
+    _v3.append(_mido.Message("note_off", channel=9, note=13, velocity=0, time=240))
+    _vf.save("data/sing/selftest-verify-lost.mid")
+    _lr = (action_verify({"action": "verify",
+                          "scoreMediaPath": "data/sing/selftest-verify-lost.mid"})
+           .get("data") or {})
+    ck("verify: 우리가 조용히 버리는 음을 잡아낸다 (표에 없는 드럼 키)", [False, 1],
+       [_lr.get("exact"), len(_lr.get("lost") or [])],
+       _lr.get("exact") is False and len(_lr.get("lost") or []) == 1)
+    ck("…그리고 왜 다른지 응답이 말한다", True, (_lr.get("note") or "")[:40],
+       "사라진 음" in (_lr.get("note") or ""))
+    _bad = action_verify({"action": "verify", "scoreMediaPath": "data/sing/selftest-parts.musicxml"}) \
+        if os.path.exists("data/sing/selftest-parts.musicxml") else {"error": "verify 는 .mid"}
+    ck("…MusicXML 은 대조 기준이 없다고 이유를 대며 거부한다", True,
+       (_bad.get("error") or "")[:30], "verify" in (_bad.get("error") or ""))
+    for _f in ("data/sing/selftest-verify.mid", "data/sing/selftest-verify-lost.mid"):
+        if os.path.exists(_f):
+            os.remove(_f)
+
     lyr_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
                '<note><unpitched><display-step>F</display-step>'
                '<display-octave>4</display-octave></unpitched><duration>1</duration>'
@@ -5899,6 +5957,178 @@ def action_selftest():
                                             "pyworld": try_pyworld() is not None}}
 
 
+def _raw_midi_notes(path):
+    """(pitch, onset_beat, dur_beat, velocity, program, is_drum) 목록 — **파서를 안 거치고**
+    파일에서 직접. 템포맵만 우리 warp 로 펴서 두 쪽을 같은 시간 축에 둔다.
+
+    verify 가 `midi_to_parts` 를 쓰면 우리 리더와 우리 라이터의 왕복만 증명한다. 리더가 통째로
+    틀려도 그 시험은 초록이다 — 8/21 에 type-0 파일이 한 악기로 무너져 있던 동안 selftest 는
+    내내 초록이었다. 그래서 원본 쪽은 여기서 다시, 최소한으로 읽는다."""
+    import mido
+    mf = mido.MidiFile(path)
+    tpb = mf.ticks_per_beat or 480
+    tempo_events = []
+    for tr in mf.tracks:
+        t = 0
+        for msg in tr:
+            t += msg.time
+            if msg.type == "set_tempo":
+                tempo_events.append((t / tpb, round(mido.tempo2bpm(msg.tempo), 3)))
+    tempo_events.sort()
+    bpm = round(tempo_events[0][1], 1) if tempo_events else 120.0
+    warp = _warp_fn(tempo_events, bpm)
+    out, ccs = [], set()
+    for tr in mf.tracks:
+        t, on, prog = 0, {}, {}
+        for msg in tr:
+            t += msg.time
+            ch = getattr(msg, "channel", None)
+            if msg.type == "program_change":
+                prog[int(ch)] = int(msg.program)
+            elif msg.type == "control_change":
+                ccs.add((int(ch), int(msg.control)))
+            elif msg.type == "note_on" and msg.velocity > 0:
+                on[(int(ch), msg.note)] = (t, msg.velocity, prog.get(int(ch), 0))
+            elif (msg.type == "note_off"
+                  or (msg.type == "note_on" and msg.velocity == 0)) and (int(ch), msg.note) in on:
+                st, vel, pg = on.pop((int(ch), msg.note))
+                b0 = warp(st / tpb)
+                out.append((int(msg.note), round(b0, 4), round(warp(t / tpb) - b0, 4),
+                            int(vel), (0 if ch == 9 else pg), ch == 9))
+    return out, bpm, ccs
+
+
+def _emitted_notes(path):
+    """같은 모양으로, 우리가 신디에 넘기는 .mid 에서. 이쪽은 템포가 하나라 warp 가 없다."""
+    import mido
+    mf = mido.MidiFile(path)
+    tpb = mf.ticks_per_beat or 480
+    out, ccs = [], set()
+    for tr in mf.tracks:
+        t, on, prog = 0, {}, {}
+        for msg in tr:
+            t += msg.time
+            ch = getattr(msg, "channel", None)
+            if msg.type == "program_change":
+                prog[int(ch)] = int(msg.program)
+            elif msg.type == "control_change":
+                ccs.add((int(ch), int(msg.control)))
+            elif msg.type == "note_on" and msg.velocity > 0:
+                on[(int(ch), msg.note)] = (t, msg.velocity, prog.get(int(ch), 0))
+            elif (msg.type == "note_off"
+                  or (msg.type == "note_on" and msg.velocity == 0)) and (int(ch), msg.note) in on:
+                st, vel, pg = on.pop((int(ch), msg.note))
+                out.append((int(msg.note), round(st / tpb, 4), round((t - st) / tpb, 4),
+                            int(vel), (0 if ch == 9 else pg), ch == 9))
+    return out, ccs
+
+
+def action_verify(inp):
+    """원본 파일과 **우리가 신디에 주는 .mid** 를 대조한다 — 그대로 연주되고 있나.
+
+    소리를 재는 게 아니다. 음 하나하나가 같은 자리에 같은 길이로 같은 악기로 갔는지, 그리고
+    파일이 보낸 컨트롤러가 그대로 나갔는지를 센다. 이게 없으면 무엇을 만질 때마다 정확도가
+    안 깨졌다는 것을 매번 귀로만 확인해야 한다."""
+    media_path, err = resolve_score_media(inp)
+    if err:
+        return {"success": False, "error": err}
+    if not media_path:
+        return {"success": False,
+                "error": "점검할 악보가 없습니다 — scoreMediaPath(URL·경로·보관함 별칭)를 주거나 "
+                         "설정의 악보 보관함에 올려 주세요. 보관함 목록은 scores 액션입니다"}
+    kind = score_media_kind(media_path)
+    if kind != "midi":
+        return {"success": False,
+                "error": f"verify 는 .mid 파일만 대조합니다 (받은 것: {kind or '알 수 없음'}). "
+                         "MusicXML 은 원본에 시간축이 없어 음표 대조의 기준이 없습니다 — "
+                         "render 응답의 notationNote 가 무엇을 못 읽었는지 말합니다"}
+    try:
+        src, src_bpm, src_ccs = _raw_midi_notes(media_path)
+    except Exception as e:  # noqa: BLE001 — 깨진 업로드는 자기 이름을 대야지 크래시가 아니다
+        return {"success": False, "error": f"원본 MIDI 를 못 읽었습니다: {e}"}
+    rows, bpm, meta, rerr = midi_to_parts(media_path)
+    if rerr:
+        return {"success": False, "error": rerr}
+    os.makedirs("data/sing", exist_ok=True)
+    tmp = f"data/sing/verify-{os.getpid()}.mid"
+    try:
+        ok, note = write_midi(
+            rows, bpm, tmp,
+            filecc7={p: m["cc7"] for p, m in meta.items() if m.get("cc7") is not None},
+            ctl={p: {"cc": m.get("cc") or {}, "bend": m.get("bend") or []}
+                 for p, m in meta.items()})
+        if not ok:
+            return {"success": False, "error": note or "mido 없음 — .mid 를 쓸 수 없습니다"}
+        got, got_ccs = _emitted_notes(tmp)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+    def bag(rows_):
+        out = {}
+        for r in rows_:
+            out[r] = out.get(r, 0) + 1
+        return out
+
+    a, b = bag(src), bag(got)
+    missing = [k for k, n in a.items() if b.get(k, 0) < n]
+    added = [k for k, n in b.items() if a.get(k, 0) < n]
+    # 음 자체는 갔는데 길이·세기·악기만 다른 것은 따로 센다 — "사라졌다"와 다른 병이다.
+    by_place = {}
+    for pit, at, dur, vel, pg, dr in src:
+        by_place.setdefault((pit, at, dr), []).append((dur, vel, pg))
+    changed = []
+    for pit, at, dur, vel, pg, dr in added:
+        was = by_place.get((pit, at, dr))
+        if was:
+            changed.append({"pitch": pit, "at": at,
+                            "was": {"dur": was[0][0], "vel": was[0][1], "program": was[0][2]},
+                            "now": {"dur": dur, "vel": vel, "program": pg}})
+    lost = [{"pitch": p, "at": t, "dur": d, "vel": v, "program": g, "drum": dr}
+            for p, t, d, v, g, dr in missing
+            if (p, t, dr) not in by_place or not any(
+                c["pitch"] == p and c["at"] == t for c in changed)]
+    src_cc = sorted({c for _ch, c in src_ccs})
+    got_cc = sorted({c for _ch, c in got_ccs})
+    exact = not lost and not changed and len(src) == len(got) and src_cc == got_cc
+    data = {
+        "file": os.path.basename(media_path),
+        "exact": exact,
+        "notes": {"source": len(src), "played": len(got)},
+        "drums": {"source": sum(1 for r in src if r[5]),
+                  "played": sum(1 for r in got if r[5])},
+        "programs": {"source": sorted({r[4] for r in src if not r[5]}),
+                     "played": sorted({r[4] for r in got if not r[5]})},
+        "bpm": {"source": src_bpm, "played": bpm},
+        "controllers": {"source": src_cc, "played": got_cc,
+                        "dropped": [c for c in src_cc if c not in got_cc],
+                        "added": [c for c in got_cc if c not in src_cc]},
+        "lost": lost[:40],
+        "changed": changed[:40],
+    }
+    if exact:
+        data["note"] = ("음표·길이·세기·악기·컨트롤러가 원본과 같습니다 — 파일 그대로 "
+                        "연주되고 소리는 폰트가 정합니다.")
+    else:
+        why = []
+        if data["notes"]["source"] != data["notes"]["played"]:
+            why.append(f"음 수 {data['notes']['source']} → {data['notes']['played']}")
+        if lost:
+            why.append(f"사라진 음 {len(lost)}")
+        if changed:
+            why.append(f"달라진 음 {len(changed)}")
+        if data["controllers"]["dropped"]:
+            why.append("안 나간 컨트롤러 CC" + ", CC".join(
+                str(c) for c in data["controllers"]["dropped"]))
+        if data["controllers"]["added"]:
+            why.append("우리가 더한 컨트롤러 CC" + ", CC".join(
+                str(c) for c in data["controllers"]["added"]))
+        data["note"] = "원본과 다릅니다 — " + " · ".join(why)
+    return {"success": True, "data": data}
+
+
 def main():
     # Bytes, decoded as UTF-8 explicitly — the locale default turns Korean into lone
     # surrogates on some hosts (measured on Windows), and the envelope is UTF-8 by contract.
@@ -5922,10 +6152,12 @@ def main():
         out = action_preview(inp)
     elif action == "levels":
         out = action_levels(inp)
+    elif action == "verify":
+        out = action_verify(inp)
     else:
         out = {"success": False,
                "error": f"unknown action {action!r} — one of: render, preview, scores, lyrics, "
-                        "levels, selftest"}
+                        "levels, verify, selftest"}
     # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
     # and the envelope is UTF-8 by contract on both ends.
     sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False)).encode("utf-8"))
