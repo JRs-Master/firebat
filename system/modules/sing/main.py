@@ -3301,8 +3301,8 @@ def _pitched(rows):
 def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     """MusicXML (.musicxml/.xml/.mxl) -> score. The whole notation plays (사용자: "악보에 있는
     건 다 구현해줘"): repeats/voltas/D.C./D.S./coda/fine expand the playback order; tempo
-    changes and metronome marks bend time onto one master tempo; 8va and transposing
-    instruments correct the sounding pitch; wedges ramp the dynamics between steps;
+    changes and metronome marks bend time onto one master tempo; <transpose> corrects the
+    sounding pitch of transposing instruments; wedges ramp the dynamics between steps;
     staccato/accent/tenuto shape gate and weight; grace notes steal their moment; trills,
     mordents and turns play as the notes they mean; fermatas hold; arpeggios roll; pedal
     marks become real CC64 downstream. Melody part = the one carrying lyrics, else the
@@ -3384,7 +3384,6 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         f_part = f"p{pi + 1}"
         last_onset, stack_n, arp_here = 0.0, 0, False
         pedal_down = None
-        oct_events = []   # (자리, 보표, 반음) — 8va 는 후처리에서 자리로 얹는다
         tab_staves = set()   # 타브 보표 번호 — 오선의 사본이라 소리로 내지 않는다
         cur_fifths = 0  # key signature — ornament neighbors are DIATONIC, not fixed intervals
         transpose = 0  # transposing instruments, in semitones
@@ -3479,20 +3478,6 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                            "c" if wt == "crescendo"
                                            else "d" if wt == "diminuendo" else "stop",
                                            d_staff))
-                        osh = kid(dt, "octave-shift")
-                        if osh is not None:
-                            ot = (osh.get("type") or "").lower()
-                            size = int(float(osh.get("size") or 8))
-                            semis = 12 if size <= 8 else 24
-                            # spec: type="down" = 8va bracket, notes SOUND higher.
-                            # **자리와 보표로** 모은다. 흐르는 변수 하나로 두면 `<backup>` 이
-                            # 성부를 되감을 때 나중 성부의 **앞선** 음이 이미 처리된 stop 을
-                            # 본다 — 실측 2026-08-21 아로하 Gtr2 54마디: 성부 1 의 stop(4박)이
-                            # 처리된 뒤 성부 5 의 0박 음이 8va 밖으로 나가 D5 대신 D4 가 났고,
-                            # 그래서 53마디에서 넘어온 붙임줄도 짝을 잃었다.
-                            oct_events.append((m_base + cur, d_staff,
-                                               semis if ot == "down"
-                                               else (-semis if ot == "up" else 0)))
                         ped = kid(dt, "pedal") if dt is not None else None
                         if ped is not None and parts_out is not None:
                             ptype = (ped.get("type") or "start").lower()
@@ -3594,9 +3579,20 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     step = (text_of(p2, "step") or "C").strip().upper()
                     octave = int(text_of(p2, "octave") or 4)
                     alter = int(float(text_of(p2, "alter") or 0))
-                    # 8va 는 여기서 안 얹는다 — 아래 후처리가 자리·보표로 얹는다. 붙임줄이
-                    # **적힌 음고**로 짝을 찾게 되는 것은 덤이 아니라 맞는 순서다: 붙임줄은
-                    # 같은 줄에 그린 두 음표를 잇는 것이고, 8va 는 그 뒤에 걸린다.
+                    # `<pitch>` 는 **울리는 음**이다. 그 위에 얹는 건 `<transpose>`(조옮김
+                    # 악기, 적힌 음과 나는 음이 다르다고 파일이 스스로 선언한 것) **하나뿐**
+                    # 이고, 음자리표의 `clef-octave-change` 와 `octave-shift`(8va) 는 **그리는
+                    # 법**이라 음고에 얹지 않는다. 얹으면 한 옥타브씩 밀린다.
+                    #
+                    # 실측 2026-08-21 아로하 — 기타 두 파트는 오선과 타브를 나란히 적는데,
+                    # 타브의 음고는 줄·프렛에서 나오므로 **물리적으로 확정된 실음**이다
+                    # (staff-tuning 1번줄 = E2 … 6번줄 = E4). 둘을 대조하니:
+                    #   · Gtr1 1,431음 **전부 일치** — 오선 오선 = 타브 = 실음
+                    #   · Gtr2 78음 중 66음 일치. 어긋난 12음은 51마디 8va 괄호 안이고,
+                    #     같은 파일의 다른 8va 괄호(56마디)에서는 두 보표가 **또 일치한다**
+                    # 즉 옥타브를 얹어야 한다는 증거가 1,497음 중 12음뿐이고 그 12음은 규칙이
+                    # 아니라 **그 파일 그 괄호의 자기모순**이다. 두 보표가 같은 파일 안에서
+                    # 갈리면 프렛(실음)이 아니라 규격(`<pitch>` = 실음)을 따른다.
                     midi = 12 * (octave + 1) + _XML_STEP.get(step, 0) + alter + transpose
                     if is_grace:
                         graces.append(midi)
@@ -3661,8 +3657,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             take = min(0.1 * len(graces), dur * 0.4)
                             per = take / len(graces)
                             for gi, gp in enumerate(graces):
-                                # 꾸밈음도 보표·성부를 단다 — 8va 후처리와 쐐기 램프가 그걸
-                                # 보고 고른다. 없으면 그 음만 옥타브도 셈여림도 안 받는다.
+                                # 꾸밈음도 보표·성부를 단다 — 쐐기 램프가 그걸 보고 고른다.
+                                # 없으면 그 음만 셈여림을 안 받는다.
                                 parts_out.append({"beat": onset + gi * per, "beats": per,
                                                   "part": f_part,
                                                   "patch": _patch_for_program(f_prog),
@@ -3747,28 +3743,6 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         if pedal_down is not None and parts_out is not None and pos > pedal_down:
             parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
                               "part": f_part, "pedal": True})
-        # 8va — 자리와 보표로. 한 음의 시작 시점에 그 보표에서 마지막으로 선언된 값을 쓴다.
-        if oct_events:
-            oct_events.sort(key=lambda e: e[0])
-
-            def _oct_at(pos, st):
-                v = 0
-                for at, ost, semis in oct_events:
-                    if at > pos + 1e-9:
-                        break
-                    if ost == st:
-                        v = semis
-                return v
-
-            for row in (parts_out or []):
-                if (row.get("part") == f_part and "pitch" in row and not row.get("pedal")):
-                    sh = _oct_at(row["beat"], row.get("staff"))
-                    if sh:
-                        row["pitch"] = max(0, min(127, row["pitch"] + sh))
-            for nrow in notes:
-                sh = _oct_at(nrow.get("_at", 0.0), nrow.get("_st"))
-                if sh:
-                    nrow["midi"] = max(0, min(127, nrow["midi"] + sh))
         # wedges ramp between the stepped dynamics on either side
         for wi, (wstart, wkind, wstaff) in enumerate(wedges):
             if wkind == "stop":
@@ -5651,11 +5625,15 @@ def action_selftest():
         fh.write(perf_doc)
     prows = []
     psc, perr = musicxml_to_score("data/sing/selftest-perf.musicxml", parts_out=prows)
-    c5 = [r for r in prows if r.get("pitch") == 72]
+    c5 = [r for r in prows if r.get("pitch") == 60]
     trill = [r for r in prows if r.get("pitch") in (69, 71) and r["beats"] <= 0.5]
-    ck("8va sounds an octave up, staccato shortens the gate",
-       True, (len(c5), c5[0]["gate"] if c5 else None),
-       perr is None and c5 and c5[0]["gate"] == 0.4)
+    # 8va 괄호는 **그리는 법**이지 음고가 아니다 — `<pitch>` 가 이미 울리는 음이라
+    # 괄호 안의 C4 는 C4 로 남는다. 얹으면 그 구간만 한 옥타브 뜬다.
+    ck("an 8va bracket does not move the pitch — <pitch> already sounds",
+       (1, 0.4), (len(c5), c5[0]["gate"] if c5 else None),
+       perr is None and len(c5) == 1 and c5[0]["gate"] == 0.4)
+    ck("…and nothing else got moved either", [], [r["pitch"] for r in prows if r["pitch"] == 72],
+       not [r for r in prows if r.get("pitch") == 72])
     ck("a grace note steals its moment, a trill plays as the notes it means",
        True, (any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows), len(trill)),
        any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows) and len(trill) >= 4)
@@ -6033,6 +6011,24 @@ def action_selftest():
        next((r.get("staff") for r in _tr if "pitch" in r), None),
        next((r.get("staff") for r in _tr if "pitch" in r), None) == "1")
     os.remove("data/sing/selftest-tab.musicxml")
+
+    # 음자리표의 `clef-octave-change` 도 그리는 법이다. 기타 오선은 관례로 한 옥타브 높여
+    # 적고 𝄞 아래 8 을 달지만, `<pitch>` 는 그것과 무관하게 울리는 음을 적는다. 실측
+    # 2026-08-21 아로하: 오선과 타브(줄·프렛에서 나온 실음)가 Gtr1 1,431음 **전부** 같았고,
+    # 얹는 순간 전부 한 옥타브 내려갔다. 한 번 얹었다가 이 대조로 되돌렸으니 픽스처로 박는다.
+    _cod = (P + '<measure number="1"><attributes><divisions>1</divisions>'
+            '<clef><sign>G</sign><line>2</line>'
+            '<clef-octave-change>-1</clef-octave-change></clef></attributes>'
+            '<note><pitch><step>C</step><octave>4</octave></pitch>'
+            '<duration>4</duration></note></measure>' + E)
+    with open("data/sing/selftest-clefoct.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_cod)
+    _cr = []
+    musicxml_to_score("data/sing/selftest-clefoct.musicxml", parts_out=_cr)
+    ck("a clef's octave change does not move the pitch either", 60,
+       next((r["pitch"] for r in _cr if "pitch" in r), None),
+       next((r["pitch"] for r in _cr if "pitch" in r), None) == 60)
+    os.remove("data/sing/selftest-clefoct.musicxml")
 
     # 한 파트에 성부가 여럿이면 같은 음이 동시에 울린다 — 온음표를 붙든 성부와, 그 위에서
     # 이음줄로 이어지는 성부. 마지막 행 하나만 들고 있으면 그 온음표를 집고 검사에서 떨어진다
