@@ -1034,17 +1034,21 @@ def band_seats(style, band=None):
 
 
 def comping_stage(n):
-    """컴핑 N 목소리가 설 자리(−1 왼쪽 … +1 오른쪽)와 각자의 볼륨 배수.
+    """컴핑 N 목소리가 설 자리(−1 왼쪽 … +1 오른쪽). 하나면 지금 그 자리 그대로.
 
-    팬은 파트 이름으로만 정해졌고 `chord3` 는 숫자를 떼어 `chord` 값을 받았다 — 같은 악기 두 대가
-    **정확히 같은 자리**에 포개졌다. 볼륨도 마찬가지로 컴핑이 하나일 때 고른 0.58 을 셋이 그대로
-    써서 합이 리드 1.0 을 넘었다(사용자가 들은 서열 그대로: 아코디언 → 보컬 → 드럼).
-    무상관 신호 N 개는 √N 으로 합해지므로 각자를 √N 으로 나누면 **컴핑 전체**가 예전 한 대와
-    같은 자리에 앉는다. N=1 이면 나눗셈도 이동도 없다 = 옛 동작 그대로.
+    팬은 파트 이름으로만 정해졌고 `chord3` 는 숫자를 떼어 `chord` 값을 받았다 — 같은 자리에 두
+    대가 포개졌다. 이제 몇 대인가가 자리를 정한다.
+
+    ⚠️ **볼륨은 나누지 않는다.** 한때 √N 으로 나눴다(무상관 N 개는 √N 으로 합해지니 컴핑 전체를
+    예전 한 대 자리에 앉힌다는 계산). 그 계산은 **같은 것을 여러 번 낼 때** 맞고, 여기서는 성부마다
+    다른 음악이라 틀렸다 — 각자가 제 목소리이지 서로의 사본이 아니다. 그리고 우리 코드가 이미
+    그 반대로 말하고 있었다: 더블트래킹(정말 같은 리프를 두 번)은 chord+chord2 둘 다 0.58 로
+    보정이 **0** 인데, 서로 다른 다섯 성부는 내가 나누고 있었다. 앞뒤가 안 맞았고, 사용자가
+    들은 결과가 그것이다 — "보컬리드악기 말고 나머지는 묻히는건 비슷한데"(8/21).
     """
     if n <= 1:
-        return [PAN.get("chord", -0.25)], 1.0
-    return ([round(-0.5 + i * (1.0 / (n - 1)), 3) for i in range(n)], math.sqrt(n))
+        return [PAN.get("chord", -0.25)]
+    return [round(-0.5 + i * (1.0 / (n - 1)), 3) for i in range(n)]
 
 
 # 쿵덕 for three bars, 두구두구 on the fourth, 쨍 on the downbeat after: every 4th bar keeps its
@@ -1652,7 +1656,7 @@ def events_beats(events):
 
 def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, names=None):
     """The file's own parts, re-cast for a genre — every voice keeps its notes and takes the
-    instrument its ROLE and REGISTER call for. Returns (rows, cast_map, mix_overlay).
+    instrument its ROLE and REGISTER call for. Returns (rows, cast_map).
 
     The arrangement path throws the score away: it reduces the piece to one line, derives chords
     from it, and rebuilds a backing. That is right when you want the genre to play the song, and
@@ -1675,7 +1679,7 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, 
         if "pitch" in r and not r.get("pedal"):
             voices.setdefault(r["part"], []).append(r["pitch"])
     if not voices:
-        return rows, {}, {}
+        return rows, {}
     avg = {p: sum(v) / len(v) for p, v in voices.items()}
     seats = band_seats(style, band)
     lead = lead_row if lead_row in avg else max(avg, key=lambda x: avg[x])
@@ -1706,9 +1710,8 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, 
     for role, name in (band or {}).items():
         if role in inst_for and resolve_instrument(name) is not None:
             inst_for[role] = name
-    stage, share = comping_stage(len(comping))
+    stage = comping_stage(len(comping))
     seat_at = {roles[p]: stage[i] for i, p in enumerate(comping)}
-    mix_over = {roles[p]: round(mix_of("chord") / share, 4) for p in comping} if share > 1.0 else {}
     out = []
     for r in rows:
         if r.get("part") == "drum":
@@ -1734,7 +1737,7 @@ def recast_parts(rows, style, band=None, lead_row=None, keep_instruments=False, 
         name = (gm_name(src_prog.get(src)) if keep_instruments
                 else inst_for.get(role, "piano"))
         cast[role] = {"part": (names or {}).get(src, src), "instrument": name}
-    return out, cast, mix_over
+    return out, cast
 
 
 def build_arrangement(events, chords, style, total_beats, band=None, feel=None):
@@ -4403,21 +4406,15 @@ def action_render(inp):
     recast = None
     if (arrange_from in ("score", "parts") and not faithful
             and len(locals().get("faithful_rows") or []) > 0):
-        recast, cast_map, mix_over = recast_parts(faithful_rows, style, band, lead_row,
-                                                  keep_instruments=arrange_from == "parts",
-                                                  names=part_names)
+        recast, cast_map = recast_parts(faithful_rows, style, band, lead_row,
+                                        keep_instruments=arrange_from == "parts",
+                                        names=part_names)
         # The genre's rhythm section, borrowed whole from the arrangement path so the kit, the
         # fills and the crashes stay one implementation. Only the drums: the harmony is already
         # in the score's own parts.
         if not any(r.get("part") == "drum" for r in recast):
             backing = build_arrangement([], chords, style, total_beats, band, feel)
             recast += [r for r in backing if r.get("part") == "drum"]
-        # 컴핑이 여럿이면 각자의 볼륨이 낮아진다 — 파생값이라 호출자의 `mix` 가 이긴다.
-        # 두 엔진 다 feel["mix"] 를 읽으므로 여기 한 번 얹으면 .mid 의 CC7 과 내장 렌더가
-        # 같은 균형을 쓴다.
-        if mix_over:
-            feel = dict(feel or {})
-            feel["mix"] = {**mix_over, **(feel.get("mix") or {})}
     reinst_name = None
     if faithful and band:
         faithful_rows, reinst_name = reinstrument(faithful_rows, band)
@@ -5285,7 +5282,7 @@ def action_selftest():
                  "patch": "piano", "program": 0} for i in range(4)]
              + [{"beat": float(i), "beats": 1.0, "part": "p3", "pitch": 40, "vel": 0.7,
                  "patch": "piano", "program": 0} for i in range(4)])
-    cast_rows, cast, cast_mix = recast_parts(rrows, "metal", None, "p1")
+    cast_rows, cast = recast_parts(rrows, "metal", None, "p1")
     ck("recast keeps every part the score wrote", 3,
        len({r["part"] for r in cast_rows}), len({r["part"] for r in cast_rows}) == 3)
     ck("…and casts them by role: the tune, the floor, the comping",
@@ -5326,25 +5323,26 @@ def action_selftest():
     ck("…and each role wears the genre's instrument, not the file's", True,
        (lead_prog, next(r["program"] for r in cast_rows if r["part"] == "chord")),
        lead_prog == resolve_instrument(STYLE_BAND["metal"]["melody"])[1])
-    ck("one comping voice keeps the seat it always had — no spread, no divide",
-       [PAN["chord"], {}], [cast_rows and next(r["pan"] for r in cast_rows
-                                               if r["part"] == "chord"), cast_mix],
-       next(r["pan"] for r in cast_rows if r["part"] == "chord") == PAN["chord"]
-       and cast_mix == {})
+    ck("one comping voice keeps the seat it always had", PAN["chord"],
+       next(r["pan"] for r in cast_rows if r["part"] == "chord"),
+       next(r["pan"] for r in cast_rows if r["part"] == "chord") == PAN["chord"])
     p4 = [{"beat": 0.0, "beats": 1.0, "part": "p4", "pitch": 64,
            "vel": 0.7, "patch": "piano", "program": 0}]
-    many, _, many_mix = recast_parts(rrows + p4, "metal", None, "p1")
+    many, _ = recast_parts(rrows + p4, "metal", None, "p1")
     ck("a fourth voice comps as chord2, where the pan and mix tables can still find it",
        True, sorted({r["part"] for r in many}), "chord2" in {r["part"] for r in many})
     # 같은 자리에 두 대가 포개지지 않는다 — 팬은 파트 이름이 아니라 **몇 대인가**가 정한다.
     seats_used = sorted({r["pan"] for r in many if str(r["part"]).startswith("chord")})
     ck("…and two comping voices stand apart instead of stacking on one spot",
        [-0.5, 0.5], seats_used, seats_used == [-0.5, 0.5])
-    # 그리고 둘이면 각자 √2 만큼 낮아져 컴핑 전체가 예전 한 대 자리에 앉는다.
-    ck("…each dropping by root-N so the comping bed stays where one voice used to sit",
-       round(MIX["chord"] / math.sqrt(2), 4), many_mix.get("chord"),
-       many_mix.get("chord") == round(MIX["chord"] / math.sqrt(2), 4)
-       and many_mix.get("chord") == many_mix.get("chord2"))
+    # ⚠️ 볼륨은 **안 나눈다.** 성부마다 다른 음악이라 서로의 사본이 아니고, 우리 코드가 이미
+    # 그렇게 말하고 있었다 — 진짜 사본인 더블트래킹(chord+chord2)조차 보정이 0 이다. 한때
+    # 여기만 √N 으로 나눠서 반주가 통째로 묻혔다(사용자 8/21).
+    ck("컴핑이 여럿이어도 각자는 자기 자리 볼륨 그대로 — 사본이 아니니 나누지 않는다",
+       [MIX["chord"], MIX["chord"]], [mix_of("chord"), mix_of("chord2")],
+       mix_of("chord") == MIX["chord"] and mix_of("chord2") == MIX["chord"])
+    ck("…그리고 진짜 사본인 더블트래킹도 같은 규칙을 쓴다(둘 다 chord 레벨)", True,
+       mix_of("chord2") == mix_of("chord"), mix_of("chord2") == mix_of("chord"))
     # 둘째 손을 이름으로 부를 수 있다. 자리에만 걸려 있던 시절 이 인자는 조용히 버려졌다.
     named = recast_parts(rrows + p4, "metal", {"chord2": "piano"}, "p1")[0]
     ck("…and the caller can name the SECOND comping hand, which used to be dropped",
