@@ -4,7 +4,7 @@ import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal
 import { logger } from '../../../../../lib/util/logger';
 
 /**
- * /api/hub/[slug]/media — 익명 hub 방문자의 갤러리 dispatcher.
+ * /api/hub/[slug]/media — 익명 hub 방문자의 미디어 dispatcher.
  *
  * GET ?limit=50&offset=0&search=&kind=&sort=  — hub-scoped 미디어 목록 (user/hub/<id>/media/)
  * DELETE ?slug=...                    — hub-scoped 미디어 삭제 (소유 확인 후)

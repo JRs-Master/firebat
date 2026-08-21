@@ -2304,7 +2304,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   // 입력창 접기(앵커식) — 답변 읽기 공간 확보. 세션 상태만(리로드 시 펼침 복귀 = "입력창 어디갔지" 방지).
   const [composerCollapsed, setComposerCollapsed] = useState(false);
-  // 첨부 이미지를 갤러리에 저장 — 사용자 명시 클릭 시에만 (자동 저장 X).
+  // 첨부 이미지를 미디어에 저장 — 사용자 명시 클릭 시에만 (자동 저장 X).
   // 'idle' 기본 → 'saving' 진행 → 'saved' 성공 → 'error' 실패. attachedImage 변경 시 'idle' 리셋.
   const [attachedSaveState, setAttachedSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [attachedSaveError, setAttachedSaveError] = useState<string>('');
@@ -2566,21 +2566,21 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     const reader = new FileReader();
     reader.onload = () => {
       setAttachedImage(reader.result as string);
-      // 새 첨부 — 갤러리 저장 상태 리셋
+      // 새 첨부 — 미디어 저장 상태 리셋
       setAttachedSaveState('idle');
       setAttachedSaveError('');
     };
     reader.readAsDataURL(file);
   }, [setAttachedImage]);
 
-  /** 첨부 이미지를 갤러리에 저장 — 사용자 명시 클릭. 메시지 전송과 독립.
-   *  결과는 source: 'upload' 메타로 기록되어 갤러리에서 AI 생성과 시각 구분 가능. */
-  const handleSaveAttachedToGallery = useCallback(async () => {
+  /** 첨부 이미지를 미디어에 저장 — 사용자 명시 클릭. 메시지 전송과 독립.
+   *  결과는 source: 'upload' 메타로 기록되어 미디어에서 AI 생성과 시각 구분 가능. */
+  const handleSaveAttachedToMedia = useCallback(async () => {
     if (!attachedImage || attachedSaveState === 'saving' || attachedSaveState === 'saved') return;
     setAttachedSaveState('saving');
     setAttachedSaveError('');
     try {
-      // Shared owner-injected door — in hub mode this lands in the hub session's own gallery
+      // Shared owner-injected door — in hub mode this lands in the hub session's own media store
       // (the admin route would just 401 there).
       const json = await uploadMediaDataUrl(attachedImage);
       if (json.success) {
@@ -2879,7 +2879,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                 onTouchStart={handleCardTouchStart}
                 onTouchMove={handleCardTouchMove}
               >
-                {/* 이미지 미리보기 + 갤러리 저장 토글 */}
+                {/* 이미지 미리보기 + 미디어 저장 토글 */}
                 {attachedImage && (
                   <div className="px-4 pt-3 pb-1 flex items-end gap-2">
                     <div className="relative inline-block">
@@ -2891,7 +2891,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                         <X size={12} />
                       </button>
                     </div>
-                    {/* 갤러리 저장 — 사용자 명시 클릭 시에만. 메시지 전송과 독립. */}
+                    {/* 미디어 저장 — 사용자 명시 클릭 시에만. 메시지 전송과 독립. */}
                     <Tooltip
                       label={
                         attachedSaveState === 'saved' ? '미디어에 저장됨'
@@ -2901,7 +2901,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                       }
                     >
                       <button
-                        onClick={handleSaveAttachedToGallery}
+                        onClick={handleSaveAttachedToMedia}
                         disabled={attachedSaveState === 'saving' || attachedSaveState === 'saved'}
                         className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:cursor-default ${
                           attachedSaveState === 'saved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'

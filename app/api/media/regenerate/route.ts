@@ -3,7 +3,7 @@ import { regenerateImage } from '../../../../lib/api-gen/media';
 import { withAuth } from '../../../../lib/with-api-error';
 
 /** POST /api/media/regenerate?slug=<slug>
- *  갤러리에서 재생성 — 기존 메타의 prompt/model 등으로 image_gen 재실행.
+ *  미디어에서 재생성 — 기존 메타의 prompt/model 등으로 image_gen 재실행.
  *  성공 시 새 slug 발급 + 기존 slug 제거 (Core 가 처리).
  *  관리자 인증 필수. */
 export const POST = withAuth(async (req: NextRequest) => {

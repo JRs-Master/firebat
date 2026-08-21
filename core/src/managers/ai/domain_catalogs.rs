@@ -122,9 +122,9 @@ impl CatalogSource for PageCatalogSource {
     }
 }
 
-/// Media — admin gallery (prompt text is the semantic body: "그 우주 고양이 그림" style
+/// Media — admin media store (prompt text is the semantic body: "그 우주 고양이 그림" style
 /// queries). id = `admin:{slug}`. Capped at the most recent 2000 (hash cache keeps rebuilds
-/// cheap; beyond that the oldest items age out of the index, not out of the gallery).
+/// cheap; beyond that the oldest items age out of the index, not out of the media store).
 pub struct MediaCatalogSource {
     pub media: Arc<MediaManager>,
 }

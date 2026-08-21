@@ -63,7 +63,7 @@ fn subscribe_types_filter() {
     );
 
     mgr.notify_sidebar(); // 매칭
-    mgr.notify_gallery(serde_json::json!({})); // 미매칭
+    mgr.notify_media(serde_json::json!({})); // 미매칭
 
     let got = received.lock().unwrap().clone();
     assert_eq!(got, vec!["sidebar:refresh".to_string()]);

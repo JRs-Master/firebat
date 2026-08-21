@@ -36,7 +36,7 @@ export type SettingsSchema = {
    *  model change resets the state into that model's list, so an out-of-set value never exists. */
   'firebat_last_thinking_by_model': Record<string, string>;
   /** 입력 모드 — 'text' 면 일반 LLM 채팅, 'image' 면 입력창 텍스트를 prompt 로 직접 image_gen.
-   *  LLM 우회 → 비용 절감 + timeout 위험 0. 갤러리 자동 갱신은 SSE gallery:refresh 가 처리. */
+   *  LLM 우회 → 비용 절감 + timeout 위험 0. 미디어 자동 갱신은 SSE media:refresh 가 처리. */
   'firebat_input_mode': 'text' | 'image';
 };
 

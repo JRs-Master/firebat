@@ -9,7 +9,7 @@ import { withAuth } from '../../../../lib/with-api-error';
  * 메시지에는 URL slug 만 들어가서 fetch body 작게 유지 → keepalive 안정 (모바일
  * 첨부 첫 시도 실패 root cause fix, 2026-05-11).
  *
- * 갤러리 (/api/media/upload) 와 분리 — 갤러리는 sharp + variants + 영구 저장.
+ * 미디어 (/api/media/upload) 와 분리 — 미디어는 sharp + variants + 영구 저장.
  * 임시 첨부는 30일 retention internal cron 이 자동 cleanup.
  *
  * Body:

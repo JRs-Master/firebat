@@ -1777,7 +1777,7 @@ message EventSubscribeRequest {
   repeated string topics = 1;
 }
 message EventStreamPb {
-  // 이벤트 type — 'status:update' / 'cron:complete' / 'gallery:refresh' / 'sidebar:refresh' 등.
+  // 이벤트 type — 'status:update' / 'cron:complete' / 'media:refresh' / 'sidebar:refresh' 등.
   string type = 1;
   // 이벤트 payload (JSON 직렬화). Frontend 가 JSON.parse 해서 SSE data 로 전달.
   string data_json = 2;

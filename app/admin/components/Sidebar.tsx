@@ -7,7 +7,7 @@ import { FolderTree, MessageSquare, ChevronRight, ChevronDown, ChevronLeft, Plus
 import { FileEditor } from './FileEditor';
 import { AnchoredMenu, CascadeMenuItem } from './Menu';
 import { CronPanel, ScheduleModal } from './CronPanel';
-import { GalleryPanel } from './GalleryPanel';
+import { MediaPanel } from './MediaPanel';
 import { EntitiesPanel } from './EntitiesPanel';
 import { NotesPanel } from './NotesPanel';
 import { CalendarPanel } from './CalendarPanel';
@@ -39,7 +39,7 @@ export type ConversationMeta = {
   updatedAt?: number;
 };
 
-type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'skills' | 'entities' | 'notes' | 'calendar' | 'library';
+type TabId = 'workspace' | 'chats' | 'media' | 'templates' | 'skills' | 'entities' | 'notes' | 'calendar' | 'library';
 
 // Page → document export. Which modules offer it — and which actions — is DERIVED from module
 // config declarations (`pageExport`), not listed here: a hand list meant a new export module
@@ -51,8 +51,7 @@ interface ExportFormat { module: string; action: string; label: string }
 const TABS: { id: TabId; Icon: typeof FolderTree }[] = [
   { id: 'workspace', Icon: FolderTree },
   { id: 'chats', Icon: MessageSquare },
-  // 'gallery' id 는 내부 식별자로 유지(탭 상태·i18n 키) — 라벨은 sidebar.gallery = "미디어".
-  { id: 'gallery', Icon: FolderOpen },
+  { id: 'media', Icon: FolderOpen },
   { id: 'templates', Icon: LayoutTemplate },
   { id: 'skills', Icon: BookText },
   { id: 'library', Icon: BookOpen },
@@ -80,7 +79,7 @@ interface SidebarProps {
   /** 외부에서 사이드바 열기 요청 (모바일 햄버거) */
   mobileOpen?: boolean;
   onMobileOpenChange?: (open: boolean) => void;
-  /** Hub page mode — anonymous 방문자라 settings / workspace / templates / gallery 등 admin 전용 탭 hide. */
+  /** Hub page mode — anonymous 방문자라 settings / workspace / templates / media 등 admin 전용 탭 hide. */
   hubMode?: boolean;
   /** Hub page mode 이면 share-helper 의 createShareLink 분기 인자. */
   hubShareContext?: { slug: string; apiToken: string; sessionId: string };
@@ -652,7 +651,7 @@ export function Sidebar({
         });
         return;
       }
-      // 갤러리 카드와 같은 방식 — anchor download (팝업 차단 회피, 파일명은 서버 것 사용).
+      // 미디어 카드와 같은 방식 — anchor download (팝업 차단 회피, 파일명은 서버 것 사용).
       const a = document.createElement('a');
       a.href = url;
       a.download = '';
@@ -939,8 +938,8 @@ export function Sidebar({
   /* ── Panel 본문 — 탭별 컨텐츠. PC·모바일 공통으로 재사용. ── */
   const panelBody = (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-      {tab === 'gallery' ? (
-        <GalleryPanel hubMode={hubMode} hubContext={hubShareContext} />
+      {tab === 'media' ? (
+        <MediaPanel hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'templates' ? (
         <TemplatesPanel onEditFile={onEditFile} hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'skills' ? (

@@ -1428,7 +1428,7 @@ impl AiManager {
         /// (2026-07-11/12/28 실측). `search_module_actions` already explains that verdict;
         /// the other four catalogs returned a bare `count: 0`, which reads as "this does not
         /// exist" when the truth is "your words are not in this index". Measured 2026-08-09: a
-        /// Korean query against the gallery, whose text is the English generation prompts, came
+        /// Korean query against the media store, whose text is the English generation prompts, came
         /// back empty while the same search in the prompts' own words returned five.
         ///
         /// No domain examples in the message — this path is reached from every catalog.
@@ -1643,7 +1643,7 @@ impl AiManager {
             async move {
                 let scopes: Vec<String> = if is_hub_call(&args) { vec![] } else { vec!["admin:".into()] };
                 // Failed generations have nothing to show — excluded by default so "show me X"
-                // never embeds a dead address (2026-08-09 실측: a gallery pull rendered failure
+                // never embeds a dead address (2026-08-09 실측: a media pull rendered failure
                 // cards for images that never existed). `includeFailed: true` is the OTHER use:
                 // "list my failures" / "regenerate the failed one" — those rows carry status
                 // "error", no url, and regenerate_image takes their slug.
@@ -1689,7 +1689,7 @@ impl AiManager {
         self.tools.register_handler("search_media", handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "search_media".to_string(),
-            description: "Semantic search over the media gallery by generation prompt or filename — a description of the image works, exact words are not needed. Use it to find an existing image before generating a new one. Each hit carries an embeddable `url` for an image block's src. Failed generations are excluded unless includeFailed:true; those rows have status \"error\" and no url — regenerate one via regenerate_image with its slug, never embed it.".to_string(),
+            description: "Semantic search over the media store by generation prompt or filename — a description of the image works, exact words are not needed. Use it to find an existing image before generating a new one. Each hit carries an embeddable `url` for an image block's src. Failed generations are excluded unless includeFailed:true; those rows have status \"error\" and no url — regenerate one via regenerate_image with its slug, never embed it.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

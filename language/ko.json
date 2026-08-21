@@ -419,7 +419,7 @@
   "sidebar": {
     "workspace": "워크스페이스",
     "chats": "대화",
-    "gallery": "미디어",
+    "media": "미디어",
     "templates": "템플릿",
     "skills": "스킬",
     "library": "라이브러리",
@@ -563,7 +563,7 @@
   "file_tree": {
     "open_in_browser": "브라우저에서 열기"
   },
-  "gallery_modal": {
+  "media_modal": {
     "previous_image": "이전 (←)",
     "next_image": "다음 (→)"
   },
@@ -921,9 +921,9 @@
     "load_failed": "이미지를 불러오지 못했습니다",
     "no_address": "이미지 주소가 없습니다"
   },
-  "gallery": {
+  "media": {
     "search_label": "미디어 검색",
-    "search_placeholder": "프롬프트·파일명·모델로 검색",
+    "search_placeholder": "검색",
     "scope_user": "사용자",
     "scope_system": "시스템",
     "scope_all": "전체",

@@ -6,7 +6,7 @@
 //!   1) 이미지 생성 오케스트레이션 + 후처리 파이프라인 (resolve reference + imageGen.generate +
 //!      aspectRatio crop + variants/blurhash/thumbnail/메타 업데이트)
 //!   2) 미디어 CRUD (read/list/remove/stat) — IMediaPort thin wrapper
-//!   3) 갤러리 재생성 (regenerate_image_by_slug) — 기존 메타에서 prompt/model/aspectRatio 그대로
+//!   3) 미디어 재생성 (regenerate_image_by_slug) — 기존 메타에서 prompt/model/aspectRatio 그대로
 //!   4) 외부 노출 안전성 (is_media_ready) — og:image 등 SNS 캐싱 보호
 //!   5) 이미지 모델·기본 size/quality 설정 (Vault `system:image-model` 등)
 //!   6) SEO 이미지 후처리 설정 (variants, blurhash, thumbnail 등)
@@ -95,7 +95,7 @@ pub struct GenerateImageInput {
     pub reference_image: Option<ReferenceImageInput>,
 }
 
-/// 외부에서 만들어진 이미지 바이너리의 갤러리 편입 — `MediaManager` 구현.
+/// 외부에서 만들어진 이미지 바이너리의 미디어 편입 — `MediaManager` 구현.
 ///
 /// AiManager(오케스트레이터)가 MediaManager(생성 오케스트레이터)를 통째로 잡지 않도록 끼우는
 /// 좁은 포트. 매니저가 코어 포트를 구현해 manager→manager 결합을 끊는 `IMemoryFacadePort` 선례.
@@ -134,7 +134,7 @@ impl IMediaIntakePort for MediaIntake {
         opts: MediaSaveOptions,
     ) -> InfraResult<MediaSaveResult> {
         let saved = self.0.save(&binary, content_type, opts).await?;
-        // The gallery listens for `gallery:refresh` and image generation, upload and delete all
+        // The media panel listens for `media:refresh` and image generation, upload and delete all
         // announce themselves — a module's product did not, so a rendered track or a generated
         // deck landed in the store and the grid kept showing what it had until a reload
         // (사용자 2026-08-21: "미디어에 새 파일 f5해야 나오는듯 실시간 갱신안되고").
@@ -143,7 +143,7 @@ impl IMediaIntakePort for MediaIntake {
         // emits — one announcement per arrival, and this narrow port is the one every module
         // product comes through, so every module gets it without declaring anything.
         if let Some(event) = &self.0.event {
-            event.notify_gallery(serde_json::json!({
+            event.notify_media(serde_json::json!({
                 "slug": saved.slug,
                 "source": "module",
             }));
@@ -316,7 +316,7 @@ fn ext_from_hint_for_opaque(hint: Option<&str>, binary: &[u8]) -> Option<&'stati
 ///
 /// Mirrors `detect_image_ext` in shape and in reason: the declared content type is the
 /// uploader's CLAIM, and a claim that lets any bytes into a store that pages, modules and the
-/// gallery all read from needs the file to actually be what it says. Returns the canonical
+/// media store all read from needs the file to actually be what it says. Returns the canonical
 /// extension so the claim cannot ride in with a lying one.
 fn detect_audio_ext(binary: &[u8]) -> Option<&'static str> {
     if binary.len() < 12 {
@@ -462,7 +462,7 @@ pub struct MediaManager {
     /// Cross-call hooks (옛 TS Core facade 의 startImageGeneration / generateImage 패턴 1:1):
     /// - cost: ImageGenResult.cost_usd 설정되어 있으면 자동 record_llm_cost (CostManager)
     /// - status: 이미지 생성 시작 → start, 완료 → done, 실패 → fail (StatusManager / 어드민 ActiveJobsIndicator)
-    /// - event: 갤러리 SSE refresh + status 변경 broadcast (EventManager / GalleryPanel)
+    /// - event: 미디어 SSE refresh + status 변경 broadcast (EventManager / MediaPanel)
     cost: Option<Arc<CostManager>>,
     status: Option<Arc<StatusManager>>,
     event: Option<Arc<EventManager>>,
@@ -736,7 +736,7 @@ impl MediaManager {
 
     /// 채팅 첨부 이미지 임시 저장 — sharp 0 (raw). 보안 검증 통과 후 IMediaPort 위임.
     /// Args: dataUrl (`data:image/...;base64,...`). Response: `/user/attachments/<slug>.<ext>` URL.
-    /// 30일 후 cleanup_old_attachments 가 자동 삭제. 갤러리 (`/user/media/`) 와 분리.
+    /// 30일 후 cleanup_old_attachments 가 자동 삭제. 미디어 (`/user/media/`) 와 분리.
     pub async fn save_temp_attachment(&self, data_url: &str) -> InfraResult<String> {
         // dataUrl 파싱 — "data:image/png;base64,..."
         if !data_url.starts_with("data:") {
@@ -915,7 +915,7 @@ impl MediaManager {
 
     // ── 이미지 생성·재생성 (옛 TS 1:1) ──────────────────────────────────────
 
-    /// 갤러리에서 재생성 — 기존 메타의 prompt/model/size/quality/aspectRatio 재추출 → 재실행.
+    /// 미디어에서 재생성 — 기존 메타의 prompt/model/size/quality/aspectRatio 재추출 → 재실행.
     /// prompt 미설정 (legacy record) → error.
     pub async fn regenerate_image_by_slug(
         self: &Arc<Self>,
@@ -959,7 +959,7 @@ impl MediaManager {
             filename_hint: stat.filename_hint.clone(),
             scope: stat.scope,
             aspect_ratio: stat.aspect_ratio.clone(),
-            // hub 재생성 결과도 같은 visitor scope 로 — admin 갤러리로 새지 않게.
+            // hub 재생성 결과도 같은 visitor scope 로 — admin 미디어로 새지 않게.
             hub_owner: hub_owner.filter(|s| !s.is_empty()).map(|s| s.to_string()),
             ..Default::default()
         };
@@ -973,9 +973,9 @@ impl MediaManager {
     ///
     /// Cross-call hooks (옛 TS Core facade 1:1):
     ///   - status.start (type='image', meta=async/promptPreview/model/scope)
-    ///   - 백그라운드 완료: status.done + event.notify_gallery + cost.record (cost_usd 설정되어 있으면)
-    ///   - 백그라운드 실패: status.fail + event.notify_gallery (error)
-    ///   - placeholder 등장 즉시 event.notify_gallery (사용자가 "렌더링중" 카드 봄)
+    ///   - 백그라운드 완료: status.done + event.notify_media + cost.record (cost_usd 설정되어 있으면)
+    ///   - 백그라운드 실패: status.fail + event.notify_media (error)
+    ///   - placeholder 등장 즉시 event.notify_media (사용자가 "렌더링중" 카드 봄)
     pub async fn start_generate(
         self: &Arc<Self>,
         input: GenerateImageInput,
@@ -1027,7 +1027,7 @@ impl MediaManager {
             .media
             .save(&placeholder, "image/png", &save_opts)
             .await?;
-        // status='rendering' 마킹 — 갤러리 UI 가 spinner / 빨간 테두리 분기
+        // status='rendering' 마킹 — 미디어 UI 가 spinner / 빨간 테두리 분기
         let _ = self
             .media
             .update_meta(
@@ -1036,9 +1036,9 @@ impl MediaManager {
             )
             .await;
 
-        // Cross-call hook: placeholder 등장 즉시 갤러리 SSE — "렌더링중" 카드 가시화 (옛 TS 1:1)
+        // Cross-call hook: placeholder 등장 즉시 미디어 SSE — "렌더링중" 카드 가시화 (옛 TS 1:1)
         if let Some(event) = &self.event {
-            event.notify_gallery(serde_json::json!({
+            event.notify_media(serde_json::json!({
                 "slug": saved.slug,
                 "scope": scope.as_str(),
             }));
@@ -1069,9 +1069,9 @@ impl MediaManager {
                             })),
                         );
                     }
-                    // Cross-call hook 3: event.notify_gallery — placeholder → 실제 이미지 swap 알림
+                    // Cross-call hook 3: event.notify_media — placeholder → 실제 이미지 swap 알림
                     if let Some(event) = &mgr.event {
-                        event.notify_gallery(serde_json::json!({
+                        event.notify_media(serde_json::json!({
                             "slug": success.slug,
                             "scope": bg_scope.as_str(),
                         }));
@@ -1089,9 +1089,9 @@ impl MediaManager {
                     if let (Some(status), Some(jid)) = (&mgr.status, &bg_status_id) {
                         status.fail(jid, e.clone());
                     }
-                    // Cross-call hook 3 (실패): event.notify_gallery error
+                    // Cross-call hook 3 (실패): event.notify_media error
                     if let Some(event) = &mgr.event {
-                        event.notify_gallery(serde_json::json!({
+                        event.notify_media(serde_json::json!({
                             "error": e,
                             "scope": bg_scope.as_str(),
                         }));
@@ -1125,12 +1125,12 @@ impl MediaManager {
         self.produce_image(input, existing_slug, None).await
     }
 
-    /// **이미 만들어진** 이미지 바이너리를 갤러리에 편입 — 생성만 건너뛰고 후처리는 동일.
+    /// **이미 만들어진** 이미지 바이너리를 미디어에 편입 — 생성만 건너뛰고 후처리는 동일.
     ///
     /// 용도 = CLI(codex)가 자기 런타임 내장 이미지 도구로 만들어 놓은 산출물 수확. 그 경로는
     /// 우리 image_gen 포트를 안 타므로 바이너리만 들고 오는데, 예전엔 `IMediaPort.save` 로
     /// 원본만 저장해 variants·thumbnail·blurhash·해상도가 통째로 비었다(2026-07-27 실측 —
-    /// 갤러리에서 같은 종류 이미지가 경로에 따라 메타가 다르게 보였다).
+    /// 미디어에서 같은 종류 이미지가 경로에 따라 메타가 다르게 보였다).
     /// 후처리를 복제하지 않고 같은 파이프라인에 바이너리만 주입한다 = 구현 하나, 소비 둘.
     pub async fn import_image(
         self: &Arc<Self>,
@@ -1151,7 +1151,7 @@ impl MediaManager {
     }
 
     /// generate_image / import_image 공용 본체. `preset` 이 있으면 생성 단계만 건너뛴다 —
-    /// 크롭·저장·variants·썸네일·blurhash·메타 갱신·갤러리 이벤트는 두 경로가 완전히 동일.
+    /// 크롭·저장·variants·썸네일·blurhash·메타 갱신·미디어 이벤트는 두 경로가 완전히 동일.
     async fn produce_image(
         self: &Arc<Self>,
         input: GenerateImageInput,
@@ -1159,7 +1159,7 @@ impl MediaManager {
         preset: Option<ImageGenResult>,
     ) -> InfraResult<GenerateImageResult> {
         let started_at = SystemTime::now();
-        // 편입 경로는 생성기가 필요 없다 — 키 미설정이어도 수확물은 갤러리에 들어가야 한다.
+        // 편입 경로는 생성기가 필요 없다 — 키 미설정이어도 수확물은 미디어에 들어가야 한다.
         let image_gen: Option<&Arc<dyn IImageGenPort>> = match &preset {
             Some(_) => None,
             None => Some(
@@ -1230,7 +1230,7 @@ impl MediaManager {
             Ok(r) => r,
             Err(e) => {
                 self.log_error(&format!("[MediaManager] [{model_id}] 생성 실패: {e}"));
-                // 실패 기록 — 갤러리에서 사용자가 prompt 보고 재시도/삭제 가능
+                // 실패 기록 — 미디어에서 사용자가 prompt 보고 재시도/삭제 가능
                 let err_opts = MediaSaveOptions {
                     filename_hint: input.filename_hint.clone(),
                     scope: Some(scope),
@@ -1522,9 +1522,9 @@ impl MediaManager {
         // existing_slug 설정된 (start_generate 백그라운드) 경로는 caller 가 wrap 하므로 skip —
         // 본 hook 은 직접 호출 (채팅 이미지 모드 등) 에서만.
         if existing_slug.is_none() {
-            // event.notify_gallery — 갤러리 즉시 갱신
+            // event.notify_media — 미디어 즉시 갱신
             if let Some(event) = &self.event {
-                event.notify_gallery(serde_json::json!({
+                event.notify_media(serde_json::json!({
                     "slug": result.slug,
                     "scope": scope.as_str(),
                 }));
@@ -1577,7 +1577,7 @@ impl MediaManager {
             }
         }
 
-        // 2) slug — 갤러리에서 직접 read
+        // 2) slug — 미디어에서 직접 read
         if let Some(slug) = &r.slug {
             if let Ok(Some((binary, content_type, _))) = self.media.read(slug).await {
                 return Some(ImageReferenceImage {

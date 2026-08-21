@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * 모바일 뷰포트 정확 모달 셸 — 갤러리 이미지 상세(MediaDetailModal)에서 검증된 패턴을 공유 컴포넌트로.
+ * 모바일 뷰포트 정확 모달 셸 — 미디어 이미지 상세(MediaDetailModal)에서 검증된 패턴을 공유 컴포넌트로.
  *
  * 핵심: `createPortal(document.body)` 로 사이드바(슬라이드 드로어가 transform 을 써서 `position:fixed` 의
  * containing block 이 됨)를 벗어나 화면 전체에 렌더한다 → 모바일에서 모달이 사이드바 폭·높이에 갇혀

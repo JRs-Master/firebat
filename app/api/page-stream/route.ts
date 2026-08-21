@@ -11,7 +11,7 @@ import { resolvePageVisibility } from '../../../lib/page-visibility';
  * GET /api/page-stream?slug=&topic= — 발행 페이지 전용 공개 SSE (S6).
  *
  * admin `/api/events` 는 필터 없는 전체 스트림(인증 게이트)이라 공개 재사용 시 어드민 이벤트
- * (status/cron/sidebar/gallery)가 통째로 새므로, 공개 표면은 이 라우트 하나로만 —
+ * (status/cron/sidebar/media)가 통째로 새므로, 공개 표면은 이 라우트 하나로만 —
  * **서버측 topic 필터**(EventService.Subscribe topics → Rust EventFilter::Types)로 요청한
  * topic 의 프레임만 흐른다.
  *

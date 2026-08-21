@@ -625,7 +625,7 @@ async fn substitute_cli_local_images(state: &Arc<McpServerState>, args: Value) -
             Ok(saved) => {
                 tracing::info!(
                     target: "media",
-                    "CLI local image in tool args → gallery: {} → {}", path, saved.url
+                    "CLI local image in tool args → media: {} → {}", path, saved.url
                 );
                 replace_string_value(&mut out, &path, &saved.url);
             }

@@ -9,7 +9,7 @@ import { setEventsHubMode } from './hooks/events-manager';
 /** hub page wrapper — visitor lang server-side detect (cookie + Accept-Language)
  *  → SSR/client 동일 locale → hydration mismatch 차단. 옛 navigator.language 사용한
  *  client-only 부분 = SSR 시 'en' / client 시 동적 → React #418 (hydration text mismatch).
- *  + FirebatQueryProvider (CronPanel / TemplatesPanel / GalleryPanel 안 useQuery 동작).
+ *  + FirebatQueryProvider (CronPanel / TemplatesPanel / MediaPanel 안 useQuery 동작).
  *  admin layout 안에 있던 provider 가 (user) route 쪽에는 없어 hub mode 안
  *  사이드바 panel 진입 시 "No QueryClient set" throw 가 일어나던 fix. */
 export function ConsoleLayoutInner({

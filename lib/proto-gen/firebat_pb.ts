@@ -7850,7 +7850,7 @@ export const EventSubscribeRequestSchema: GenMessage<EventSubscribeRequest> = /*
  */
 export type EventStreamPb = Message<"firebat.v1.EventStreamPb"> & {
   /**
-   * 이벤트 type — 'status:update' / 'cron:complete' / 'gallery:refresh' / 'sidebar:refresh' 등.
+   * 이벤트 type — 'status:update' / 'cron:complete' / 'media:refresh' / 'sidebar:refresh' 등.
    *
    * @generated from field: string type = 1;
    */
@@ -15585,7 +15585,7 @@ export const MediaService: GenService<{
   },
   /**
    * / 채팅 첨부 이미지 임시 저장 — sharp 0 (raw 그대로). /user/attachments/<slug>.<ext> 응답.
-   * / 30일 후 cleanup cron 이 자동 삭제. 사용자 명시 갤러리 저장 (Save) 은 별도.
+   * / 30일 후 cleanup cron 이 자동 삭제. 사용자 명시 미디어 저장 (Save) 은 별도.
    * / Response: {slug, url}.
    *
    * @generated from rpc firebat.v1.MediaService.SaveTempAttachment

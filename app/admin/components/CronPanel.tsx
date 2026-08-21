@@ -746,7 +746,7 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
   // (transform/overflow/contain) 영향 회피. fixed inset-0 가 viewport 기준 동작.
   const modalContent = (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-stretch justify-center sm:items-center sm:p-4" onClick={onClose}>
-      {/* 갤러리와 동일 패턴: 모바일은 inset-0 + items-stretch → viewport unit 의존 없이 자연 높이 채움.
+      {/* 미디어와 동일 패턴: 모바일은 inset-0 + items-stretch → viewport unit 의존 없이 자연 높이 채움.
           PC 는 sm:h-[85vh] + p-4 + items-center 로 가운데 카드. */}
       <div
         className="bg-white w-full sm:max-w-md sm:rounded-xl rounded-t-none shadow-2xl flex flex-col h-full sm:h-[85vh] sm:max-h-[85vh] overflow-hidden"

@@ -419,7 +419,7 @@
   "sidebar": {
     "workspace": "Workspace",
     "chats": "Chats",
-    "gallery": "Media",
+    "media": "Media",
     "templates": "Templates",
     "skills": "Skills",
     "library": "Library",
@@ -563,7 +563,7 @@
   "file_tree": {
     "open_in_browser": "Open in browser"
   },
-  "gallery_modal": {
+  "media_modal": {
     "previous_image": "Previous (←)",
     "next_image": "Next (→)"
   },
@@ -921,9 +921,9 @@
     "load_failed": "Could not load this image",
     "no_address": "This image has no address"
   },
-  "gallery": {
+  "media": {
     "search_label": "Search media",
-    "search_placeholder": "Search by prompt, filename, model",
+    "search_placeholder": "Search",
     "scope_user": "User",
     "scope_system": "System",
     "scope_all": "All",

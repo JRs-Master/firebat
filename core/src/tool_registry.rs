@@ -2097,7 +2097,7 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 
 fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // search_media is registered by AiManager::register_action_catalog_tools (semantic —
-    // prompt-meaning search over the gallery). Same shadowing hazard as search_skills:
+    // prompt-meaning search over the media store). Same shadowing hazard as search_skills:
     // registering a version here would overwrite the semantic one (builder runs first).
 
     // image_gen — AI 가 호출하는 비동기 이미지 생성 도구.

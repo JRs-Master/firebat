@@ -2767,7 +2767,7 @@ function useMediaPhase(src: string, skip: boolean) {
           return;
         }
         // A generation that died before finalize leaves meta 'rendering' forever (measured
-        // 2026-08-09: one long-dead image spun a generating card when pulled from the gallery).
+        // 2026-08-09: one long-dead image spun a generating card when pulled from the media store).
         // A rendering far older than the 420s generation timeout reads as failed.
         if (rec?.createdAt && Date.now() - Number(rec.createdAt) > 15 * 60 * 1000) {
           setPhase('dead');

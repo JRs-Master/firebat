@@ -1453,8 +1453,8 @@ impl ModuleManager {
                         "bytes": bin.size,
                         "contentType": content_type,
                         // The human name the module chose, echoed back. The media record keeps it
-                        // and the gallery shows it, but the response carried only the slug — so a
-                        // produced-file card downloaded "2026-08-12-…-76ca.xlsx" while the gallery
+                        // and the media store shows it, but the response carried only the slug — so a
+                        // produced-file card downloaded "2026-08-12-…-76ca.xlsx" while the media store
                         // offered "SK하이닉스-…-대시보드.xlsx": one file, two names (2026-08-12
                         // 사용자 보고). The produced-file detector already prefers this field.
                         "filenameHint": filename_hint,
@@ -1467,7 +1467,7 @@ impl ModuleManager {
                         // download name (the card sets `download` from it), and the only name the
                         // NEXT turn can see — history carries the answer's prose, not this
                         // record. Left free, the model typed the slug: the user downloaded
-                        // "…-f834.xlsx" while the gallery showed the real name (2026-08-13 실측).
+                        // "…-f834.xlsx" while the media store showed the real name (2026-08-13 실측).
                         "note": format!(
                             "Attach this in your answer as exactly this markdown link — [{}]({}) \
                              — it renders as a downloadable file card, and that link text is the \

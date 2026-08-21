@@ -23,7 +23,7 @@ export const GET = withAuth(async (req: NextRequest) => {
   return NextResponse.json({ success: true, items: result.data?.items ?? [], total: result.data?.total ?? 0 });
 });
 
-/** DELETE /api/media/list?slug=2026-04-24-foo-abcd — 갤러리에서 삭제 */
+/** DELETE /api/media/list?slug=2026-04-24-foo-abcd — 미디어에서 삭제 */
 export const DELETE = withAuth(async (req: NextRequest) => {
   const slug = req.nextUrl.searchParams.get('slug');
   if (!slug) {

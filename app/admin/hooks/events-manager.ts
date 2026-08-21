@@ -86,7 +86,7 @@ class EventBusSingleton {
 
   private connect() {
     // hub mode (익명 visitor) = admin SSE `/api/events` (requireAuth 필요) 구독 금지.
-    // 옛 = hub page 안 Sidebar / GalleryPanel 등이 구독 → 인증 실패로 SSE 중단 →
+    // 옛 = hub page 안 Sidebar / MediaPanel 등이 구독 → 인증 실패로 SSE 중단 →
     // EventSource 무한 재연결 (ERR_INCOMPLETE_CHUNKED_ENCODING 반복).
     if (eventsHubMode) return;
     if (this.es) return;

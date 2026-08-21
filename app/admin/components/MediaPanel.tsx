@@ -103,10 +103,10 @@ function ScorePreview({ path, t }: { path: string; t: (k: string) => string }) {
         type="button" onClick={listen} disabled={state === 'busy'}
         className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700 disabled:opacity-50"
       >
-        {state === 'busy' ? t('gallery.score_rendering') : t('gallery.score_listen')}
+        {state === 'busy' ? t('media.score_rendering') : t('media.score_listen')}
       </button>
       <p className="text-[11px] text-slate-400 text-center">
-        {state === 'error' ? err : t('gallery.score_no_browser')}
+        {state === 'error' ? err : t('media.score_no_browser')}
       </p>
     </div>
   );
@@ -159,13 +159,13 @@ const MUSIC_SUB: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
 const SORTS = ['newest', 'oldest', 'name', 'size'] as const;
 type SortKey = typeof SORTS[number];
 
-export type GalleryHubContext = { slug: string; apiToken: string; sessionId: string };
+export type MediaHubContext = { slug: string; apiToken: string; sessionId: string };
 
-export function GalleryPanel({
+export function MediaPanel({
   hubContext,
 }: {
   hubMode?: boolean;   // accepted for caller compat; owner derived from hubContext (backend object).
-  hubContext?: GalleryHubContext;
+  hubContext?: MediaHubContext;
 } = {}) {
   const searchId = useId();
   const t = useTranslations();
@@ -203,7 +203,7 @@ export function GalleryPanel({
         return res.json().catch(() => null);
       }
       params.set('scope', opts.scope);
-      return apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(`/api/media/list?${params.toString()}`, { category: 'gallery' }).catch(() => null);
+      return apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(`/api/media/list?${params.toString()}`, { category: 'media' }).catch(() => null);
     },
     async upload(dataUrl: string, filenameHint: string): Promise<{ success?: boolean; error?: string }> {
       // Owner-injected door — same shape as the chat record button: admin REST vs hub op.
@@ -212,17 +212,17 @@ export function GalleryPanel({
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
           body: JSON.stringify({ op: 'upload', dataUrl, filenameHint }),
-        }).then(r => r.json()).catch(() => ({ success: false, error: t('gallery.network_error') }));
+        }).then(r => r.json()).catch(() => ({ success: false, error: t('media.network_error') }));
       }
-      return apiPost<{ success: boolean; error?: string }>('/api/media/upload', { dataUrl, filenameHint }, { category: 'gallery' });
+      return apiPost<{ success: boolean; error?: string }>('/api/media/upload', { dataUrl, filenameHint }, { category: 'media' });
     },
     async remove(slug: string): Promise<{ success: boolean; error?: string }> {
       if (hubContext) {
         return fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?slug=${encodeURIComponent(slug)}`, {
           method: 'DELETE', headers: { 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
-        }).then(r => r.json()).catch(() => ({ success: false, error: t('gallery.network_error') }));
+        }).then(r => r.json()).catch(() => ({ success: false, error: t('media.network_error') }));
       }
-      return apiDelete<{ success: boolean; error?: string }>(`/api/media/list?slug=${encodeURIComponent(slug)}`, { category: 'gallery' });
+      return apiDelete<{ success: boolean; error?: string }>(`/api/media/list?slug=${encodeURIComponent(slug)}`, { category: 'media' });
     },
     async regenerate(slug: string): Promise<{ success: boolean; error?: string }> {
       if (hubContext) {
@@ -230,9 +230,9 @@ export function GalleryPanel({
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
           body: JSON.stringify({ op: 'regenerate', slug }),
-        }).then(r => r.json()).catch(() => ({ success: false, error: t('gallery.network_error') }));
+        }).then(r => r.json()).catch(() => ({ success: false, error: t('media.network_error') }));
       }
-      return apiPost<{ success: boolean; error?: string }>(`/api/media/regenerate?slug=${encodeURIComponent(slug)}`, undefined, { category: 'gallery' });
+      return apiPost<{ success: boolean; error?: string }>(`/api/media/regenerate?slug=${encodeURIComponent(slug)}`, undefined, { category: 'media' });
     },
   }), [hubContext, t]);
 
@@ -280,7 +280,7 @@ export function GalleryPanel({
   // real validator, this side only fills a missing MIME claim from the extension.
   const handleUploadFile = useCallback(async (file: File) => {
     if (file.size > UPLOAD_MAX_MB * 1024 * 1024) {
-      await alertDialog({ title: t('gallery.upload_failed'), message: t('gallery.upload_too_large', { max: UPLOAD_MAX_MB }), danger: true });
+      await alertDialog({ title: t('media.upload_failed'), message: t('media.upload_too_large', { max: UPLOAD_MAX_MB }), danger: true });
       return;
     }
     setUploading(true);
@@ -299,19 +299,21 @@ export function GalleryPanel({
       const hint = file.name.replace(/\.[^.]+$/, '');
       const res = await backend.upload(dataUrl, hint);
       if (!res?.success) {
-        await alertDialog({ title: t('gallery.upload_failed'), message: res?.error || 'unknown', danger: true });
+        await alertDialog({ title: t('media.upload_failed'), message: res?.error || 'unknown', danger: true });
         return;
       }
-      // Hub has no SSE gallery:refresh — refetch directly (harmless double on admin).
+      // Hub has no SSE media:refresh — refetch directly (harmless double on admin).
       refetchAll();
     } finally {
       setUploading(false);
     }
   }, [backend, fetchList, t]);
 
-  // SSE `gallery:refresh` subscription — auto-refresh on image_gen completion, media delete, regenerate.
+  // SSE `media:refresh` subscription — auto-refresh on image_gen completion, media delete, regenerate.
   // Keeps the current scope/search and resets to page one so a new image shows immediately.
-  useEvents(['gallery:refresh'], () => { refetchAll(); });
+  // 옛 이름도 같이 듣는다 — Rust 와 프론트가 다른 채널로 배포되므로 한쪽이 먼저 나가도
+  // 자동 갱신이 안 죽는다. Rust(`media:refresh`)가 서버에 오르면 옛 이름을 지운다.
+  useEvents(['media:refresh', 'media:refresh'], () => { refetchAll(); });
 
   // 다음 offset = **이미 받은 개수**. 따로 세는 상태를 두면 그 상태와 목록이 어긋나고, 어긋난
   // 쪽이 이기면 같은 페이지가 두 번 붙는다 (파생이지 손유지가 아니다).
@@ -323,7 +325,7 @@ export function GalleryPanel({
     queryFn: () =>
       apiGet<{ success: boolean; data?: Array<{ pageSlug: string; usedAt: number }> }>(
         `/api/media/usage?slug=${encodeURIComponent(selected!.slug)}`,
-        { category: 'gallery' },
+        { category: 'media' },
       ),
     enabled: !!selected && !hubContext, // usage = admin analytics (no hub backend op) — skipped on hub to avoid a 401
   });
@@ -333,9 +335,9 @@ export function GalleryPanel({
     // Usage-aware confirm — an image set on pages gets the red warning plus the page list.
     const usage = selectedUsage;
     const msg = usage.length > 0
-      ? t('gallery.delete_in_use', { count: usage.length, pages: usage.map(u => `  • /${u.pageSlug}`).join('\n') })
-      : t('gallery.delete_confirm');
-    if (!await confirmDialog({ title: t('gallery.delete_title'), message: msg, danger: true, okLabel: t('gallery.delete_ok') })) return;
+      ? t('media.delete_in_use', { count: usage.length, pages: usage.map(u => `  • /${u.pageSlug}`).join('\n') })
+      : t('media.delete_confirm');
+    if (!await confirmDialog({ title: t('media.delete_title'), message: msg, danger: true, okLabel: t('media.delete_ok') })) return;
     try {
       const data = await backend.remove(slug);
       if (data.success) {
@@ -346,10 +348,10 @@ export function GalleryPanel({
         setTotal(prev => Math.max(0, prev - 1));
         setSelectedIndex(cur => (cur === null || left <= 0) ? null : Math.min(cur, left - 1));
       } else {
-        await alertDialog({ title: t('gallery.delete_failed'), message: data.error || 'unknown', danger: true });
+        await alertDialog({ title: t('media.delete_failed'), message: data.error || 'unknown', danger: true });
       }
     } catch (err: any) {
-      await alertDialog({ title: t('gallery.delete_failed'), message: err.message, danger: true });
+      await alertDialog({ title: t('media.delete_failed'), message: err.message, danger: true });
     }
   };
 
@@ -359,12 +361,12 @@ export function GalleryPanel({
     try {
       const data = await backend.regenerate(slug);
       if (!data.success) {
-        await alertDialog({ title: t('gallery.regen_failed'), message: data.error || 'unknown', danger: true });
+        await alertDialog({ title: t('media.regen_failed'), message: data.error || 'unknown', danger: true });
       }
-      // Success or failure, SSE gallery:refresh refreshes the grid. Close the modal either way.
+      // Success or failure, SSE media:refresh refreshes the grid. Close the modal either way.
       setSelectedIndex(null);
     } catch (err: any) {
-      await alertDialog({ title: t('gallery.regen_failed'), message: err.message, danger: true });
+      await alertDialog({ title: t('media.regen_failed'), message: err.message, danger: true });
     } finally {
       setRegenerating(false);
     }
@@ -376,14 +378,14 @@ export function GalleryPanel({
       <div className="shrink-0 flex flex-col gap-2 px-3 py-3 border-b border-slate-100 bg-slate-50/50">
         <div className="relative">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <label htmlFor={searchId} className="sr-only">{t('gallery.search_label')}</label>
+          <label htmlFor={searchId} className="sr-only">{t('media.search_label')}</label>
           <input
             type="text"
-            placeholder={t('gallery.search_placeholder')}
+            placeholder={t('media.search_placeholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            aria-label={t('gallery.search_label')}
-            className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="gallerySearch" autoComplete="off" id={searchId}
+            aria-label={t('media.search_label')}
+            className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="mediaSearch" autoComplete="off" id={searchId}
           />
         </div>
         <div className="flex gap-1">
@@ -395,7 +397,7 @@ export function GalleryPanel({
                 scope === s ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
               }`}
             >
-              {s === 'user' ? t('gallery.scope_user') : s === 'system' ? t('gallery.scope_system') : t('gallery.scope_all')}
+              {s === 'user' ? t('media.scope_user') : s === 'system' ? t('media.scope_system') : t('media.scope_all')}
             </button>
           ))}
         </div>
@@ -410,7 +412,7 @@ export function GalleryPanel({
                   ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
               }`}
             >
-              {t(`gallery.kind_${k}`)}
+              {t(`media.kind_${k}`)}
             </button>
           ))}
         </div>
@@ -424,7 +426,7 @@ export function GalleryPanel({
                   kind === k ? 'bg-slate-200 text-slate-800' : 'text-slate-400 hover:bg-slate-100'
                 }`}
               >
-                {k === 'music' ? t('gallery.kind_all') : t(`gallery.kind_${k}`)}
+                {k === 'music' ? t('media.kind_all') : t(`media.kind_${k}`)}
               </button>
             ))}
           </div>
@@ -433,10 +435,10 @@ export function GalleryPanel({
           <select
             value={sort}
             onChange={e => setSort(e.target.value as SortKey)}
-            aria-label={t('gallery.sort_label')}
+            aria-label={t('media.sort_label')}
             className="flex-1 px-1.5 py-1 text-[11px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-600"
           >
-            {SORTS.map(s => <option key={s} value={s}>{t(`gallery.sort_${s}`)}</option>)}
+            {SORTS.map(s => <option key={s} value={s}>{t(`media.sort_${s}`)}</option>)}
           </select>
           <input
             ref={fileInputRef}
@@ -455,13 +457,13 @@ export function GalleryPanel({
             className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-md bg-slate-800 hover:bg-slate-900 text-white transition-colors disabled:opacity-50"
           >
             {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-            {uploading ? t('gallery.uploading') : t('gallery.upload')}
+            {uploading ? t('media.uploading') : t('media.upload')}
           </button>
         </div>
         <div className="text-[10px] text-slate-400">
           {total > 0
-            ? `${t('gallery.total_count', { total })}${items.length < total ? t('gallery.loaded_suffix', { loaded: items.length }) : ''}`
-            : loading ? t('gallery.loading') : t('gallery.empty')}
+            ? `${t('media.total_count', { total })}${items.length < total ? t('media.loaded_suffix', { loaded: items.length }) : ''}`
+            : loading ? t('media.loading') : t('media.empty')}
         </div>
       </div>
 
@@ -470,8 +472,8 @@ export function GalleryPanel({
         {items.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
             <FolderOpen size={32} strokeWidth={1.5} />
-            <p className="text-[12px]">{t('gallery.empty_title')}</p>
-            <p className="text-[10px] text-slate-300">{t('gallery.empty_hint')}</p>
+            <p className="text-[12px]">{t('media.empty_title')}</p>
+            <p className="text-[10px] text-slate-300">{t('media.empty_hint')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-1.5">
@@ -482,7 +484,7 @@ export function GalleryPanel({
               const KindIcon = KIND_ICON[itemKind];
               const thumbSrc = item.thumbnailUrl || `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
               const tooltipLabel = isError
-                ? t('gallery.failed_tooltip', { msg: item.errorMsg?.slice(0, 80) ?? 'unknown' })
+                ? t('media.failed_tooltip', { msg: item.errorMsg?.slice(0, 80) ?? 'unknown' })
                 : (item.filenameHint || item.slug);
               return (
                 <Tooltip key={`${item.scope}-${item.slug}`} label={tooltipLabel}>
@@ -499,12 +501,12 @@ export function GalleryPanel({
                   {isError ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-red-500">
                       <AlertTriangle size={20} />
-                      <span className="text-[9px] font-bold">{t('gallery.failed_badge')}</span>
+                      <span className="text-[9px] font-bold">{t('media.failed_badge')}</span>
                     </div>
                   ) : isRendering ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-blue-500">
                       <Loader2 size={20} className="animate-spin" />
-                      <span className="text-[9px] font-bold">{t('gallery.generating_badge')}</span>
+                      <span className="text-[9px] font-bold">{t('media.generating_badge')}</span>
                     </div>
                   ) : itemKind !== 'image' ? (
                     /* non-image — no pixels to show, so the card says what the file IS:
@@ -548,7 +550,7 @@ export function GalleryPanel({
             disabled={loading}
             className="w-full mt-2 py-2 text-[11px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50"
           >
-            {loading ? <Loader2 size={12} className="animate-spin inline" /> : t('gallery.load_more', { count: total - items.length })}
+            {loading ? <Loader2 size={12} className="animate-spin inline" /> : t('media.load_more', { count: total - items.length })}
           </button>
         )}
       </div>
@@ -638,27 +640,27 @@ function MediaDetailModal({
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[11px] text-slate-400 tabular-nums px-1">{index + 1} / {total}</span>
             {/* header arrows — desktop only (mobile uses the floating buttons over the image; no duplicates) */}
-            <Tooltip label={t('gallery_modal.previous_image')}>
+            <Tooltip label={t('media_modal.previous_image')}>
               <button
                 onClick={onPrev}
                 disabled={!hasPrev}
                 className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
-                aria-label={t('gallery.aria_prev')}
+                aria-label={t('media.aria_prev')}
               >
                 <ChevronLeft size={18} />
               </button>
             </Tooltip>
-            <Tooltip label={t('gallery_modal.next_image')}>
+            <Tooltip label={t('media_modal.next_image')}>
               <button
                 onClick={onNext}
                 disabled={!hasNext}
                 className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
-                aria-label={t('gallery.aria_next')}
+                aria-label={t('media.aria_next')}
               >
                 <ChevronRight size={18} />
               </button>
             </Tooltip>
-            <button onClick={onClose} className="md:ml-1 text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200" aria-label={t('gallery.aria_close')}>
+            <button onClick={onClose} className="md:ml-1 text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200" aria-label={t('media.aria_close')}>
               <X size={18} />
             </button>
           </div>
@@ -681,19 +683,19 @@ function MediaDetailModal({
             {isError ? (
               <div className="flex flex-col items-center gap-2 text-center px-4 py-6">
                 <AlertTriangle size={32} className="text-red-500" />
-                <div className="text-sm font-bold text-red-700">{t('gallery.gen_failed_title')}</div>
+                <div className="text-sm font-bold text-red-700">{t('media.gen_failed_title')}</div>
                 {item.errorMsg && (
                   <p className="text-[11px] text-red-600 break-words leading-relaxed max-w-xs">{item.errorMsg}</p>
                 )}
                 {item.prompt && (
-                  <p className="text-[10px] text-slate-500 italic mt-1">{t('gallery.gen_failed_retry_hint')}</p>
+                  <p className="text-[10px] text-slate-500 italic mt-1">{t('media.gen_failed_retry_hint')}</p>
                 )}
               </div>
             ) : item.status === 'rendering' ? (
               <div className="flex flex-col items-center gap-2 text-center px-4 py-6 text-blue-600">
                 <Loader2 size={32} className="animate-spin" />
-                <div className="text-sm font-bold">{t('gallery.generating_title')}</div>
-                <p className="text-[11px] text-slate-500 italic mt-1">{t('gallery.generating_hint')}</p>
+                <div className="text-sm font-bold">{t('media.generating_title')}</div>
+                <p className="text-[11px] text-slate-500 italic mt-1">{t('media.generating_hint')}</p>
               </div>
             ) : itemKind === 'score' ? (
               <div className="flex flex-col items-center gap-3 w-full px-4 py-6 text-slate-600">
@@ -711,7 +713,7 @@ function MediaDetailModal({
               <div className="flex flex-col items-center gap-2 text-center px-4 py-8 text-slate-500">
                 <HeaderIcon size={40} strokeWidth={1.5} />
                 <span className="text-sm font-black tracking-wider uppercase text-slate-600">{item.ext}</span>
-                <p className="text-[11px] text-slate-400">{t('gallery.no_preview')}</p>
+                <p className="text-[11px] text-slate-400">{t('media.no_preview')}</p>
               </div>
             ) : (
               <img
@@ -726,7 +728,7 @@ function MediaDetailModal({
               onClick={onPrev}
               disabled={!hasPrev}
               className="md:hidden absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 disabled:opacity-20 transition-colors"
-              aria-label={t('gallery.aria_prev')}
+              aria-label={t('media.aria_prev')}
             >
               <ChevronLeft size={20} />
             </button>
@@ -734,7 +736,7 @@ function MediaDetailModal({
               onClick={onNext}
               disabled={!hasNext}
               className="md:hidden absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 disabled:opacity-20 transition-colors"
-              aria-label={t('gallery.aria_next')}
+              aria-label={t('media.aria_next')}
             >
               <ChevronRight size={20} />
             </button>
@@ -746,45 +748,45 @@ function MediaDetailModal({
             <div className="md:flex-1 md:min-h-[60px] md:overflow-y-auto pr-1 border-b border-slate-100 pb-2">
               {item.prompt && (
                 <div className="mb-2">
-                  <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> {t('gallery.prompt')}</div>
+                  <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> {t('media.prompt')}</div>
                   <p className="text-slate-700 break-words leading-relaxed">{item.prompt}</p>
                 </div>
               )}
               {item.revisedPrompt && item.revisedPrompt !== item.prompt && (
                 <div>
-                  <div className="text-slate-400 font-bold uppercase text-[10px] mb-0.5">{t('gallery.revised_prompt')}</div>
+                  <div className="text-slate-400 font-bold uppercase text-[10px] mb-0.5">{t('media.revised_prompt')}</div>
                   <p className="text-slate-600 break-words italic leading-relaxed">{item.revisedPrompt}</p>
                 </div>
               )}
               {!item.prompt && !item.revisedPrompt && (
-                <p className="text-slate-400 italic text-[11px]">{t('gallery.no_prompt')}</p>
+                <p className="text-slate-400 italic text-[11px]">{t('media.no_prompt')}</p>
               )}
             </div>
 
             {/* meta — always the same row count (missing values show "—") so positions never shift */}
             <div className="shrink-0 flex flex-col gap-1.5">
-              <MetaRow icon={<Calendar size={10} />} label={t('gallery.meta_created')} value={createdStr} />
-              <MetaRow label={t('gallery.meta_model')} value={item.model || '—'} />
-              <MetaRow label={t('gallery.meta_size')} value={item.size || '—'} />
-              <MetaRow label={t('gallery.meta_quality')} value={item.quality || '—'} />
-              <MetaRow icon={<Ruler size={10} />} label={t('gallery.meta_resolution')} value={(item.width && item.height) ? `${item.width} × ${item.height}` : '—'} />
+              <MetaRow icon={<Calendar size={10} />} label={t('media.meta_created')} value={createdStr} />
+              <MetaRow label={t('media.meta_model')} value={item.model || '—'} />
+              <MetaRow label={t('media.meta_size')} value={item.size || '—'} />
+              <MetaRow label={t('media.meta_quality')} value={item.quality || '—'} />
+              <MetaRow icon={<Ruler size={10} />} label={t('media.meta_resolution')} value={(item.width && item.height) ? `${item.width} × ${item.height}` : '—'} />
               <MetaRow
                 icon={<Crop size={10} />}
-                label={t('gallery.meta_ratio')}
+                label={t('media.meta_ratio')}
                 value={item.aspectRatio
                   ? `${item.aspectRatio}${item.focusPoint ? ` (${typeof item.focusPoint === 'string' ? item.focusPoint : 'xy'})` : ''}`
                   : '—'}
               />
-              <MetaRow label={t('gallery.meta_original')} value={`${sizeKb} KB · ${item.ext.toUpperCase()}`} />
+              <MetaRow label={t('media.meta_original')} value={`${sizeKb} KB · ${item.ext.toUpperCase()}`} />
               <MetaRow label="Variants" value={item.variants && item.variants.length > 0
-                ? t('gallery.variants_value', { count: item.variants.length, formats: [...new Set(item.variants.map(v => v.format))].join('/') })
-                : t('gallery.none')} />
-              <MetaRow label="Blurhash" value={item.blurhash ? t('gallery.blurhash_yes') : '✗'} />
+                ? t('media.variants_value', { count: item.variants.length, formats: [...new Set(item.variants.map(v => v.format))].join('/') })
+                : t('media.none')} />
+              <MetaRow label="Blurhash" value={item.blurhash ? t('media.blurhash_yes') : '✗'} />
               {/* usage — pages whose PageSpec references this media. Empty array shows the not-used label. */}
               <div className="flex items-start gap-1.5 text-[11px]">
-                <span className="shrink-0 text-slate-400 font-bold uppercase text-[10px] mt-0.5 min-w-[64px]">{t('gallery.usage')}</span>
+                <span className="shrink-0 text-slate-400 font-bold uppercase text-[10px] mt-0.5 min-w-[64px]">{t('media.usage')}</span>
                 {usage.length === 0 ? (
-                  <span className="text-slate-400 italic">{t('gallery.usage_none')}</span>
+                  <span className="text-slate-400 italic">{t('media.usage_none')}</span>
                 ) : (
                   <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                     {usage.slice(0, 5).map(u => (
@@ -799,7 +801,7 @@ function MediaDetailModal({
                       </a>
                     ))}
                     {usage.length > 5 && (
-                      <span className="text-slate-400 text-[10px]">{t('gallery.usage_more', { count: usage.length - 5 })}</span>
+                      <span className="text-slate-400 text-[10px]">{t('media.usage_more', { count: usage.length - 5 })}</span>
                     )}
                   </div>
                 )}
@@ -824,8 +826,8 @@ function MediaDetailModal({
                   }`}
                 >
                   {regenerating
-                    ? <><Loader2 size={12} className="animate-spin" /> {t('gallery.regenerating')}</>
-                    : <><RefreshCw size={12} /> {isError ? t('gallery.retry_same_prompt') : t('gallery.regenerate')}</>}
+                    ? <><Loader2 size={12} className="animate-spin" /> {t('media.regenerating')}</>
+                    : <><RefreshCw size={12} /> {isError ? t('media.retry_same_prompt') : t('media.regenerate')}</>}
                 </button>
               )}
               {!isError && itemKind !== 'image' && (
@@ -835,7 +837,7 @@ function MediaDetailModal({
                   download={`${item.filenameHint || item.slug}.${item.ext}`}
                   className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition-colors"
                 >
-                  <Download size={12} /> {t('gallery.download')}
+                  <Download size={12} /> {t('media.download')}
                 </a>
               )}
               {!isError && (
@@ -844,9 +846,9 @@ function MediaDetailModal({
                     onClick={() => copy(url, 'url')}
                     className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
                   >
-                    <Copy size={12} /> {t('gallery.copy_url')}
+                    <Copy size={12} /> {t('media.copy_url')}
                   </button>
-                  <FeedbackBadge state={copiedField === 'url' ? 'ok' : null} okLabel={t('gallery.copied')} absolute />
+                  <FeedbackBadge state={copiedField === 'url' ? 'ok' : null} okLabel={t('media.copied')} absolute />
                 </div>
               )}
               {!isError && (
@@ -861,16 +863,16 @@ function MediaDetailModal({
                     )}
                     className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
                   >
-                    <Copy size={12} /> {t('gallery.copy_md')}
+                    <Copy size={12} /> {t('media.copy_md')}
                   </button>
-                  <FeedbackBadge state={copiedField === 'md' ? 'ok' : null} okLabel={t('gallery.copied')} absolute />
+                  <FeedbackBadge state={copiedField === 'md' ? 'ok' : null} okLabel={t('media.copied')} absolute />
                 </div>
               )}
               <button
                 onClick={onDelete}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors"
               >
-                <Trash2 size={12} /> {t('gallery.delete')}
+                <Trash2 size={12} /> {t('media.delete')}
               </button>
             </div>
           </div>

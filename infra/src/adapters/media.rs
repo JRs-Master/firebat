@@ -120,7 +120,7 @@ impl LocalMediaAdapter {
         }
     }
 
-    /// Content type (+ extension) → gallery kind.
+    /// Content type (+ extension) → media kind.
     /// `image | audio | score | lyrics | document | other`, and `music` = audio ∪ score ∪ lyrics
     /// as a group the filter accepts. Music arrives in three forms and a person looking for a
     /// piece wants all three near each other: the sound, the notation that makes it, and the

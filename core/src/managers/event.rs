@@ -6,7 +6,7 @@
 //! channel 도입 검토 (gRPC streaming RPC 와 자연 통합 위해).
 //!
 //! BIBLE 준수: Core 매니저는 직접 발행 X. Core facade 메서드가 EventManager 의 도메인 메서드
-//! (notify_sidebar / notify_gallery / notify_cron_complete) 호출. emit() 자체는 일반화 path.
+//! (notify_sidebar / notify_media / notify_cron_complete) 호출. emit() 자체는 일반화 path.
 
 use std::sync::{Arc, Mutex};
 
@@ -16,7 +16,7 @@ use crate::ports::ILogPort;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FirebatEvent {
-    /// 이벤트 type — 'sidebar:refresh' / 'cron:complete' / 'gallery:refresh' / 'status:update' 등
+    /// 이벤트 type — 'sidebar:refresh' / 'cron:complete' / 'media:refresh' / 'status:update' 등
     #[serde(rename = "type")]
     pub event_type: String,
     /// 이벤트 payload (JSON value 임의 구조)
@@ -178,9 +178,9 @@ impl EventManager {
     }
 
     /// 갤러리 갱신 — 미디어 생성·재생성·삭제 시.
-    pub fn notify_gallery(&self, data: serde_json::Value) {
+    pub fn notify_media(&self, data: serde_json::Value) {
         self.emit(FirebatEvent {
-            event_type: "gallery:refresh".to_string(),
+            event_type: "media:refresh".to_string(),
             data,
         });
     }

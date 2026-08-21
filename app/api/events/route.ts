@@ -7,7 +7,7 @@ import { EventService } from '../../../lib/proto-gen/firebat_pb';
 import { transport } from '../../../lib/api-gen/_transport';
 
 /** GET /api/events — SSE 이벤트 스트림 (Core → 클라이언트 실시간 알림)
- *  Rust EventManager 의 이벤트(status:update / cron:complete / gallery:refresh / sidebar:refresh)를
+ *  Rust EventManager 의 이벤트(status:update / cron:complete / media:refresh / sidebar:refresh)를
  *  gRPC server-stream(EventService.Subscribe)으로 받아 SSE 로 forward. + Next-local eventBus 도 같이. */
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);

@@ -14,7 +14,7 @@ import { withAuth } from '../../../../lib/with-api-error';
  * 응답: GenerateImageResult — render_image 와 동일 포맷 (url, thumbnailUrl, variants, blurhash, slug, modelId)
  *
  * 진행 가시화: Core.generateImage 가 StatusManager job 발행 → SSE 'status:update' → ActiveJobsIndicator 자동 표시.
- * 갤러리: 성공·실패 모두 gallery:refresh emit → GalleryPanel 자동 갱신.
+ * 미디어: 성공·실패 모두 media:refresh emit → MediaPanel 자동 갱신.
  *
  * 관리자 인증 필수.
  */

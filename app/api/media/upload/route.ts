@@ -14,7 +14,7 @@ import { withAuth } from '../../../../lib/with-api-error';
  *
  * 응답: { success: true, data: { slug, url } }
  *
- * 갤러리 자동 갱신: gallery:refresh emit (Core.saveUpload 가 처리).
+ * 미디어 자동 갱신: media:refresh emit (Core.saveUpload 가 처리).
  * 메타에 source: 'upload' 자동 마킹 — AI 생성 이미지와 시각·필터 구분.
  */
 export const POST = withAuth(async (req: NextRequest) => {
