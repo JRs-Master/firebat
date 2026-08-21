@@ -1885,7 +1885,7 @@ def apply_performance(arr, feel, spb, total_beats):
     return arr
 
 
-def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, expr=None):
+def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, ctl=None):
     """The numpy backend — (stereo (n,2) array, mono reverb-send bus). The band is panned onto
     a stage and each voice contributes to one shared room (add_room applies it at the end)."""
     n_total = int(SR * spb * total_beats) + int(SR * 0.5)
@@ -1908,8 +1908,11 @@ def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, expr=No
             continue
         # 같은 판정을 .mid 는 CC7·CC11 로 말하고 여기서는 진폭으로 곱한다 — 층이 둘이지
         # 표가 둘이 아니다.
+        # 내장 신디는 컨트롤러를 다 알아듣지 못한다 — 진폭에 닿는 CC11 만 반영하고 나머지는
+        # 그냥 안 쓴다(sf2 로는 전부 나간다). 못 하는 것을 흉내 내면 두 엔진이 갈린다.
         lvl = part_gain(e["part"], mixmap, filecc7) \
-            * expr_at((expr or {}).get(e["part"]), e["beat"])
+            * expr_at((((ctl or {}).get(e["part"]) or {}).get("cc") or {}).get(CC_EXPRESSION),
+                      e["beat"])
         if e["part"] == "drum":
             seg = hits[e["drum"]] * float(e.get("vel", 0.8)) * lvl
             key = e["drum"]
@@ -2084,7 +2087,7 @@ def add_room(stereo, send, wet=0.9):
     return stereo
 
 
-def write_midi(arr, bpm, path, mix=None, filecc7=None, expr=None):
+def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
     """The MIDI backend — the same arrangement as a .mid, for any synth worth more than ours.
 
     Optional dependency on purpose: this is the one output that needs no audio stack at all, so a
@@ -2138,17 +2141,30 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, expr=None):
                 pan = pan_of(part)
             tr.append(mido.Message("control_change", channel=ch, control=10,
                                    value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
-        tr.append(mido.Message("control_change", channel=ch, control=7,
-                               value=part_cc7(part, mix, filecc7), time=0))
+        # 페이더를 여기서 놓는 것은 **아무도 안 말했을 때뿐**이다. 파일이 CC7 을 썼으면 그 시리즈가
+        # 아래 패스스루로 그대로 지나간다 — 우리가 t=0 에 첫 값을 미리 놓으면, 4박에서 페이더를
+        # 내리는 파일의 앞 4박이 조용히 그 값으로 바뀐다(그리고 같은 바이트가 두 번 나간다).
+        _file_fader = bool(((ctl or {}).get(part) or {}).get("cc", {}).get(CC_VOLUME))
+        if not (_file_fader and not (mix and part in mix)):
+            tr.append(mido.Message("control_change", channel=ch, control=7,
+                                   value=part_cc7(part, mix, filecc7), time=0))
         # (tick, kind) marks in one time-ordered pass — MIDI deltas are relative, so note-offs
         # and pedal changes have to be interleaved rather than appended per event. kind: 0 =
         # note_off, 1 = note_on, 2 = CC64 (sustain — fluidsynth and every GM synth honor it),
         # 3 = pitch wheel (벤딩 — sf2 가 기본 엔진이라 여기에도 실려야 실제로 들린다),
-        # 4 = CC11 익스프레션. CC7 이 그 파트의 페이더라면 CC11 은 그 안에서의 부풀림이고,
-        # 크레셴도가 사는 층이 이것이다. 안 싣던 시절 파일이 적은 셈여림 변화가 통째로 평평했다.
+        # 4 = 컨트롤 체인지 일반(값 a, 번호 b). 파일이 보낸 컨트롤러는 **전부** 여기로 지나간다:
+        # CC11 부풀림, CC1 모듈레이션(폰트 자기 비브라토 LFO), CC64, CC91/93 센드… 무엇을
+        # 뜻하는지 우리가 알 필요가 없다. 아는 쪽은 폰트다. 셋만 고르던 것이 손목록이었다.
         marks = []
-        for at, val in (expr or {}).get(part, []):
-            marks.append((int(round(at * tpb)), 4, max(0, min(127, int(val))), 0))
+        _cs = (ctl or {}).get(part) or {}
+        _skip = {CC_VOLUME} if (mix and part in mix) else set()   # 호출자가 덮은 페이더만 막는다
+        for _num, _series in (_cs.get("cc") or {}).items():
+            if _num in _skip:
+                continue
+            for at, val in _series:
+                marks.append((int(round(at * tpb)), 4, max(0, min(127, int(val))), int(_num)))
+        for at, val in (_cs.get("bend") or []):
+            marks.append((int(round(at * tpb)), 3, max(-8192, min(8191, int(val))), 0))
         for e in rows:
             if e.get("pedal"):
                 start = int(round(e["beat"] * tpb))
@@ -2183,7 +2199,7 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, expr=None):
         prev = 0
         for tick, kind, a, b in marks:
             if kind == 4:
-                tr.append(mido.Message("control_change", channel=ch, control=11, value=a,
+                tr.append(mido.Message("control_change", channel=ch, control=b, value=a,
                                        time=tick - prev))
             elif kind == 3:
                 tr.append(mido.Message("pitchwheel", channel=ch, pitch=a, time=tick - prev))
@@ -2397,7 +2413,7 @@ def sf2_backend():
     return binp, font, None
 
 
-def render_sf2(arr, spb, binp, font, mixmap=None, normalize=True, filecc7=None, expr=None):
+def render_sf2(arr, spb, binp, font, mixmap=None, normalize=True, filecc7=None, ctl=None):
     """The arrangement through fluidsynth: the same .mid midiOut writes, played on the GM font.
 
     Returns (stereo, why_not) — any why_not drops the render back to the builtin synth, so a
@@ -2410,7 +2426,7 @@ def render_sf2(arr, spb, binp, font, mixmap=None, normalize=True, filecc7=None, 
     wav_path = f"data/sing/tmp-{tag}.wav"
     try:
         written, note = write_midi(arr, 60.0 / spb, mid_path, mix=mixmap,
-                                   filecc7=filecc7, expr=expr)
+                                   filecc7=filecc7, ctl=ctl)
         if not written:
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
         # Stock settings on purpose (사용자: "우리가 임의적으로 하지 말고 미디 기본값으로") —
@@ -2664,26 +2680,30 @@ def _track_controls(track):
     through a piano; 실측 2026-08-21: a 3-channel 12-note type-0 file came out as
     `part=p1 program=0 x12`, bass and drums included.
 
-    CC7/CC10/CC11 are the balance the person who wrote the file already set. We read none of
-    them and substituted a table of our own — which is why 밸런스 kept being ours to solve
-    (사용자: "악기별 소리는 이미 폰트에 세팅되어 있는거잖아 니가 바꿀 필요없이")."""
+    The controllers are the balance and the articulation the person who wrote the file already
+    set. We read none of them and substituted a table of our own — which is why 밸런스 kept
+    being ours to solve (사용자: "악기별 소리는 이미 폰트에 세팅되어 있는거잖아").
+
+    **Every** controller is collected, not a chosen few. A list of "controllers we support" is
+    a hand-list, and the font already knows what CC1 (its own vibrato LFO), CC64, CC91/93 and
+    the wheel mean. We do not have to understand one to carry it."""
     out, t = {}, 0
     for msg in track:
         t += msg.time
         ch = getattr(msg, "channel", None)
         if ch is None:
             continue
-        c = out.setdefault(int(ch), {"prog": [], "cc7": None, "pan": None, "expr": []})
+        c = out.setdefault(int(ch), {"prog": [], "cc": {}, "bend": []})
         if msg.type == "program_change":
             c["prog"].append((t, int(msg.program)))
         elif msg.type == "control_change":
-            if msg.control == 7 and c["cc7"] is None:
-                c["cc7"] = int(msg.value)
-            elif msg.control == 10:
-                c["pan"] = int(msg.value)
-            elif msg.control == 11:
-                c["expr"].append((t, int(msg.value)))
+            c["cc"].setdefault(int(msg.control), []).append((t, int(msg.value)))
+        elif msg.type == "pitchwheel":
+            c["bend"].append((t, int(msg.pitch)))
     return out
+
+
+CC_VOLUME, CC_PAN, CC_EXPRESSION = 7, 10, 11
 
 
 def _prog_at(changes, tick):
@@ -2708,9 +2728,11 @@ def midi_to_parts(path):
     """The WHOLE file as playable rows — every CHANNEL, its own instrument, its own dynamics,
     and its own place in the mix. This is the faithful mode's source.
 
-    Returns (rows, bpm, meta, err). `meta[part]` = {name, cc7, expr}: what the FILE says about
-    balance, kept as the **bytes it wrote** rather than converted into a level of ours. A
-    conversion is a decision, and the whole point is that this decision is already made."""
+    Returns (rows, bpm, meta, err). `meta[part]` = {name, cc7, cc, bend}: what the FILE wrote,
+    kept as the **bytes it wrote** rather than converted into levels of ours. A conversion is a
+    decision, and the whole point is that this decision is already made. `cc` is every
+    controller it sent, in beats; `cc7` is just the opening fader lifted out because the caller
+    may override that one."""
     import mido
     try:
         mf = mido.MidiFile(path)
@@ -2751,7 +2773,8 @@ def midi_to_parts(path):
             pidx += 1
             part = f"p{pidx}"
             c = ctl.get(ch) or {}
-            pan = c.get("pan")
+            _pans = (c.get("cc") or {}).get(CC_PAN)
+            pan = _pans[0][1] if _pans else None
             for note, start, dur, vel in by_ch[ch]:
                 prog = _prog_at(c.get("prog") or [], start)
                 b0 = warp(start / tpb)
@@ -2762,8 +2785,13 @@ def midi_to_parts(path):
                     row["pan"] = round((pan - 64) / 63.0, 3)
                 rows.append(row)
             label = tname if len(by_ch) == 1 else (tname + f" ch{ch + 1}").strip()
-            meta[part] = {"name": label or f"ch{ch + 1}", "cc7": c.get("cc7"),
-                          "expr": [(round(warp(t / tpb), 4), v) for t, v in (c.get("expr") or [])]}
+            meta[part] = {
+                "name": label or f"ch{ch + 1}",
+                "cc7": (c.get("cc") or {}).get(CC_VOLUME, [(0, None)])[0][1],
+                "cc": {n: [(round(warp(t / tpb), 4), v) for t, v in series]
+                       for n, series in (c.get("cc") or {}).items()},
+                "bend": [(round(warp(t / tpb), 4), v) for t, v in (c.get("bend") or [])],
+            }
     if not rows:
         return None, None, None, "MIDI 에서 음표를 못 읽었습니다"
     return rows, bpm, meta, None
@@ -4086,7 +4114,8 @@ def action_render(inp):
                         # 파일이 이미 말한 밸런스와 이름. MusicXML 쪽은 파서가 직접 심는다.
                         file_cc7 = {p: m["cc7"] for p, m in fmeta.items()
                                     if m.get("cc7") is not None}
-                        file_expr = {p: m["expr"] for p, m in fmeta.items() if m.get("expr")}
+                        file_ctl = {p: {"cc": m.get("cc") or {}, "bend": m.get("bend") or []}
+                                    for p, m in fmeta.items()}
                         if isinstance(score, dict):
                             score["_partNames"] = {p: m["name"] for p, m in fmeta.items()}
                             score["_partsSeen"] = [
@@ -4145,7 +4174,7 @@ def action_render(inp):
     lead_row = score.pop("_leadRow", None) if isinstance(score, dict) else None
     # 파일이 선언한 페이더·부풀림 (MIDI 만; MusicXML 은 셈여림을 벨로시티로 적는다).
     file_cc7 = locals().get("file_cc7") or {}
-    file_expr = locals().get("file_expr") or {}
+    file_ctl = locals().get("file_ctl") or {}
     parts_seen = score.pop("_partsSeen", None) if isinstance(score, dict) else None
     part_names = score.pop("_partNames", None) if isinstance(score, dict) else None
     spb, events, chords, style, band, feel, err = parse_score(score)
@@ -4345,7 +4374,7 @@ def action_render(inp):
             return {"success": False, "error": f"engine:sf2 사용 불가 — {why}"}
         if not why:
             stereo, err = render_sf2(arr, spb, binp, font, mixmap=feel.get("mix"),
-                                     filecc7=file_cc7, expr=file_expr)
+                                     filecc7=file_cc7, ctl=file_ctl)
             if stereo is None:
                 engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
             else:
@@ -4357,7 +4386,7 @@ def action_render(inp):
                 mix, send = stereo, np.zeros(len(stereo), dtype=np.float32)
     if mix is None:
         mix, send = render_arrangement(arr, spb, total_beats, mixmap=feel.get("mix"),
-                                       filecc7=file_cc7, expr=file_expr)
+                                       filecc7=file_cc7, ctl=file_ctl)
         mix *= 0.45
         send *= 0.45
     if vocal_path:
@@ -5472,6 +5501,11 @@ def action_selftest():
     _zt.append(_mido.Message("control_change", channel=0, control=7, value=100, time=0))
     _zt.append(_mido.Message("control_change", channel=1, control=7, value=64, time=0))
     _zt.append(_mido.Message("control_change", channel=0, control=11, value=40, time=0))
+    # 우리가 뜻을 해석하지 않는 것들 — 폰트는 안다.
+    _zt.append(_mido.Message("control_change", channel=0, control=1, value=64, time=0))
+    _zt.append(_mido.Message("control_change", channel=0, control=64, value=127, time=0))
+    _zt.append(_mido.Message("control_change", channel=0, control=91, value=50, time=0))
+    _zt.append(_mido.Message("pitchwheel", channel=0, pitch=2048, time=0))
     for _i in range(4):
         _zt.append(_mido.Message("note_on", channel=0, note=60 + _i, velocity=90, time=0))
         _zt.append(_mido.Message("note_off", channel=0, note=60 + _i, velocity=0, time=480))
@@ -5492,9 +5526,10 @@ def action_selftest():
        (zmeta or {}).get("p1", {}).get("cc7") == 100
        and (zmeta or {}).get("p2", {}).get("cc7") == 64)
     _zcc = {p: v["cc7"] for p, v in (zmeta or {}).items() if v.get("cc7") is not None}
-    _zex = {p: v["expr"] for p, v in (zmeta or {}).items() if v.get("expr")}
+    _zct = {p: {"cc": v.get("cc") or {}, "bend": v.get("bend") or []}
+            for p, v in (zmeta or {}).items()}
     _zok, _ = write_midi(zrows, 120, "data/sing/selftest-t0-out.mid",
-                         filecc7=_zcc, expr=_zex)
+                         filecc7=_zcc, ctl=_zct)
     _bk = _mido.MidiFile("data/sing/selftest-t0-out.mid") if _zok else None
     def _cc(name, ctl):
         for t in (_bk.tracks if _bk else []):
@@ -5508,6 +5543,18 @@ def action_selftest():
        _cc("drum", 7) == [mix_cc7(mix_of("drum"))])
     ck("CC11 익스프레션이 실린다 — 크레셴도가 사는 층", [40], _cc("p1", 11),
        _cc("p1", 11) == [40])
+    # 컨트롤러는 고르지 않는다. 우리가 뜻을 아는 것만 나른다면 그건 손목록이고, 그 목록에 없는
+    # 것을 쓴 파일은 조용히 그 표현을 잃는다. CC1 = 폰트 자기 비브라토 LFO — 어제 손으로 만든 것.
+    ck("우리가 뜻을 모르는 컨트롤러도 그대로 지나간다 (CC1·CC64·CC91)",
+       [[64], [127], [50]], [_cc("p1", 1), _cc("p1", 64), _cc("p1", 91)],
+       _cc("p1", 1) == [64] and _cc("p1", 64) == [127] and _cc("p1", 91) == [50])
+    ck("…파일이 쓴 피치휠도", [2048],
+       [x.pitch for t in (_bk.tracks if _bk else [])
+        for x in t if x.type == "pitchwheel"
+        and any(getattr(y, "name", None) == "p1" for y in t)],
+       [x.pitch for t in (_bk.tracks if _bk else [])
+        for x in t if x.type == "pitchwheel"
+        and any(getattr(y, "name", None) == "p1" for y in t)] == [2048])
     # 호출자의 명시가 파일을 이긴다: 파일 > 우리 표 사이에 사람이 들어갈 자리가 있어야 한다.
     ck("…호출자의 mix 가 파일의 페이더를 이긴다", mix_cc7(0.25),
        part_cc7("p1", {"p1": 0.25}, _zcc), part_cc7("p1", {"p1": 0.25}, _zcc) == mix_cc7(0.25))
@@ -5516,6 +5563,21 @@ def action_selftest():
     ck("…그리고 두 엔진이 여전히 같은 balance 를 뜻한다", True,
        [round(part_gain("chord"), 4), mix_of("chord")],
        abs(part_gain("chord") - mix_of("chord")) < 0.015)
+    # 그리고 덮었으면 파일의 페이더 자동화는 통째로 빠져야 한다 — 남으면 우리 값을 되돌린다.
+    _zok2, _ = write_midi(zrows, 120, "data/sing/selftest-t0-mix.mid",
+                          mix={"p1": 0.25}, filecc7=_zcc, ctl=_zct)
+    _bk2 = _mido.MidiFile("data/sing/selftest-t0-mix.mid") if _zok2 else None
+    _p1cc7 = [x.value for t in (_bk2.tracks if _bk2 else [])
+              if any(getattr(y, "name", None) == "p1" for y in t)
+              for x in t if x.type == "control_change" and x.control == 7]
+    ck("호출자가 덮으면 파일의 페이더는 한 줄도 안 나간다", [mix_cc7(0.25)], _p1cc7,
+       _p1cc7 == [mix_cc7(0.25)])
+    _p1cc1 = [x.value for t in (_bk2.tracks if _bk2 else [])
+              if any(getattr(y, "name", None) == "p1" for y in t)
+              for x in t if x.type == "control_change" and x.control == 1]
+    ck("…덮은 것은 페이더뿐 — 나머지 컨트롤러는 그대로 간다", [64], _p1cc1, _p1cc1 == [64])
+    if os.path.exists("data/sing/selftest-t0-mix.mid"):
+        os.remove("data/sing/selftest-t0-mix.mid")
     for _f in ("data/sing/selftest-t0.mid", "data/sing/selftest-t0-out.mid"):
         if os.path.exists(_f):
             os.remove(_f)
