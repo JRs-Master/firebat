@@ -4067,12 +4067,15 @@ def read_wav_mono(path):
 def write_wav(path, x):
     # soundfile picks the container from the extension — wav/flac ride PCM_16, mp3 goes through
     # libsndfile's LAME encoder (subtype MPEG_LAYER_III, its own default rate ~150 kbps VBR).
-    # Scaled IN PLACE: at five minutes the old `x / peak * 0.95` copy was another quarter-GB.
+    #
+    # ⚠️ 여기 `x *= 0.95 / peak` 가 있었다. 렌더 쪽 정규화를 걷은 뒤에도 **파일을 쓰는 이쪽이
+    # 따로 정규화하고 있었고**, 출력 레벨을 실제로 정하는 건 마지막 이쪽이다. 실측 2026-08-21:
+    # 폰트 넷 × 곡 둘 여덟 파일이 전부 peak −0.45 dBFS 로 **똑같았다**(0.95 가 그 값이다).
+    # 폰트가 다른데 피크가 같으면 그건 폰트 소리가 아니라 우리 소리다.
+    # 값이 흘러가는 다음 홉을 안 열면 앞에서 지운 것이 뒤에서 그대로 산다.
     import soundfile as sf
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     x = np.asarray(x, dtype=np.float32)
-    peak = float(np.max(np.abs(x))) or 1.0
-    x *= 0.95 / peak
     ext = path.rsplit(".", 1)[-1].lower()
     if ext == "opus":
         sf.write(path, x, SR, format="OGG", subtype="OPUS")
@@ -5741,6 +5744,18 @@ def action_selftest():
         [{"part": "melody", "program": 0, "pitch": 60, "beat": 0.0, "beats": 1.0, "vel": 0.7}], _fx))
     _FONT_ALIASES.clear()
     os.remove(_fx)
+
+    # 출력 레벨을 정하는 건 **파일을 쓰는 마지막 자리**다. 렌더 쪽 정규화를 걷고도 여기가
+    # 따로 정규화하고 있어서 폰트 넷 × 곡 둘이 전부 peak −0.45 dBFS 로 같았다(2026-08-21 실측,
+    # 0.95 가 그 값이다). 폰트가 다른데 피크가 같으면 그건 폰트 소리가 아니라 우리 소리다.
+    _lvl = np.array([[0.3, 0.3], [0.6, 0.6], [-0.2, -0.2]], dtype="float32")
+    write_wav("data/sing/selftest-level.wav", _lvl.copy())
+    import soundfile as _sfmod
+    _back, _ = _sfmod.read("data/sing/selftest-level.wav", dtype="float32", always_2d=True)
+    _pk = float(np.abs(_back).max())
+    ck("파일 쓰기가 레벨을 안 건드린다 — 정규화는 우리 결정이다", 0.6, round(_pk, 3),
+       abs(_pk - 0.6) < 0.01)
+    os.remove("data/sing/selftest-level.wav")
 
     # ── verify: 그대로 연주되는지 재는 자리 ────────────────────────────────────────────────
     # ⚠️ 이 액션은 midi_to_parts 를 비교의 **한쪽에만** 쓴다. 양쪽에 쓰면 우리 리더와 우리
