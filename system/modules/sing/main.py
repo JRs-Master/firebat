@@ -2564,6 +2564,20 @@ def font_inventory(path):
         if not {"phdr", "pbag", "pgen", "inst", "ibag", "igen"} <= set(raw):
             return None
 
+        def inst_atten(ix):
+            """그 instrument 의 첫 존이 선언한 감쇠(센티벨). 존마다 다르면 첫 값만 본다 —
+            우리는 절대 보정이 아니라 **프리셋 사이의 차**를 알고 싶은 것이라 대표값이면 된다."""
+            bag0 = inst[ix][1]
+            bend = inst[ix + 1][1] if ix + 1 < len(inst) else len(ibag)
+            for bi in range(bag0, min(bend, len(ibag))):
+                gs = ibag[bi][0]
+                ge = ibag[bi + 1][0] if bi + 1 < len(ibag) else len(igen)
+                for gi in range(gs, min(ge, len(igen))):
+                    op, amt = igen[gi]
+                    if op == 48:
+                        return float(amt)
+            return 0.0
+
         def recs(name, fmt, size):
             b = raw[name]
             return [struct.unpack_from(fmt, b, i * size) for i in range(len(b) // size)]
@@ -2603,7 +2617,26 @@ def font_inventory(path):
                     if op == 41 and amt < len(inst):              # instrument
                         keys |= inst_keys(amt)
             kits[preset] = {"name": name, "keys": keys}
-        out = ({"programs": programs, "kits": kits, "name": title}
+        # 폰트가 스스로 대는 감쇠(gen 48 initialAttenuation, 센티벨). 프리셋 레벨이 제각각인 것이
+        # 밸런스가 표대로 안 나는 이유인데(실측 8/21: Arachno 의 Distortion Guitar 가 Overdriven
+        # 보다 10.7 dB 조용하다), 그 값을 표에 박으면 폰트를 갈 때 조용히 틀린다. **폰트에게
+        # 묻는다** — INAM 과 같은 자리, 같은 이유. preset 존과 instrument 존의 감쇠는 더해진다.
+        atten = {}
+        for pi, (name, preset, bank, bagndx) in enumerate(phdr[:-1]):
+            if bank != 0:
+                continue
+            cb, end = 0.0, (phdr[pi + 1][3] if pi + 1 < len(phdr) else len(pbag))
+            for bi in range(bagndx, min(end, len(pbag))):
+                gs = pbag[bi][0]
+                ge = pbag[bi + 1][0] if bi + 1 < len(pbag) else len(pgen)
+                for gi in range(gs, min(ge, len(pgen))):
+                    op, amt = pgen[gi]
+                    if op == 48:
+                        cb += amt
+                    elif op == 41 and amt < len(inst):
+                        cb += inst_atten(amt)
+            atten.setdefault(preset, round(cb / 10.0, 2))   # 센티벨 → dB
+        out = ({"programs": programs, "kits": kits, "name": title, "attenDb": atten}
                if programs or kits else None)
     except (OSError, ValueError, struct.error, IndexError):
         out = None
@@ -4807,6 +4840,15 @@ def action_levels(inp):
             r["tableSaysDb"] = round(20 * math.log10(r["mix"]), 1)
             r["offByDb"] = round(r["rmsVsLead"] - r["tableSaysDb"], 1)
     inv = font_inventory(font) if (use_sf2 and font) else None
+    if inv and inv.get("attenDb"):
+        # 폰트가 선언한 감쇠가 실측 어긋남을 설명하나? 설명하면 렌더 때마다 공짜로 보정할 수
+        # 있고, 아니면 짧은 탐침을 한 번 굽는 수밖에 없다. 그 판정을 위해 나란히 싣는다.
+        for r in rows:
+            prog = next((e.get("program") for e in arr
+                         if e.get("part") == r["part"] and e.get("program") is not None), None)
+            if prog is not None:
+                r["program"] = prog
+                r["fontAttenDb"] = inv["attenDb"].get(prog)
     return {"success": True, "data": {
         "engine": "sf2" if use_sf2 else "builtin",
         "soundfont": ("%s (%s)" % (inv["name"], os.path.basename(font))
