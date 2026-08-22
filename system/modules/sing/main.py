@@ -2144,11 +2144,20 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
         # 하나만 써서, 도중에 바뀐 악기가 첫 악기로 되돌아가고 있었다 — 실측 2026-08-21 비발디
         # 사계 봄: 4,054음 중 **218음이 다른 악기로** 났다. 읽기만 고치고 쓰기를 안 따라간 자리.
         _pg_now = int((first_note or {}).get("program", 0)) if part != "drum" else None
+        _bk_now = int((first_note or {}).get("bank") or 0) if part != "drum" else None
         if part != "drum":
             for e in rows:
                 if e.get("pedal") or "program" not in e:
                     continue
                 _p = int(e["program"])
+                _b = int(e.get("bank") or 0)
+                # 뱅크가 바뀌면 CC0 이 program_change **앞**에 서야 한다 — 곡 중간 교체도
+                # 첫 음과 같은 규칙이다(뒤에 오면 다음 프로그램부터 걸린다).
+                if _b != _bk_now:
+                    marks.append((int(round(e["beat"] * tpb)), 4,
+                                  max(0, min(127, _b)), 0))
+                    _bk_now = _b
+                    _pg_now = None      # 뱅크가 바뀌었으면 프로그램도 다시 말한다
                 if _p != _pg_now:
                     marks.append((int(round(e["beat"] * tpb)), 5, _p, 0))
                     _pg_now = _p
@@ -2563,6 +2572,12 @@ FONT_SYNTH_PROFILES = {
             # 기본 256. 레이어가 두꺼운 폰트라 페달 밟은 피아노에서 보이스를 훔친다
             "synth.polyphony": 512,
             "synth.device-id": 16,          # 롤랜드 GS 기기로 동작 = GS SysEx 를 GS 로 읽는다
+            # 리버브·코러스가 **켜져 있어야** 위 값들이 뜻을 갖는다. 지금 빌드의 기본이 켬이지만
+            # 문서(§3.1.1)가 이 둘을 명시로 적으므로 우리도 적는다 — 기대는 것과 적는 것은 다르다.
+            "synth.reverb.active": 1, "synth.chorus.active": 1,
+            # 뱅크 셀렉트 해석. GS 뱅크 폰트라 'gs'(CC0 만 본다)가 맞고, 우리 라이터도 CC0 만
+            # 쓴다. 이 빌드 기본이 마침 'gs' 지만 규격이 넷을 허용하니 역시 적어 둔다.
+            "synth.midi-bank-select": "gs",
             # 리버브 넷은 fluidsynth 2.4 기본값과 같은 값이다. 그래도 **적는다** —
             # 2.3.x 기본은 damp 0 / level 0.9 / room 0.2 / width 0.5 였고, 배포판이 내려가면
             # 아무 말 없이 소리가 바뀐다. 적어 두면 버전이 아니라 문서가 정한다.
@@ -3668,7 +3683,24 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     if not parts:
         return None, "MusicXML 에 part 가 없습니다"
 
-    prog_of, unp_of = {}, {}
+    skipped = {}
+    part_mix = {}          # 행 이름 → 파일이 적은 믹스. score["_partMix"] 로 나간다
+
+    def skip_mark(what, whose="us"):
+        """못 연주한 기호를 센다. `whose` 는 **누구 사정인지**를 가른다.
+
+        "us" = 우리가 아직 못 읽는 기호(트레몰로·글리산도…) — 우리가 고칠 것.
+        "file" = 파일이 스스로 어긋난 자리 — 고칠 데가 우리 코드에 없다. 둘을 한 통에
+        담고 "파서 미구현분" 이라고 적으면 파일 결함을 우리 결손으로 보고하는 셈이라,
+        사용자가 우리한테 고치라고 하고 우리는 고칠 게 없다. 실측 2026-08-21 아로하
+        보컬 28마디: 27마디 끝 C#5 에 붙임줄이 시작되는데 짝인 C#5 앞에 B4 가 한 음
+        끼어 있다(그 파트에 `<grace>` 는 0개 — 꾸밈음이 아니라 온전한 8분음표다).
+        붙임줄은 이웃한 두 음을 잇는 것이라 이건 이을 수 없다.
+        """
+        skipped.setdefault(whose, {})
+        skipped[whose][what] = skipped[whose].get(what, 0) + 1
+
+    prog_of, unp_of, bank_of = {}, {}, {}
     pl = kid(root, "part-list")
     name_of, mix_of = {}, {}
     for sp in (kids(pl, "score-part") if pl is not None else []):
@@ -3684,6 +3716,21 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
             #   pan    — 규격: "0 is straight ahead, -90 is hard left, 90 is hard right,
             #            and -180 and 180 are directly behind the listener" (도 단위)
             # ⚠️ ±90 너머는 **뒤**인데 스테레오에 뒤가 없다 → 방향은 두고 그쪽 끝에 붙인다.
+            # <midi-bank> — 규격: "a MIDI 1.0 bank number ranging from 1 to 16,384".
+            # 16,384 = 128×128 이라 **(값−1)이 14비트 뱅크 번호**이고 MSB·LSB 로 갈린다.
+            # ⚠️ 참조 구현(MuseScore)은 이 원소를 import 에서 **건너뛴다** — 따라갈 관례가 없어
+            # 규격의 범위 자체에서 파생했다. fluidsynth 를 'gs' 로 두므로 실제로 고르는 것은
+            # MSB(CC0)뿐이라, LSB 가 0 이 아니면 못 고른다고 말한다.
+            _mb = text_of(mi2, "midi-bank")
+            if _mb and sp.get("id") and sp.get("id") not in bank_of:
+                try:
+                    _bv = int(_mb) - 1
+                    if 0 <= _bv < 16384:
+                        if _bv & 0x7F:
+                            skip_mark("뱅크 LSB %d (GS 모드는 MSB 만 고른다)" % (_bv & 0x7F))
+                        bank_of[sp.get("id")] = _bv >> 7
+                except ValueError:
+                    pass
             _mx = mix_of.setdefault(sp.get("id"), {})
             for _tag, _key in (("volume", "cc7"), ("pan", "pan")):
                 _tv = text_of(mi2, _tag)
@@ -3714,23 +3761,6 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
             if _g is not None:
                 named_progs[_pid] = _g
 
-    skipped = {}
-    part_mix = {}          # 행 이름 → 파일이 적은 믹스. score["_partMix"] 로 나간다
-
-    def skip_mark(what, whose="us"):
-        """못 연주한 기호를 센다. `whose` 는 **누구 사정인지**를 가른다.
-
-        "us" = 우리가 아직 못 읽는 기호(트레몰로·글리산도…) — 우리가 고칠 것.
-        "file" = 파일이 스스로 어긋난 자리 — 고칠 데가 우리 코드에 없다. 둘을 한 통에
-        담고 "파서 미구현분" 이라고 적으면 파일 결함을 우리 결손으로 보고하는 셈이라,
-        사용자가 우리한테 고치라고 하고 우리는 고칠 게 없다. 실측 2026-08-21 아로하
-        보컬 28마디: 27마디 끝 C#5 에 붙임줄이 시작되는데 짝인 C#5 앞에 B4 가 한 음
-        끼어 있다(그 파트에 `<grace>` 는 0개 — 꾸밈음이 아니라 온전한 8분음표다).
-        붙임줄은 이웃한 두 음을 잇는 것이라 이건 이을 수 없다.
-        """
-        skipped.setdefault(whose, {})
-        skipped[whose][what] = skipped[whose].get(what, 0) + 1
-
     order = _playback_order([_measure_flags(m) for m in kids(parts[0], "measure")])
 
     meter = None
@@ -3752,6 +3782,72 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         lead_voice = None
         f_prog = prog_of.get(part.get("id"), named_progs.get(part.get("id"), 0))
         f_part = f"p{pi + 1}"
+        f_bank = bank_of.get(part.get("id")) or 0
+        prog_now = [None, None]     # [프로그램, 뱅크] — 곡 중간 교체가 덮는 값
+        swing_now = [0.0, 0.5]      # [비율(0=스트레이트), 단위(박)] — <sound><swing>
+
+        def swing_pos(t, d):
+            """스윙 격자로 옮긴 (자리, 길이).
+
+            규격 <swing>: "consecutive on-beat / off-beat eighth or 16th notes are played with
+            unequal nominal durations", 비율은 <first>:<second>. 2:1 이면 앞이 박의 2/3.
+            규격이 정한 예외 그대로 — **길이가 그 단위의 명목값일 때만** 걸린다("notes where
+            the specified <duration> is different than the nominal value ... no effect").
+            ⚠️ 우리 편곡기의 `swing` 노브와 다른 물건이다: 저건 우리가 만든 리듬섹션에 걸리고,
+            이건 **파일이 적은 음표**에 걸린다."""
+            r, u = swing_now
+            if r <= 0:
+                return t, d
+            pair = 2.0 * u
+            k = math.floor(t / pair + 1e-9)
+            off = t - k * pair
+            lead = pair * r / (r + 1.0)
+            if abs(off) < 1e-6:
+                return t, (lead if abs(d - u) < 1e-6 else d)
+            if abs(off - u) < 1e-6:
+                return k * pair + lead, ((pair - lead) if abs(d - u) < 1e-6 else d)
+            return t, d
+
+        def sound_instrument(snd_el):
+            """<sound> 안의 악기 교체. 규격상 새 악기는 그 <sound> 의 <midi-instrument> 로 온다.
+
+            ⚠️ 파트가 여럿이면 <sound> 는 그 파트의 것이다(파트 안에서 파싱 중이라 자연히 맞다).
+            <instrument-change> 만 있고 <midi-instrument> 가 없으면 바꿀 번호가 없어 고지한다."""
+            if snd_el is None:
+                return
+            _sw = kid(snd_el, "swing")
+            if _sw is not None:
+                if kid(_sw, "straight") is not None:
+                    swing_now[0] = 0.0
+                else:
+                    try:
+                        _f = float(text_of(_sw, "first") or 0)
+                        _s2 = float(text_of(_sw, "second") or 0)
+                        if _f > 0 and _s2 > 0:
+                            swing_now[0] = _f / _s2
+                    except ValueError:
+                        pass
+                    _st2 = (text_of(_sw, "swing-type") or "eighth").strip()
+                    swing_now[1] = _XML_UNIT.get(_st2, 0.5)
+            got = False
+            for _mi in kids(snd_el, "midi-instrument"):
+                _mp2 = text_of(_mi, "midi-program")
+                if _mp2:
+                    try:
+                        prog_now[0] = max(0, min(127, int(_mp2) - 1))
+                        got = True
+                    except ValueError:
+                        pass
+                _mb2 = text_of(_mi, "midi-bank")
+                if _mb2:
+                    try:
+                        _bv2 = int(_mb2) - 1
+                        if 0 <= _bv2 < 16384:
+                            prog_now[1] = _bv2 >> 7
+                    except ValueError:
+                        pass
+            if not got and kid(snd_el, "instrument-change") is not None:
+                skip_mark("악기 교체(바꿀 MIDI 번호가 안 적혀 있음)", "file")
         f_mix = mix_of.get(part.get("id")) or {}
         if f_mix:
             part_mix[f_part] = dict(f_mix)
@@ -3829,6 +3925,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         except (TypeError, ValueError):
                             pass
                     snd = kid(el, "sound")
+                    sound_instrument(snd)
                     if snd is not None and snd.get("tempo") and pi == 0:
                         tempo_events.append((m_base + _dcur, float(snd.get("tempo"))))
                     # 파일이 숫자를 말하면 그 숫자를 쓴다. `<sound dynamics="N">` = 벨로시티 90 에
@@ -3926,8 +4023,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                                       "beats": now - pedal_down,
                                                       "part": f_part, "pedal": True})
                                 pedal_down = now if ptype == "change" else None
-                elif tag == "sound" and el.get("tempo") and pi == 0:
-                    tempo_events.append((m_base + cur, float(el.get("tempo"))))
+                elif tag == "sound":
+                    # 마디 직속 <sound> — 템포도 악기 교체도 여기로 올 수 있다.
+                    sound_instrument(el)
+                    if el.get("tempo") and pi == 0:
+                        tempo_events.append((m_base + cur, float(el.get("tempo"))))
                 elif tag == "harmony":
                     hr = kid(el, "root")
                     if hr is not None:
@@ -3953,7 +4053,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # <play><mute> — 규격: "represents muting playback for different
                     # instruments, including brass, winds, and strings". 값이 "off" 가 아니면
                     # 뮤트다. GM 이 그 악기의 뮤트 음색을 주면 그 번호로, 아니면 고지한다.
-                    n_prog = f_prog
+                    n_prog = f_prog if prog_now[0] is None else prog_now[0]
                     _ply = kid(el, "play")
                     _mut = (text_of(_ply, "mute") or "").strip().lower() if _ply is not None                         else ""
                     if _mut and _mut != "off":
@@ -4172,13 +4272,22 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         # 연속성 검사가 깨지고**, 이어져야 할 음이 다시 때려진다. 실측
                         # 2026-08-21 아로하: 기타 두 파트에서 이음줄 37개가 그렇게 안 붙었다.
                         # 바닥은 divisions 한 칸 — 길이 0 만 막는다.
-                        base_row = {"beat": onset + stolen,
-                                    "beats": max(1.0 / max(1.0, divisions), dur - stolen),
+                        _sb, _sd = swing_pos(onset + stolen, dur - stolen)
+                        # 바닥은 **길이가 0 일 때만**. `max(1/divisions, …)` 였는데 그건 파일이
+                        # 쓸 수 있는 제일 짧은 값이라, 우리가 계산해서 그보다 짧아진 것까지
+                        # 끌어올렸다 — 실측: divisions=2 인 파일에서 스윙 뒷박이 0.333 으로
+                        # 나와야 하는데 0.5 로 되돌려졌다(꾸밈음이 훔쳐 간 길이도 같은 자리).
+                        base_row = {"beat": _sb,
+                                    "beats": (_sd if _sd > 1e-9
+                                              else 1.0 / max(1.0, divisions)),
                                     "part": f_part, "patch": _patch_for_program(n_prog),
                                     "program": n_prog, "pitch": midi, "vel": nvel,
                                     # 성부도 싣는다 — 파일이 선언한 값이고, 붙임줄이 제 성부에
                                     # 붙었는지 **밖에서 확인할 방법**이 이것뿐이다. staff 와 같은 층.
                                     "gate": gate, "staff": n_staff, "voice": n_voice}
+                        _rb = f_bank if prog_now[1] is None else prog_now[1]
+                        if _rb:
+                            base_row["bank"] = _rb
                         if "pan" in f_mix:
                             base_row["pan"] = f_mix["pan"]
                         if roll_n is not None:
@@ -6430,6 +6539,77 @@ def action_selftest():
        _wv, _dv, _dv == _wv and _wv == [49, 49, 65, 80, 96])
     ck("…낱말 없는 점선은 아무것도 안 한다 (점선은 rit.·8va 도 늘린다)", [49, 49, 49, 49, 96],
        _nv, _nv == [49, 49, 49, 49, 96])
+
+    # ── 3군: 뱅크 · 곡 중간 악기 교체 · 파일이 적은 스윙 ────────────────────────────────
+    def _bankdoc(bankval, midsound=""):
+        return ('<score-partwise><part-list><score-part id="P1">'
+                '<midi-instrument id="P1-I1"><midi-program>1</midi-program>'
+                + ('<midi-bank>%d</midi-bank>' % bankval if bankval else "")
+                + '</midi-instrument></score-part></part-list><part id="P1">'
+                '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                + _n("C", 4, 1) + midsound + _n("D", 4, 1)
+                + '</measure></part></score-partwise>')
+
+    def _bankrows(bankval, midsound=""):
+        with open("data/sing/selftest-bank2.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(_bankdoc(bankval, midsound))
+        rows = []
+        musicxml_to_score("data/sing/selftest-bank2.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-bank2.musicxml")
+        return [(r.get("bank") or 0, r.get("program")) for r in rows if "pitch" in r]
+
+    # 규격 범위 1~16,384 = 14비트 → (값−1)>>7 이 MSB. 1025 → 8
+    _bp = _bankrows(1025)
+    ck("⭐ 악보가 지정한 뱅크를 읽는다 (규격 범위가 14비트라 (값−1)>>7 = MSB)", [(8, 0), (8, 0)],
+       _bp, _bp == [(8, 0), (8, 0)])
+    _bp = _bankrows(0)
+    ck("…안 적으면 뱅크 0", [(0, 0), (0, 0)], _bp, _bp == [(0, 0), (0, 0)])
+    _bp = _bankrows(0, '<sound><midi-instrument id="P1-I1"><midi-program>57</midi-program>'
+                       '</midi-instrument></sound>')
+    ck("⭐ 곡 **중간** 악기 교체를 읽는다 (<sound> 안의 새 midi-program)", [(0, 0), (0, 56)],
+       _bp, _bp == [(0, 0), (0, 56)])
+    _brow = [{"beat": 0.0, "beats": 1.0, "part": "melody", "patch": "piano", "program": 0,
+              "pitch": 60, "vel": 0.7, "gate": 1.0},
+             {"beat": 1.0, "beats": 1.0, "part": "melody", "patch": "piano", "program": 56,
+              "bank": 8, "pitch": 62, "vel": 0.7, "gate": 1.0}]
+    if write_midi(_brow, 120, "data/sing/selftest-mid.mid")[0]:
+        _mt = _mido.MidiFile("data/sing/selftest-mid.mid").tracks[0]
+        _seq = [(m.type, getattr(m, "control", getattr(m, "program", None)),
+                 getattr(m, "value", None)) for m in _mt
+                if m.type in ("control_change", "program_change")]
+        ck("…곡 중간 뱅크 변경도 CC0 이 program_change **앞**에 선다",
+           [("control_change", 0, 8), ("program_change", 56, None)], _seq[-2:],
+           _seq[-2:] == [("control_change", 0, 8), ("program_change", 56, None)])
+        os.remove("data/sing/selftest-mid.mid")
+
+    def _swingrows(sw):
+        body = sw + "".join(
+            '<note><pitch><step>%s</step><octave>4</octave></pitch><duration>1</duration>'
+            '<type>eighth</type></note>' % st for st in "CDEF")
+        with open("data/sing/selftest-swing.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(P + '<measure number="1"><attributes><divisions>2</divisions>'
+                     '</attributes>' + body + '</measure>' + E)
+        rows = []
+        musicxml_to_score("data/sing/selftest-swing.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-swing.musicxml")
+        return [(round(r["beat"], 3), round(r["beats"], 3)) for r in rows if "pitch" in r]
+
+    _sw0 = _swingrows("")
+    _sw1 = _swingrows("<sound><swing><first>2</first><second>1</second></swing></sound>")
+    _sw2 = _swingrows("<sound><swing><straight/></swing></sound>")
+    ck("⭐ 파일이 적은 스윙을 그 비율대로 (<first>2</first><second>1</second> = 2:1)",
+       [(0.0, 0.667), (0.667, 0.333), (1.0, 0.667), (1.667, 0.333)], _sw1,
+       _sw1 == [(0.0, 0.667), (0.667, 0.333), (1.0, 0.667), (1.667, 0.333)])
+    ck("…선언이 없거나 <straight/> 면 그대로", [_sw0, _sw0], [_sw0, _sw2],
+       _sw0 == [(0.0, 0.5), (0.5, 0.5), (1.0, 0.5), (1.5, 0.5)] and _sw2 == _sw0)
+    _pargv = fluidsynth_argv("fluidsynth", "/nope/GeneralUser-GS.sf2", "a.mid", "b.wav")
+    _po = dict(o.split("=", 1) for o in _pargv if o.count("=") == 1)
+    ck("…리버브·코러스 켬과 뱅크 셀렉트 모드도 **적어서** 넘긴다 (기본값에 안 기댄다)",
+       ["1", "1", "gs"],
+       [_po.get("synth.reverb.active"), _po.get("synth.chorus.active"),
+        _po.get("synth.midi-bank-select")],
+       [_po.get("synth.reverb.active"), _po.get("synth.chorus.active"),
+        _po.get("synth.midi-bank-select")] == ["1", "1", "gs"])
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
