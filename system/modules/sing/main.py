@@ -1971,6 +1971,8 @@ def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, ctl=Non
             # — fluidsynth `synth.min-note-length` 기본 10 ms(실측: 0·1·5 ms 가 같은 시간 난다).
             # 내장 신디에도 같은 바닥을 준다. 안 그러면 한쪽만 소리가 없어 두 엔진이 갈린다.
             held = e["beats"] or (SYNTH_MIN_NOTE_MS / 1000.0) / max(1e-9, spb)
+            if e.get("breath"):
+                held = max(held * 0.5, held - BREATH_SEC / max(1e-9, spb))
             for a, b in pedal_spans.get(e["part"], ()):  # noqa: B007
                 if a <= e["beat"] < b:
                     held = max(held, b - e["beat"])
@@ -2192,6 +2194,18 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
         # 5 = program_change. 리더는 트랙 중간 악기 변경을 읽는데(`_prog_at`) 라이터가 트랙당
         # 하나만 써서, 도중에 바뀐 악기가 첫 악기로 되돌아가고 있었다 — 실측 2026-08-21 비발디
         # 사계 봄: 4,054음 중 **218음이 다른 악기로** 났다. 읽기만 고치고 쓰기를 안 따라간 자리.
+        # 이 파트가 쓰는 제일 큰 벤딩. 2 를 넘으면 RPN 으로 휠 범위를 그만큼 연다.
+        bend_span = 2
+        for e in rows:
+            for _pt in (e.get("bend") or ()):
+                bend_span = max(bend_span, int(math.ceil(abs(_pt[1]))))
+        bend_span = min(24, bend_span)
+        if bend_span > 2 and part != "drum":
+            # RPN 0 = pitch bend sensitivity. CC101/100 으로 파라미터를 고르고 CC6 으로 반음,
+            # CC38 로 센트를 준 뒤 CC101/100 을 127 로 닫는다(규격의 표준 순서).
+            for _c, _v in ((101, 0), (100, 0), (6, bend_span), (38, 0), (101, 127), (100, 127)):
+                tr.append(mido.Message("control_change", channel=ch, control=_c,
+                                       value=_v, time=0))
         _pg_now = int((first_note or {}).get("program", 0)) if part != "drum" else None
         _bk_now = int((first_note or {}).get("bank") or 0) if part != "drum" else None
         if part != "drum":
@@ -2234,9 +2248,10 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
                 continue
             curve = e.get("bend")
             if curve and part != "drum":
-                # GM 의 휠 기본 범위는 ±2반음 — 록의 온음 벤딩이 마침 그 끝이다. 끝나면 0 으로
-                # 돌려 다음 음을 오염시키지 않는다. **시간 격자로** 훑는 이유는 벤딩이
-                # 박이 아니라 초로 움직이기 때문 — 음을 n등분하면 느린 곡에서 늘어진다.
+                # ⚠️ GM 의 휠 기본 범위는 ±2반음이라, 그보다 큰 벤딩은 **조용히 잘렸다**
+                # (악보가 `<bend-alter>3` 을 적어도 2 만 났다). 규격이 정한 방법이 있다 —
+                # RPN 0(pitch bend sensitivity)으로 범위를 넓히는 것. 이 파트가 쓰는 최대치를
+                # 보고 필요한 만큼만 연다(안 쓰면 아무것도 안 보내 옛 파일 무변).
                 spb_w = 60.0 / max(1e-6, bpm)
                 dur_s = e["beats"] * spb_w
                 b0 = int(round(e["beat"] * tpb))
@@ -2245,7 +2260,7 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
                 for k in range(steps + 1):
                     frac = k / steps
                     semis = bend_at(curve, frac)
-                    val = max(-8192, min(8191, int(round(semis / 2.0 * 8192))))
+                    val = max(-8192, min(8191, int(round(semis / float(bend_span) * 8192))))
                     marks.append((b0 + int((b1 - b0) * frac), 3, val, 0))
                 marks.append((b1, 3, 0, 0))
             start = int(round(e["beat"] * tpb))
@@ -2260,6 +2275,10 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
             # velocity → attenuation). 여기서 우리가 손대면 그 판단을 두 번 하는 것이 된다.
             vel = int(round(127 * float(e.get("vel", XML_DEFAULT_VEL))))
             length = e["beats"] * float(e.get("gate", 1.0))
+            if e.get("breath"):
+                # 앞 음에서 꺼내 쉰다 — 박이 아니라 **초**로 뺀다(숨은 템포를 안 탄다).
+                # 음의 절반은 넘지 않는다: 짧은 음에서 숨이 음을 삼키면 안 된다.
+                length = max(length * 0.5, length - BREATH_SEC / (60.0 / max(1e-6, bpm)))
             _end = start + int(round(length * tpb))
             marks.append((start, 1, pitch, vel))
             # 같은 틱이면 note_off 가 note_on **뒤에** 서야 그 음이 꺼진다 — 보통은 반대가
@@ -3443,7 +3462,14 @@ _XML_ART_GATE = {"staccato": 0.50, "staccatissimo": 0.33, "spiccato": 0.33,
 # 규격에는 있는데 **아무 관례도 연주값을 안 주는** 것들. 우리가 지어내지 않고, 안 걸었다고 말한다.
 #   · breath-mark·caesura — 참조 구현의 기본 멈춤이 0.0 이다(breath.cpp `_pause = 0.0`)
 #   · soft-accent·stress·unstress — 심볼은 있는데 gateTime·velocity 항목이 없다
-_XML_ART_UNPLAYED = ("breath-mark", "caesura",
+# 숨은 **앞 음에서 꺼내 쉰다.** 연주 관례(Wikipedia, Breath mark): "This pause is normally
+# intended to **shorten the duration of the preceding note** and **not to alter the tempo**;
+# in this function it can be thought of as a **grace rest**." — 그래서 뒤 음은 제자리에 있고
+# 그 음만 일찍 끝난다. 규격은 자리만 말한다("indicates a place to take a breath").
+# ⚠️ **길이는 우리가 고른다.** 숨은 물리적 행위라 박이 아니라 초로 잡았고(느린 곡에서 늘어지면
+# 숨이 아니라 쉼이 된다), 값은 짧은 들숨 한 번 = **0.25초**. 음의 절반을 넘지 않는다.
+BREATH_SEC = 0.25
+_XML_ART_UNPLAYED = ("caesura",
                      "doit", "falloff", "plop", "scoop", "other-articulation")
 # <technical> 중 **음색을 바꾸는 것**. 값은 여기 없다 — 낱말만 있고, 번호는 GM 이름표에서
 # 찾는다(gm_named_variant). 참조 구현이 악기마다 선언한 주법 채널의 program 과 같은 결과다.
@@ -3513,7 +3539,7 @@ def _art_of(el):
     """
     nots = _xk1(el, "notations")          # 모듈 레벨 헬퍼 — kid/text_of 는 파서 안 지역명이다
     arts = _xk1(nots, "articulations") if nots is not None else None
-    gate, steps, unplayed = 1.0, 0, []
+    gate, steps, unplayed, breath = 1.0, 0, [], False
     if arts is not None:
         for a in arts:
             tag = _strip_ns(a.tag)
@@ -3525,7 +3551,9 @@ def _art_of(el):
                 steps = _st2
             if tag in _XML_ART_UNPLAYED:
                 unplayed.append(tag)
-    return gate, steps, unplayed
+            if tag == "breath-mark":
+                breath = True
+    return gate, steps, unplayed, breath
 
 # 물결선으로 지시된 화음 굴리기(rolled chord). ⚠️ 우리말 "아르페지오 주법"(손가락으로 뜯는
 # 분산화음)과 **다른 물건**이다 — 그쪽은 악보에 음표로 다 적히고 우리는 그대로 연주한다.
@@ -4253,7 +4281,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         usyl = (text_of(uly, "text") or "").strip() if uly is not None else ""
                         u_staff = _xt(el, "staff", "1") or "1"
                         # 드럼도 악센트를 읽는다 — 게이트는 원샷이라 무의미하지만 세기는 아니다.
-                        _ug, _ust, _uun = _art_of(el)
+                        _ug, _ust, _uun, _ubr = _art_of(el)
                         for _t in _uun:
                             skip_mark("아티큘레이션 %s" % _t)
                         _upa = pend_accent.pop(u_staff, None)
@@ -4362,7 +4390,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             vel_by_staff[_ds] = _dv
                             vel_any[0] = _dv
                         deferred_dyn = [q for q in deferred_dyn if q[0] > _now + 1e-9]
-                    gate, vsteps, _unp_art = _art_of(el)
+                    gate, vsteps, _unp_art, _breath = _art_of(el)
                     for _t in _unp_art:
                         skip_mark("아티큘레이션 %s" % _t)
                     orn = kid(nots, "ornaments") if nots is not None else None
@@ -4506,6 +4534,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             base_row["bank"] = _rb
                         if _bend_curve:
                             base_row["bend"] = _bend_curve
+                        if _breath:
+                            base_row["breath"] = True
                         if "pan" in f_mix:
                             base_row["pan"] = f_mix["pan"]
                         if roll_n is not None:
@@ -6739,11 +6769,35 @@ def action_selftest():
     ck("⭐ 아티큘레이션 게이트가 MuseScore 표 그대로 (스타카티시모는 0.25→0.33 로 출처 통일)",
        [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0], _g,
        _g == [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0])
-    _g, _sc = _gates(["breath-mark", "caesura", "doit"])
+    _g, _sc = _gates(["caesura", "doit", "scoop"])
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
-    ck("⭐ 연주값을 주는 관례가 없는 것은 **안 걸었다고 말한다** (참조 구현도 멈춤이 0.0)",
-       [[1.0, 1.0, 1.0], 3], [_g, len([k for k in _sk if "아티큘레이션" in k])],
+    ck("⭐ 연주값을 주는 관례가 없는 것은 **안 걸었다고 말한다**", [[1.0, 1.0, 1.0], 3],
+       [_g, len([k for k in _sk if "아티큘레이션" in k])],
        _g == [1.0, 1.0, 1.0] and len([k for k in _sk if "아티큘레이션" in k]) == 3)
+    # ⭐ 숨은 **앞 음에서 꺼낸다** — 뒤 음은 제자리여야 한다(관례: "not to alter the tempo").
+    _brdoc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+              + _n("C", 4, 2, extra='<notations><articulations><breath-mark/>'
+                                    '</articulations></notations>')
+              + _n("D", 4, 2) + '</measure>' + E)
+    with open("data/sing/selftest-breath.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_brdoc)
+    _brows = []
+    musicxml_to_score("data/sing/selftest-breath.musicxml", parts_out=_brows)
+    os.remove("data/sing/selftest-breath.musicxml")
+    _bp = [r for r in _brows if "pitch" in r]
+    if write_midi(_bp, 120, "data/sing/selftest-breath.mid")[0]:
+        _bt = _mido.MidiFile("data/sing/selftest-breath.mid").tracks[0]
+        _ev, _t2 = [], 0
+        for _m2 in _bt:
+            _t2 += _m2.time
+            if _m2.type in ("note_on", "note_off"):
+                _ev.append((_t2, _m2.type, _m2.note))
+        os.remove("data/sing/selftest-breath.mid")
+        _off1 = next(t for t, k, n2 in _ev if k == "note_off" and n2 == 60)
+        _on2 = next(t for t, k, n2 in _ev if k == "note_on" and n2 == 62)
+        ck("⭐ 숨표는 **앞 음을 일찍 끝낸다** (0.25초어치, 120bpm 에서 240틱)", [720, 960],
+           [_off1, _on2], _off1 == 720 and _on2 == 960)
+        ck("…그리고 **뒤 음은 안 움직인다** (숨은 템포를 바꾸지 않는다)", 960, _on2, _on2 == 960)
 
     def _artvels(marks):
         body = ""
