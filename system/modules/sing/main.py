@@ -3489,7 +3489,12 @@ _XML_ART_UNPLAYED = ("caesura", "other-articulation")
 _XML_SLIDE = {"doit": (1, "after"), "falloff": (-1, "after"),
               "scoop": (-1, "before"), "plop": (1, "before")}
 _XML_SLIDE_SEMIS = {"short": 2, "medium": 5, "long": 12}
-SLIDE_SPAN = 0.25
+# ⚠️ 처음엔 **음 길이의 1/4** 로 잡았다가 실측에서 걷었다: 같은 비율이 8분음표 @200bpm 에서
+# 0.037초, 온음표 @60bpm 에서 1.000초가 됐다(**27배**). 37 ms 는 미끄러짐이 아니라 딸깍이고
+# 1초짜리 폴은 우스꽝스럽다. 입술·밸브로 하는 **물리적 몸짓**이라 음표 값이 아니라 초로 잡는다
+# (팜뮤트·청킹을 ms 로 못 박은 것과 같은 자리). 음의 절반은 안 넘는다.
+# 값은 우리가 골랐다 — 짧은 스매어 한 번.
+SLIDE_SEC = 0.2
 
 
 def _xml_slide_curve(el):
@@ -3503,10 +3508,19 @@ def _xml_slide_curve(el):
             continue
         sign, where = hit
         n = sign * _XML_SLIDE_SEMIS.get((a.get("line-length") or "medium").strip().lower(), 5)
-        if where == "after":
-            return [(0.0, 0.0), (round(1 - SLIDE_SPAN, 4), 0.0), (1.0, float(n))]
-        return [(0.0, float(n)), (round(SLIDE_SPAN, 4), 0.0), (1.0, 0.0)]
+        # 곡선의 **시간 몫**은 여기서 못 정한다 — 음의 최종 길이와 템포를 알아야 한다.
+        # 표시만 달아 두고 워프 뒤에서 초로 환산한다(_slide_to_bend).
+        return (float(n), where)
     return None
+
+
+def _slide_to_bend(spec, beats, spb):
+    """(반음, 앞/뒤) → 벤딩 곡선. 몫은 **초**로 정하고 음의 절반을 안 넘는다."""
+    n, where = spec
+    frac = min(0.5, SLIDE_SEC / max(1e-6, beats * spb))
+    if where == "after":
+        return [(0.0, 0.0), (round(1 - frac, 4), 0.0), (1.0, n)]
+    return [(0.0, n), (round(frac, 4), 0.0), (1.0, 0.0)]
 # <technical> 중 **음색을 바꾸는 것**. 값은 여기 없다 — 낱말만 있고, 번호는 GM 이름표에서
 # 찾는다(gm_named_variant). 참조 구현이 악기마다 선언한 주법 채널의 program 과 같은 결과다.
 _XML_TECH_VOICE = {"snap-pizzicato": "pizzicato", "stopped": "muted",
@@ -4307,9 +4321,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         _bends = kids(_tec, "bend")
                         if _bends:
                             _bend_curve = _xml_bend_curve(_bends)
-                    if _bend_curve is None:
-                        # 미끄러짐은 <articulations> 에 산다 — <bend> 가 있으면 그쪽이 원본이다.
-                        _bend_curve = _xml_slide_curve(el)
+                    # 미끄러짐은 <articulations> 에 산다 — <bend> 가 있으면 그쪽이 원본이다.
+                    _slide_spec = _xml_slide_curve(el) if _bend_curve is None else None
                     _ply = kid(el, "play")
                     _mut = (text_of(_ply, "mute") or "").strip().lower() if _ply is not None                         else ""
                     if mute_now[0] and not _mut:
@@ -4617,6 +4630,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             base_row["bank"] = _rb
                         if _bend_curve:
                             base_row["bend"] = _bend_curve
+                        elif _slide_spec:
+                            base_row["_slide"] = _slide_spec
                         if _breath:
                             base_row["breath"] = True
                         if "pan" in f_mix:
@@ -4749,6 +4764,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
 
     if parts_out is not None:
         spb_w = spb_w0
+        for row in parts_out:
+            _sp2 = row.pop("_slide", None)
+            if _sp2:
+                row["bend"] = _slide_to_bend(_sp2, row["beats"], spb_w0)
         for row in parts_out:
             b0, b1 = row["beat"], row["beat"] + row["beats"]
             _w0, _w1 = warp(b0), warp(b1)
@@ -6886,18 +6905,44 @@ def action_selftest():
         os.remove("data/sing/selftest-slide.musicxml")
         return next((r.get("bend") for r in rows if "pitch" in r), None)
 
+    # 픽스처는 온음표 @120bpm = 2초 → 0.2초는 그 1/10 이다.
     _sd, _sf = _slide("doit"), _slide("falloff")
     _ss, _sp = _slide("scoop"), _slide("plop")
     ck("⭐ doit·falloff 는 음 **뒤**에서 위·아래로 미끄러진다 (규격이 정한 자리와 방향)",
-       [[(0.0, 0.0), (0.75, 0.0), (1.0, 5.0)], [(0.0, 0.0), (0.75, 0.0), (1.0, -5.0)]],
-       [_sd, _sf], _sd == [(0.0, 0.0), (0.75, 0.0), (1.0, 5.0)]
-       and _sf == [(0.0, 0.0), (0.75, 0.0), (1.0, -5.0)])
+       [[(0.0, 0.0), (0.9, 0.0), (1.0, 5.0)], [(0.0, 0.0), (0.9, 0.0), (1.0, -5.0)]],
+       [_sd, _sf], _sd == [(0.0, 0.0), (0.9, 0.0), (1.0, 5.0)]
+       and _sf == [(0.0, 0.0), (0.9, 0.0), (1.0, -5.0)])
     # ⚠️ 규격은 **어디서 오느냐**로 쓴다 — scoop "comes from below", plop "comes from above".
     # 처음엔 이 둘을 뒤집어 놓고 시험에도 그대로 적었다.
     ck("…scoop 은 **아래에서** 올라오고, plop 은 **위에서** 내려온다 (규격 문장 그대로)",
-       [[(0.0, -5.0), (0.25, 0.0), (1.0, 0.0)], [(0.0, 5.0), (0.25, 0.0), (1.0, 0.0)]],
-       [_ss, _sp], _ss == [(0.0, -5.0), (0.25, 0.0), (1.0, 0.0)]
-       and _sp == [(0.0, 5.0), (0.25, 0.0), (1.0, 0.0)])
+       [[(0.0, -5.0), (0.1, 0.0), (1.0, 0.0)], [(0.0, 5.0), (0.1, 0.0), (1.0, 0.0)]],
+       [_ss, _sp], _ss == [(0.0, -5.0), (0.1, 0.0), (1.0, 0.0)]
+       and _sp == [(0.0, 5.0), (0.1, 0.0), (1.0, 0.0)])
+
+    def _slide_secs(dur_beats, tempo):
+        doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<direction><direction-type><metronome><beat-unit>quarter</beat-unit>'
+               '<per-minute>' + str(tempo) + '</per-minute></metronome>'
+               '</direction-type></direction>'
+               + _n("C", 4, dur_beats,
+                    extra='<notations><articulations><falloff/>'
+                          '</articulations></notations>') + '</measure>' + E)
+        with open("data/sing/selftest-ss.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        rows = []
+        musicxml_to_score("data/sing/selftest-ss.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-ss.musicxml")
+        r = next(r for r in rows if r.get("bend"))
+        # 미끄러지는 몫 × 음 길이(초)
+        return round((1 - r["bend"][1][0]) * r["beats"] * 60.0 / tempo, 3)
+
+    # 둘 다 0.4초보다 긴 음이라 상한(절반)에 안 걸린다 — 4초짜리와 0.6초짜리.
+    _s1, _s2 = _slide_secs(4, 60), _slide_secs(2, 200)
+    ck("⭐ 미끄러짐은 **초로 잡는다** — 음이 길든 짧든 같은 시간 (비율이면 27배 벌어졌다)",
+       [0.2, 0.2], [_s1, _s2], _s1 == 0.2 and _s2 == 0.2)
+    _s3 = _slide_secs(1, 400)   # 음 0.15초 — 0.2초가 안 들어간다
+    ck("…음의 절반은 안 넘는다 (짧은 음이 통째로 미끄러지면 안 된다)", 0.075, _s3,
+       _s3 == 0.075)
     ck("…폭은 파일의 `line-length` 등급을 따른다 (short 온음 · long 옥타브)", [2.0, 12.0],
        [_slide("falloff", ' line-length="short"')[-1][1] * -1,
         _slide("falloff", ' line-length="long"')[-1][1] * -1],
