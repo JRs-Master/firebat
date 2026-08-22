@@ -16,6 +16,7 @@ round trip, the module owns the work.
 """
 
 import collections
+import inspect as _inspect
 import hashlib
 import json
 import math
@@ -1086,8 +1087,8 @@ DRUM_NOTE = {
     "guiro_short": 73, "guiro_long": 74, "claves": 75, "woodblock_hi": 76, "woodblock_lo": 77,
     "cuica_mute": 78, "cuica_open": 79, "triangle_mute": 80, "triangle_open": 81,
     # 35~81 above is General MIDI Level 1 — the floor every GM font has. Below and above it lies
-    # the GS/GM2 extension, and the fonts people actually install do carry it: Arachno's kits run
-    # 26~87 (실측 8/20). Naming them is the difference between "the font has castanets" and "you
+    # the GS/GM2 extension, and the fonts people actually install do carry it: GeneralUser GS
+    # ships 13 kits (실측 8/22). Naming them is the difference between "the font has castanets" and "you
     # can ask for castanets". A font WITHOUT them is handled, not assumed — DRUM_GM1_SUB below.
     "fingersnap": 26, "highq": 27, "slap": 28, "scratch_push": 29, "scratch_pull": 30,
     "sticks": 31, "square_click": 32, "metronome_click": 33, "metronome_bell": 34,
@@ -2058,7 +2059,7 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
             ch = 9
             # A kit is chosen by program change like any other instrument — GM only fixes WHICH
             # channel it sits on. Without this line the drum track was always Standard, whatever
-            # else the font carried (Arachno ships ten kits; we could reach one).
+            # else the font carried (GeneralUser GS ships 13 kits; we could reach one).
             kp = int(rows[0].get("program") or 0)
             if kp:
                 tr.append(mido.Message("program_change", channel=ch, program=kp, time=0))
@@ -2192,7 +2193,7 @@ SF2_DIRS = ("/usr/share/sounds/sf2", "/usr/local/share/sounds/sf2")
 # ── what the installed font can actually play ─────────────────────────────────────────────────
 # We used to assume. The font is the original for "which sounds exist" — it says so in its own
 # table of contents — and asking it is cheap: the chunk walk SEEKS past the sample data, so a
-# 155 MB SoundFont costs 0.36 MB of reads and 1.8 ms (실측 8/20, Arachno). Cheap enough to ask
+# 155 MB SoundFont costs 0.36 MB of reads and 1.8 ms (실측 8/20). Cheap enough to ask
 # every render, which means we never ship a name the current font cannot sound. Swap the font and
 # the answer changes with it; no table of ours has to be edited to keep up.
 _FONT_CACHE = {}
@@ -2448,7 +2449,7 @@ def font_inventory(path):
 
 
 def sf2_backend():
-    """The OS synth, if the OS has one: `apt install fluidsynth fluid-soundfont-gm`.
+    """The OS synth, if the OS has one: fluidsynth + a GM SoundFont in the distro's sf2 dir.
 
     Both halves come from apt and both are FOUND, not configured — the engine on PATH, the GM
     font at the distro's standard sf2 directory (default-GM.sf2 = the alternatives symlink, so the
@@ -2469,11 +2470,73 @@ def sf2_backend():
             font = os.path.join(d, (pref or sf2s)[0])
             break
     if not binp:
-        return None, font, "fluidsynth 미설치 — `apt install fluidsynth fluid-soundfont-gm`"
+        return None, font, "fluidsynth 미설치 — `apt install fluidsynth`"
     if not font:
-        return binp, None, ("사운드폰트(.sf2)가 없습니다 — "
-                            "`apt install fluid-soundfont-gm` (/usr/share/sounds/sf2)")
+        # 이 폰트를 지목하는 이유는 취향이 아니라 측정이다 — 128 중 116 프로그램이 루프 없는
+        # 원샷 샘플이고(튕기고 잦아드는 악기가 늘어나지 않는다) 31 MB 로 그걸 한다. 그리고
+        # 저자가 fluidsynth 설정을 문서로 지정해 둔 유일한 폰트라 FONT_SYNTH_PROFILES 가 안다.
+        return binp, None, ("사운드폰트(.sf2)가 없습니다 — GeneralUser-GS.sf2 를 "
+                            "/usr/share/sounds/sf2 에 두세요 "
+                            "(github.com/mrbumpy409/GeneralUser-GS)")
     return binp, font, None
+
+
+# ── 폰트가 자기 문서에서 지정한 신디 설정 ───────────────────────────────────────────────
+# sf2 파일은 이 값들을 담지 못한다 — 리버브·코러스·보간·폴리포니는 **재생기** 설정이지 폰트의
+# 청크가 아니다. 그래서 파일에서 파생할 방법이 없고 유일한 집이 선언이다. 여기 들어올 수 있는
+# 값의 조건은 하나 — **출처를 댈 수 있을 것.** 우리 취향은 못 들어온다.
+# 매치는 폰트가 말하는 자기 이름(INFO/INAM)의 앞부분. 모르는 폰트면 빈 프로필 = fluidsynth 기본값.
+FONT_SYNTH_PROFILES = {
+    # GeneralUser GS — 문서 revision 6 (2026-02-23) §3.0.2 "FluidSynth", S. Christian Collins.
+    # github.com/mrbumpy409/GeneralUser-GS  (문서 = documentation/README.md)
+    # 이 폰트는 모듈레이터를 2,258개 선언한다(pmod 449 + imod 1,809, 실측). 벨로시티가 필터를
+    # 열고 CC91/CC93 이 존별 센드를 움직이는 식이라, 규격을 다 구현한 신디를 전제로 만들어졌다.
+    # 저자가 fluidsynth 를 "Excellent" 로 꼽으면서 같이 적어 둔 값이 아래다.
+    "generalusergs": {
+        "gain": 0.5,
+        "interp": 7,             # 최고차 보간. 이건 설정이 아니라 셸 명령이라 -f 로만 걸린다
+        "settings": {
+            # 기본 256. 레이어가 두꺼운 폰트라 페달 밟은 피아노에서 보이스를 훔친다
+            "synth.polyphony": 512,
+            "synth.device-id": 16,          # 롤랜드 GS 기기로 동작 = GS SysEx 를 GS 로 읽는다
+            # 리버브 넷은 fluidsynth 2.4 기본값과 같은 값이다. 그래도 **적는다** —
+            # 2.3.x 기본은 damp 0 / level 0.9 / room 0.2 / width 0.5 였고, 배포판이 내려가면
+            # 아무 말 없이 소리가 바뀐다. 적어 두면 버전이 아니라 문서가 정한다.
+            "synth.reverb.damp": 0.3, "synth.reverb.level": 0.7,
+            "synth.reverb.room-size": 0.5, "synth.reverb.width": 0.8,
+            # 코러스는 2.4 기본(4.25 / 0.6 / 3 / 0.2)과 다르다. ⚠️ 실측: 지금은 **아무것도
+            # 안 바뀐다**(바이트 동일) — GM 기본 CC93 센드가 0 이라 코러스가 꺼진 것과 같기
+            # 때문. 파일이 CC93 을 쓰는 날 이 값이 산다. 리버브가 들리는 이유도 같다(CC91=40).
+            "synth.chorus.depth": 3.6, "synth.chorus.level": 0.55,
+            "synth.chorus.nr": 4, "synth.chorus.speed": 0.36,
+        },
+    },
+}
+
+
+def synth_profile(font_path):
+    """(프로필 이름, 프로필) — 그 폰트의 저자가 지정한 신디 설정. 없으면 (None, {})."""
+    inv = font_inventory(font_path) if font_path else None
+    key = _norm_inst((inv or {}).get("name") or os.path.basename(font_path or ""))
+    for pref, prof in FONT_SYNTH_PROFILES.items():
+        if key.startswith(pref):
+            return pref, prof
+    return None, {}
+
+
+def fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path=None):
+    """fluidsynth 한 줄. 렌더도 프로브도 **같은 줄**을 쓴다 — 다른 설정으로 잰 값은
+    우리가 실제로 내보내는 소리에 대한 값이 아니다."""
+    _pn, prof = synth_profile(font)
+    argv = [binp, "-ni", "-g", str(float(prof.get("gain", SYNTH_GAIN))),
+            "-r", str(SR), "-O", "float"]
+    if prof.get("interp") and cfg_path:
+        with open(cfg_path, "w", encoding="utf-8") as fh:
+            print("interp %d" % int(prof["interp"]), file=fh)
+        argv += ["-f", cfg_path]
+    for k, v in sorted((prof.get("settings") or {}).items()):
+        argv += ["-o", f"{k}={v}"]
+    return argv + ["-F", wav_path, font, mid_path]
 
 
 def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None):
@@ -2487,16 +2550,19 @@ def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None):
     tag = f"{os.getpid()}-{hashlib.sha1(f'{spb}:{len(arr)}'.encode()).hexdigest()[:8]}"
     mid_path = f"data/sing/tmp-{tag}.mid"
     wav_path = f"data/sing/tmp-{tag}.wav"
+    cfg_path = f"data/sing/tmp-{tag}.cfg"
     try:
         written, note = write_midi(arr, 60.0 / spb, mid_path, mix=mixmap,
                                    filecc7=filecc7, ctl=ctl)
         if not written:
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
-        # Stock settings on purpose (사용자: "우리가 임의적으로 하지 말고 미디 기본값으로") —
-        # the reference sound is what any GM player makes of the same .mid, reverb included.
-        r = subprocess.run([binp, "-ni", "-g", str(SYNTH_GAIN), "-r", str(SR),
-                            "-F", wav_path, font,
-                            mid_path],
+        # 우리 취향은 여전히 0 이다. 달라진 것은 **누구의 기본값이냐** — 그냥 fluidsynth 것을
+        # 쓰면 그건 "아무 폰트나"의 기본값이고, 이 폰트를 만든 사람은 이 폰트를 위한 값을
+        # 자기 문서에 적어 뒀다. 적어 둔 것이 있으면 그것이 기본값이다.
+        # ⚠️ 출력은 **부동소수**로 받는다. fluidsynth 기본은 16비트라, 조용한 대목을 렌더한 뒤
+        # 라우드니스 정규화가 끌어올리면 양자화 잡음도 같이 올라간다. 실측(pp 화음 하나):
+        # 16비트 바닥이 정규화 후 −42.4 dBFS, float 는 −112.6 dBFS. **70 dB 차이.**
+        r = subprocess.run(fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path),
                            capture_output=True, timeout=600)
         if r.returncode != 0 or not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1024:
             tail = (r.stderr or r.stdout or b"")[-300:].decode("utf-8", "replace").strip()
@@ -2516,7 +2582,7 @@ def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None):
     except subprocess.TimeoutExpired:
         return None, "fluidsynth timed out"
     finally:
-        for pth in (mid_path, wav_path):
+        for pth in (mid_path, wav_path, cfg_path):
             try:
                 os.remove(pth)
             except OSError:
@@ -5004,6 +5070,12 @@ def action_render(inp):
         _inv = font_inventory(sf2_font_path) if sf2_font_path else None
         if _inv and _inv.get("name"):
             data["soundfont"] = "%s (%s)" % (_inv["name"], sf2_font)
+        # 어느 설정으로 울렸는지도 응답이 말한다 — 안 말하면 소리가 달라져도 이유를 못 댄다.
+        _pn, _pf = synth_profile(sf2_font_path) if sf2_font_path else (None, {})
+        data["synth"] = {"gain": float(_pf.get("gain", SYNTH_GAIN)), "format": "float",
+                         "profile": _pn or "fluidsynth defaults",
+                         **({"interp": _pf["interp"]} if _pf.get("interp") else {}),
+                         **(_pf.get("settings") or {})}
     if kit_label:
         data["kit"] = kit_label
     if swapped and engine_used == "sf2":
@@ -5223,6 +5295,7 @@ def action_levels(inp):
 
 def action_selftest():
     checks = []
+    _PROBE_SRC = _inspect.getsource(probe_controllers)
 
     def ck(name, want, got, ok):
         checks.append({"name": name, "want": want, "got": got, "ok": bool(ok)})
@@ -6292,6 +6365,49 @@ def action_selftest():
     ck("…그리고 규격 기본 모듈레이터는 따로 안다(파일엔 없지만 늘 걸린다)", True,
        [a for a, _b, _w, _c in SF2_DEFAULT_MODULATORS][:3],
        any(a == "CC1" and _w == "spec" for a, _b, _w, _c in SF2_DEFAULT_MODULATORS))
+    # ── 저자가 지정한 신디 설정 ──────────────────────────────────────────────────────────
+    # 폰트 문서가 있는 폰트는 그 문서가 기본값을 정한다. 없는 폰트에 우리 취향을 얹지 않는다.
+    _cfgp = "data/sing/selftest-synth.cfg"
+    _gargv = fluidsynth_argv("fluidsynth", "/nope/GeneralUser-GS.sf2", "a.mid", "b.wav", _cfgp)
+    _gopts = dict(o.split("=", 1) for o in _gargv if "=" in o and o.count("=") == 1)
+    ck("⭐ 출력은 **부동소수** — 16비트로 받으면 정규화가 양자화 잡음까지 끌어올린다(실측 70 dB)",
+       True, "-O float" if ("-O" in _gargv and "float" in _gargv) else _gargv[:6],
+       "-O" in _gargv and _gargv[_gargv.index("-O") + 1] == "float")
+    ck("GeneralUser GS 면 저자 문서의 게인(0.5)으로 부른다", "0.5",
+       _gargv[_gargv.index("-g") + 1], _gargv[_gargv.index("-g") + 1] == "0.5")
+    ck("…폴리포니 512 (기본 256 = 페달 밟은 피아노에서 보이스를 훔친다)", "512",
+       _gopts.get("synth.polyphony"), _gopts.get("synth.polyphony") == "512")
+    ck("…코러스 넷이 문서 값 (2.4 기본 4.25/0.6/3/0.2 과 다르다)",
+       ["3.6", "0.55", "4", "0.36"],
+       [_gopts.get("synth.chorus.depth"), _gopts.get("synth.chorus.level"),
+        _gopts.get("synth.chorus.nr"), _gopts.get("synth.chorus.speed")],
+       [_gopts.get("synth.chorus.depth"), _gopts.get("synth.chorus.level"),
+        _gopts.get("synth.chorus.nr"), _gopts.get("synth.chorus.speed")]
+       == ["3.6", "0.55", "4", "0.36"])
+    ck("…리버브 넷도 **적어서** 나간다 (버전 기본값에 기대면 배포판이 내려갈 때 조용히 바뀐다)",
+       ["0.3", "0.7", "0.5", "0.8"],
+       [_gopts.get("synth.reverb.damp"), _gopts.get("synth.reverb.level"),
+        _gopts.get("synth.reverb.room-size"), _gopts.get("synth.reverb.width")],
+       [_gopts.get("synth.reverb.damp"), _gopts.get("synth.reverb.level"),
+        _gopts.get("synth.reverb.room-size"), _gopts.get("synth.reverb.width")]
+       == ["0.3", "0.7", "0.5", "0.8"])
+    # ⚠️ 파일을 무조건 열면 프로필이 빠졌을 때 **검사가 죽어** 나머지 286개까지 같이 죽는다.
+    # 그물은 빨강이 되어야지 끊어지면 안 된다.
+    _cfgtxt = (open(_cfgp, encoding="utf-8").read().strip()
+               if os.path.isfile(_cfgp) else "(파일 없음)")
+    ck("…보간 7 은 설정이 아니라 셸 명령이라 -f 커맨드 파일로 나간다", "interp 7",
+       _cfgtxt if "-f" in _gargv else "-f 없음",
+       "-f" in _gargv and _cfgtxt == "interp 7")
+    if os.path.isfile(_cfgp):
+        os.remove(_cfgp)
+    _uargv = fluidsynth_argv("fluidsynth", _fx, "a.mid", "b.wav", "data/sing/selftest-x.cfg")
+    ck("⭐ 문서가 없는 폰트엔 **아무것도 안 얹는다** — 남의 폰트 값은 우리 취향과 같다", 0,
+       _uargv.count("-o"), _uargv.count("-o") == 0 and "-f" not in _uargv)
+    ck("…그때 게인은 fluidsynth 자기 기본값", str(SYNTH_GAIN),
+       _uargv[_uargv.index("-g") + 1], _uargv[_uargv.index("-g") + 1] == str(SYNTH_GAIN))
+    _same_line = "fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path)" in _PROBE_SRC
+    ck("프로브도 렌더와 **같은 줄**을 쓴다 (다른 설정에서 잰 값은 우리 소리의 값이 아니다)",
+       True, _same_line, _same_line)
     # 배선 — 이름으로 부르면 뱅크가 따라오고, .mid 에 뱅크 셀렉트가 program_change **앞**에 선다.
     _FONT_ALIASES.clear()
     load_font_aliases(_fx)
@@ -7175,10 +7291,15 @@ def action_selftest():
 # Arachno +9.6 dBFS · FluidR3 +7.8 · MuseScore +6.4 · GeneralUser +2.9 — 즉 **0.9 에서
 # 제일 큰 폰트가 8.7 dB 넘게 잘린다.** fluidsynth 기본이 0.2 인 것이 이 이유다. 우리 실제
 # 렌더가 여태 안 잘린 건 재료가 fff 여덟 겹이 아니었을 뿐이고, 그건 안전이 아니라 운이다.
-# 0.16 = 제일 큰 폰트의 최악값을 −6 dBFS 에 두는 값. 폰트를 갈면 이 숫자를 다시 잰다
-# (스크래치패드 headroom.py — 폰트별로 재서 제일 작은 게인을 고른다).
-SYNTH_GAIN = 0.16
-BUILTIN_GAIN = SYNTH_GAIN / 0.2     # 내장 신디도 여유값을 같은 비율로 — 크기는 정규화가 정한다
+# ⚠️ **그 여유 문제는 8/22 에 없어졌다** — 출력을 `-O float` 로 받으면서 파일 쓰기에서 잘릴
+# 자리가 사라졌다(render_sf2 참조). 그래서 `-g` 는 이제 "안 잘릴 만큼 작게"가 아니라 그냥 크기
+# 계수이고, 크기는 라우드니스가 정하므로 **최종 파일에 안 남는다**(스케일 불변). 남은 일은
+# 하나 — 누구의 값을 쓸 것인가. 폰트가 자기 문서에서 말했으면 그것(FONT_SYNTH_PROFILES,
+# GeneralUser GS = 0.5), 아무도 안 말했으면 **fluidsynth 자기 기본값**.
+SYNTH_GAIN = 0.2
+# 내장 신디의 마스터. 예전엔 SYNTH_GAIN 에서 파생했는데 그 연결의 근거였던 "여유"가 없어져
+# 뜻이 사라졌다 — 값은 그대로 두어 회귀 0(정규화가 뒤에 서니 최종 결과는 어차피 스케일 불변).
+BUILTIN_GAIN = 0.8
 
 
 MIDI_TPB = 480          # write_midi 가 쓰는 격자. 대조는 이 눈금 위에서 한다
@@ -7352,6 +7473,7 @@ def probe_controllers(program=0, bank=0):
     os.makedirs("data/sing", exist_ok=True)
     tag = f"{os.getpid()}-probe"
     mid_path, wav_path = f"data/sing/{tag}.mid", f"data/sing/{tag}.wav"
+    cfg_path = f"data/sing/{tag}.cfg"
     tpb, note_beats = 480, 2.0        # 120bpm 기준 1초. 뒤 30% 가 꼬리 구간이 된다
     try:
         mf = mido.MidiFile(ticks_per_beat=tpb)
@@ -7379,7 +7501,9 @@ def probe_controllers(program=0, bank=0):
                 tr.append(mido.Message("control_change", channel=0, control=123, value=0,
                                        time=step - step // 2))
         mf.save(mid_path)
-        r = subprocess.run([binp, "-ni", "-r", str(SR), "-F", wav_path, font, mid_path],
+        # 렌더와 **같은 줄**로 잰다 — 설정이 다르면 "이 폰트가 답하는 CC" 가 우리가
+        # 실제로 내보내는 소리에 대한 답이 아니게 된다.
+        r = subprocess.run(fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path),
                            capture_output=True, timeout=300)
         if r.returncode != 0 or not os.path.isfile(wav_path):
             tail = (r.stderr or b"")[-200:].decode("utf-8", "replace").strip()
@@ -7407,7 +7531,7 @@ def probe_controllers(program=0, bank=0):
     except subprocess.TimeoutExpired:
         return None, "fluidsynth timed out"
     finally:
-        for pth in (mid_path, wav_path):
+        for pth in (mid_path, wav_path, cfg_path):
             try:
                 os.remove(pth)
             except OSError:

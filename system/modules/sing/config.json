@@ -260,7 +260,7 @@
           "string",
           "null"
         ],
-        "description": "[render] sf2 = system FluidSynth + GM SoundFont — realistic instruments; the server enables it with `apt install fluidsynth fluid-soundfont-gm` and the module finds both on its own. builtin = the module's own synth. Omit = auto: sf2 when installed, else builtin. [levels] which engine to measure; omit for whichever would actually render."
+        "description": "[render] sf2 = system FluidSynth + a GM SoundFont found in the distro's sf2 dir — realistic instruments; when the font ships its own recommended synth settings the module uses them, and the response reports which under `synth`. builtin = the module's own synth. Omit = auto: sf2 when installed, else builtin. [levels] which engine to measure; omit for whichever would actually render."
       },
       "audioFormat": {
         "type": [
