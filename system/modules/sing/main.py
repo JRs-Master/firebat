@@ -3356,7 +3356,23 @@ def _xt(el, name, default=None):
 
 # 적힌 길이의 **절반**이 스타카토의 교과서 규칙이고, 스타카티시모는 그 절반. 테누토는
 # "제 길이를 다 지켜라" 라 **1.0** 이다 — 1.05 는 다음 음을 침범하므로 테누토가 아니었다.
-_XML_ART_GATE = {"staccato": 0.5, "staccatissimo": 0.25, "tenuto": 1.0}
+# 출처 = MuseScore `share/instruments/instruments.xml` 의 Articulation `gateTime`(%) —
+# staccato 50 · staccatissimo 33 · portato 67 · tenuto 100 · marcato 67.
+# 규격이 기호와 길이의 대응을 안 정하므로 여기도 관례를 쓰는데, **셈여림 표와 같은 출처**로
+# 맞춘다(두 데서 가져오면 두 표가 서로 어긋난다).
+# 어느 MusicXML 기호가 어느 심볼인지도 같은 저장소의 임포터가 말한다(importmxmlpass2.cpp):
+#   · `spiccato`        → articStaccatissimo  = staccatissimo 와 같은 값
+#   · `detached-legato` → articTenutoStaccato = portato
+# ⚠️ staccatissimo 는 우리가 0.25 로 두고 있었다(스타카토의 절반이라는 우리 셈). 표가 0.33 이라
+#    그쪽으로 맞춘다 — 값 하나를 위해 출처를 둘로 두지 않는다.
+_XML_ART_GATE = {"staccato": 0.50, "staccatissimo": 0.33, "spiccato": 0.33,
+                 "detached-legato": 0.67, "strong-accent": 0.67, "marcato": 0.67,
+                 "tenuto": 1.0}
+# 규격에는 있는데 **아무 관례도 연주값을 안 주는** 것들. 우리가 지어내지 않고, 안 걸었다고 말한다.
+#   · breath-mark·caesura — 참조 구현의 기본 멈춤이 0.0 이다(breath.cpp `_pause = 0.0`)
+#   · soft-accent·stress·unstress — 심볼은 있는데 gateTime·velocity 항목이 없다
+_XML_ART_UNPLAYED = ("breath-mark", "caesura", "soft-accent", "stress", "unstress",
+                     "doit", "falloff", "plop", "scoop", "other-articulation")
 # 세기는 **셈여림 표의 한 칸**으로 움직인다. 예전엔 +0.12·+0.18 이라는 내가 고른 값이었는데,
 # "조금 세게" 를 말해 주는 출처가 우리에게 _XML_DYN 하나뿐이라 거기서 파생한다.
 _XML_ART_STEP = {"accent": 1, "strong-accent": 2, "marcato": 2}
@@ -3392,13 +3408,15 @@ def _art_of(el):
     """
     nots = _xk1(el, "notations")          # 모듈 레벨 헬퍼 — kid/text_of 는 파서 안 지역명이다
     arts = _xk1(nots, "articulations") if nots is not None else None
-    gate, steps = 1.0, 0
+    gate, steps, unplayed = 1.0, 0, []
     if arts is not None:
         for a in arts:
             tag = _strip_ns(a.tag)
             gate = min(gate, _XML_ART_GATE.get(tag, 1.0))
             steps = max(steps, _XML_ART_STEP.get(tag, 0))
-    return gate, steps
+            if tag in _XML_ART_UNPLAYED:
+                unplayed.append(tag)
+    return gate, steps, unplayed
 
 # 물결선으로 지시된 화음 굴리기(rolled chord). ⚠️ 우리말 "아르페지오 주법"(손가락으로 뜯는
 # 분산화음)과 **다른 물건**이다 — 그쪽은 악보에 음표로 다 적히고 우리는 그대로 연주한다.
@@ -3725,6 +3743,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     for pi, part in enumerate(parts):
         divisions = 1.0
         vel_any = [None]   # 이 파트에서 마지막으로 선 셈여림 — 보표를 안 가린다
+        deferred_dyn = []  # 재생 오프셋이 붙은 셈여림 — (발효 위치, 세기, 보표)
         pend_accent = {}   # 악센트형 셈여림(sf·fp…)이 기다리는 보표 → 그 음 하나의 세기
         vel_by_staff = {}  # dynamics are written PER STAFF (실측 월광: pp 는 오른손 보표의
         # 것인데 문서 순서대로 전 성부에 들러붙어 왼손이 더 커졌다 — 악보가 아니라 우리
@@ -3797,9 +3816,19 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         transpose = int(float(text_of(tr_el, "chromatic") or 0))                             + 12 * int(float(text_of(tr_el, "octave-change") or 0))
                 elif tag == "direction":
                     d_staff = _xt(el, "staff", "1") or "1"
+                    # <offset> — 규격: 단위는 divisions 이고, **sound="yes" 일 때만** 재생에
+                    # 걸린다. 기본은 no("affects notation only"), 그때는 <sound> 가 지금 자리에서
+                    # 발효한다. 그래서 기본값에서는 위치를 안 옮긴다.
+                    _off_el = kid(el, "offset")
+                    _dcur = cur
+                    if _off_el is not None and (_off_el.get("sound") or "no").lower() == "yes":
+                        try:
+                            _dcur = cur + float(_off_el.text or 0) / divisions
+                        except (TypeError, ValueError):
+                            pass
                     snd = kid(el, "sound")
                     if snd is not None and snd.get("tempo") and pi == 0:
-                        tempo_events.append((m_base + cur, float(snd.get("tempo"))))
+                        tempo_events.append((m_base + _dcur, float(snd.get("tempo"))))
                     # 파일이 숫자를 말하면 그 숫자를 쓴다. `<sound dynamics="N">` = 벨로시티 90 에
                     # 대한 백분율(규격). 기호를 우리 표로 옮기는 것보다 이쪽이 먼저다 — 월광에
                     # 27개가 있는데 안 읽고 있었다.
@@ -3809,7 +3838,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                                / 100.0 / 127.0))
                             vel_by_staff[d_staff] = _sv
                             vel_any[0] = _sv
-                            dyn_events.append((m_base + cur, _sv, d_staff))
+                            dyn_events.append((m_base + _dcur, _sv, d_staff))
                         except ValueError:
                             pass
                     dt = kid(el, "direction-type")
@@ -3831,12 +3860,18 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                     _va = max(0, min(127, _ent[0] + _ent[1])) / 127.0
                                     vel_by_staff[d_staff] = _va
                                     vel_any[0] = _va
-                                    dyn_events.append((m_base + cur, _va, d_staff))
+                                    dyn_events.append((m_base + _dcur, _va, d_staff))
                             else:
                                 v_new = _ent[0] / 127.0
-                                vel_by_staff[d_staff] = v_new
-                                vel_any[0] = v_new
-                                dyn_events.append((m_base + cur, v_new, d_staff))
+                                if _dcur > cur:
+                                    # 재생 오프셋이 붙은 셈여림 — **그 자리에서** 발효해야지
+                                    # 문서 순서로 바로 걸면 앞 음까지 바뀐다. 아래 음표 가지가
+                                    # 자기 onset 을 보고 꺼내 간다. (오프셋 0 이면 이 길로 안 온다)
+                                    deferred_dyn.append((m_base + _dcur, v_new, d_staff))
+                                else:
+                                    vel_by_staff[d_staff] = v_new
+                                    vel_any[0] = v_new
+                                dyn_events.append((m_base + _dcur, v_new, d_staff))
                         met = kid(dt, "metronome")
                         if met is not None and pi == 0 and snd is None:
                             unit = _XML_UNIT.get((text_of(met, "beat-unit") or "quarter"), 1.0)
@@ -3845,7 +3880,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             try:
                                 pm = float(text_of(met, "per-minute") or 0)
                                 if pm > 0:
-                                    tempo_events.append((m_base + cur, pm * unit))
+                                    tempo_events.append((m_base + _dcur, pm * unit))
                             except ValueError:
                                 pass
                         wd = kid(dt, "words")
@@ -3856,14 +3891,14 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         wg = kid(dt, "wedge")
                         if wg is not None:
                             wt = (wg.get("type") or "").lower()
-                            wedges.append((m_base + cur,
+                            wedges.append((m_base + _dcur,
                                            "c" if wt == "crescendo"
                                            else "d" if wt == "diminuendo" else "stop",
                                            d_staff))
                         ped = kid(dt, "pedal") if dt is not None else None
                         if ped is not None and parts_out is not None:
                             ptype = (ped.get("type") or "start").lower()
-                            now = m_base + cur
+                            now = m_base + _dcur
                             if ptype in ("start", "resume", "sostenuto"):
                                 if pedal_down is None:
                                     pedal_down = now
@@ -3925,9 +3960,12 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         usyl = (text_of(uly, "text") or "").strip() if uly is not None else ""
                         u_staff = _xt(el, "staff", "1") or "1"
                         # 드럼도 악센트를 읽는다 — 게이트는 원샷이라 무의미하지만 세기는 아니다.
+                        _ug, _ust, _uun = _art_of(el)
+                        for _t in _uun:
+                            skip_mark("아티큘레이션 %s" % _t)
                         _upa = pend_accent.pop(u_staff, None)
                         uv = (_upa if _upa is not None
-                              else _dyn_step(_staff_vel(u_staff), _art_of(el)[1]))
+                              else _dyn_step(_staff_vel(u_staff), _ust))
                         if usyl:
                             # A rhythm-lyric lead sheet (실측 아로하: 가사 344개가 슬래시 음표에
                             # 얹혀 멜로디 음고가 없다): the slash carries WHEN, the lyric carries
@@ -4025,7 +4063,15 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         graces.append((midi, _steal, _gt))
                         continue
                     nots = kid(el, "notations")
-                    gate, vsteps = _art_of(el)
+                    if deferred_dyn:
+                        _now = m_base + cur
+                        for _dp, _dv, _ds in [q for q in deferred_dyn if q[0] <= _now + 1e-9]:
+                            vel_by_staff[_ds] = _dv
+                            vel_any[0] = _dv
+                        deferred_dyn = [q for q in deferred_dyn if q[0] > _now + 1e-9]
+                    gate, vsteps, _unp_art = _art_of(el)
+                    for _t in _unp_art:
+                        skip_mark("아티큘레이션 %s" % _t)
                     orn = kid(nots, "ornaments") if nots is not None else None
                     orn_kind = None
                     if orn is not None:
@@ -6292,6 +6338,54 @@ def action_selftest():
     ck("…그 사다리 위에서 악센트 한 칸은 여전히 f → ff", round(112 / 127.0, 6),
        round(_dyn_step(_XML_DYN["f"], 1), 6),
        abs(_dyn_step(_XML_DYN["f"], 1) - _XML_DYN["ff"]) < 1e-9)
+
+    # ── 2군: 아티큘레이션 게이트 · 안 연주하는 것 고지 · <offset> ──────────────────────
+    def _gates(marks):
+        body = ""
+        for mk in marks:
+            ex = ('<notations><articulations><' + mk + '/></articulations></notations>')                 if mk else ""
+            body += _n("C", 4, 4, extra=ex)
+        with open("data/sing/selftest-art.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(P + '<measure number="1"><attributes><divisions>1</divisions>'
+                     '</attributes>' + body + '</measure>' + E)
+        rows = []
+        sc, _e = musicxml_to_score("data/sing/selftest-art.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-art.musicxml")
+        return [round(r.get("gate", 1.0), 2) for r in rows if "pitch" in r], (sc or {})
+
+    _g, _ = _gates([None, "staccato", "staccatissimo", "spiccato", "detached-legato",
+                    "strong-accent", "tenuto"])
+    ck("⭐ 아티큘레이션 게이트가 MuseScore 표 그대로 (스타카티시모는 0.25→0.33 로 출처 통일)",
+       [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0], _g,
+       _g == [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0])
+    _g, _sc = _gates(["breath-mark", "soft-accent", "stress"])
+    _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
+    ck("⭐ 연주값을 주는 관례가 없는 것은 **안 걸었다고 말한다** (참조 구현도 멈춤이 0.0)",
+       [[1.0, 1.0, 1.0], 3], [_g, len([k for k in _sk if "아티큘레이션" in k])],
+       _g == [1.0, 1.0, 1.0] and len([k for k in _sk if "아티큘레이션" in k]) == 3)
+
+    def _offvels(off_attr):
+        body = ('<direction><direction-type><dynamics><f/></dynamics></direction-type>'
+                + off_attr + '</direction>')
+        doc = P + ('<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                   '<direction><direction-type><dynamics><p/></dynamics>'
+                   '</direction-type></direction>') + _n("C", 4, 1) + body             + _n("D", 4, 1) + _n("E", 4, 1) + _n("G", 4, 1) + '</measure>' + E
+        with open("data/sing/selftest-off.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        rows = []
+        musicxml_to_score("data/sing/selftest-off.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-off.musicxml")
+        return [round(r["vel"] * 127) for r in rows if "pitch" in r]
+
+    _v = _offvels("")
+    ck("<offset> 없으면 셈여림은 그 자리에서 (p→f)", [49, 96, 96, 96], _v,
+       _v == [49, 96, 96, 96])
+    _v = _offvels('<offset>2</offset>')
+    ck("…`sound` 를 안 적은 오프셋은 **표시만** 옮긴다 (규격 기본값 no)", [49, 96, 96, 96], _v,
+       _v == [49, 96, 96, 96])
+    _v = _offvels('<offset sound="yes">2</offset>')
+    ck('⭐ `sound="yes"` 오프셋은 재생도 옮긴다 — 두 박 뒤부터 f', [49, 49, 49, 96], _v,
+       _v == [49, 49, 49, 96])
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
