@@ -2912,6 +2912,10 @@ def _fix_lyric_text(s):
     return s
 
 
+# ⚠️ 메타 `midi_port`·`channel_prefix` 는 **안 읽어도 된다** (8/22 판정). 16채널을 넘기려고
+# 포트를 나눈 파일이 걱정이었는데, 우리는 파트를 **(트랙, 채널)마다** 만들므로 다른 트랙의 같은
+# 채널은 애초에 안 합쳐진다. 진짜 한계는 반대쪽에 있다 — **출력이 16채널뿐**이라는 것이고,
+# 그건 아래 write_midi 가 겹칠 때 응답이 말한다.
 def _track_events(track):
     """One track -> [[note, start_tick, dur_tick, velocity, channel], …] sorted by start.
 
@@ -5677,6 +5681,15 @@ def action_render(inp):
                          **(_pf.get("settings") or {})}
     if kit_label:
         data["kit"] = kit_label
+    # MIDI 는 채널이 16개뿐이고 그중 하나는 드럼 것이다. 성부가 그보다 많으면 라이터가 뒤쪽을
+    # 채널 15 에 겹쳐 놓는데(min(15, …)), 겹친 성부는 **서로의 악기를 덮는다.** 규격의 한계라
+    # 우리가 늘릴 수 없지만, 조용히 겹치는 것과 겹쳤다고 말하는 것은 다르다.
+    # 실측: 저자 데모 10개는 최대 16(멜로디 15 + 드럼)이라 아직 안 걸린다.
+    _mparts = {e["part"] for e in arr if e.get("part") != "drum" and not e.get("pedal")}
+    if len(_mparts) > 15:
+        data["channelNote"] = (
+            "MIDI 채널이 16개(드럼 1 포함)뿐이라 %d 성부 중 뒤쪽이 한 채널에 겹칩니다 — "
+            "겹친 성부는 서로의 악기를 덮습니다." % len(_mparts))
     if swapped and engine_used == "sf2":
         data["kitNote"] = ("이 사운드폰트에 없는 드럼을 GM1 소리로 바꿔 연주했습니다: "
                            + ", ".join(f"{k}→{v}" for k, v in sorted(swapped.items())))
@@ -6846,6 +6859,31 @@ def action_selftest():
        ">Hel<" in _lrc2 and ">lo <" in _lrc2 and _lrc2.endswith("the_end"))
     ck("…선언이 없는 음절 앞에는 안 띄운다 (모르는 것을 지어내지 않는다)", True,
        "world<00:01.50>the_end" in _lrc2, "world<00:01.50>the_end" in _lrc2)
+
+    # ── 8군: 16채널 한계는 조용하면 안 된다 ─────────────────────────────────────────────
+    def _manyparts(n):
+        pl = "".join('<score-part id="P%d"><part-name>V%d</part-name></score-part>'
+                     % (i, i) for i in range(1, n + 1))
+        bodies = "".join(
+            '<part id="P%d"><measure number="1"><attributes><divisions>1</divisions>'
+            '</attributes><note><pitch><step>C</step><octave>4</octave></pitch>'
+            '<duration>1</duration></note></measure></part>' % i for i in range(1, n + 1))
+        path = "data/sing/selftest-many.musicxml"
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write('<score-partwise><part-list>' + pl + '</part-list>' + bodies
+                     + '</score-partwise>')
+        r = action_render({"action": "render", "scoreMediaPath": path,
+                           "engine": "builtin", "outPath": "data/sing/selftest-many.wav"})
+        os.remove(path)
+        for _f in ("data/sing/selftest-many.wav",):
+            if os.path.exists(_f):
+                os.remove(_f)
+        return (r.get("data") or {}).get("channelNote")
+
+    _cn15 = _manyparts(15)
+    _cn17 = _manyparts(17)
+    ck("⭐ 성부가 MIDI 채널 수를 넘으면 **겹친다고 말한다** (규격 한계라 못 늘리지만 조용하면 안 된다)",
+       [None, True], [_cn15, bool(_cn17)], _cn15 is None and bool(_cn17))
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
