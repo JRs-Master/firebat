@@ -3095,6 +3095,19 @@ def _xt(el, name, default=None):
 
 _XML_ART_GATE = {"staccato": 0.4, "staccatissimo": 0.25, "tenuto": 1.05}
 _XML_ART_VEL = {"accent": 0.12, "strong-accent": 0.18, "marcato": 0.18}
+
+# 물결선으로 지시된 화음 굴리기(rolled chord). ⚠️ 우리말 "아르페지오 주법"(손가락으로 뜯는
+# 분산화음)과 **다른 물건**이다 — 그쪽은 악보에 음표로 다 적히고 우리는 그대로 연주한다.
+# 굴림은 기호 하나뿐이라 우리가 시간을 만들어야 하는 유일한 자리다.
+#
+# 폭에는 출처가 없다. 규격은 `<arpeggiate>` 에 시간 칸이 아예 없고, 기타 교습도 고정값을
+# 안 준다(Douglas Niedt: "a rolled chord is not necessarily one speed. It can be many
+# speeds."). 그래서 **밀리초 대신 음표 값**으로 적는다 — 무엇을 골랐는지 말할 수 있고
+# 바꿔 들어 볼 수 있다. 128분음표 = 99bpm 에서 19 ms, 6줄이면 줄당 3.8 ms 로 실제 피크
+# 스윕에 가깝다. 청취 비교 2026-08-22(아로하 5~11마디, 판본 6개, 라우드니스 −18.0 고정):
+# 넓힐수록 어택이 하나씩 서서 **세게 긁은 것처럼** 들린다 — 폭은 타이밍 노브가 아니라
+# 성격 노브라, 악보가 안 시킨 성격을 안 얹는 쪽으로 제일 좁은 값을 고른다.
+ROLL_SPAN = 1.0 / 32.0
 _XML_UNIT = {"whole": 4.0, "half": 2.0, "quarter": 1.0, "eighth": 0.5, "16th": 0.25}
 
 
@@ -3304,7 +3317,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     changes and metronome marks bend time onto one master tempo; <transpose> corrects the
     sounding pitch of transposing instruments; wedges ramp the dynamics between steps;
     staccato/accent/tenuto shape gate and weight; grace notes steal their moment; trills,
-    mordents and turns play as the notes they mean; fermatas hold; arpeggios roll; pedal
+    mordents and turns play as the notes they mean; fermatas hold; a chord marked with the
+    arpeggio sign is ROLLED so its last note lands on the written beat; pedal
     marks become real CC64 downstream. Melody part = the one carrying lyrics, else the
     busiest; chord symbols come from <harmony>."""
     import xml.etree.ElementTree as ET
@@ -3394,7 +3408,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         lead_voice = None
         f_prog = prog_of.get(part.get("id"), named_progs.get(part.get("id"), 0))
         f_part = f"p{pi + 1}"
-        last_onset, stack_n, arp_here = 0.0, 0, False
+        last_onset, stack_n, roll_here, roll_dir_here = 0.0, 0, False, ""
         pedal_down = None
         tab_staves = set()   # 타브 보표 번호 — 오선의 사본이라 소리로 내지 않는다
         cur_fifths = 0  # key signature — ornament neighbors are DIATONIC, not fixed intervals
@@ -3652,7 +3666,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     fermata = nots is not None and _xk1(nots, "fermata") is not None
                     if fermata:
                         dur *= 1.75
-                    arp = nots is not None and _xk1(nots, "arpeggiate") is not None
+                    _roll_el = _xk1(nots, "arpeggiate") if nots is not None else None
+                    rolled = _roll_el is not None
+                    # 규격 기본은 저음 → 고음. 파일이 반대로 적으면 그쪽이 이긴다.
+                    roll_dir = (_roll_el.get("direction") or "").strip().lower() if rolled else ""
                     ly = kid(el, "lyric")
                     syl = (text_of(ly, "text") or "").strip() if ly is not None else ""
                     tie = any(t.get("type") == "stop" for t in kids(el, "tie"))
@@ -3661,9 +3678,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         stack_n += 1
                     else:
                         stack_n = 0
-                        arp_here = arp
+                        roll_here, roll_dir_here = rolled, roll_dir
                     onset = last_onset if is_stack else m_base + cur
-                    roll_n = stack_n if (is_stack and (arp_here or arp)) else 0
+                    # 화음의 **첫 음도** 표시해 둔다 — 아래 후처리가 화음 전체를 한 무리로
+                    # 잡아 마지막 음을 자리에 맞추려면 무리의 크기를 알아야 한다.
+                    roll_n = stack_n if (roll_here or rolled) else None
                     if not is_stack:
                         last_onset = onset
                     n_staff = _xt(el, "staff", "1") or "1"
@@ -3704,11 +3723,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                     # 성부도 싣는다 — 파일이 선언한 값이고, 붙임줄이 제 성부에
                                     # 붙었는지 **밖에서 확인할 방법**이 이것뿐이다. staff 와 같은 층.
                                     "gate": gate, "staff": n_staff, "voice": n_voice}
-                        if roll_n:
-                            # A rolled chord is a hand gesture — constant in TIME. The old
-                            # 0.04-beat step made 월광 (bpm 44) roll 55ms per voice; applied
-                            # after the warp below, in seconds.
+                        if roll_n is not None:
                             base_row["_roll"] = roll_n
+                            base_row["_rollcap"] = dur - stolen
+                            if roll_dir or roll_dir_here:
+                                base_row["_rolldir"] = roll_dir or roll_dir_here
                         # 이음줄은 **그 음이 마지막으로 울린 행**으로 이어진다 — 바로 앞 행이
                         # 아니라. 화음 안에서는 앞 행이 다른 성부라 붙을 자리를 못 찾았고, 그
                         # 음은 이어지는 대신 **다시 때려졌다**. 실측 2026-08-21 아로하:
@@ -3815,9 +3834,36 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
             b0, b1 = row["beat"], row["beat"] + row["beats"]
             row["beat"] = round(warp(b0), 4)
             row["beats"] = max(0.06, round(warp(b1) - warp(b0), 4))
-            rl = row.pop("_roll", 0)
-            if rl:
-                row["beat"] = round(row["beat"] + rl * (0.022 / spb_w), 4)
+        # 굴림 — **마지막 음이 적힌 자리에 선다.** 첫 음을 자리에 두고 뒤로 밀면 멜로디(대개
+        # 맨 윗줄)가 박보다 늦게 도착한다. 실측 2026-08-22 아로하 6음 화음에서 110 ms 늦었고,
+        # 기타 교습 둘이 정확히 그것을 하지 말라고 가르친다:
+        #   Douglas Niedt — "if I start a rolled chord on a beat, the last note of the chord
+        #     is significantly delayed."
+        #   Classical Guitar Corner — "place the last note of a rolled chord on the downbeat."
+        # 리드에 붙이는 게 아니라 **악보의 그 자리**에 붙이는 것이라, 같은 박에 있는 다른 파트와
+        # 저절로 같이 떨어진다.
+        _rollg = {}
+        for row in parts_out:
+            if "_roll" in row:
+                _rollg.setdefault((row.get("part"), row.get("staff"),
+                                   row.get("voice"), row["beat"]), []).append(row)
+        for _rows in _rollg.values():
+            _mx = max(r["_roll"] for r in _rows)
+            if not _mx:
+                continue          # 한 음짜리에 붙은 물결선 — 굴릴 것이 없다
+            # 굴림은 그 화음의 적힌 길이 안에서 끝난다 (Classical Guitar Shed — "This should
+            # be done within the notated duration and rhythm of the notes"). 상한이 없으면
+            # 빠른 곡의 짧은 화음에서 다음 화음 위로 넘어간다.
+            # `beats` 가 아니라 `_rollcap`(악보가 적은 길이) — beats 는 이미 하한을 먹었다.
+            _span = min([ROLL_SPAN] + [r["_rollcap"] for r in _rows if r.get("_rollcap")])
+            _down = any(r.get("_rolldir") == "down" for r in _rows)
+            for r in _rows:
+                _k = (_mx - r["_roll"]) if _down else r["_roll"]
+                r["beat"] = round(r["beat"] - (_mx - _k) * (_span / _mx), 4)
+        for row in parts_out:
+            row.pop("_roll", None)
+            row.pop("_rolldir", None)
+            row.pop("_rollcap", None)
     # Lyrics first (a part with words IS the song), then what the part CALLS itself, and only
     # then the note count. Count alone hands the tune to whoever plays the most notes.
     best = (_wanted_part(parsed_parts, want_part)
@@ -6281,6 +6327,51 @@ def action_selftest():
        next((r["pitch"] for r in _cr if "pitch" in r), None) == 60)
     os.remove("data/sing/selftest-clefoct.musicxml")
 
+    # ── 굴림(물결선으로 지시된 화음) ─────────────────────────────────────────────────────────
+    # ⚠️ 이름 주의: 우리말 "아르페지오 주법"(손가락으로 뜯는 분산화음)은 악보에 음표로 다
+    # 적히므로 우리가 만질 것이 없다. 여기서 다루는 것은 **기호 하나**로 지시된 굴리기다.
+    def _rolldoc(direction="", dur=4, div=1):
+        _ns = "".join(
+            '<note>%s<pitch><step>%s</step><octave>4</octave></pitch>'
+            '<duration>%d</duration><notations><arpeggiate%s/></notations></note>'
+            % ("<chord/>" if i else "", st, dur,
+               (' direction="%s"' % direction) if (direction and i == 0) else "")
+            for i, st in enumerate("CEG"))
+        return (P.replace("<divisions>1</divisions>", "<divisions>%d</divisions>" % div)
+                + '<measure number="1"><attributes><divisions>%d</divisions></attributes>' % div
+                + _ns + '</measure>' + E)
+
+    def _rollrows(doc, name):
+        with open("data/sing/selftest-%s.musicxml" % name, "w", encoding="utf-8") as _fh:
+            _fh.write(doc)
+        _r = []
+        musicxml_to_score("data/sing/selftest-%s.musicxml" % name, parts_out=_r)
+        os.remove("data/sing/selftest-%s.musicxml" % name)
+        return sorted((r["beat"], r["pitch"]) for r in _r if "pitch" in r)
+
+    _up = _rollrows(_rolldoc(), "rollup")
+    # 마지막(제일 높은) 음이 적힌 자리 0.0 에, 나머지는 그 앞으로 ROLL_SPAN 안에.
+    ck("a rolled chord lands its LAST note on the written beat",
+       (0.0, 67, round(-ROLL_SPAN, 4)), (_up[-1][0], _up[-1][1], _up[0][0]),
+       len(_up) == 3 and _up[-1] == (0.0, 67)
+       and abs(_up[0][0] + ROLL_SPAN) < 1e-4 and _up[0][1] == 60)
+    ck("…and the roll is one note value wide, not one of our milliseconds",
+       round(1.0 / 32.0, 6), round(ROLL_SPAN, 6), abs(ROLL_SPAN - 1.0 / 32.0) < 1e-12)
+
+    _dn = _rollrows(_rolldoc("down"), "rolldn")
+    # 아래로 굴리면 **제일 낮은 음**이 자리에 서고 높은 음들이 앞선다.
+    ck("direction=\"down\" rolls the other way — the file decides, not us",
+       (0.0, 60), next(((b, p) for b, p in _dn if abs(b) < 1e-9), None),
+       any(abs(b) < 1e-9 and p == 60 for b, p in _dn)
+       and all(b <= 1e-9 for b, _p in _dn))
+
+    # 화음이 굴림보다 짧으면 굴림이 그 안으로 줄어든다 — 다음 음을 침범하지 않는다.
+    _sh = _rollrows(_rolldoc(dur=1, div=64), "rollcap")
+    _short = 1.0 / 64.0
+    ck("a roll never spills past the chord's own written length",
+       True, ("굴림 폭", round(-_sh[0][0], 6), "적힌 길이", round(_short, 6)),
+       abs(_sh[0][0]) <= _short + 1e-4 and _sh[-1][0] == 0.0)
+
     # 셈여림은 대보표 사이에 한 번 적고 두 손에 다 건다. 오른손에만 pp 가 있고 왼손에
     # 크레센도가 걸리면 그 크레센도는 pp 에서 출발해야 한다 — 실측 2026-08-21 월광
     # 16·18마디가 기본값 90 에서 출발해 "피아노 부서지도록" 들렸다. 음표 경로는 이미
@@ -6577,9 +6668,15 @@ def action_selftest():
     arows = []
     asc, aerr = musicxml_to_score("data/sing/selftest-arp.musicxml", parts_out=arows)
     arp_top = [r for r in arows if r.get("pitch") == 64]
-    ck("a rolled chord is a hand gesture — constant milliseconds, not beats",
-       0.044, arp_top[0]["beat"] if arp_top else None,
-       aerr is None and bool(arp_top) and abs(arp_top[0]["beat"] - 0.044) < 0.002)
+    # 두 음 화음: 아래 음이 앞서고 **위 음이 적힌 자리(0박)에** 선다. 옛 규칙은 아래 음을
+    # 0박에 두고 위 음을 +44ms 로 밀었다 — 멜로디가 늦는 그 동작이라 2026-08-22 에 뒤집었다.
+    arp_low = [r for r in arows if r.get("pitch") == 60]
+    ck("a rolled chord arrives ON the beat — its last note, not its first",
+       (0.0, -ROLL_SPAN),
+       (arp_top[0]["beat"] if arp_top else None, arp_low[0]["beat"] if arp_low else None),
+       aerr is None and bool(arp_top) and bool(arp_low)
+       and arp_top[0]["beat"] == 0.0
+       and abs(arp_low[0]["beat"] + ROLL_SPAN) < 1e-4)
 
     rk = _rank_lrc([{"trackName": "a"},
                     {"trackName": "b", "syncedLyrics": "[00:01.00]x", "duration": 250},
