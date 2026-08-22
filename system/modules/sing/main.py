@@ -3093,8 +3093,51 @@ def _xt(el, name, default=None):
     return k.text if k is not None and k.text is not None else default
 
 
-_XML_ART_GATE = {"staccato": 0.4, "staccatissimo": 0.25, "tenuto": 1.05}
-_XML_ART_VEL = {"accent": 0.12, "strong-accent": 0.18, "marcato": 0.18}
+# 적힌 길이의 **절반**이 스타카토의 교과서 규칙이고, 스타카티시모는 그 절반. 테누토는
+# "제 길이를 다 지켜라" 라 **1.0** 이다 — 1.05 는 다음 음을 침범하므로 테누토가 아니었다.
+_XML_ART_GATE = {"staccato": 0.5, "staccatissimo": 0.25, "tenuto": 1.0}
+# 세기는 **셈여림 표의 한 칸**으로 움직인다. 예전엔 +0.12·+0.18 이라는 내가 고른 값이었는데,
+# "조금 세게" 를 말해 주는 출처가 우리에게 _XML_DYN 하나뿐이라 거기서 파생한다.
+_XML_ART_STEP = {"accent": 1, "strong-accent": 2, "marcato": 2}
+
+
+def _dyn_step(vel, steps):
+    """셈여림 표에서 `steps` 칸 옮긴 세기. 표 밖으로는 안 나간다.
+
+    악센트가 "얼마나 더 세게" 인지, 목표 없는 쐐기가 "얼마나 부푸는지" 를 말해 주는 곳이
+    악보에도 규격에도 없다. 우리가 가진 유일한 세기 눈금이 이 표이므로 거기서 한 칸씩
+    움직인다 — 새 숫자를 만들지 않고, 표를 고치면 셋이 같이 따라온다.
+    """
+    if not steps:
+        return vel
+    scale = sorted(_XML_DYN.values())
+    for _ in range(abs(steps)):
+        if steps > 0:
+            nxt = next((v for v in scale if v > vel + 1e-9), None)
+        else:
+            nxt = next((v for v in reversed(scale) if v < vel - 1e-9), None)
+        if nxt is None:
+            break
+        vel = nxt
+    return max(0.02, min(1.0, vel))
+
+
+def _art_of(el):
+    """그 음표의 아티큘레이션 → (게이트, 셈여림 칸 수).
+
+    ⚠️ 한 곳에 둔다. 예전엔 음표 가지 안에만 있어서 **드럼(unpitched) 가지가 이걸 안 읽었고**,
+    실측 2026-08-22 아로하: 파일이 드럼에 악센트를 40개 적어 놨는데 880행이 전부 평평하게
+    나갔다. 파일이 말한 것을 우리가 버리고 있었다.
+    """
+    nots = _xk1(el, "notations")          # 모듈 레벨 헬퍼 — kid/text_of 는 파서 안 지역명이다
+    arts = _xk1(nots, "articulations") if nots is not None else None
+    gate, steps = 1.0, 0
+    if arts is not None:
+        for a in arts:
+            tag = _strip_ns(a.tag)
+            gate = min(gate, _XML_ART_GATE.get(tag, 1.0))
+            steps = max(steps, _XML_ART_STEP.get(tag, 0))
+    return gate, steps
 
 # 물결선으로 지시된 화음 굴리기(rolled chord). ⚠️ 우리말 "아르페지오 주법"(손가락으로 뜯는
 # 분산화음)과 **다른 물건**이다 — 그쪽은 악보에 음표로 다 적히고 우리는 그대로 연주한다.
@@ -3563,7 +3606,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         uly = kid(el, "lyric")
                         usyl = (text_of(uly, "text") or "").strip() if uly is not None else ""
                         u_staff = _xt(el, "staff", "1") or "1"
-                        uv = _staff_vel(u_staff)
+                        # 드럼도 악센트를 읽는다 — 게이트는 원샷이라 무의미하지만 세기는 아니다.
+                        uv = _dyn_step(_staff_vel(u_staff), _art_of(el)[1])
                         if usyl:
                             # A rhythm-lyric lead sheet (실측 아로하: 가사 344개가 슬래시 음표에
                             # 얹혀 멜로디 음고가 없다): the slash carries WHEN, the lyric carries
@@ -3636,15 +3680,23 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # 갈리면 프렛(실음)이 아니라 규격(`<pitch>` = 실음)을 따른다.
                     midi = 12 * (octave + 1) + _XML_STEP.get(step, 0) + alter + transpose
                     if is_grace:
-                        graces.append(midi)
+                        # 꾸밈음이 본음에서 가져가는 시간. 규격에 칸이 있고(steal-time-*),
+                        # 없으면 **그 꾸밈음이 그려진 음표 값**을 쓴다 — 실측 2026-08-22 아로하
+                        # 18개가 전부 <type>16th 로 자기 값을 적어 놨다.
+                        _gel = kid(el, "grace")
+                        _steal = None
+                        for _a in ("steal-time-following", "steal-time-previous"):
+                            _v = _gel.get(_a) if _gel is not None else None
+                            if _v:
+                                try:
+                                    _steal = max(0.0, min(1.0, float(_v) / 100.0))
+                                except ValueError:
+                                    _steal = None
+                        _gt = _XML_UNIT.get((text_of(el, "type") or "").strip().lower())
+                        graces.append((midi, _steal, _gt))
                         continue
                     nots = kid(el, "notations")
-                    arts = kid(nots, "articulations") if nots is not None else None
-                    gate, vboost = 1.0, 0.0
-                    if arts is not None:
-                        for a in arts:
-                            gate = min(gate, _XML_ART_GATE.get(_strip_ns(a.tag), 1.0))
-                            vboost = max(vboost, _XML_ART_VEL.get(_strip_ns(a.tag), 0.0))
+                    gate, vsteps = _art_of(el)
                     orn = kid(nots, "ornaments") if nots is not None else None
                     orn_kind = None
                     if orn is not None:
@@ -3665,7 +3717,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         skip_mark("글리산도")
                     fermata = nots is not None and _xk1(nots, "fermata") is not None
                     if fermata:
-                        dur *= 1.75
+                        # 관례는 "대략 두 배, 연주자 재량". 1.75 는 내가 고른 값이었다.
+                        dur *= 2.0
                     _roll_el = _xk1(nots, "arpeggiate") if nots is not None else None
                     rolled = _roll_el is not None
                     # 규격 기본은 저음 → 고음. 파일이 반대로 적으면 그쪽이 이긴다.
@@ -3694,22 +3747,31 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # 안 보면 남의 것을 집는다 — 실측 2026-08-21 아로하 Gtr1 41→42마디:
                     # 성부 1 과 성부 5 가 A2·E3·G3·D4 에 똑같이 붙임줄을 걸어 놓았다.
                     n_voice = _xt(el, "voice", "1") or "1"
-                    nvel = min(1.0, _staff_vel(n_staff) + vboost)
+                    nvel = _dyn_step(_staff_vel(n_staff), vsteps)
                     if parts_out is not None and not is_tab:
                         stolen = 0.0
                         if graces and not is_stack:
-                            take = min(0.1 * len(graces), dur * 0.4)
-                            per = take / len(graces)
-                            for gi, gp in enumerate(graces):
+                            # 각 꾸밈음이 가져갈 시간: 규격 칸 > 그려진 음표 값 > 남는 것
+                            # 균등. 합계는 본음의 **절반**을 안 넘는다(앞꾸밈음 관례).
+                            _w = [(dur * _gs if _gs is not None
+                                   else (_gt if _gt else dur * 0.5 / len(graces)))
+                                  for _gm, _gs, _gt in graces]
+                            _cap = dur * 0.5
+                            if sum(_w) > _cap:
+                                _w = [v * _cap / sum(_w) for v in _w]
+                            _at = onset
+                            for (_gm, _gs2, _gt2), _gw in zip(graces, _w):
                                 # 꾸밈음도 보표·성부를 단다 — 쐐기 램프가 그걸 보고 고른다.
-                                # 없으면 그 음만 셈여림을 안 받는다.
-                                parts_out.append({"beat": onset + gi * per, "beats": per,
+                                # 세기·게이트는 본음과 같다: 꾸밈음이 더 여리다고 말한 곳이
+                                # 악보에도 관례에도 없어서 −0.1·0.9 는 내 숫자였다.
+                                parts_out.append({"beat": _at, "beats": _gw,
                                                   "part": f_part,
                                                   "patch": _patch_for_program(f_prog),
-                                                  "program": f_prog, "pitch": gp,
-                                                  "vel": max(0.1, nvel - 0.1), "gate": 0.9,
+                                                  "program": f_prog, "pitch": _gm,
+                                                  "vel": nvel, "gate": 1.0,
                                                   "staff": n_staff, "voice": n_voice})
-                            stolen = take
+                                _at += _gw
+                            stolen = sum(_w)
                         # 여기에도 `max(0.125, …)` 가 있었다 — MIDI 리더에서 걷은 그 바닥이
                         # MusicXML 쪽에 그대로 남아 있었다. 그리고 여기서는 값이 틀리는 것으로
                         # 끝나지 않는다: 음이 늘어나면 **끝이 다음 음의 시작과 안 맞아 이음줄
@@ -3805,7 +3867,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                        if t >= wstop - 0.25 and st == wstaff and v is not None),
                       next((v for t, v, st in dyn_events
                             if t >= wstop - 0.25 and v is not None),
-                           min(1.0, max(0.1, v0 + (0.15 if wkind == "c" else -0.15)))))
+                           _dyn_step(v0, 1 if wkind == "c" else -1)))
             span = max(1e-9, wstop - wstart)
             for row in (parts_out or []):
                 # 드럼 행은 `part` 가 "drum" 이라 자기 파트 이름을 `_src` 로 들고 있다.
@@ -4834,15 +4896,13 @@ def action_render(inp):
             else:
                 engine_used, sf2_font = "sf2", os.path.basename(font)
                 sf2_font_path = font
-                # The engine's own space is the MIDI default — we add no room of ours on top.
-                # (The vocal overlay still sends to add_room below: that voice is OUR sound.)
-                stereo *= 0.45
+                # ⚠️ 여기 `stereo *= 0.45` 가 있었다 — 설명이 없는 상수였고, 라우드니스
+                # 정규화가 뒤에서 그대로 되돌리므로 지워도 소리가 안 바뀐다(2026-08-22).
                 mix, send = stereo, np.zeros(len(stereo), dtype=np.float32)
     if mix is None:
         mix, send = render_arrangement(arr, spb, total_beats, mixmap=feel.get("mix"),
                                        filecc7=file_cc7, ctl=file_ctl)
-        mix *= 0.45
-        send *= 0.45
+        # 내장 신디 쪽 ×0.45 도 같이 걷었다 — 크기는 인코딩 때 정규화가 정한다.
     if vocal_path:
         if not os.path.isfile(vocal_path):
             return {"success": False,
@@ -5907,13 +5967,36 @@ def action_selftest():
     # 8va 괄호는 **그리는 법**이지 음고가 아니다 — `<pitch>` 가 이미 울리는 음이라
     # 괄호 안의 C4 는 C4 로 남는다. 얹으면 그 구간만 한 옥타브 뜬다.
     ck("an 8va bracket does not move the pitch — <pitch> already sounds",
-       (1, 0.4), (len(c5), c5[0]["gate"] if c5 else None),
-       perr is None and len(c5) == 1 and c5[0]["gate"] == 0.4)
+       (1, 0.5), (len(c5), c5[0]["gate"] if c5 else None),
+       perr is None and len(c5) == 1 and c5[0]["gate"] == 0.5)
     ck("…and nothing else got moved either", [], [r["pitch"] for r in prows if r["pitch"] == 72],
        not [r for r in prows if r.get("pitch") == 72])
-    ck("a grace note steals its moment, a trill plays as the notes it means",
-       True, (any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows), len(trill)),
-       any(r["beats"] <= 0.15 and r.get("pitch") == 67 for r in prows) and len(trill) >= 4)
+    # 꾸밈음은 **본음에서 훔친다** — 더해지지 않는다. 예전 단언은 "0.15박 이하"라는 내
+    # 상수를 못 박고 있었다. 지금 길이는 악보가 정하므로(steal-time-* > 그려진 값 > 절반)
+    # 값을 박지 말고 **불변식**을 박는다: 꾸밈음 + 본음 = 본음이 원래 적힌 길이.
+    ck("…and the trill plays as the notes it means", True, len(trill), len(trill) >= 4)
+
+    # 꾸밈음은 자기 문서로 잰다 — 위 문서는 본음에 트릴이 걸려 쪼개지므로 짝을 못 센다.
+    # 16분 꾸밈음(0.25박) + 4분 본음(1박) → 꾸밈음이 0.25 를 훔치고 본음이 0.75 로 줄어
+    # **합이 여전히 1박**. 예전엔 `0.1박 × 개수` 라는 내 상수였다.
+    _gd = (P + '<measure number="1"><attributes><divisions>4</divisions></attributes>'
+           '<note><grace/><pitch><step>G</step><octave>4</octave></pitch>'
+           '<type>16th</type></note>'
+           '<note><pitch><step>C</step><octave>5</octave></pitch>'
+           '<duration>4</duration><type>quarter</type></note></measure>' + E)
+    with open("data/sing/selftest-grace.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_gd)
+    _gp = []
+    musicxml_to_score("data/sing/selftest-grace.musicxml", parts_out=_gp)
+    _g1 = next((r for r in _gp if r.get("pitch") == 67), None)
+    _h1 = next((r for r in _gp if r.get("pitch") == 72), None)
+    ck("a grace note takes the value the score drew for it, stolen from its host",
+       (0.25, 0.75), (_g1 and round(_g1["beats"], 4), _h1 and round(_h1["beats"], 4)),
+       _g1 is not None and _h1 is not None
+       and abs(_g1["beats"] - 0.25) < 1e-4 and abs(_h1["beats"] - 0.75) < 1e-4
+       and abs(_g1["beat"] + _g1["beats"] - _h1["beat"]) < 1e-4
+       and abs(_g1["vel"] - _h1["vel"]) < 1e-9)
+    os.remove("data/sing/selftest-grace.musicxml")
 
     tv_rows = []
     tv_sc, _ = musicxml_to_score("data/sing/selftest-x.musicxml", parts_out=tv_rows)         if os.path.exists("data/sing/selftest-x.musicxml") else (None, None)
@@ -6326,6 +6409,76 @@ def action_selftest():
        next((r["pitch"] for r in _cr if "pitch" in r), None),
        next((r["pitch"] for r in _cr if "pitch" in r), None) == 60)
     os.remove("data/sing/selftest-clefoct.musicxml")
+
+    # 세기 델타는 **셈여림 표 한 칸**이다. 악센트 +0.12·마르카토 +0.18 은 내가 고른 값이었다.
+    ck("an accent is one step up the dynamics table, not a number of mine",
+       (round(_XML_DYN["mf"], 4), round(_XML_DYN["f"], 4)),
+       (round(_dyn_step(_XML_DYN["p"], 1), 4), round(_dyn_step(_XML_DYN["p"], 2), 4)),
+       abs(_dyn_step(_XML_DYN["p"], 1) - _XML_DYN["mp"]) < 1e-9
+       and abs(_dyn_step(_XML_DYN["p"], -1) - _XML_DYN["pp"]) < 1e-9
+       and _dyn_step(_XML_DYN["fff"], 1) <= 1.0
+       and _dyn_step(_XML_DYN["ppp"], -1) > 0)
+
+    # …그리고 그 계단이 **음표 경로에서** 실제로 쓰이는지. 헬퍼만 재면 호출부를 되돌려도
+    # 초록이 나온다(카나리아로 확인). p 로 선언된 마디에서 악센트 붙은 음은 정확히 mp 다.
+    _ad = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+           '<direction><direction-type><dynamics><p/></dynamics></direction-type></direction>'
+           '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>'
+           '<note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration>'
+           '<notations><articulations><accent/></articulations></notations></note>'
+           '</measure>' + E)
+    with open("data/sing/selftest-accent.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_ad)
+    _ap = []
+    musicxml_to_score("data/sing/selftest-accent.musicxml", parts_out=_ap)
+    _plain = next((r["vel"] for r in _ap if r.get("pitch") == 60), None)
+    _accd = next((r["vel"] for r in _ap if r.get("pitch") == 62), None)
+    ck("…and the note path uses that step — an accent under p comes out exactly mp",
+       (round(_XML_DYN["p"], 4), round(_XML_DYN["mp"], 4)),
+       (_plain and round(_plain, 4), _accd and round(_accd, 4)),
+       _plain is not None and _accd is not None
+       and abs(_plain - _XML_DYN["p"]) < 1e-9 and abs(_accd - _XML_DYN["mp"]) < 1e-9)
+    os.remove("data/sing/selftest-accent.musicxml")
+
+    # 드럼도 악센트를 읽는다. 실측 2026-08-22 아로하: 파일이 40개 적었는데 전부 버려졌다.
+    _acc = ('<score-partwise><part-list><score-part id="P1">'
+            '<midi-instrument id="P1-I36"><midi-unpitched>39</midi-unpitched>'
+            '</midi-instrument></score-part></part-list><part id="P1">'
+            '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+            '<note><unpitched><display-step>C</display-step>'
+            '<display-octave>5</display-octave></unpitched>'
+            '<instrument id="P1-I36"/><duration>1</duration></note>'
+            '<note><unpitched><display-step>C</display-step>'
+            '<display-octave>5</display-octave></unpitched>'
+            '<instrument id="P1-I36"/><duration>1</duration>'
+            '<notations><articulations><accent/></articulations></notations></note>'
+            '</measure></part></score-partwise>')
+    with open("data/sing/selftest-drumacc.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_acc)
+    _dr = []
+    musicxml_to_score("data/sing/selftest-drumacc.musicxml", parts_out=_dr)
+    _hits = [r for r in _dr if r.get("drum")]
+    ck("a drum hit marked with an accent is played accented", True,
+       [round(h["vel"], 3) for h in _hits],
+       len(_hits) == 2 and _hits[1]["vel"] > _hits[0]["vel"])
+    os.remove("data/sing/selftest-drumacc.musicxml")
+
+    # 페르마타는 관례대로 대략 두 배. 1.75 는 내 값이었다.
+    _fd = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+           '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>'
+           '<notations><fermata type="upright"/></notations></note></measure>' + E)
+    with open("data/sing/selftest-ferm.musicxml", "w", encoding="utf-8") as _fh:
+        _fh.write(_fd)
+    _fr = []
+    musicxml_to_score("data/sing/selftest-ferm.musicxml", parts_out=_fr)
+    ck("a fermata holds about twice the written value", 2.0,
+       next((round(r["beats"], 4) for r in _fr if "pitch" in r), None),
+       any(abs(r["beats"] - 2.0) < 1e-4 for r in _fr if "pitch" in r))
+    os.remove("data/sing/selftest-ferm.musicxml")
+
+    # 테누토는 제 길이를 지킨다 — 넘기지 않는다. 1.05 는 테누토가 아니었다.
+    ck("tenuto holds the full value and no more", 1.0, _XML_ART_GATE["tenuto"],
+       _XML_ART_GATE["tenuto"] == 1.0 and _XML_ART_GATE["staccato"] == 0.5)
 
     # ── 굴림(물결선으로 지시된 화음) ─────────────────────────────────────────────────────────
     # ⚠️ 이름 주의: 우리말 "아르페지오 주법"(손가락으로 뜯는 분산화음)은 악보에 음표로 다
