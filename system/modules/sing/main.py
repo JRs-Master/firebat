@@ -2025,7 +2025,7 @@ def add_room(stereo, send, wet=0.9):
     return stereo
 
 
-def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
+def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
     """The MIDI backend — the same arrangement as a .mid, for any synth worth more than ours.
 
     Optional dependency on purpose: this is the one output that needs no audio stack at all, so a
@@ -2124,6 +2124,12 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
                 marks.append((int(round(at * tpb)), 4, max(0, min(127, int(val))), int(_num)))
         for at, val in (_cs.get("bend") or []):
             marks.append((int(round(at * tpb)), 3, max(-8192, min(8191, int(val))), 0))
+        # 압력 둘. 뜻을 몰라도 나른다 — 무엇을 하는지는 폰트가 선언한다(GS = 비브라토).
+        for at, val in (_cs.get("press") or []):
+            marks.append((int(round(at * tpb)), 6, max(0, min(127, int(val))), 0))
+        for at, note, val in (_cs.get("poly") or []):
+            marks.append((int(round(at * tpb)), 7, max(0, min(127, int(val))),
+                          max(0, min(127, int(note)))))
         for e in rows:
             if e.get("pedal"):
                 start = int(round(e["beat"] * tpb))
@@ -2158,7 +2164,7 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
             marks.append((start + max(1, int(round(length * tpb))), 0, pitch, 0))
         # 컨트롤러가 음보다 먼저 — 같은 틱에서 CC11 이 note_on 뒤에 오면 그 음은 옛 값으로 난다.
         # 컨트롤러와 프로그램이 음보다 먼저 — 같은 틱에서 뒤에 오면 그 음은 옛 값으로 난다.
-        marks.sort(key=lambda m: (m[0], {4: -2, 5: -1}.get(m[1], m[1])))
+        marks.sort(key=lambda m: (m[0], {4: -2, 5: -1, 6: -0.5, 7: -0.4}.get(m[1], m[1])))
         prev = 0
         for tick, kind, a, b in marks:
             if kind == 5:
@@ -2169,6 +2175,11 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
                                        time=tick - prev))
             elif kind == 3:
                 tr.append(mido.Message("pitchwheel", channel=ch, pitch=a, time=tick - prev))
+            elif kind == 6:
+                tr.append(mido.Message("aftertouch", channel=ch, value=a, time=tick - prev))
+            elif kind == 7:
+                tr.append(mido.Message("polytouch", channel=ch, note=b, value=a,
+                                       time=tick - prev))
             elif kind == 2:
                 tr.append(mido.Message("control_change", channel=ch, control=64, value=a,
                                        time=tick - prev))
@@ -2180,6 +2191,17 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None):
             prev = tick
     mid.tracks[0].insert(0, mido.MetaMessage("set_tempo",
                                              tempo=mido.bpm2tempo(bpm), time=0))
+    # 파일이 보낸 전역 시스템 메시지는 **자기 트랙**에 실린다 — 파트 트랙에 끼우면 그 파트의
+    # 채널 배치에 묶여 읽히고, 애초에 이건 파트의 것이 아니다. 없으면 트랙도 안 생긴다.
+    if sysex:
+        con = mido.MidiTrack()
+        con.append(mido.MetaMessage("track_name", name="_file", time=0))
+        prev_t = 0
+        for beat, data in sorted(sysex, key=lambda x: x[0]):   # 안정 정렬 = 파일 순서 보존
+            tick = int(round(float(beat) * tpb))
+            con.append(mido.Message("sysex", data=list(data), time=max(0, tick - prev_t)))
+            prev_t = tick
+        mid.tracks.insert(0, con)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     mid.save(path)
     return path, None
@@ -2539,7 +2561,7 @@ def fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path=None):
     return argv + ["-F", wav_path, font, mid_path]
 
 
-def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None):
+def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None, sysex=None):
     """The arrangement through fluidsynth: the same .mid midiOut writes, played on the GM font.
 
     Returns (stereo, why_not) — any why_not drops the render back to the builtin synth, so a
@@ -2553,7 +2575,7 @@ def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None):
     cfg_path = f"data/sing/tmp-{tag}.cfg"
     try:
         written, note = write_midi(arr, 60.0 / spb, mid_path, mix=mixmap,
-                                   filecc7=filecc7, ctl=ctl)
+                                   filecc7=filecc7, ctl=ctl, sysex=sysex)
         if not written:
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
         # 우리 취향은 여전히 0 이다. 달라진 것은 **누구의 기본값이냐** — 그냥 fluidsynth 것을
@@ -2826,13 +2848,21 @@ def _track_controls(track):
         ch = getattr(msg, "channel", None)
         if ch is None:
             continue
-        c = out.setdefault(int(ch), {"prog": [], "cc": {}, "bend": []})
+        c = out.setdefault(int(ch),
+                           {"prog": [], "cc": {}, "bend": [], "press": [], "poly": []})
         if msg.type == "program_change":
             c["prog"].append((t, int(msg.program)))
         elif msg.type == "control_change":
             c["cc"].setdefault(int(msg.control), []).append((t, int(msg.value)))
         elif msg.type == "pitchwheel":
             c["bend"].append((t, int(msg.pitch)))
+        elif msg.type == "aftertouch":
+            # 채널 압력. **GeneralUser GS 는 이것을 비브라토로 선언한다**
+            # (channelPressure → vibLfoToPitch, 실측 8/22) — 즉 이 메시지를 버리면
+            # 폰트가 자기 문서에서 약속한 연주법 하나가 통째로 안 걸린다.
+            c["press"].append((t, int(msg.value)))
+        elif msg.type == "polytouch":
+            c["poly"].append((t, int(msg.note), int(msg.value)))
     return out
 
 
@@ -2855,6 +2885,34 @@ _NOTE_DRUM = {v: k for k, v in DRUM_NOTE.items()}
 def _patch_for_program(g):
     """GM program -> the nearest builtin patch (the sf2 engine uses the program itself)."""
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[max(0, min(127, int(g))) // 8])
+
+
+# ── 파일이 보낸 시스템 메시지 ───────────────────────────────────────────────────────────
+# ⚠️ **전부 흘리면 틀린다.** 우리는 파트를 채널에 **다시 배치**하므로(실측: ch4→ch2), 특정
+# 파트를 가리키는 GS/XG 메시지는 엉뚱한 파트에 걸린다. 그래서 **채널을 안 가리키는 것만**
+# 나르고, 나머지는 안 걸었다고 응답이 말한다. 흘리는 쪽은 fluidsynth 가 GS 기기로 동작할 때
+# (`synth.device-id 16`, FONT_SYNTH_PROFILES) 실제로 받는다.
+# 출처 = MIDI 1.0 Universal System Exclusive (7E 비실시간 / 7F 실시간) + Roland GS Reset +
+# Yamaha XG System On. 기기 바이트(인덱스 1)는 대상 지정이라 비교에서 뺀다.
+_UNIVERSAL_SYSEX = {
+    (0x7E, 0x09, 0x01): "GM System On", (0x7E, 0x09, 0x02): "GM System Off",
+    (0x7E, 0x09, 0x03): "GM2 System On",
+    (0x7F, 0x04, 0x01): "Master Volume", (0x7F, 0x04, 0x03): "Master Fine Tuning",
+    (0x7F, 0x04, 0x04): "Master Coarse Tuning",
+}
+
+
+def global_sysex_name(data):
+    """채널을 안 가리키는 전역 메시지면 그 이름, 아니면 None. data = F0/F7 뺀 본문."""
+    d = list(data)
+    if len(d) >= 4 and d[0] in (0x7E, 0x7F):
+        return _UNIVERSAL_SYSEX.get((d[0], d[2], d[3]))
+    if (len(d) >= 9 and d[0] == 0x41 and d[2] == 0x42 and d[3] == 0x12
+            and d[4:8] == [0x40, 0x00, 0x7F, 0x00]):
+        return "GS Reset"
+    if (len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C and d[3:6] == [0x00, 0x00, 0x7E]):
+        return "XG System On"
+    return None
 
 
 def midi_to_parts(path):
@@ -2883,6 +2941,19 @@ def midi_to_parts(path):
     bpm = round(tempo_events[0][1], 1) if tempo_events else 120.0
     warp = _warp_fn(tempo_events, bpm)
     rows, meta, pidx = [], {}, 0
+    sysex, sysex_skipped = [], {}
+    for tr in mf.tracks:
+        _t = 0
+        for _m in tr:
+            _t += _m.time
+            if _m.type not in ("sysex", "sequencer_specific"):
+                continue
+            _nm = global_sysex_name(getattr(_m, "data", ()) or ())
+            if _nm:
+                sysex.append((round(warp(_t / tpb), 4), tuple(_m.data)))
+            else:
+                _k = "sysex(파트 지정 — 채널 재배치와 어긋납니다)"
+                sysex_skipped[_k] = sysex_skipped.get(_k, 0) + 1
     for tr in mf.tracks:
         ev = _track_events(tr)
         if not ev:
@@ -2937,9 +3008,15 @@ def midi_to_parts(path):
                 "cc": {n: [(round(warp(t / tpb), 4), v) for t, v in series]
                        for n, series in (c.get("cc") or {}).items()},
                 "bend": [(round(warp(t / tpb), 4), v) for t, v in (c.get("bend") or [])],
+                "press": [(round(warp(t / tpb), 4), v) for t, v in (c.get("press") or [])],
+                "poly": [(round(warp(t / tpb), 4), n, v)
+                         for t, n, v in (c.get("poly") or [])],
             }
     if not rows:
         return None, None, None, "MIDI 에서 음표를 못 읽었습니다"
+    # 파일 전체의 것 — 파트가 아니다. 밑줄 = 파트 순회가 건너뛴다.
+    meta["_file"] = {"sysex": sorted(sysex, key=lambda x: x[0]),  # 같은 틱이면 파일 순서
+                 "sysexSkipped": sysex_skipped}
     return rows, bpm, meta, None
 
 
@@ -4695,9 +4772,12 @@ def action_render(inp):
                     if not ferr:
                         faithful_rows = fr
                         # 파일이 이미 말한 밸런스와 이름. MusicXML 쪽은 파서가 직접 심는다.
+                        _fdoc = fmeta.pop("_file", None) or {}
+                        file_sysex = _fdoc.get("sysex") or []
                         file_cc7 = {p: m["cc7"] for p, m in fmeta.items()
                                     if m.get("cc7") is not None}
-                        file_ctl = {p: {"cc": m.get("cc") or {}, "bend": m.get("bend") or []}
+                        file_ctl = {p: {"cc": m.get("cc") or {}, "bend": m.get("bend") or [],
+                                        "press": m.get("press") or [], "poly": m.get("poly") or []}
                                     for p, m in fmeta.items()}
                         if isinstance(score, dict):
                             score["_partNames"] = {p: m["name"] for p, m in fmeta.items()}
@@ -4705,6 +4785,9 @@ def action_render(inp):
                                 "%s(%d)" % (m["name"],
                                             sum(1 for r in fr if r.get("part") == p))
                                 for p, m in fmeta.items()]
+                            if _fdoc.get("sysexSkipped"):
+                                score.setdefault("_notation_skipped", {}).setdefault(
+                                    "us", {}).update(_fdoc["sysexSkipped"])
             else:
                 score, err = musicxml_to_score(media_path, want_part=inp.get("melodyPart"),
                                                lyrics=inp.get("lyrics"),
@@ -4758,6 +4841,7 @@ def action_render(inp):
     # 파일이 선언한 페이더·부풀림 (MIDI 만; MusicXML 은 셈여림을 벨로시티로 적는다).
     file_cc7 = locals().get("file_cc7") or {}
     file_ctl = locals().get("file_ctl") or {}
+    file_sysex = locals().get("file_sysex") or []
     parts_seen = score.pop("_partsSeen", None) if isinstance(score, dict) else None
     part_names = score.pop("_partNames", None) if isinstance(score, dict) else None
     spb, events, chords, style, band, feel, err = parse_score(score)
@@ -4956,7 +5040,7 @@ def action_render(inp):
             return {"success": False, "error": f"engine:sf2 사용 불가 — {why}"}
         if not why:
             stereo, err = render_sf2(arr, spb, binp, font, mixmap=feel.get("mix"),
-                                     filecc7=file_cc7, ctl=file_ctl)
+                                     filecc7=file_cc7, ctl=file_ctl, sysex=file_sysex)
             if stereo is None:
                 engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
             else:
@@ -5024,7 +5108,7 @@ def action_render(inp):
         midi_out = out_path.rsplit(".", 1)[0] + ".mid"
     midi_written, midi_note = (None, None)
     if midi_out:
-        midi_written, midi_note = write_midi(arr, 60.0 / spb, midi_out)
+        midi_written, midi_note = write_midi(arr, 60.0 / spb, midi_out, sysex=file_sysex)
     # No workspace paths here. `data/sing/x.flac` is an address the CALLER cannot open — AI file
     # access is confined to `user/` — so handing one over invites a detour that ends in a wrong
     # answer (실측 8/19: the lyrics action led with such a path and the model burned 17 calls
@@ -6216,6 +6300,16 @@ def action_selftest():
     _zt.append(_mido.Message("control_change", channel=0, control=64, value=127, time=0))
     _zt.append(_mido.Message("control_change", channel=0, control=91, value=50, time=0))
     _zt.append(_mido.Message("pitchwheel", channel=0, pitch=2048, time=0))
+    # 압력 둘 — GeneralUser GS 가 채널 압력을 **비브라토**로 선언한다(실측). 안 나르면 폰트가
+    # 자기 문서에서 약속한 연주법이 조용히 사라진다.
+    _zt.append(_mido.Message("aftertouch", channel=0, value=77, time=0))
+    _zt.append(_mido.Message("polytouch", channel=0, note=60, value=88, time=0))
+    # 시스템 메시지 셋 — 전역 둘은 나르고, 파트를 가리키는 하나는 안 나른다.
+    _zt.append(_mido.Message("sysex", data=[0x7E, 0x7F, 0x09, 0x01], time=0))   # GM System On
+    _zt.append(_mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, 0x40, 0x00,
+                                            0x7F, 0x00, 0x41], time=0))        # GS Reset
+    _zt.append(_mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, 0x40, 0x11,
+                                            0x15, 0x02, 0x18], time=0))        # GS part 2 = drum
     for _i in range(4):
         _zt.append(_mido.Message("note_on", channel=0, note=60 + _i, velocity=90, time=0))
         _zt.append(_mido.Message("note_off", channel=0, note=60 + _i, velocity=0, time=480))
@@ -6236,10 +6330,18 @@ def action_selftest():
        (zmeta or {}).get("p1", {}).get("cc7") == 100
        and (zmeta or {}).get("p2", {}).get("cc7") == 64)
     _zcc = {p: v["cc7"] for p, v in (zmeta or {}).items() if v.get("cc7") is not None}
-    _zct = {p: {"cc": v.get("cc") or {}, "bend": v.get("bend") or []}
+    _zfile = (zmeta or {}).pop("_file", None) or {}
+    ck("⭐ 전역 시스템 메시지는 나른다 (GM System On · GS Reset — device-id 16 이 받는다)", 2,
+       len(_zfile.get("sysex") or []), len(_zfile.get("sysex") or []) == 2)
+    ck("…파트를 가리키는 GS 메시지는 **안 나르고 안 걸었다고 말한다** "
+       "(우리가 채널을 재배치하므로 엉뚱한 파트에 걸린다)", 1,
+       sum((_zfile.get("sysexSkipped") or {}).values()),
+       sum((_zfile.get("sysexSkipped") or {}).values()) == 1)
+    _zct = {p: {"cc": v.get("cc") or {}, "bend": v.get("bend") or [],
+                "press": v.get("press") or [], "poly": v.get("poly") or []}
             for p, v in (zmeta or {}).items()}
     _zok, _ = write_midi(zrows, 120, "data/sing/selftest-t0-out.mid",
-                         filecc7=_zcc, ctl=_zct)
+                         filecc7=_zcc, ctl=_zct, sysex=_zfile.get("sysex") or [])
     _bk = _mido.MidiFile("data/sing/selftest-t0-out.mid") if _zok else None
     def _cc(name, ctl):
         for t in (_bk.tracks if _bk else []):
@@ -6265,6 +6367,30 @@ def action_selftest():
        [x.pitch for t in (_bk.tracks if _bk else [])
         for x in t if x.type == "pitchwheel"
         and any(getattr(y, "name", None) == "p1" for y in t)] == [2048])
+    _sysout = [tuple(x.data) for t in (_bk.tracks if _bk else []) for x in t
+               if x.type == "sysex"]
+    ck("…그리고 그 둘이 **자기 트랙**에 실려 나간다 (파트 트랙에 끼우면 그 채널에 묶인다)",
+       [(0x7E, 0x7F, 0x09, 0x01)], _sysout[:1],
+       len(_sysout) == 2 and _sysout[0] == (0x7E, 0x7F, 0x09, 0x01)
+       and any(getattr(y, "name", None) == "_file" for y in (_bk.tracks[0] if _bk else [])))
+
+    def _msgs(name, typ):
+        for t in (_bk.tracks if _bk else []):
+            if any(getattr(x, "name", None) == name for x in t):
+                return [x for x in t if x.type == typ]
+        return []
+    ck("⭐ 채널 압력(aftertouch)이 그대로 나간다 — GS 는 이걸 비브라토로 선언한다", [77],
+       [x.value for x in _msgs("p1", "aftertouch")],
+       [x.value for x in _msgs("p1", "aftertouch")] == [77])
+    ck("…폴리 압력(polytouch)도 음번호와 함께", [(60, 88)],
+       [(x.note, x.value) for x in _msgs("p1", "polytouch")],
+       [(x.note, x.value) for x in _msgs("p1", "polytouch")] == [(60, 88)])
+    _p1msgs = [y.type for t in (_bk.tracks if _bk else [])
+               if any(getattr(z, "name", None) == "p1" for z in t) for y in t]
+    _at_i = _p1msgs.index("aftertouch") if "aftertouch" in _p1msgs else 99
+    _on_i = _p1msgs.index("note_on") if "note_on" in _p1msgs else -1
+    ck("…그리고 그 음이 울리기 **전에** 선다 (뒤에 오면 첫 음은 옛 값으로 난다)",
+       "aftertouch < note_on", "%d < %d" % (_at_i, _on_i), _at_i < _on_i)
     # 호출자의 명시가 파일을 이긴다: 파일 > 우리 표 사이에 사람이 들어갈 자리가 있어야 한다.
     ck("…호출자의 mix 가 파일의 페이더를 이긴다", mix_cc7(0.25),
        part_cc7("p1", {"p1": 0.25}, _zcc), part_cc7("p1", {"p1": 0.25}, _zcc) == mix_cc7(0.25))
@@ -7642,14 +7768,17 @@ def action_verify(inp):
     rows, bpm, meta, rerr = midi_to_parts(media_path)
     if rerr:
         return {"success": False, "error": rerr}
+    fdoc = meta.pop("_file", None) or {}     # 파일 전체의 것 — 파트 순회에서 빼 둔다
     os.makedirs("data/sing", exist_ok=True)
     tmp = f"data/sing/verify-{os.getpid()}.mid"
     try:
         ok, note = write_midi(
             rows, bpm, tmp,
             filecc7={p: m["cc7"] for p, m in meta.items() if m.get("cc7") is not None},
-            ctl={p: {"cc": m.get("cc") or {}, "bend": m.get("bend") or []}
-                 for p, m in meta.items()})
+            ctl={p: {"cc": m.get("cc") or {}, "bend": m.get("bend") or [],
+                     "press": m.get("press") or [], "poly": m.get("poly") or []}
+                 for p, m in meta.items()},
+            sysex=fdoc.get("sysex") or [])
         if not ok:
             return {"success": False, "error": note or "mido 없음 — .mid 를 쓸 수 없습니다"}
         got, got_ccs = _emitted_notes(tmp)
