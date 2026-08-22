@@ -362,12 +362,26 @@ function buildQueryString(params) {
   return buildQueryStrings(params).encoded;
 }
 
+// The exchange counts per GROUP and per IP, and the whole allowance is shared with every other
+// process asking at the same moment — the paging loop spaced its own calls and nothing spaced the
+// cycle's five symbols against each other.
+//
+// Placing an order and replacing one are their own group, raised to twelve a second on
+// 2026-08-22 (사용자 확인). They get their own bucket: sharing one with balance and order-status
+// reads meant a cycle's queries could eat the allowance an order needed. Everything else
+// authenticated stays at eight — a number for a group we were not told, and guessing UP on a live
+// account buys a 429 rather than throughput.
+const UPBIT_ORDER_GROUP = new Set(['/v1/orders', '/v1/orders/cancel_and_new']);
+
 // ─── API 호출 ───
 async function callApi(method, endpoint, params, accessKey, secretKey, needAuth) {
-  // Upbit counts per group and per IP — ten a second on candles, eight on orders — and the whole
-  // allowance is shared with every other process asking at the same moment. The paging loop spaced
-  // its own calls and nothing spaced the cycle's five symbols against each other.
-  await acquireShared(needAuth ? 'upbit-private' : 'upbit-public', needAuth ? 8 : 10);
+  if (!needAuth) {
+    await acquireShared('upbit-public', 10);
+  } else if (method === 'POST' && UPBIT_ORDER_GROUP.has(endpoint)) {
+    await acquireShared('upbit-order', 12);
+  } else {
+    await acquireShared('upbit-private', 8);
+  }
   const headers = { 'Content-Type': 'application/json' };
 
   if (needAuth) {
