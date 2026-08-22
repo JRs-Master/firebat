@@ -3478,7 +3478,7 @@ _XML_TECH_VOICE = {"snap-pizzicato": "pizzicato", "stopped": "muted",
 # 소리에 걸리지만 **아무 관례도 연주값을 안 주는 것** — 안 하고 고지한다.
 # (fingering·fret·string·heel·toe·hole·arrow·handbell·thumb-position·fingernails 는 표시라 없다.
 #  `open`·`open-string` 은 "뮤트 아님" 이고 그게 우리 기본이라 잃는 것이 없다.)
-_XML_TECH_UNPLAYED = ("hammer-on", "pull-off", "up-bow", "down-bow", "double-tongue",
+_XML_TECH_UNPLAYED = ("up-bow", "down-bow", "double-tongue",
                       "triple-tongue", "brass-bend", "flip", "smear", "golpe", "tap",
                       "pluck", "other-technical")
 # 세기는 **셈여림 표의 한 칸**으로 움직인다. 예전엔 +0.12·+0.18 이라는 내가 고른 값이었는데,
@@ -3822,6 +3822,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         return None, "MusicXML 에 part 가 없습니다"
 
     skipped = {}
+    caesuras = []      # 카이수라 자리(박) — 전 파트를 같이 밀어야 하므로 파싱 뒤에 처리
     part_mix = {}          # 행 이름 → 파일이 적은 믹스. score["_partMix"] 로 나간다
 
     def skip_mark(what, whose="us"):
@@ -4229,7 +4230,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # ── <technical> — 지금까지 한 원소도 안 읽던 갈래 ─────────────────────
                     _nots0 = kid(el, "notations")
                     _tec = kid(_nots0, "technical") if _nots0 is not None else None
-                    _bend_curve = None
+                    _bend_curve, _hammered = None, False
                     if _tec is not None:
                         # <harmonic> — 규격상 <pitch> 는 그대로 울리는 음이고 이건 **음색**이다
                         # (자식 base/touching/sounding 은 "어느 음을 적었나"를 말한다).
@@ -4243,6 +4244,15 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 skip_mark("하모닉스 (GM 에 이 악기의 하모닉스 음색이 없음)")
                         for _te in _tec:
                             _tn = _strip_ns(_te.tag)
+                            # 해머온·풀오프의 **두 번째** 음(type="stop")은 뜯지 않고 낸다.
+                            # 관례: "the resulting sounds are **not as brightly audible**,
+                            # precisely due to the absence of the plucking of the string, the
+                            # vibration of the string from an earlier plucking dying off."
+                            # 즉 **소리는 나되 약하다** — 그래서 지우는 게 아니라 한 칸 내린다.
+                            # (그 짝이 빠르게 번갈면 트릴이 되는데, 트릴은 따로 읽고 있다.)
+                            if (_tn in ("hammer-on", "pull-off")
+                                    and (_te.get("type") or "").lower() == "stop"):
+                                _hammered = True
                             _tw = _XML_TECH_VOICE.get(_tn)
                             if _tw:
                                 _tv = gm_named_variant(n_prog, _tw)
@@ -4392,6 +4402,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         deferred_dyn = [q for q in deferred_dyn if q[0] > _now + 1e-9]
                     gate, vsteps, _unp_art, _breath = _art_of(el)
                     for _t in _unp_art:
+                        if _t == "caesura":
+                            # 카이수라는 그 음 **뒤**에서 음악을 끊는다 — 숨과 달리 시간을
+                            # **더한다.** 자리만 모아 두고 아래에서 전 파트를 함께 민다.
+                            caesuras.append(m_base + cur + dur)
+                            continue
                         skip_mark("아티큘레이션 %s" % _t)
                     orn = kid(nots, "ornaments") if nots is not None else None
                     orn_kind = None
@@ -4484,6 +4499,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # 안 보면 남의 것을 집는다 — 실측 2026-08-21 아로하 Gtr1 41→42마디:
                     # 성부 1 과 성부 5 가 A2·E3·G3·D4 에 똑같이 붙임줄을 걸어 놓았다.
                     n_voice = _xt(el, "voice", "1") or "1"
+                    if _hammered:
+                        vsteps -= 1
                     _pa = pend_accent.pop(n_staff, None)
                     nvel = _pa if _pa is not None else _dyn_step(_staff_vel(n_staff), vsteps)
                     if parts_out is not None and not is_tab:
@@ -4652,12 +4669,26 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
 
     master = tempo_events[0][1] if tempo_events else 120.0
     warp = _warp_fn(tempo_events, master)
+    spb_w0 = 60.0 / max(20.0, min(300.0, master))
+    # 카이수라 = 음악이 잠깐 멈추는 자리. 규격은 "a slight pause", 연주 관례는 "the slightest
+    # perception of silence all the way up to a full pause" 라 **폭이 정해져 있지 않다** —
+    # 규격이 고른 짧은 쪽을 따라 숨과 같은 길이(BREATH_SEC)를 쓴다. 숨과 다른 점은 **어디서
+    # 시간이 나오느냐** 하나다: 숨은 앞 음에서 꺼내고(템포 불변), 카이수라는 **끼워 넣어**
+    # 뒤가 전부 밀린다. 그래서 한 파트가 아니라 **전 파트를 같이** 민다 — 아니면 어긋난다.
+    _cw = sorted({round(warp(c), 4) for c in caesuras})
+    _cpause = BREATH_SEC / spb_w0
+
+    def _caesura_shift(b):
+        return _cpause * sum(1 for c in _cw if c <= b + 1e-9)
+
     if parts_out is not None:
-        spb_w = 60.0 / max(20.0, min(300.0, master))
+        spb_w = spb_w0
         for row in parts_out:
             b0, b1 = row["beat"], row["beat"] + row["beats"]
-            row["beat"] = round(warp(b0), 4)
-            row["beats"] = max(0.06, round(warp(b1) - warp(b0), 4))
+            _w0, _w1 = warp(b0), warp(b1)
+            _sh = _caesura_shift(_w0)
+            row["beat"] = round(_w0 + _sh, 4)
+            row["beats"] = max(0.06, round(_w1 - _w0, 4))
         # 굴림 — **마지막 음이 적힌 자리에 선다.** 첫 음을 자리에 두고 뒤로 밀면 멜로디(대개
         # 맨 윗줄)가 박보다 늦게 도착한다. 실측 2026-08-22 아로하 6음 화음에서 110 ms 늦었고,
         # 기타 교습 둘이 정확히 그것을 하지 말라고 가르친다:
@@ -4730,8 +4761,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         if at is not None and syl != "-" and (has_own or has_caller):
             # The LRC lane: absolute seconds on the warped clock, sung length only (a rest
             # extends the row's beats for playback but is silence to a lyric line).
-            _lr = {"t": round(warp(at) * spb_m, 3),
-                   "d": round(max(0.0, warp(at + sung) - warp(at)) * spb_m, 3),
+            # 가사 줄도 같은 만큼 밀린다 — 안 그러면 노래방 자막이 소리보다 앞선다.
+            _wa = warp(at)
+            _lr = {"t": round((_wa + _caesura_shift(_wa)) * spb_m, 3),
+                   "d": round(max(0.0, warp(at + sung) - _wa) * spb_m, 3),
                    "syl": syl}
             # 낱말의 시작인가. **파일이 말했을 때만** 싣는다 — 안 적힌 악보에 우리가 경계를
             # 지어내면 틀린 자리에서 띄어쓰기가 난다.
@@ -6769,11 +6802,25 @@ def action_selftest():
     ck("⭐ 아티큘레이션 게이트가 MuseScore 표 그대로 (스타카티시모는 0.25→0.33 로 출처 통일)",
        [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0], _g,
        _g == [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0])
-    _g, _sc = _gates(["caesura", "doit", "scoop"])
+    _g, _sc = _gates(["plop", "doit", "scoop"])
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
     ck("⭐ 연주값을 주는 관례가 없는 것은 **안 걸었다고 말한다**", [[1.0, 1.0, 1.0], 3],
        [_g, len([k for k in _sk if "아티큘레이션" in k])],
        _g == [1.0, 1.0, 1.0] and len([k for k in _sk if "아티큘레이션" in k]) == 3)
+    # ⭐ 카이수라는 **시간을 끼워 넣는다** — 숨과 반대로 뒤가 전부 밀린다.
+    _cdoc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+             + _n("C", 4, 2, extra='<notations><articulations><caesura/>'
+                                   '</articulations></notations>')
+             + _n("D", 4, 2) + '</measure>' + E)
+    with open("data/sing/selftest-caes.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_cdoc)
+    _crows2 = []
+    musicxml_to_score("data/sing/selftest-caes.musicxml", parts_out=_crows2)
+    os.remove("data/sing/selftest-caes.musicxml")
+    _cb2 = [round(r["beat"], 3) for r in _crows2 if "pitch" in r]
+    # 120bpm 이면 0.25초 = 0.5박. 앞 음은 제자리, 뒤 음만 밀린다.
+    ck("⭐ 카이수라는 뒤를 민다 (숨은 앞 음에서 꺼내고, 카이수라는 끼워 넣는다)", [0.0, 2.5],
+       _cb2, _cb2 == [0.0, 2.5])
     # ⭐ 숨은 **앞 음에서 꺼낸다** — 뒤 음은 제자리여야 한다(관례: "not to alter the tempo").
     _brdoc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
               + _n("C", 4, 2, extra='<notations><articulations><breath-mark/>'
@@ -6986,11 +7033,28 @@ def action_selftest():
     _r, _ = _tecrows("<stopped/>", prog=58)
     ck("…스톱트/하몬뮤트는 뮤트 음색 (트롬본 57 → 59, 참조도 59)", 59, _r[0].get("program"),
        _r[0].get("program") == 59)
-    _r, _sc = _tecrows("<hammer-on/><up-bow/>", prog=41)
+    _r, _sc = _tecrows("<down-bow/><up-bow/>", prog=41)
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
     ck("…값을 주는 관례가 없는 주법은 그대로 두고 **말한다** (참조 구현도 재생을 안 한다)",
        [40, 2], [_r[0].get("program"), len([k for k in _sk if k.startswith("주법")])],
        _r[0].get("program") == 40 and len([k for k in _sk if k.startswith("주법")]) == 2)
+    # ⭐ 해머온·풀오프의 둘째 음은 **뜯지 않고** 낸다 — 소리는 나되 약하다.
+    _hdoc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+             '<direction><direction-type><dynamics><mf/></dynamics>'
+             '</direction-type></direction>'
+             + _n("C", 4, 2, extra='<notations><technical>'
+                                   '<hammer-on type="start"/></technical></notations>')
+             + _n("D", 4, 2, extra='<notations><technical>'
+                                   '<hammer-on type="stop"/></technical></notations>')
+             + '</measure>' + E)
+    with open("data/sing/selftest-ham.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_hdoc)
+    _hrows = []
+    musicxml_to_score("data/sing/selftest-ham.musicxml", parts_out=_hrows)
+    os.remove("data/sing/selftest-ham.musicxml")
+    _hv = [round(r["vel"] * 127) for r in _hrows if "pitch" in r]
+    ck("⭐ 해머온의 둘째 음은 소리가 나되 **한 칸 약하다** (mf 80 → mp 64) — 지우지 않는다",
+       [80, 64], _hv, _hv == [80, 64])
     _r, _sc = _tecrows("<harmonic><natural/></harmonic>", prog=41)
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
     ck("…GM 이 그 악기의 하모닉스를 안 주면 안 바꾸고 말한다 (바이올린 40)",
