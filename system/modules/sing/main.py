@@ -3653,10 +3653,12 @@ def _ornament_rows(row, kind, up=2, down=2):
         nb = pitch + up if kind == "mordent_up" else pitch - down
         return [mk(beat, d, pitch), mk(beat + d, d, nb),
                 mk(beat + 2 * d, dur - 2 * d, pitch)]
-    if kind == "turn":
+    if kind in ("turn", "turn_inverted"):
+        # 돈다: 위 → 본음 → 아래 → 본음. 뒤집힌 턴은 아래에서 시작한다(그게 "inverted" 의 뜻).
         d = dur / 4
-        return [mk(beat, d, pitch + up), mk(beat + d, d, pitch),
-                mk(beat + 2 * d, d, pitch - down), mk(beat + 3 * d, d, pitch)]
+        a, b = (pitch + up, pitch - down) if kind == "turn" else (pitch - down, pitch + up)
+        return [mk(beat, d, a), mk(beat + d, d, pitch),
+                mk(beat + 2 * d, d, b), mk(beat + 3 * d, d, pitch)]
     return [row]
 
 
@@ -4286,10 +4288,21 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 orn_kind = "mordent_up"
                             elif "mordent" in ot:
                                 orn_kind = "mordent"
-                            elif ot == "turn":
+                            elif ot in ("turn", "vertical-turn", "delayed-turn"):
+                                # ⚠️ `delayed-turn` 은 본음을 끌다가 늦게 도는 것인데, 참조
+                                # 구현이 **`turn` 과 같은 심볼로** 읽는다(늦음을 안 싣는다).
+                                # 우리도 같게 둔다 — 늦추는 시점을 말해 주는 출처가 없다.
+                                # `vertical-turn` 은 같은 턴을 세로로 그린 것(기보 변형)이다.
                                 orn_kind = "turn"
+                            elif ot in ("inverted-turn", "inverted-vertical-turn",
+                                        "delayed-inverted-turn"):
+                                orn_kind = "turn_inverted"
                             elif ot == "tremolo":
                                 skip_mark("트레몰로")
+                            elif ot in ("shake", "haydn", "schleifer", "wavy-line",
+                                        "other-ornament"):
+                                # 참조 구현에도 연주가 없다(심볼만). 지어내지 않고 말한다.
+                                skip_mark("꾸밈 %s" % ot)
                     if nots is not None and (_xk1(nots, "glissando") is not None
                                              or _xk1(nots, "slide") is not None):
                         skip_mark("글리산도")
@@ -6751,6 +6764,33 @@ def action_selftest():
     ck("…GM 이 그 악기의 하모닉스를 안 주면 안 바꾸고 말한다 (바이올린 40)",
        [40, True], [_r[0].get("program"), any("하모닉스" in k for k in _sk)],
        _r[0].get("program") == 40 and any("하모닉스" in k for k in _sk))
+
+    # ── 6군: 턴의 변형들 ────────────────────────────────────────────────────────────────
+    def _ornpitch(orn):
+        doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration>'
+               '<notations><ornaments><' + orn + '/></ornaments></notations></note>'
+               '</measure>' + E)
+        with open("data/sing/selftest-orn2.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        rows = []
+        sc, _e = musicxml_to_score("data/sing/selftest-orn2.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-orn2.musicxml")
+        return [r["pitch"] for r in rows if "pitch" in r],             list(((sc or {}).get("_notation_skipped") or {}).get("us") or {})
+
+    _t1, _ = _ornpitch("turn")
+    _t2, _ = _ornpitch("inverted-turn")
+    ck("⭐ 뒤집힌 턴은 **아래에서** 시작한다 (그게 inverted 의 뜻)", [[62, 60, 59, 60],
+                                                       [59, 60, 62, 60]], [_t1, _t2],
+       _t1 == [62, 60, 59, 60] and _t2 == [59, 60, 62, 60])
+    _t3, _ = _ornpitch("vertical-turn")
+    _t4, _ = _ornpitch("delayed-inverted-turn")
+    ck("…세로 턴은 같은 턴을 세로로 그린 것 · 늦은 턴은 참조 구현대로 같은 턴", [_t1, _t2],
+       [_t3, _t4], _t3 == _t1 and _t4 == _t2)
+    _t5, _sk5 = _ornpitch("shake")
+    ck("…참조에도 연주가 없는 꾸밈은 그대로 두고 말한다 (shake)", [[60], True],
+       [_t5, any("shake" in k for k in _sk5)],
+       _t5 == [60] and any("shake" in k for k in _sk5))
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
