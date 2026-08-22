@@ -3288,8 +3288,29 @@ XML_DEFAULT_VEL = 90 / 127.0        # ≈ 0.709
 # (velocity/127). ⚠️ 여기 있던 표는 **내가 지어낸 숫자**였고 mf 를 0.65 로 두어 규격 기본값
 # 0.709 와도 어긋났다(사용자 2026-08-21: "니가 만든 숫자인가"). 파일이 숫자를 말하면 이 표는
 # 안 쓰인다 — 그게 정상이고, 이건 안 말한 파일에만 서는 자리다.
-_XML_DYN = {"ppp": 16 / 127.0, "pp": 33 / 127.0, "p": 49 / 127.0, "mp": 64 / 127.0,
-            "mf": 80 / 127.0, "f": 96 / 127.0, "ff": 112 / 127.0, "fff": 126 / 127.0}
+# 표 전체 = MuseScore 4.4.2 `src/engraving/dom/dynamic.cpp` 의 `DYN_LIST`.
+# 우리가 쓰던 여덟 값이 **정확히 거기 값**이라(16·33·49·64·80·96·112·126) 나머지도 같은 표에서
+# 온다 — 규격이 안 정하는 대응을 두 출처에서 섞어 오면 표 하나가 다른 하나와 어긋난다.
+# 열 = (벨로시티, 뒤이어 바뀌는 양, 악센트인가). 구조체 주석: `accent` = 그 화음 하나에 걸린다.
+#   · 악센트가 아닌 것 = 그 자리부터의 **레벨**
+#   · 악센트인 것 = 그 음 하나가 그 값으로 나고, 이후 레벨이 change 만큼 바뀐다
+#     (fp = 96 으로 치고 −47 → 49 = p. 이름 그대로 "세게 쳤다가 여리게")
+# ⚠️ `z` 는 값을 안 바꾼다 — 표에서 sf 와 sfz, rf 와 rfz 가 같은 수다. 그래서 규격에만 있는
+#    `sfzp` 는 `sfp` 와 같은 값으로 둔다(지어낸 게 아니라 그 표가 보여 주는 규칙).
+_XML_DYN_TABLE = {
+    "pppppp": (1, 0, False), "ppppp": (5, 0, False), "pppp": (10, 0, False),
+    "ppp": (16, 0, False), "pp": (33, 0, False), "p": (49, 0, False),
+    "mp": (64, 0, False), "mf": (80, 0, False), "f": (96, 0, False),
+    "ff": (112, 0, False), "fff": (126, 0, False),
+    "ffff": (127, 0, False), "fffff": (127, 0, False), "ffffff": (127, 0, False),
+    "fp": (96, -47, True), "pf": (49, 47, True),
+    "sf": (112, -18, True), "sfz": (112, -18, True), "sffz": (126, -18, True),
+    "sfp": (112, -47, True), "sfzp": (112, -47, True), "sfpp": (112, -79, True),
+    "rf": (112, -18, True), "rfz": (112, -18, True), "fz": (112, -18, True),
+    "n": (49, -48, True),
+}
+# 레벨 사다리 = 악센트가 아닌 것들. 손목록이 아니라 위 표에서 파생한다.
+_XML_DYN = {k: v[0] / 127.0 for k, v in _XML_DYN_TABLE.items() if not v[2]}
 
 
 def _strip_ns(tag):
@@ -3704,6 +3725,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     for pi, part in enumerate(parts):
         divisions = 1.0
         vel_any = [None]   # 이 파트에서 마지막으로 선 셈여림 — 보표를 안 가린다
+        pend_accent = {}   # 악센트형 셈여림(sf·fp…)이 기다리는 보표 → 그 음 하나의 세기
         vel_by_staff = {}  # dynamics are written PER STAFF (실측 월광: pp 는 오른손 보표의
         # 것인데 문서 순서대로 전 성부에 들러붙어 왼손이 더 커졌다 — 악보가 아니라 우리
         # 부산물). staff 없는 지시는 "1" 로.
@@ -3796,12 +3818,25 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         # 기호는 파일이 숫자를 안 말했을 때만 — 말했으면 그 값이 이미 섰다.
                         if (dyn is not None and len(dyn)
                                 and not (snd is not None and snd.get("dynamics"))):
-                            v_new = _XML_DYN.get(_strip_ns(dyn[0].tag),
-                                                 vel_by_staff.get(d_staff))
-                            vel_by_staff[d_staff] = v_new
-                            if v_new is not None:
+                            _dtag = _strip_ns(dyn[0].tag)
+                            _ent = _XML_DYN_TABLE.get(_dtag)
+                            if _ent is None:
+                                # `other-dynamics` 같은 자유 기입. 값이 없으니 레벨을 안 바꾸고
+                                # **안 걸었다고 말한다** — 예전엔 조용히 직전 값을 유지했다.
+                                skip_mark("셈여림 %s" % _dtag)
+                            elif _ent[2]:
+                                # 악센트형 — 그 음 하나에 걸리고, 이후 레벨이 change 만큼 바뀐다.
+                                pend_accent[d_staff] = _ent[0] / 127.0
+                                if _ent[1]:
+                                    _va = max(0, min(127, _ent[0] + _ent[1])) / 127.0
+                                    vel_by_staff[d_staff] = _va
+                                    vel_any[0] = _va
+                                    dyn_events.append((m_base + cur, _va, d_staff))
+                            else:
+                                v_new = _ent[0] / 127.0
+                                vel_by_staff[d_staff] = v_new
                                 vel_any[0] = v_new
-                            dyn_events.append((m_base + cur, v_new, d_staff))
+                                dyn_events.append((m_base + cur, v_new, d_staff))
                         met = kid(dt, "metronome")
                         if met is not None and pi == 0 and snd is None:
                             unit = _XML_UNIT.get((text_of(met, "beat-unit") or "quarter"), 1.0)
@@ -3890,7 +3925,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         usyl = (text_of(uly, "text") or "").strip() if uly is not None else ""
                         u_staff = _xt(el, "staff", "1") or "1"
                         # 드럼도 악센트를 읽는다 — 게이트는 원샷이라 무의미하지만 세기는 아니다.
-                        uv = _dyn_step(_staff_vel(u_staff), _art_of(el)[1])
+                        _upa = pend_accent.pop(u_staff, None)
+                        uv = (_upa if _upa is not None
+                              else _dyn_step(_staff_vel(u_staff), _art_of(el)[1]))
                         if usyl:
                             # A rhythm-lyric lead sheet (실측 아로하: 가사 344개가 슬래시 음표에
                             # 얹혀 멜로디 음고가 없다): the slash carries WHEN, the lyric carries
@@ -4039,7 +4076,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # 안 보면 남의 것을 집는다 — 실측 2026-08-21 아로하 Gtr1 41→42마디:
                     # 성부 1 과 성부 5 가 A2·E3·G3·D4 에 똑같이 붙임줄을 걸어 놓았다.
                     n_voice = _xt(el, "voice", "1") or "1"
-                    nvel = _dyn_step(_staff_vel(n_staff), vsteps)
+                    _pa = pend_accent.pop(n_staff, None)
+                    nvel = _pa if _pa is not None else _dyn_step(_staff_vel(n_staff), vsteps)
                     if parts_out is not None and not is_tab:
                         stolen = 0.0
                         if graces and not is_stack:
@@ -6210,6 +6248,51 @@ def action_selftest():
     # Which part is the song. Counting notes gave the tune to whoever plays the most of them:
     # 실측 8/20, 아로하's "Voice" (536 notes) lost to its "Piano" (968) and the lead was the
     # piano's right hand in every style. The part names itself; we only had to read it.
+    # ── 2군: 셈여림 27종 ────────────────────────────────────────────────────────────────
+    def _dyndoc(marks):
+        """[(기호, 그 뒤에 올 음)] → 한 마디짜리 MusicXML."""
+        body = ""
+        for mk, step in marks:
+            if mk:
+                body += ('<direction><direction-type><dynamics><' + mk
+                         + '/></dynamics></direction-type></direction>')
+            body += _n(step, 4, 1)
+        return P + ('<measure number="1"><attributes><divisions>1</divisions>'
+                    '</attributes>') + body + '</measure>' + E
+
+    def _vels(marks):
+        with open("data/sing/selftest-dyn2.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(_dyndoc(marks))
+        rows = []
+        sc, _e = musicxml_to_score("data/sing/selftest-dyn2.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-dyn2.musicxml")
+        return [round(r["vel"] * 127) for r in rows if "pitch" in r], (sc or {})
+
+    _v, _ = _vels([("p", "C"), ("sf", "D"), (None, "E")])
+    ck("⭐ `sf` 는 그 음 하나에만 걸린다 (112) — 다음 음은 표의 −18 만큼 내려온 94", [49, 112, 94],
+       _v, _v == [49, 112, 94])
+    _v, _ = _vels([("mf", "C"), ("fp", "D"), (None, "E")])
+    ck("…`fp` 는 세게 쳤다가(96) 다음부터 여리게(49) — 이름 그대로", [80, 96, 49], _v,
+       _v == [80, 96, 49])
+    _v, _ = _vels([("pppp", "C"), (None, "D")])
+    ck("…표의 양 끝도 읽는다 (`pppp` = 10)", [10, 10], _v, _v == [10, 10])
+    _v, _ = _vels([("ffff", "C")])
+    ck("…`ffff` = 127", [127], _v, _v == [127])
+    _v, _sc = _vels([("f", "C"), ("other-dynamics", "D")])
+    _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
+    ck("⭐ 값이 없는 기호는 레벨을 안 바꾸고 **안 걸었다고 말한다** (예전엔 조용히 무시)",
+       [[96, 96], True], [_v, any("other-dynamics" in k for k in _sk)],
+       _v == [96, 96] and any("other-dynamics" in k for k in _sk))
+    # 악센트가 아닌 항목 14개(ffff·fffff·ffffff 가 다 127 이라 값은 12종). `_dyn_step` 은
+    # **더 큰 값**을 찾으므로 같은 값이 여럿이어도 한 칸만 움직인다.
+    ck("…사다리는 표에서 **파생**한다 (악센트가 아닌 것만)", [14, 12],
+       [len(_XML_DYN), len(set(_XML_DYN.values()))],
+       len(_XML_DYN) == 14 and len(set(_XML_DYN.values())) == 12
+       and _XML_DYN["p"] == 49 / 127.0)
+    ck("…그 사다리 위에서 악센트 한 칸은 여전히 f → ff", round(112 / 127.0, 6),
+       round(_dyn_step(_XML_DYN["f"], 1), 6),
+       abs(_dyn_step(_XML_DYN["f"], 1) - _XML_DYN["ff"]) < 1e-9)
+
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
                 + _n("C", 4, 2)
