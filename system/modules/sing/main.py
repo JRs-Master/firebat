@@ -2068,6 +2068,7 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
             kp = int(rows[0].get("program") or 0)
             if kp:
                 tr.append(mido.Message("program_change", channel=ch, program=kp, time=0))
+            _pan_row = rows[0]
         else:
             ch = min(15, next_ch)
             next_ch += 1
@@ -2086,12 +2087,14 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
                                        value=max(0, min(127, _bank)), time=0))
             tr.append(mido.Message("program_change", channel=ch,
                                    program=int((first_note or {}).get("program", 0)), time=0))
-            # 팬도 **행이 말할 때만**. SF2 는 존마다 자기 팬을 선언하고(gen 17) CC10 을 보내면
-            # 그 선언을 덮는다 — 우리 표가 하던 일이 그것이다.
-            pan = (first_note or {}).get("pan")
-            if pan is not None:
-                tr.append(mido.Message("control_change", channel=ch, control=10,
-                                       value=max(0, min(127, int(round(64 + pan * 63)))), time=0))
+            _pan_row = first_note
+        # 팬도 **행이 말할 때만**. SF2 는 존마다 자기 팬을 선언하고(gen 17) CC10 을 보내면
+        # 그 선언을 덮는다 — 우리 표가 하던 일이 그것이다. 드럼도 같다: 파일이 킷을 옆으로
+        # 놓았으면 그것도 파일이 말한 것이라, 예전처럼 멜로디 파트에서만 내보내면 안 된다.
+        _pan = (_pan_row or {}).get("pan")
+        if _pan is not None and not ((ctl or {}).get(part) or {}).get("cc", {}).get(CC_PAN):
+            tr.append(mido.Message("control_change", channel=ch, control=10,
+                                   value=max(0, min(127, int(round(64 + _pan * 63)))), time=0))
         # 페이더를 여기서 놓는 것은 **아무도 안 말했을 때뿐**이다. 파일이 CC7 을 썼으면 그 시리즈가
         # 아래 패스스루로 그대로 지나간다 — 우리가 t=0 에 첫 값을 미리 놓으면, 4박에서 페이더를
         # 내리는 파일의 앞 4박이 조용히 그 값으로 바뀐다(그리고 같은 바이트가 두 번 나간다).
@@ -2563,7 +2566,12 @@ def fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path=None):
     우리가 실제로 내보내는 소리에 대한 값이 아니다."""
     _pn, prof = synth_profile(font)
     argv = [binp, "-ni", "-g", str(float(prof.get("gain", SYNTH_GAIN))),
-            "-r", str(SR), "-O", "float"]
+            "-r", str(SR), "-O", "float",
+            # 쓰는 프리셋의 샘플만 램에 올린다(GS 문서 §3.1.1 이 큰 뱅크용으로 안내).
+            # ⚠️ **소리 결정이 아니다** — 실측: 데모 셋에서 출력이 **바이트 동일**(표본차
+            # 0.000e+00)이고 램만 67.9 → 45.9 MB(−32%), 렌더 시간 동일. 그래서 폰트 프로필이
+            # 아니라 여기 항상 선다. 오프라인 렌더라 지연 로딩의 위험(실시간 끊김)도 없다.
+            "-o", "synth.dynamic-sample-loading=1"]
     if prof.get("interp") and cfg_path:
         with open(cfg_path, "w", encoding="utf-8") as fh:
             print("interp %d" % int(prof["interp"]), file=fh)
@@ -3594,12 +3602,31 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
 
     prog_of, unp_of = {}, {}
     pl = kid(root, "part-list")
-    name_of = {}
+    name_of, mix_of = {}, {}
     for sp in (kids(pl, "score-part") if pl is not None else []):
         name_of[sp.get("id")] = (text_of(sp, "part-name") or "").strip()
         for mi2 in kids(sp, "midi-instrument"):
             mp = text_of(mi2, "midi-program")
             mu = text_of(mi2, "midi-unpitched")
+            # 파일이 적은 믹스. **MIDI 파일의 CC7/CC10 을 다른 문법으로 적은 것**이라, 한쪽만
+            # 읽으면 같은 뜻이 포맷에 따라 갈린다(실측 아로하: 드럼 100 · 나머지 78.74 =
+            # 4.15 dB 차이를 우리가 버리고 있었다).
+            #   volume — 규격: "a percentage of the maximum ranging from 0 to 100 …
+            #            corresponds to a scaling value for the MIDI 1.0 channel volume controller"
+            #   pan    — 규격: "0 is straight ahead, -90 is hard left, 90 is hard right,
+            #            and -180 and 180 are directly behind the listener" (도 단위)
+            # ⚠️ ±90 너머는 **뒤**인데 스테레오에 뒤가 없다 → 방향은 두고 그쪽 끝에 붙인다.
+            _mx = mix_of.setdefault(sp.get("id"), {})
+            for _tag, _key in (("volume", "cc7"), ("pan", "pan")):
+                _tv = text_of(mi2, _tag)
+                if _tv is None or _key in _mx:
+                    continue
+                try:
+                    _fv = float(_tv)
+                except ValueError:
+                    continue
+                _mx[_key] = (max(0, min(127, int(round(_fv / 100.0 * 127.0))))
+                             if _key == "cc7" else max(-1.0, min(1.0, _fv / 90.0)))
             if mp and sp.get("id") and sp.get("id") not in prog_of:
                 try:
                     prog_of[sp.get("id")] = max(0, min(127, int(mp) - 1))
@@ -3620,6 +3647,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                 named_progs[_pid] = _g
 
     skipped = {}
+    part_mix = {}          # 행 이름 → 파일이 적은 믹스. score["_partMix"] 로 나간다
 
     def skip_mark(what, whose="us"):
         """못 연주한 기호를 센다. `whose` 는 **누구 사정인지**를 가른다.
@@ -3654,6 +3682,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         lead_voice = None
         f_prog = prog_of.get(part.get("id"), named_progs.get(part.get("id"), 0))
         f_part = f"p{pi + 1}"
+        f_mix = mix_of.get(part.get("id")) or {}
+        if f_mix:
+            part_mix[f_part] = dict(f_mix)
         last_onset, stack_n, roll_here, roll_dir_here = 0.0, 0, False, ""
         pedal_down = None
         tab_staves = set()   # 타브 보표 번호 — 오선의 사본이라 소리로 내지 않는다
@@ -3838,6 +3869,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             # 길이도 적힌 대로. 0.25 가 박혀 있었다(MIDI 리더와 같은 자리).
                             parts_out.append({"beat": onset, "beats": max(0.03, dur),
                                               "part": "drum", "_src": f_part, "drum": dname,
+                                              **({"pan": f_mix["pan"]}
+                                                 if "pan" in f_mix else {}),
                                               "vel": (uv if uv is not None
                                                       else XML_DEFAULT_VEL)})
                         elif parts_out is not None:
@@ -3988,6 +4021,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                     # 성부도 싣는다 — 파일이 선언한 값이고, 붙임줄이 제 성부에
                                     # 붙었는지 **밖에서 확인할 방법**이 이것뿐이다. staff 와 같은 층.
                                     "gate": gate, "staff": n_staff, "voice": n_voice}
+                        if "pan" in f_mix:
+                            base_row["pan"] = f_mix["pan"]
                         if roll_n is not None:
                             base_row["_roll"] = roll_n
                             base_row["_rollcap"] = dur - stolen
@@ -4196,6 +4231,16 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         score["_unpitchedMelody"] = True
     if skipped:
         score["_notation_skipped"] = skipped
+    if part_mix:
+        # 드럼 행은 "drum" 한 파트로 합쳐지므로 그 믹스도 한 벌만 산다 — 드럼을 낸 첫
+        # score-part 의 것. 둘 이상이 드럼을 내면 뒤엣것은 못 싣고 그렇다고 말한다.
+        _dsrc = [r.get("_src") for r in (parts_out or []) if r.get("part") == "drum"]
+        _dmix = [part_mix[q] for q in dict.fromkeys(_dsrc) if q in part_mix]
+        if _dmix:
+            part_mix["drum"] = _dmix[0]
+            if len(_dmix) > 1 and any(d != _dmix[0] for d in _dmix[1:]):
+                skip_mark("드럼 파트가 여럿인데 믹스가 서로 다름(첫 파트 것만 적용)")
+        score["_partMix"] = part_mix
     if meter is not None and meter != 4:
         score["meter"] = meter
     hs = best["harmonies"] or next((pp["harmonies"] for pp in parsed_parts
@@ -4856,6 +4901,17 @@ def action_render(inp):
                 return {"success": False, "error": err}
             notation_skipped = score.pop("_notation_skipped", None) \
                 if isinstance(score, dict) else None
+            # 악보가 적은 믹스도 파일이 말한 것이다 — MIDI 쪽 CC7/CC10 이 지나는 **그 배관**에
+            # 그대로 태운다. 새 층을 만들면 같은 뜻이 포맷마다 다른 길로 간다.
+            _pmix = score.pop("_partMix", None) if isinstance(score, dict) else None
+            if _pmix:
+                file_cc7 = dict(locals().get("file_cc7") or {})
+                file_ctl = dict(locals().get("file_ctl") or {})
+                for _pp, _mm in _pmix.items():
+                    if _mm.get("cc7") is not None:
+                        file_cc7[_pp] = int(_mm["cc7"])
+                # 팬은 여기서 안 넣는다 — 파서가 이미 **행에** 달았고 라이터가 그걸 내보낸다.
+                # 둘 다 하면 같은 바이트가 두 번 나간다(실측 CC10 [64, 64]).
             own_lyrics = score.pop("_lyrics", None) if isinstance(score, dict) else None
             if isinstance(score, dict) and score.pop("_unpitchedMelody", False):
                 return {"success": False, "error": (
@@ -6602,8 +6658,15 @@ def action_selftest():
     if os.path.isfile(_cfgp):
         os.remove(_cfgp)
     _uargv = fluidsynth_argv("fluidsynth", _fx, "a.mid", "b.wav", "data/sing/selftest-x.cfg")
-    ck("⭐ 문서가 없는 폰트엔 **아무것도 안 얹는다** — 남의 폰트 값은 우리 취향과 같다", 0,
-       _uargv.count("-o"), _uargv.count("-o") == 0 and "-f" not in _uargv)
+    # 자원 설정(dynamic-sample-loading)은 소리를 안 바꾸므로 늘 선다 — 세는 것은 **소리 설정**뿐.
+    _usound = [o for o in _uargv if o.startswith(("synth.reverb", "synth.chorus",
+                                                  "synth.polyphony", "synth.device-id"))]
+    ck("⭐ 문서가 없는 폰트엔 **소리 설정을 안 얹는다** — 남의 폰트 값은 우리 취향과 같다", [],
+       _usound, not _usound and "-f" not in _uargv)
+    ck("…자원 설정은 폰트와 무관하게 선다 (출력이 바이트 동일하고 램만 32% 준다)", True,
+       "synth.dynamic-sample-loading=1" in _uargv,
+       "synth.dynamic-sample-loading=1" in _uargv
+       and "synth.dynamic-sample-loading=1" in _gargv)
     ck("…그때 게인은 fluidsynth 자기 기본값", str(SYNTH_GAIN),
        _uargv[_uargv.index("-g") + 1], _uargv[_uargv.index("-g") + 1] == str(SYNTH_GAIN))
     _same_line = "fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path)" in _PROBE_SRC
