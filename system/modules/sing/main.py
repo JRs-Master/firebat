@@ -3762,6 +3762,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         transpose = 0  # transposing instruments, in semitones
         graces = []    # pending grace pitches awaiting their host note
         wedges = []    # (raw pos, "c"|"d"|"stop")
+        pend_dash = {}   # cresc./dim. 낱말을 본 보표 → 뒤따르는 <dashes> 가 집어 간다
+        dash_open = set()
         dyn_events = []  # (raw pos, vel)
         def _staff_vel(staff):
             """이 보표에 지금 걸려 있는 셈여림. 자기 것이 없으면 **파트의 것**을 쓴다.
@@ -3888,6 +3890,22 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             import re as _re
                             if _re.search(r"\b(rit|rall|accel)", wd.text.lower()):
                                 skip_mark(f"문자 템포({wd.text.strip()[:12]})")
+                            # 문자로 쓴 셈여림 변화. 규격: <dashes> 는 "used for instance with cresc.
+                            # and dim. marks" — 점선은 **그 지시가 어디까지 가는지**를 그리고, 무엇을
+                            # 하라는지는 이 낱말이 말한다. 쐐기와 같은 일이라 같은 통로로 보낸다.
+                            # 낱말은 이 기보법의 표준 이탈리아어 축약이지 우리가 만든 어휘가 아니다.
+                            _wl = wd.text.strip().lower()
+                            if _re.match(r"^(cresc|dimin|decresc|dim)", _wl):
+                                pend_dash[d_staff] = "d" if _wl[0] == "d" else "c"
+                        dsh = kid(dt, "dashes")
+                        if dsh is not None:
+                            _dt2 = (dsh.get("type") or "start").lower()
+                            if _dt2 == "start" and d_staff in pend_dash:
+                                wedges.append((m_base + _dcur, pend_dash.pop(d_staff), d_staff))
+                                dash_open.add(d_staff)
+                            elif _dt2 == "stop" and d_staff in dash_open:
+                                wedges.append((m_base + _dcur, "stop", d_staff))
+                                dash_open.discard(d_staff)
                         wg = kid(dt, "wedge")
                         if wg is not None:
                             wt = (wg.get("type") or "").lower()
@@ -6386,6 +6404,32 @@ def action_selftest():
     _v = _offvels('<offset sound="yes">2</offset>')
     ck('⭐ `sound="yes"` 오프셋은 재생도 옮긴다 — 두 박 뒤부터 f', [49, 49, 49, 96], _v,
        _v == [49, 49, 49, 96])
+
+    # ── 2군: 문자로 쓴 셈여림 변화(cresc. + 점선) ───────────────────────────────────────
+    def _dashvels(mid):
+        doc = P + ('<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                   '<direction><direction-type><dynamics><p/></dynamics>'
+                   '</direction-type></direction>') + _n("C", 4, 1) + mid             + _n("D", 4, 1) + _n("E", 4, 1) + _n("F", 4, 1)             + ('<direction><direction-type><dashes type="stop"/></direction-type></direction>'
+               '<direction><direction-type><wedge type="stop"/></direction-type></direction>'
+               '<direction><direction-type><dynamics><f/></dynamics>'
+               '</direction-type></direction>') + _n("G", 4, 1) + '</measure>' + E
+        with open("data/sing/selftest-dash.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        rows = []
+        musicxml_to_score("data/sing/selftest-dash.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-dash.musicxml")
+        return [round(r["vel"] * 127) for r in rows if "pitch" in r]
+
+    _wv = _dashvels('<direction><direction-type><wedge type="crescendo"/>'
+                    '</direction-type></direction>')
+    _dv = _dashvels('<direction><direction-type><words>cresc.</words>'
+                    '<dashes type="start"/></direction-type></direction>')
+    _nv = _dashvels('<direction><direction-type><dashes type="start"/>'
+                    '</direction-type></direction>')
+    ck("⭐ `cresc.` + 점선이 쐐기와 **같은 램프**를 낸다 (같은 일을 다른 문법으로 적은 것)",
+       _wv, _dv, _dv == _wv and _wv == [49, 49, 65, 80, 96])
+    ck("…낱말 없는 점선은 아무것도 안 한다 (점선은 rit.·8va 도 늘린다)", [49, 49, 49, 49, 96],
+       _nv, _nv == [49, 49, 49, 49, 96])
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
