@@ -4315,7 +4315,22 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # 규격 기본은 저음 → 고음. 파일이 반대로 적으면 그쪽이 이긴다.
                     roll_dir = (_roll_el.get("direction") or "").strip().lower() if rolled else ""
                     ly = kid(el, "lyric")
-                    syl = (text_of(ly, "text") or "").strip() if ly is not None else ""
+                    # <elision> — 한 음에 두 음절이 붙는 자리(the_end). 규격상 <lyric> 은
+                    # text·elision·text 로 오는데 우리는 **첫 text 만** 읽어 뒤엣것을 잃고 있었다.
+                    # 잇는 글자는 <elision> 자신이 말한다(비어 있으면 그냥 붙인다).
+                    if ly is None:
+                        syl, n_syb = "", None
+                    else:
+                        _tx = [t.text or "" for t in kids(ly, "text")]
+                        _el = [(e.text or "") for e in kids(ly, "elision")]
+                        _parts = [_tx[0]] if _tx else []
+                        for _i2 in range(1, len(_tx)):
+                            _parts.append(_el[_i2 - 1] if _i2 - 1 < len(_el) else "")
+                            _parts.append(_tx[_i2])
+                        syl = "".join(_parts).strip()
+                        # <syllabic> — single/begin 이 **낱말의 시작**이다. 이것이 악보가 단어
+                        # 경계를 말하는 유일한 자리라, 있으면 그대로 쓰고 없으면 모르는 채로 둔다.
+                        n_syb = (text_of(ly, "syllabic") or "").strip().lower() or None
                     tie = any(t.get("type") == "stop" for t in kids(el, "tie"))
                     is_stack = kid(el, "chord") is not None
                     if is_stack:
@@ -4449,7 +4464,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         notes[-1]["_sung"] = notes[-1].get("_sung", 0.0) + dur
                     else:
                         notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": nvel,
-                                      "_at": onset, "_st": n_staff, "_sung": dur})
+                                      "_at": onset, "_st": n_staff, "_sung": dur,
+                                      "_syb": n_syb})
             pos = m_base + m_len
         if pedal_down is not None and parts_out is not None and pos > pedal_down:
             parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
@@ -4559,6 +4575,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         sung = n.pop("_sung", n["beats"])
         n.pop("_st", None)
         n.pop("_unp", None)
+        _syb = n.pop("_syb", None)
         beats = n["beats"]
         if at is not None:
             beats = max(0.25, warp(at + beats) - warp(at))
@@ -4571,9 +4588,14 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         if at is not None and syl != "-" and (has_own or has_caller):
             # The LRC lane: absolute seconds on the warped clock, sung length only (a rest
             # extends the row's beats for playback but is silence to a lyric line).
-            lyric_rows.append({"t": round(warp(at) * spb_m, 3),
-                               "d": round(max(0.0, warp(at + sung) - warp(at)) * spb_m, 3),
-                               "syl": syl})
+            _lr = {"t": round(warp(at) * spb_m, 3),
+                   "d": round(max(0.0, warp(at + sung) - warp(at)) * spb_m, 3),
+                   "syl": syl}
+            # 낱말의 시작인가. **파일이 말했을 때만** 싣는다 — 안 적힌 악보에 우리가 경계를
+            # 지어내면 틀린 자리에서 띄어쓰기가 난다.
+            if _syb:
+                _lr["nw"] = _syb in ("single", "begin")
+            lyric_rows.append(_lr)
         row = {"syl": syl, "note": _midi_name(n["midi"]),
                "beats": min(64.0, round(beats * 4) / 4)}
         if n["vel"] is not None:
@@ -4659,9 +4681,11 @@ def _lrc_ts(t):
 def build_lrc(lyric_rows, spb, offset=0.0, title=None):
     """Enhanced LRC (a line tag plus per-syllable <..> tags) from parsed syllable rows.
 
-    Lines break on musical gaps (~a beat of silence between sung notes). Korean scores carry
-    no word boundaries (실측 아로하: syllabic 전부 single, 공백 0), so syllables join bare —
-    timing is the product here; pretty spacing belongs to imported .lrc files."""
+    Lines break on musical gaps (~a beat of silence between sung notes).
+
+    띄어쓰기는 **악보가 말할 때만** 넣는다. `<syllabic>` 이 single·begin 이면 그 음절이 낱말의
+    시작이라 앞에 공백을 둔다(middle·end 는 이어 붙인다). 그 선언이 없는 악보는 단어 경계를
+    모르는 것이라 예전처럼 붙여 쓴다 — 우리가 지어내면 틀린 자리에서 끊긴다."""
     gap = max(0.45, spb * 0.9)
     lines, cur = [], []
     for r in lyric_rows:
@@ -4676,7 +4700,11 @@ def build_lrc(lyric_rows, spb, offset=0.0, title=None):
         out.append(f"[ti:{title}]")
     for line in lines:
         head = _lrc_ts(line[0]["t"] + offset)
-        body = "".join(f"<{_lrc_ts(r['t'] + offset)}>{r['syl']}" for r in line)
+        body = ""
+        for _i3, r in enumerate(line):
+            if _i3 and r.get("nw"):
+                body += " "
+            body += f"<{_lrc_ts(r['t'] + offset)}>{r['syl']}"
         out.append(f"[{head}]{body}")
     return "\n".join(out) + "\n"
 
@@ -6791,6 +6819,33 @@ def action_selftest():
     ck("…참조에도 연주가 없는 꾸밈은 그대로 두고 말한다 (shake)", [[60], True],
        [_t5, any("shake" in k for k in _sk5)],
        _t5 == [60] and any("shake" in k for k in _sk5))
+
+    # ── 7군: 가사의 음절 경계와 두 음절 붙임 ────────────────────────────────────────────
+    def _lynote(step, lyric):
+        return ('<note><pitch><step>' + step + '</step><octave>4</octave></pitch>'
+                '<duration>1</duration><type>quarter</type>' + lyric + '</note>')
+
+    _lydoc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+              + _lynote("C", '<lyric><syllabic>begin</syllabic><text>Hel</text></lyric>')
+              + _lynote("D", '<lyric><syllabic>end</syllabic><text>lo</text></lyric>')
+              + _lynote("E", '<lyric><syllabic>single</syllabic><text>world</text></lyric>')
+              + _lynote("F", '<lyric><text>the</text><elision>_</elision>'
+                             '<text>end</text></lyric>')
+              + '</measure>' + E)
+    with open("data/sing/selftest-lyric2.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_lydoc)
+    _lsc, _lerr = musicxml_to_score("data/sing/selftest-lyric2.musicxml")
+    os.remove("data/sing/selftest-lyric2.musicxml")
+    _lsyl = [n["syl"] for n in (_lsc or {}).get("notes", [])]
+    ck("⭐ <elision> — 한 음에 붙은 두 음절을 다 읽는다 (예전엔 첫 <text> 만)",
+       ["Hel", "lo", "world", "the_end"], _lsyl, _lerr is None
+       and _lsyl == ["Hel", "lo", "world", "the_end"])
+    _lrc2 = build_lrc((_lsc or {}).get("_lyrics") or [], 0.5).strip()
+    ck("⭐ <syllabic> 이 낱말의 시작을 말하면 **거기만** 띄운다 (한국 악보 단어 경계의 그 자리)",
+       "…>Hel…>lo <…>world…", _lrc2.split("]", 1)[-1],
+       ">Hel<" in _lrc2 and ">lo <" in _lrc2 and _lrc2.endswith("the_end"))
+    ck("…선언이 없는 음절 앞에는 안 띄운다 (모르는 것을 지어내지 않는다)", True,
+       "world<00:01.50>the_end" in _lrc2, "world<00:01.50>the_end" in _lrc2)
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
