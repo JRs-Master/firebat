@@ -3723,11 +3723,17 @@ def _ornament_rows(row, kind, up=2, down=2):
     <mordent> beats DOWN, <inverted-mordent> beats UP (the Pralltriller)."""
     beat, dur, pitch = row["beat"], row["beats"], row["pitch"]
     mk = lambda b, d, pt: dict(row, beat=b, beats=d, pitch=max(0, min(127, pt)))
-    if kind == "trill":
+    if kind in ("trill", "trill_from_above"):
+        # 시작 음 — 참조 구현의 표가 두 style 을 나란히 둔다: 기본은 본음부터({0,1}),
+        # 바로크 style 은 윗음부터({1,0}). 파일이 시대를 안 말하므로 기본은 본음부터이고,
+        # `<inverted-mordent long="yes">`(tremblement)처럼 **표가 윗음부터라고 말한 자리**
+        # 에서만 윗음으로 시작한다.
         step = 0.125
         n = max(4, min(16, int(dur / step)))
         d = dur / n
-        return [mk(beat + k * d, d, pitch + (up if k % 2 else 0)) for k in range(n)]
+        hi = kind == "trill_from_above"
+        return [mk(beat + k * d, d, pitch + (up if (k % 2 == 0) == hi else 0))
+                for k in range(n)]
     if kind in ("mordent", "mordent_up"):
         d = min(0.1, dur / 4)
         nb = pitch + up if kind == "mordent_up" else pitch - down
@@ -4381,17 +4387,28 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         # 꾸밈음이 본음에서 가져가는 시간. 규격에 칸이 있고(steal-time-*),
                         # 없으면 **그 꾸밈음이 그려진 음표 값**을 쓴다 — 실측 2026-08-22 아로하
                         # 18개가 전부 <type>16th 로 자기 값을 적어 놨다.
+                        # ⚠️ **박 앞이냐 박 위냐**를 안 보고 있었다. 규격의 두 칸이 다른 말을
+                        # 한다: `steal-time-following` = **본음**에서 꺼낸다(박 위, 아포지아투라)
+                        # · `steal-time-previous` = **앞 음**에서 꺼낸다(박 앞). 그리고 `slash`
+                        # 가 아치아카투라 표시다 — 관례: "an acciaccatura is usually performed
+                        # **before the beat** and the emphasis is on the main note".
+                        # 둘을 같게 다루면 뭉개는 꾸밈음이 박 위에 올라앉아 본음을 밀어낸다.
                         _gel = kid(el, "grace")
-                        _steal = None
-                        for _a in ("steal-time-following", "steal-time-previous"):
-                            _v = _gel.get(_a) if _gel is not None else None
-                            if _v:
-                                try:
-                                    _steal = max(0.0, min(1.0, float(_v) / 100.0))
-                                except ValueError:
-                                    _steal = None
+                        _steal, _before = None, False
+                        if _gel is not None:
+                            if (_gel.get("slash") or "").lower() == "yes":
+                                _before = True
+                            for _a, _bf in (("steal-time-following", False),
+                                            ("steal-time-previous", True)):
+                                _v = _gel.get(_a)
+                                if _v:
+                                    try:
+                                        _steal = max(0.0, min(1.0, float(_v) / 100.0))
+                                        _before = _bf
+                                    except ValueError:
+                                        _steal = None
                         _gt = _XML_UNIT.get((text_of(el, "type") or "").strip().lower())
-                        graces.append((midi, _steal, _gt))
+                        graces.append((midi, _steal, _gt, _before))
                         continue
                     nots = kid(el, "notations")
                     if deferred_dyn:
@@ -4417,9 +4434,14 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             if ot == "trill-mark":
                                 orn_kind = "trill"
                             elif ot == "inverted-mordent":
-                                orn_kind = "mordent_up"
+                                # `long="yes"` 면 참조 표가 tremblement(윗음부터의 트릴)로 읽는다
+                                orn_kind = ("trill_from_above"
+                                            if (o.get("long") or "").lower() == "yes"
+                                            else "mordent_up")
                             elif "mordent" in ot:
-                                orn_kind = "mordent"
+                                # `long="yes"` = prall-mordent: 위·본·아래·본 (참조 표 {1,0,-1,0})
+                                orn_kind = ("turn" if (o.get("long") or "").lower() == "yes"
+                                            else "mordent")
                             elif ot in ("turn", "vertical-turn", "delayed-turn"):
                                 # ⚠️ `delayed-turn` 은 본음을 끌다가 늦게 도는 것인데, 참조
                                 # 구현이 **`turn` 과 같은 심볼로** 읽는다(늦음을 안 싣는다).
@@ -4510,12 +4532,15 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             # 균등. 합계는 본음의 **절반**을 안 넘는다(앞꾸밈음 관례).
                             _w = [(dur * _gs if _gs is not None
                                    else (_gt if _gt else dur * 0.5 / len(graces)))
-                                  for _gm, _gs, _gt in graces]
+                                  for _gm, _gs, _gt, _gb in graces]
                             _cap = dur * 0.5
                             if sum(_w) > _cap:
                                 _w = [v * _cap / sum(_w) for v in _w]
-                            _at = onset
-                            for (_gm, _gs2, _gt2), _gw in zip(graces, _w):
+                            # 하나라도 "박 앞" 이면 무리 전체가 박 앞이다 — 한 무리가 박을
+                            # 사이에 두고 갈리면 그건 두 꾸밈음이지 하나가 아니다.
+                            _pre = any(_gb for _gm, _gs, _gt, _gb in graces)
+                            _at = (onset - sum(_w)) if _pre else onset
+                            for (_gm, _gs2, _gt2, _gb2), _gw in zip(graces, _w):
                                 # 꾸밈음도 보표·성부를 단다 — 쐐기 램프가 그걸 보고 고른다.
                                 # 세기·게이트는 본음과 같다: 꾸밈음이 더 여리다고 말한 곳이
                                 # 악보에도 관례에도 없어서 −0.1·0.9 는 내 숫자였다.
@@ -4526,7 +4551,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                                   "vel": nvel, "gate": 1.0,
                                                   "staff": n_staff, "voice": n_voice})
                                 _at += _gw
-                            stolen = sum(_w)
+                            # 박 앞에서 뜯어 온 것은 **본음에서** 꺼내지 않는다 — 본음은
+                            # 제 박에서 제 길이로 난다(그게 acciaccatura 의 뜻이다).
+                            stolen = 0.0 if _pre else sum(_w)
                         # 여기에도 `max(0.125, …)` 가 있었다 — MIDI 리더에서 걷은 그 바닥이
                         # MusicXML 쪽에 그대로 남아 있었다. 그리고 여기서는 값이 틀리는 것으로
                         # 끝나지 않는다: 음이 늘어나면 **끝이 다음 음의 시작과 안 맞아 이음줄
@@ -7198,6 +7225,43 @@ def action_selftest():
     _elrc = build_lrc((_esc or {}).get("_lyrics") or [], 0.5).strip()
     ck("⭐ 악보가 <end-line> 으로 줄 끝을 말하면 거기서 끊는다 (우리 추정보다 파일이 먼저)",
        2, len(_elrc.splitlines()), len(_elrc.splitlines()) == 2)
+
+    # ── 꾸밈음: 박 위(아포지아투라) 대 박 앞(아치아카투라) · mordent long ────────────────
+    def _gracerows(gattr):
+        doc = (P + '<measure number="1"><attributes><divisions>4</divisions></attributes>'
+               + _n("C", 4, 4)
+               + '<note><grace' + gattr + '/><pitch><step>E</step><octave>4</octave></pitch>'
+                 '<type>16th</type></note>'
+               + _n("G", 4, 4) + '</measure>' + E)
+        with open("data/sing/selftest-grace2.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        rows = []
+        musicxml_to_score("data/sing/selftest-grace2.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-grace2.musicxml")
+        return [(r["pitch"], round(r["beat"], 3), round(r["beats"], 3))
+                for r in rows if "pitch" in r]
+
+    _ga = _gracerows("")
+    _gb = _gracerows(' slash="yes"')
+    # 아포지아투라: 꾸밈음이 박 위에 서고 본음이 그만큼 뒤로 밀린다(본음에서 꺼낸다).
+    ck("⭐ 슬래시 없는 꾸밈음은 **박 위**에서 본음의 시간을 가져간다 (아포지아투라)",
+       [1.0, 1.0], [_ga[1][1], _ga[2][1] - _ga[1][1] + _ga[1][2] - _ga[1][2]],
+       _ga[1][1] == 1.0 and _ga[2][1] > 1.0)
+    # 아치아카투라: 꾸밈음이 박 **앞**에 서고 본음은 제 박에서 제 길이로 난다.
+    ck("⭐ 슬래시가 붙으면 **박 앞**으로 간다 — 본음은 제자리·제 길이 (아치아카투라)",
+       [True, 1.0], [_gb[1][1] < 1.0, _gb[2][1]],
+       _gb[1][1] < 1.0 and _gb[2][1] == 1.0 and _ga[2][1] > _gb[2][1])
+
+    _m1, _ = _ornpitch("mordent")
+    _m2, _ = _ornpitch('mordent long="yes"')
+    _m3, _ = _ornpitch("inverted-mordent")
+    _m4, _ = _ornpitch('inverted-mordent long="yes"')
+    ck("모르덴트 방향은 참조 표 그대로 (<mordent> 아래 · <inverted-mordent> 위)",
+       [[60, 59, 60], [60, 62, 60]], [_m1, _m3],
+       _m1 == [60, 59, 60] and _m3 == [60, 62, 60])
+    ck("⭐ `long=\"yes\"` 는 다른 도형이다 (참조 표: prall-mordent {1,0,-1,0} · tremblement)",
+       [[62, 60, 59, 60], True], [_m2, _m4[0] == 62],
+       _m2 == [62, 60, 59, 60] and len(_m4) > 4 and _m4[0] == 62)
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
