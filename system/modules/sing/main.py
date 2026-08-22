@@ -3443,7 +3443,7 @@ _XML_ART_GATE = {"staccato": 0.50, "staccatissimo": 0.33, "spiccato": 0.33,
 # 규격에는 있는데 **아무 관례도 연주값을 안 주는** 것들. 우리가 지어내지 않고, 안 걸었다고 말한다.
 #   · breath-mark·caesura — 참조 구현의 기본 멈춤이 0.0 이다(breath.cpp `_pause = 0.0`)
 #   · soft-accent·stress·unstress — 심볼은 있는데 gateTime·velocity 항목이 없다
-_XML_ART_UNPLAYED = ("breath-mark", "caesura", "soft-accent", "stress", "unstress",
+_XML_ART_UNPLAYED = ("breath-mark", "caesura",
                      "doit", "falloff", "plop", "scoop", "other-articulation")
 # <technical> 중 **음색을 바꾸는 것**. 값은 여기 없다 — 낱말만 있고, 번호는 GM 이름표에서
 # 찾는다(gm_named_variant). 참조 구현이 악기마다 선언한 주법 채널의 program 과 같은 결과다.
@@ -3457,7 +3457,17 @@ _XML_TECH_UNPLAYED = ("hammer-on", "pull-off", "up-bow", "down-bow", "double-ton
                       "pluck", "other-technical")
 # 세기는 **셈여림 표의 한 칸**으로 움직인다. 예전엔 +0.12·+0.18 이라는 내가 고른 값이었는데,
 # "조금 세게" 를 말해 주는 출처가 우리에게 _XML_DYN 하나뿐이라 거기서 파생한다.
-_XML_ART_STEP = {"accent": 1, "strong-accent": 2, "marcato": 2}
+_XML_ART_STEP = {
+    "accent": 1, "strong-accent": 2, "marcato": 2,
+    # 규격: "The <soft-accent> element indicates a soft accent that is **not as heavy as a
+    # normal accent**." — 방향과 **상한**을 둘 다 말한다. 정상 악센트가 한 칸이므로 그 사이,
+    # 즉 반 칸. (참조 구현은 이 기호에 재생 타입만 두고 숫자는 사운드 프로필에 있어 못 봤다.)
+    "soft-accent": 0.5,
+    # 규격: "The <stress> element indicates a stressed note." — 방향만 말하고 크기도, 악센트와의
+    # 관계도 안 말한다. 그래서 **우리 어휘가 낼 수 있는 제일 작은 강조**를 준다(반 칸).
+    # ⚠️ soft-accent 보다 근거가 얕다 — 규격이 상한을 안 줬다.
+    "stress": 0.5, "unstress": -0.5,
+}
 
 
 def _dyn_step(vel, steps):
@@ -3470,14 +3480,27 @@ def _dyn_step(vel, steps):
     if not steps:
         return vel
     scale = sorted(_XML_DYN.values())
-    for _ in range(abs(steps)):
-        if steps > 0:
-            nxt = next((v for v in scale if v > vel + 1e-9), None)
-        else:
-            nxt = next((v for v in reversed(scale) if v < vel - 1e-9), None)
+
+    def _next(v, up):
+        if up:
+            return next((x for x in scale if x > v + 1e-9), None)
+        return next((x for x in reversed(scale) if x < v - 1e-9), None)
+
+    up, n = steps > 0, abs(float(steps))
+    for _ in range(int(n)):
+        nxt = _next(vel, up)
         if nxt is None:
             break
         vel = nxt
+    # ⚠️ **반 칸**이 필요한 자리가 있다. 규격이 `soft-accent` 를 "an accent that is **not as
+    # heavy as a normal accent**" 라고 정의하는데, 정상 악센트가 우리에겐 한 칸이라 반드시 그
+    # 사이여야 한다. 그 구간의 양 끝은 표가 주고(지금 칸 · 다음 칸), 우리는 그 사이를 나눌 뿐
+    # — 새 상수를 만드는 게 아니라 **같은 표 위에서 덜 간다.**
+    rem = n - int(n)
+    if rem:
+        nxt = _next(vel, up)
+        if nxt is not None:
+            vel = vel + (nxt - vel) * rem
     return max(0.02, min(1.0, vel))
 
 
@@ -3495,7 +3518,11 @@ def _art_of(el):
         for a in arts:
             tag = _strip_ns(a.tag)
             gate = min(gate, _XML_ART_GATE.get(tag, 1.0))
-            steps = max(steps, _XML_ART_STEP.get(tag, 0))
+            _st2 = _XML_ART_STEP.get(tag, 0)
+            # ⚠️ `max` 로 고르면 **음수(unstress)가 0 에 먹힌다.** 세기를 제일 크게 움직이는
+            # 것을 고른다 — 한 음에 악센트와 언스트레스가 같이 붙는 일은 없다.
+            if abs(_st2) > abs(steps):
+                steps = _st2
             if tag in _XML_ART_UNPLAYED:
                 unplayed.append(tag)
     return gate, steps, unplayed
@@ -6633,11 +6660,35 @@ def action_selftest():
     ck("⭐ 아티큘레이션 게이트가 MuseScore 표 그대로 (스타카티시모는 0.25→0.33 로 출처 통일)",
        [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0], _g,
        _g == [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0])
-    _g, _sc = _gates(["breath-mark", "soft-accent", "stress"])
+    _g, _sc = _gates(["breath-mark", "caesura", "doit"])
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
     ck("⭐ 연주값을 주는 관례가 없는 것은 **안 걸었다고 말한다** (참조 구현도 멈춤이 0.0)",
        [[1.0, 1.0, 1.0], 3], [_g, len([k for k in _sk if "아티큘레이션" in k])],
        _g == [1.0, 1.0, 1.0] and len([k for k in _sk if "아티큘레이션" in k]) == 3)
+
+    def _artvels(marks):
+        body = ""
+        for mk in marks:
+            ex = ('<notations><articulations><' + mk + '/></articulations></notations>')                 if mk else ""
+            body += _n("C", 4, 4, extra=ex)
+        with open("data/sing/selftest-sa.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                     '<direction><direction-type><dynamics><mf/></dynamics>'
+                     '</direction-type></direction>' + body + '</measure>' + E)
+        rows = []
+        musicxml_to_score("data/sing/selftest-sa.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-sa.musicxml")
+        return [round(r["vel"] * 127, 1) for r in rows if "pitch" in r]
+
+    _av = _artvels([None, "soft-accent", "accent", "stress", "unstress"])
+    _plain, _soft, _acc, _str, _uns = _av
+    ck("⭐ `soft-accent` 은 악센트인데 **덜 무겁다** (규격이 그렇게 정의한다) — 평음<약악센트<악센트",
+       "80 < %s < 96" % _soft, _av, _plain < _soft < _acc
+       and _plain == 80.0 and _acc == 96.0)
+    ck("…그 값은 표 두 칸 사이를 나눈 것이지 새 상수가 아니다 (mf 80 · f 96 → 88)", 88.0,
+       _soft, _soft == 88.0)
+    ck("…`stress` 는 위로, `unstress` 는 아래로 (규격이 방향만 말한다)",
+       [88.0, 72.0], [_str, _uns], _str > _plain and _uns < _plain)
 
     def _offvels(off_attr):
         body = ('<direction><direction-type><dynamics><f/></dynamics></direction-type>'
