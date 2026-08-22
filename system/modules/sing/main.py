@@ -3469,8 +3469,44 @@ _XML_ART_GATE = {"staccato": 0.50, "staccatissimo": 0.33, "spiccato": 0.33,
 # ⚠️ **길이는 우리가 고른다.** 숨은 물리적 행위라 박이 아니라 초로 잡았고(느린 곡에서 늘어지면
 # 숨이 아니라 쉼이 된다), 값은 짧은 들숨 한 번 = **0.25초**. 음의 절반을 넘지 않는다.
 BREATH_SEC = 0.25
-_XML_ART_UNPLAYED = ("caesura",
-                     "doit", "falloff", "plop", "scoop", "other-articulation")
+_XML_ART_UNPLAYED = ("caesura", "other-articulation")
+
+# doit·falloff·scoop·plop — 재즈 관악의 미끄러짐. 규격: "an **indeterminate** slide attached to
+# a single note. The doit appears **after** the main note and goes **above** the main pitch."
+# 짝은 표기 도구가 그대로 보여 준다: doit↔fall 이 한 컨트롤(위/아래), scoop↔plop 이 한 컨트롤.
+# ⚠️ 앞에 오는 둘은 **어디서 오느냐**로 적어야 한다 — 규격 문장이 그렇게 쓰여 있다:
+#   doit    "appears **after** the main note and goes **above** the main pitch"
+#   falloff "appears **after** … and goes **below**"
+#   scoop   "appears **before** … and comes **from below**"
+#   plop    "appears **before** … and comes **from above**"
+# 처음에 앞의 둘을 "가는 방향" 으로 적어 **정반대로** 만들어 놨었다(그리고 시험에 그대로 박았다).
+# ⚠️ 참조 구현은 이것들을 **녹음된 아티큘레이션**으로 낸다(ArticulationType::{Doit,Fall,
+#    Plop,Scoop}) — GM 폰트엔 그런 샘플이 없어 우리는 피치휠로 그린다.
+# ⚠️ **폭은 우리가 고른다.** 규격이 "indeterminate" 라 못박았고 아무 관례도 도수를 안 준다.
+#    파일이 `line-length`(short/medium/long)로 등급은 주므로, 거기에 **알아들을 수 있는 도수**
+#    를 얹었다: 온음 · 완전4도 · 옥타브. 시간은 음의 앞/뒤 1/4(벤딩 프리셋의 상승 구간과 같은 몫).
+# 값 = **음고에 대한 부호**(뒤엣것은 도착점, 앞엣것은 출발점).
+_XML_SLIDE = {"doit": (1, "after"), "falloff": (-1, "after"),
+              "scoop": (-1, "before"), "plop": (1, "before")}
+_XML_SLIDE_SEMIS = {"short": 2, "medium": 5, "long": 12}
+SLIDE_SPAN = 0.25
+
+
+def _xml_slide_curve(el):
+    """<articulations> 의 doit/falloff/scoop/plop → 우리 벤딩 곡선. 없으면 None."""
+    arts = _xk1(_xk1(el, "notations"), "articulations")         if _xk1(el, "notations") is not None else None
+    if arts is None:
+        return None
+    for a in arts:
+        hit = _XML_SLIDE.get(_strip_ns(a.tag))
+        if not hit:
+            continue
+        sign, where = hit
+        n = sign * _XML_SLIDE_SEMIS.get((a.get("line-length") or "medium").strip().lower(), 5)
+        if where == "after":
+            return [(0.0, 0.0), (round(1 - SLIDE_SPAN, 4), 0.0), (1.0, float(n))]
+        return [(0.0, float(n)), (round(SLIDE_SPAN, 4), 0.0), (1.0, 0.0)]
+    return None
 # <technical> 중 **음색을 바꾸는 것**. 값은 여기 없다 — 낱말만 있고, 번호는 GM 이름표에서
 # 찾는다(gm_named_variant). 참조 구현이 악기마다 선언한 주법 채널의 program 과 같은 결과다.
 _XML_TECH_VOICE = {"snap-pizzicato": "pizzicato", "stopped": "muted",
@@ -4271,6 +4307,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         _bends = kids(_tec, "bend")
                         if _bends:
                             _bend_curve = _xml_bend_curve(_bends)
+                    if _bend_curve is None:
+                        # 미끄러짐은 <articulations> 에 산다 — <bend> 가 있으면 그쪽이 원본이다.
+                        _bend_curve = _xml_slide_curve(el)
                     _ply = kid(el, "play")
                     _mut = (text_of(_ply, "mute") or "").strip().lower() if _ply is not None                         else ""
                     if mute_now[0] and not _mut:
@@ -6829,11 +6868,41 @@ def action_selftest():
     ck("⭐ 아티큘레이션 게이트가 MuseScore 표 그대로 (스타카티시모는 0.25→0.33 로 출처 통일)",
        [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0], _g,
        _g == [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0])
-    _g, _sc = _gates(["plop", "doit", "scoop"])
+    _g, _sc = _gates(["other-articulation"])
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
-    ck("⭐ 연주값을 주는 관례가 없는 것은 **안 걸었다고 말한다**", [[1.0, 1.0, 1.0], 3],
+    ck("⭐ 값을 못 대는 것만 남았고, 그건 여전히 **안 걸었다고 말한다**", [[1.0], 1],
        [_g, len([k for k in _sk if "아티큘레이션" in k])],
-       _g == [1.0, 1.0, 1.0] and len([k for k in _sk if "아티큘레이션" in k]) == 3)
+       _g == [1.0] and len([k for k in _sk if "아티큘레이션" in k]) == 1)
+
+    # ── doit·falloff·scoop·plop = 불특정 미끄러짐 ────────────────────────────────────────
+    def _slide(mark, attr=""):
+        ex = ('<notations><articulations><' + mark + attr
+              + '/></articulations></notations>')
+        with open("data/sing/selftest-slide.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(P + '<measure number="1"><attributes><divisions>1</divisions>'
+                     '</attributes>' + _n("C", 4, 4, extra=ex) + '</measure>' + E)
+        rows = []
+        musicxml_to_score("data/sing/selftest-slide.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-slide.musicxml")
+        return next((r.get("bend") for r in rows if "pitch" in r), None)
+
+    _sd, _sf = _slide("doit"), _slide("falloff")
+    _ss, _sp = _slide("scoop"), _slide("plop")
+    ck("⭐ doit·falloff 는 음 **뒤**에서 위·아래로 미끄러진다 (규격이 정한 자리와 방향)",
+       [[(0.0, 0.0), (0.75, 0.0), (1.0, 5.0)], [(0.0, 0.0), (0.75, 0.0), (1.0, -5.0)]],
+       [_sd, _sf], _sd == [(0.0, 0.0), (0.75, 0.0), (1.0, 5.0)]
+       and _sf == [(0.0, 0.0), (0.75, 0.0), (1.0, -5.0)])
+    # ⚠️ 규격은 **어디서 오느냐**로 쓴다 — scoop "comes from below", plop "comes from above".
+    # 처음엔 이 둘을 뒤집어 놓고 시험에도 그대로 적었다.
+    ck("…scoop 은 **아래에서** 올라오고, plop 은 **위에서** 내려온다 (규격 문장 그대로)",
+       [[(0.0, -5.0), (0.25, 0.0), (1.0, 0.0)], [(0.0, 5.0), (0.25, 0.0), (1.0, 0.0)]],
+       [_ss, _sp], _ss == [(0.0, -5.0), (0.25, 0.0), (1.0, 0.0)]
+       and _sp == [(0.0, 5.0), (0.25, 0.0), (1.0, 0.0)])
+    ck("…폭은 파일의 `line-length` 등급을 따른다 (short 온음 · long 옥타브)", [2.0, 12.0],
+       [_slide("falloff", ' line-length="short"')[-1][1] * -1,
+        _slide("falloff", ' line-length="long"')[-1][1] * -1],
+       _slide("falloff", ' line-length="short"')[-1][1] == -2.0
+       and _slide("falloff", ' line-length="long"')[-1][1] == -12.0)
     # ⭐ 카이수라는 **시간을 끼워 넣는다** — 숨과 반대로 뒤가 전부 밀린다.
     _cdoc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
              + _n("C", 4, 2, extra='<notations><articulations><caesura/>'
