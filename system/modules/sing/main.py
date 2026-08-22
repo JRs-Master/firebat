@@ -3663,6 +3663,20 @@ def _warp_fn(tempo_events, master):
     return warp
 
 
+_XML_ACC_ALTER = {"sharp": 1, "flat": -1, "natural": 0,
+                  "double-sharp": 2, "sharp-sharp": 2, "flat-flat": -2, "double-flat": -2}
+_LETTERS = "CDEFGAB"
+
+
+def _neighbor_with_accidental(step, octv, up, acc_alter):
+    """이웃 **글자**에 그 임시표를 붙인 음. `<accidental-mark>` 는 조표가 주는 이웃 대신
+    자기가 지정한 이웃을 말한다 — 그래서 조표가 아니라 **글자 + 적힌 임시표**로 센다."""
+    i = _LETTERS.index(step)
+    j = (i + 1) % 7 if up else (i - 1) % 7
+    o = octv + (1 if (up and j == 0) else (-1 if (not up and i == 0) else 0))
+    return 12 * (o + 1) + _XML_STEP[_LETTERS[j]] + acc_alter
+
+
 def _diatonic_neighbors(fifths, pitch):
     """Upper/lower neighbor in semitones for this pitch IN THIS KEY — what players and every
     notation program's playback use. A fixed whole tone was OUR number: in E major (월광's
@@ -3881,6 +3895,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         f_bank = bank_of.get(part.get("id")) or 0
         prog_now = [None, None]     # [프로그램, 뱅크] — 곡 중간 교체가 덮는 값
         swing_now = [0.0, 0.5]      # [비율(0=스트레이트), 단위(박)] — <sound><swing>
+        mute_now = [False]          # <string-mute> 가 켜 둔 상태
 
         def swing_pos(t, d):
             """스윙 격자로 옮긴 (자리, 길이).
@@ -4078,6 +4093,21 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                     tempo_events.append((m_base + _dcur, pm * unit))
                             except ValueError:
                                 pass
+                            # 메트릭 모듈레이션(♩ = ♩.) — 숫자 대신 **음표 둘의 관계**로 쓴다.
+                            # 앞 음표 하나의 실제 시간이 뒤 음표 하나의 실제 시간과 같아진다:
+                            #   before/old = after/new  →  new = old × after/before
+                            _mn = kids(met, "metronome-note")
+                            if len(_mn) >= 2 and kid(met, "metronome-relation") is not None:
+                                def _mv(g):
+                                    u = _XML_UNIT.get(
+                                        (text_of(g, "metronome-type") or "quarter"), 1.0)
+                                    return u * (1.5 ** len(kids(g, "metronome-dot")))
+                                _bef, _aft = _mv(_mn[0]), _mv(_mn[-1])
+                                # 직전 템포. 파일이 아직 아무 템포도 안 말했으면 파서의
+                                # 나머지가 쓰는 것과 같은 폴백(120)을 쓴다.
+                                _prev = tempo_events[-1][1] if tempo_events else 120.0
+                                if _bef > 0 and _aft > 0 and _prev:
+                                    tempo_events.append((m_base + _dcur, _prev * _aft / _bef))
                         wd = kid(dt, "words")
                         if wd is not None and wd.text:
                             import re as _re
@@ -4106,6 +4136,24 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                            "c" if wt == "crescendo"
                                            else "d" if wt == "diminuendo" else "stop",
                                            d_staff))
+                        # <damp>·<damp-all> — 울리던 것을 **재운다**. 규격이 세기를 안 주므로
+                        # 우리가 할 수 있는 것은 페달을 떼는 것뿐이다(그게 댐퍼를 내리는 일이다).
+                        if kid(dt, "damp") is not None or kid(dt, "damp-all") is not None:
+                            if parts_out is not None and pedal_down is not None:
+                                parts_out.append(
+                                    {"beat": pedal_down,
+                                     "beats": max(1e-6, m_base + _dcur - pedal_down),
+                                     "part": f_part, "pedal": True})
+                                pedal_down = None
+                            else:
+                                # 페달이 안 밟혀 있으면 우리가 재울 것이 없다. 하프처럼 페달
+                                # 개념이 없는 악기의 <damp> 가 여기 온다 — 안 걸었다고 말한다.
+                                skip_mark("damp (페달로 재울 것이 없음)")
+                        # <string-mute type="on|off"> — 현의 뮤트. <play><mute> 와 같은 일이라
+                        # 같은 통로로 보낸다(GM 이 그 갈래의 뮤트 음색을 줄 때만 걸린다).
+                        _sm = kid(dt, "string-mute")
+                        if _sm is not None:
+                            mute_now[0] = (_sm.get("type") or "on").lower() == "on"
                         ped = kid(dt, "pedal") if dt is not None else None
                         if ped is not None and parts_out is not None:
                             ptype = (ped.get("type") or "start").lower()
@@ -4181,6 +4229,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             _bend_curve = _xml_bend_curve(_bends)
                     _ply = kid(el, "play")
                     _mut = (text_of(_ply, "mute") or "").strip().lower() if _ply is not None                         else ""
+                    if mute_now[0] and not _mut:
+                        _mut = "on"
                     if _mut and _mut != "off":
                         _mv = gm_muted_variant(f_prog)
                         if _mv is not None:
@@ -4317,6 +4367,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         skip_mark("아티큘레이션 %s" % _t)
                     orn = kid(nots, "ornaments") if nots is not None else None
                     orn_kind = None
+                    orn_acc = {}     # <accidental-mark> — 위/아래 이웃음의 임시표
                     if orn is not None:
                         for o in orn:
                             ot = _strip_ns(o.tag)
@@ -4337,6 +4388,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 orn_kind = "turn_inverted"
                             elif ot == "tremolo":
                                 skip_mark("트레몰로")
+                            elif ot == "accidental-mark":
+                                _av = _XML_ACC_ALTER.get((o.text or "").strip().lower())
+                                if _av is not None:
+                                    orn_acc[(o.get("placement") or "above").lower()] = _av
                             elif ot in ("shake", "haydn", "schleifer", "wavy-line",
                                         "other-ornament"):
                                 # 참조 구현에도 연주가 없다(심볼만). 지어내지 않고 말한다.
@@ -4357,7 +4412,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # text·elision·text 로 오는데 우리는 **첫 text 만** 읽어 뒤엣것을 잃고 있었다.
                     # 잇는 글자는 <elision> 자신이 말한다(비어 있으면 그냥 붙인다).
                     if ly is None:
-                        syl, n_syb = "", None
+                        syl, n_syb, n_eol = "", None, False
                     else:
                         _tx = [t.text or "" for t in kids(ly, "text")]
                         _el = [(e.text or "") for e in kids(ly, "elision")]
@@ -4369,6 +4424,16 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         # <syllabic> — single/begin 이 **낱말의 시작**이다. 이것이 악보가 단어
                         # 경계를 말하는 유일한 자리라, 있으면 그대로 쓰고 없으면 모르는 채로 둔다.
                         n_syb = (text_of(ly, "syllabic") or "").strip().lower() or None
+                        # 가사 줄이 여기서 끝난다고 악보가 말한다. 우리는 음악적 쉼으로 끊는데,
+                        # 파일이 말하면 그쪽이 원본이다.
+                        n_eol = (kid(ly, "end-line") is not None
+                                 or kid(ly, "end-paragraph") is not None)
+                        # 가사 없이 흥얼거리거나 웃는 자리. **부를 글자를 파일이 안 준다** —
+                        # 우리가 "음"이라고 적어 넣으면 그건 우리가 쓴 가사다.
+                        if kid(ly, "humming") is not None:
+                            skip_mark("허밍(부를 글자가 없음)", "file")
+                        if kid(ly, "laughing") is not None:
+                            skip_mark("웃음(부를 글자가 없음)", "file")
                     tie = any(t.get("type") == "stop" for t in kids(el, "tie"))
                     is_stack = kid(el, "chord") is not None
                     if is_stack:
@@ -4478,9 +4543,17 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         if prev is not None:
                             prev["beats"] += dur
                         elif orn_kind:
-                            parts_out.extend(_ornament_rows(
-                                base_row, orn_kind,
-                                *_diatonic_neighbors(cur_fifths, midi)))
+                            _up, _dn = _diatonic_neighbors(cur_fifths, midi)
+                            # 파일이 이웃음의 임시표를 적었으면 **조표 대신 그것**이다.
+                            # ⚠️ `midi` 에는 `<transpose>` 가 들어 있다 — 이웃음도 같은
+                            # 기준이라야 차이가 뜻을 갖는다.
+                            if "above" in orn_acc:
+                                _up = max(1, _neighbor_with_accidental(
+                                    step, octave, True, orn_acc["above"]) + transpose - midi)
+                            if "below" in orn_acc:
+                                _dn = max(1, midi - _neighbor_with_accidental(
+                                    step, octave, False, orn_acc["below"]) - transpose)
+                            parts_out.extend(_ornament_rows(base_row, orn_kind, _up, _dn))
                         else:
                             # 최근 것부터 여덟만 — 성부가 그보다 많이 겹치는 악보는 없다.
                             q = tie_open.setdefault((f_part, n_voice, midi), [])
@@ -4503,7 +4576,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     else:
                         notes.append({"midi": midi, "beats": dur, "syl": syl, "vel": nvel,
                                       "_at": onset, "_st": n_staff, "_sung": dur,
-                                      "_syb": n_syb})
+                                      "_syb": n_syb, "_eol": n_eol})
             pos = m_base + m_len
         if pedal_down is not None and parts_out is not None and pos > pedal_down:
             parts_out.append({"beat": pedal_down, "beats": pos - pedal_down,
@@ -4614,6 +4687,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         n.pop("_st", None)
         n.pop("_unp", None)
         _syb = n.pop("_syb", None)
+        _eol = n.pop("_eol", False)
         beats = n["beats"]
         if at is not None:
             beats = max(0.25, warp(at + beats) - warp(at))
@@ -4633,6 +4707,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
             # 지어내면 틀린 자리에서 띄어쓰기가 난다.
             if _syb:
                 _lr["nw"] = _syb in ("single", "begin")
+            if _eol:
+                _lr["eol"] = True
             lyric_rows.append(_lr)
         row = {"syl": syl, "note": _midi_name(n["midi"]),
                "beats": min(64.0, round(beats * 4) / 4)}
@@ -4727,7 +4803,10 @@ def build_lrc(lyric_rows, spb, offset=0.0, title=None):
     gap = max(0.45, spb * 0.9)
     lines, cur = [], []
     for r in lyric_rows:
-        if cur and r["t"] - (cur[-1]["t"] + cur[-1]["d"]) >= gap:
+        # 악보가 `<end-line>` 으로 줄 끝을 말했으면 그 자리에서 끊는다. 안 말한 파일만
+        # 음악적 쉼으로 나눈다 — 우리 추정보다 파일의 선언이 먼저다.
+        if cur and (cur[-1].get("eol")
+                    or r["t"] - (cur[-1]["t"] + cur[-1]["d"]) >= gap):
             lines.append(cur)
             cur = []
         cur.append(r)
@@ -6942,6 +7021,65 @@ def action_selftest():
     _cn17 = _manyparts(17)
     ck("⭐ 성부가 MIDI 채널 수를 넘으면 **겹친다고 말한다** (규격 한계라 못 늘리지만 조용하면 안 된다)",
        [None, True], [_cn15, bool(_cn17)], _cn15 is None and bool(_cn17))
+
+    # ── 남은 여섯: 메트릭 모듈레이션 · damp · 임시표 이웃 · 줄바꿈 · 허밍 · string-mute ──
+    _MET = ('<direction><direction-type><metronome><beat-unit>quarter</beat-unit>'
+            '<per-minute>100</per-minute></metronome></direction-type></direction>')
+    _MOD = ('<direction><direction-type><metronome>'
+            '<metronome-note><metronome-type>quarter</metronome-type></metronome-note>'
+            '<metronome-relation>equals</metronome-relation>'
+            '<metronome-note><metronome-type>quarter</metronome-type>'
+            '<metronome-dot/></metronome-note></metronome></direction-type></direction>')
+
+    def _sixrows(body):
+        with open("data/sing/selftest-six.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(P + '<measure number="1"><attributes><divisions>1</divisions>'
+                     '</attributes>' + body + '</measure>' + E)
+        rows = []
+        sc, _e = musicxml_to_score("data/sing/selftest-six.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-six.musicxml")
+        sk = ((sc or {}).get("_notation_skipped") or {})
+        return rows, (sc or {}), list(sk.get("us") or {}) + list(sk.get("file") or {})
+
+    _plainr, _, _ = _sixrows(_MET + _n("C", 4, 1) + _n("D", 4, 1) + _n("E", 4, 1))
+    _modr, _, _ = _sixrows(_MET + _n("C", 4, 1) + _MOD + _n("D", 4, 1) + _n("E", 4, 1))
+    _pb = [round(r["beat"], 4) for r in _plainr if "pitch" in r]
+    _mb = [round(r["beat"], 4) for r in _modr if "pitch" in r]
+    ck("⭐ 메트릭 모듈레이션(♩=♩.)이 템포를 바꾼다 — 뒤 음이 당겨진다", True,
+       [_pb, _mb], _pb[2] > _mb[2] and abs(_pb[1] - _mb[1]) < 1e-6)
+
+    _tr1, _, _ = _sixrows('<note><pitch><step>C</step><octave>4</octave></pitch>'
+                          '<duration>4</duration><notations><ornaments><trill-mark/>'
+                          '</ornaments></notations></note>')
+    _tr2, _, _ = _sixrows('<note><pitch><step>C</step><octave>4</octave></pitch>'
+                          '<duration>4</duration><notations><ornaments><trill-mark/>'
+                          '<accidental-mark placement="above">sharp</accidental-mark>'
+                          '</ornaments></notations></note>')
+    _n1 = sorted({r["pitch"] for r in _tr1 if "pitch" in r})
+    _n2 = sorted({r["pitch"] for r in _tr2 if "pitch" in r})
+    ck("⭐ <accidental-mark> 가 꾸밈의 이웃음을 지정한다 (조표의 D → 적힌 D♯)",
+       [[60, 62], [60, 63]], [_n1, _n2], _n1 == [60, 62] and _n2 == [60, 63])
+
+    _hr, _, _hsk = _sixrows('<note><pitch><step>C</step><octave>4</octave></pitch>'
+                            '<duration>4</duration><lyric><humming/></lyric></note>')
+    ck("…허밍·웃음은 **부를 글자를 파일이 안 준 것**이라 그렇게 말한다(우리가 지어내지 않는다)",
+       True, _hsk, any("허밍" in k for k in _hsk))
+
+    _smr, _, _smsk = _sixrows('<direction><direction-type><string-mute type="on"/>'
+                              '</direction-type></direction>' + _n("C", 4, 4))
+    ck("…<string-mute> 는 <play><mute> 와 같은 통로 (GM 이 그 갈래의 뮤트를 안 주면 고지)",
+       True, _smsk, any("뮤트" in k for k in _smsk))
+
+    _lyd = (_lynote("C", '<lyric><text>a</text><end-line/></lyric>')
+            + _lynote("D", '<lyric><text>b</text></lyric>'))
+    with open("data/sing/selftest-eol.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                 + _lyd + '</measure>' + E)
+    _esc, _ = musicxml_to_score("data/sing/selftest-eol.musicxml")
+    os.remove("data/sing/selftest-eol.musicxml")
+    _elrc = build_lrc((_esc or {}).get("_lyrics") or [], 0.5).strip()
+    ck("⭐ 악보가 <end-line> 으로 줄 끝을 말하면 거기서 끊는다 (우리 추정보다 파일이 먼저)",
+       2, len(_elrc.splitlines()), len(_elrc.splitlines()) == 2)
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
