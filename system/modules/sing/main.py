@@ -1967,7 +1967,10 @@ def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, ctl=Non
                 key = _nearest_drum_name(e.get("drumNote"))
             seg = hits[key] * float(e.get("vel", 0.8)) * lvl
         else:
-            held = e["beats"]
+            # 길이 0 인 음(파일이 그렇게 적는다)은 sf2 쪽에서 신디가 자기 최소 길이로 울린다
+            # — fluidsynth `synth.min-note-length` 기본 10 ms(실측: 0·1·5 ms 가 같은 시간 난다).
+            # 내장 신디에도 같은 바닥을 준다. 안 그러면 한쪽만 소리가 없어 두 엔진이 갈린다.
+            held = e["beats"] or (SYNTH_MIN_NOTE_MS / 1000.0) / max(1e-9, spb)
             for a, b in pedal_spans.get(e["part"], ()):  # noqa: B007
                 if a <= e["beat"] < b:
                     held = max(held, b - e["beat"])
@@ -2257,11 +2260,16 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
             # velocity → attenuation). 여기서 우리가 손대면 그 판단을 두 번 하는 것이 된다.
             vel = int(round(127 * float(e.get("vel", XML_DEFAULT_VEL))))
             length = e["beats"] * float(e.get("gate", 1.0))
+            _end = start + int(round(length * tpb))
             marks.append((start, 1, pitch, vel))
-            marks.append((start + max(1, int(round(length * tpb))), 0, pitch, 0))
+            # 같은 틱이면 note_off 가 note_on **뒤에** 서야 그 음이 꺼진다 — 보통은 반대가
+            # 맞다(앞 음이 끝나는 자리에서 다음 음이 시작하면 off 가 먼저 서야 새 음을 안 죽인다).
+            # 그래서 **자기 note_on 과 같은 틱일 때만** 뒤로 보낸다(kind 8).
+            marks.append((max(_end, start), 8 if _end <= start else 0, pitch, 0))
         # 컨트롤러가 음보다 먼저 — 같은 틱에서 CC11 이 note_on 뒤에 오면 그 음은 옛 값으로 난다.
         # 컨트롤러와 프로그램이 음보다 먼저 — 같은 틱에서 뒤에 오면 그 음은 옛 값으로 난다.
-        marks.sort(key=lambda m: (m[0], {4: -2, 5: -1, 6: -0.5, 7: -0.4}.get(m[1], m[1])))
+        marks.sort(key=lambda m: (m[0], {4: -2, 5: -1, 6: -0.5, 7: -0.4,
+                                         8: 1.5}.get(m[1], m[1])))
         prev = 0
         for tick, kind, a, b in marks:
             if kind == 5:
@@ -3046,11 +3054,10 @@ def _note_beats(warp, tpb, start, dur, b0):
     """
     b1 = warp((start + dur) / tpb)
     if b1 <= b0:
-        # 파일이 길이 0 을 적었다. 우리 격자가 표현할 수 있는 **제일 짧은 것**을 준다 —
-        # 라이터가 어차피 한 틱을 바닥으로 깔기 때문이고(같은 틱에 note_off 를 놓으면 정렬에서
-        # note_on 앞에 서서 음이 안 꺼진다), 0 과 한 틱은 어택+릴리스뿐이라 같게 들린다.
-        # ⚠️ 그래도 **우리 결정**이라 verify 가 `changed` 로 말한다(J-cycle 1,177음).
-        return 1.0 / MIDI_TPB
+        # 파일이 길이 0 을 적었으면 **0 을 그대로** 싣는다. 예전엔 한 틱을 깔았는데, 그 이유가
+        # "같은 틱의 note_off 가 정렬에서 note_on 앞에 서서 음이 안 꺼진다" 라는 **우리 라이터
+        # 사정**이었다. 그건 라이터에서 고칠 일이지 파일의 값을 바꿀 이유가 아니다.
+        return 0.0
     return max(1e-6, b1 - b0)
 
 
@@ -7912,26 +7919,47 @@ def action_selftest():
     ck("⭐ 이름표에 없는 드럼 키도 그대로 연주된다 (이름은 우리 어휘지 파일의 것이 아니다)",
        [True, 0], [_lr.get("exact"), len(_lr.get("lost") or [])],
        _lr.get("exact") is True and not _lr.get("lost"))
-    # 그물 자체는 살아 있어야 한다. 남아 있는 진짜 차이 하나 = **길이 0 인 음** — 파일은 0 을
-    # 쓸 수 있는데 우리는 그 파일의 틱 하나로 바닥을 깐다(실측: 저자 데모 J-cycle 에 1,177개).
-    # 소리는 사실상 같지만(어택+릴리스뿐) 그건 **우리 결정**이라, verify 가 말해야 한다.
+    # ⭐ 길이 0 인 음은 이제 **0 그대로** 나간다 — 예전엔 우리 격자의 한 틱을 깔았고 이 검사가
+    # 그 차이를 확인하는 것이었다(즉 또 결손을 못박은 시험). 저자 데모 J-cycle 의 1,177음이
+    # 그것이었고, 걷고 나서 10개 파일이 전부 일치한다.
     _v3.append(_mido.Message("note_on", channel=9, note=38, velocity=100, time=240))
     _v3.append(_mido.Message("note_off", channel=9, note=38, velocity=0, time=0))
     _vf.save("data/sing/selftest-verify-dangle.mid")
     _dr = (action_verify({"action": "verify",
                           "scoreMediaPath": "data/sing/selftest-verify-dangle.mid"})
            .get("data") or {})
-    ck("verify: 우리가 바꾼 것은 바꿨다고 말한다 (길이 0 → 틱 하나)", [False, 1],
-       [_dr.get("exact"), len(_dr.get("changed") or [])],
-       _dr.get("exact") is False and len(_dr.get("changed") or []) == 1)
-    ck("…그리고 왜 다른지 응답이 말한다", True, (_dr.get("note") or "")[:40],
-       "달라진" in (_dr.get("note") or "") or "길이" in (_dr.get("note") or ""))
+    ck("⭐ 파일이 적은 길이 0 을 그대로 낸다 (라이터 사정으로 파일 값을 바꾸지 않는다)",
+       [True, 0], [_dr.get("exact"), len(_dr.get("changed") or [])],
+       _dr.get("exact") is True and not _dr.get("changed"))
+    # 그물은 **아직 남아 있는 진짜 차이**로 옮긴다: 우리 출력 격자는 480 tpb 라, 원본이 그보다
+    # 잘게 쓴 음은 반올림에서 길이가 바뀐다. 규격 한계가 아니라 우리 격자의 한계라 말해야 한다.
+    _fine = _mido.MidiFile(ticks_per_beat=960)
+    _ft = _mido.MidiTrack(); _fine.tracks.append(_ft)
+    _ft.append(_mido.MetaMessage("set_tempo", tempo=_mido.bpm2tempo(120), time=0))
+    _ft.append(_mido.Message("program_change", channel=0, program=0, time=0))
+    _ft.append(_mido.Message("note_on", channel=0, note=60, velocity=100, time=0))
+    _ft.append(_mido.Message("note_off", channel=0, note=60, velocity=0, time=1))
+    _ft.append(_mido.Message("note_on", channel=0, note=62, velocity=100, time=959))
+    _ft.append(_mido.Message("note_off", channel=0, note=62, velocity=0, time=960))
+    _fine.save("data/sing/selftest-verify-fine.mid")
+    _fr = (action_verify({"action": "verify",
+                          "scoreMediaPath": "data/sing/selftest-verify-fine.mid"})
+           .get("data") or {})
+    # ⚠️ **verify 의 한계를 시험으로 못박는다.** 대조는 480 tpb 격자 위에서 하므로(_tick),
+    # 그보다 잘게 쓴 파일의 차이는 **볼 수 없다** — 960 tpb 의 1틱 음이 그냥 exact 로 나온다.
+    # 이 검사가 빨개지면 격자가 바뀐 것이고, 그때는 이 한계 문구도 같이 고쳐야 한다.
+    ck("verify 는 480 tpb 격자로 본다 — 그보다 잘게 쓴 차이는 못 본다(알려진 한계)", True,
+       _fr.get("exact"), _fr.get("exact") is True)
+    ck("…그 격자가 무엇인지도 한 곳에서 온다", [0.0, round(1 / 480.0, 6)],
+       [_tick(1 / 960.0), _tick(1 / 480.0)],
+       _tick(1 / 960.0) == 0.0 and _tick(1 / 480.0) == round(1 / 480.0, 6))
     _bad = action_verify({"action": "verify", "scoreMediaPath": "data/sing/selftest-parts.musicxml"}) \
         if os.path.exists("data/sing/selftest-parts.musicxml") else {"error": "verify 는 .mid"}
     ck("…MusicXML 은 대조 기준이 없다고 이유를 대며 거부한다", True,
        (_bad.get("error") or "")[:30], "verify" in (_bad.get("error") or ""))
     for _f in ("data/sing/selftest-verify.mid", "data/sing/selftest-verify-lost.mid",
-               "data/sing/selftest-verify-dangle.mid"):
+               "data/sing/selftest-verify-dangle.mid",
+               "data/sing/selftest-verify-fine.mid"):
         if os.path.exists(_f):
             os.remove(_f)
 
@@ -8379,6 +8407,9 @@ def action_selftest():
 # 그래도 값을 지우지 않는 이유 = ① 폰트 문서가 지정한 값이라 출처가 있고 ② 정규화 없이 내보내는
 # 경로가 생기는 날 바로 그 값이 답이다. 반대로 **이 숫자를 튜닝해서 소리를 바꾸려 들면 안 된다** —
 # 안 바뀐다. 크기를 바꿀 자리는 LUFS_TARGET 하나뿐이다.
+# fluidsynth 가 음 하나를 최소 이만큼은 울린다(`synth.min-note-length` 기본값). 우리가 고른
+# 값이 아니라 신디의 선언이고, 내장 신디도 같은 바닥을 써야 두 엔진이 같은 것을 연주한다.
+SYNTH_MIN_NOTE_MS = 10
 SYNTH_GAIN = 0.2
 # 내장 신디의 마스터. 예전엔 SYNTH_GAIN 에서 파생했는데 그 연결의 근거였던 "여유"가 없어져
 # 뜻이 사라졌다 — 값은 그대로 두어 회귀 0(정규화가 뒤에 서니 최종 결과는 어차피 스케일 불변).
