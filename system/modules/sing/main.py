@@ -807,11 +807,11 @@ def resolve_instrument(name):
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
 
 
-_GM_MUTED = None
+_GM_VARIANT = {}
 
 
-def gm_muted_variant(program):
-    """그 악기의 **뮤트 음색**이 GM 안에 있으면 그 번호, 없으면 None.
+def gm_named_variant(program, word):
+    """그 악기의 `word` 판(뮤트·하모닉스…)이 GM 안에 있으면 그 번호, 없으면 None.
 
     표를 새로 적지 않는다 — GM 이름표에서 파생한다. 규격의 128칸은 **여덟 칸씩 한 패밀리**라,
     같은 패밀리 안에서 이름에 'muted' 가 붙은 것을 찾고 **나머지 이름이 겹칠 때만** 짝으로 본다.
@@ -820,20 +820,60 @@ def gm_muted_variant(program):
     · 24 acousticguitarnylon → **None** (겹치는 이름이 'electricguitar' 라 안 맞는다 — 통기타를
       일렉 뮤트 음색으로 바꾸는 건 우리가 지어내는 것이지 GM 이 주는 게 아니다)
     GM 이 안 주는 악기(현·목관 뮤트)는 None 이고, 부르는 쪽이 그렇다고 고지한다."""
-    global _GM_MUTED
-    if _GM_MUTED is None:
+    if word not in _GM_VARIANT:
         by_prog = {}
         for nm, pr in GM_OFFICIAL.items():
             by_prog.setdefault(pr, nm)
-        _GM_MUTED = {}
+        found = {}
         for pr, nm in by_prog.items():
-            if "muted" not in nm:
+            if word not in nm:
                 continue
-            stem = nm.replace("muted", "")
+            stem = nm.replace(word, "")
             for other, onm in by_prog.items():
                 if other != pr and other // 8 == pr // 8 and stem and stem in onm:
-                    _GM_MUTED[other] = pr
-    return _GM_MUTED.get(int(program)) if program is not None else None
+                    found[other] = pr
+        _GM_VARIANT[word] = found
+    return _GM_VARIANT[word].get(int(program)) if program is not None else None
+
+
+def gm_muted_variant(program):
+    """뮤트 판 — 부르는 데가 많아 이름을 남긴다."""
+    return gm_named_variant(program, "muted")
+
+
+# 참조 구현(MuseScore)의 벤딩 곡선 프리셋. 시간 = 음길이/60, 값 100 = 한 반음(1/100 반음 단위).
+# ⚠️ 규격은 `<bend-alter>`(반음)만 주고 **모양은 안 준다**. 참조 구현의 MusicXML 임포터도 이
+# 원소를 안 읽어서 따라갈 매핑이 없다 — 그래서 같은 프로젝트가 벤딩 자체에 쓰는 모양을 쓴다.
+_BEND_SHAPES = {
+    #  (프리벤드?, 릴리스?) : [(시간/60, 세기×alter)]
+    (False, False): [(0, 0.0), (15, 1.0), (60, 1.0)],
+    (False, True): [(0, 0.0), (10, 1.0), (20, 1.0), (30, 0.0), (60, 0.0)],
+    (True, False): [(0, 1.0), (60, 1.0)],
+    (True, True): [(0, 1.0), (15, 1.0), (30, 0.0), (60, 0.0)],
+}
+
+
+def _xml_bend_curve(bend_els):
+    """<technical><bend> 목록 → 우리 벤딩 곡선 [(음 안의 위치 0~1, 반음)].
+
+    규격: "A single note with a bend and release will contain two <bend> elements: the first
+    to represent the bend and the second to represent the release." — 그래서 목록을 받는다."""
+    alter, pre, rel = 0.0, False, False
+    for b in bend_els:
+        try:
+            _a = float(_xt(b, "bend-alter") or 0)
+        except ValueError:
+            _a = 0.0
+        if _xk1(b, "pre-bend") is not None:
+            pre = True
+        if _xk1(b, "release") is not None:
+            rel = True
+        if abs(_a) > abs(alter):
+            alter = _a
+    if not alter:
+        return None
+    return [(round(t / 60.0, 4), round(v * alter, 4))
+            for t, v in _BEND_SHAPES[(pre, rel)]]
 
 
 def font_bank_of(name):
@@ -4054,6 +4094,24 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # instruments, including brass, winds, and strings". 값이 "off" 가 아니면
                     # 뮤트다. GM 이 그 악기의 뮤트 음색을 주면 그 번호로, 아니면 고지한다.
                     n_prog = f_prog if prog_now[0] is None else prog_now[0]
+                    # ── <technical> — 지금까지 한 원소도 안 읽던 갈래 ─────────────────────
+                    _nots0 = kid(el, "notations")
+                    _tec = kid(_nots0, "technical") if _nots0 is not None else None
+                    _bend_curve = None
+                    if _tec is not None:
+                        # <harmonic> — 규격상 <pitch> 는 그대로 울리는 음이고 이건 **음색**이다
+                        # (자식 base/touching/sounding 은 "어느 음을 적었나"를 말한다).
+                        # GM 이 하모닉스를 하나 준다(31 Guitar Harmonics) — 뮤트와 **같은 규칙**
+                        # 으로 이름표에서 파생한다. 그 판이 없는 악기면 안 바꾸고 고지한다.
+                        if kid(_tec, "harmonic") is not None:
+                            _hv = gm_named_variant(n_prog, "harmonics")
+                            if _hv is not None:
+                                n_prog = _hv
+                            else:
+                                skip_mark("하모닉스 (GM 에 이 악기의 하모닉스 음색이 없음)")
+                        _bends = kids(_tec, "bend")
+                        if _bends:
+                            _bend_curve = _xml_bend_curve(_bends)
                     _ply = kid(el, "play")
                     _mut = (text_of(_ply, "mute") or "").strip().lower() if _ply is not None                         else ""
                     if _mut and _mut != "off":
@@ -4288,6 +4346,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         _rb = f_bank if prog_now[1] is None else prog_now[1]
                         if _rb:
                             base_row["bank"] = _rb
+                        if _bend_curve:
+                            base_row["bend"] = _bend_curve
                         if "pan" in f_mix:
                             base_row["pan"] = f_mix["pan"]
                         if roll_n is not None:
@@ -6610,6 +6670,49 @@ def action_selftest():
         _po.get("synth.midi-bank-select")],
        [_po.get("synth.reverb.active"), _po.get("synth.chorus.active"),
         _po.get("synth.midi-bank-select")] == ["1", "1", "gs"])
+
+    # ── 4군: <technical> 의 벤딩과 하모닉스 ─────────────────────────────────────────────
+    def _tecrows(tec, prog=25):
+        doc = ('<score-partwise><part-list><score-part id="P1">'
+               '<midi-instrument id="P1-I1"><midi-program>%d</midi-program>'
+               '</midi-instrument></score-part></part-list><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               % prog) + _n("C", 4, 4, extra='<notations><technical>' + tec
+                            + '</technical></notations>') + '</measure></part></score-partwise>'
+        with open("data/sing/selftest-tec.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        rows = []
+        sc, _e = musicxml_to_score("data/sing/selftest-tec.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-tec.musicxml")
+        return [r for r in rows if "pitch" in r], (sc or {})
+
+    _r, _ = _tecrows("<bend><bend-alter>2</bend-alter></bend>")
+    ck("⭐ <technical><bend> 를 읽는다 — 참조 구현의 곡선 모양에 규격의 반음을 곱한다",
+       [(0.0, 0.0), (0.25, 2.0), (1.0, 2.0)], _r[0].get("bend"),
+       _r[0].get("bend") == [(0.0, 0.0), (0.25, 2.0), (1.0, 2.0)])
+    _r, _ = _tecrows("<bend><pre-bend/><bend-alter>2</bend-alter></bend>")
+    ck("…프리벤드는 **처음부터** 휘어 있다", [(0.0, 2.0), (1.0, 2.0)], _r[0].get("bend"),
+       _r[0].get("bend") == [(0.0, 2.0), (1.0, 2.0)])
+    _r, _ = _tecrows("<bend><bend-alter>2</bend-alter></bend>"
+                     "<bend><bend-alter>0</bend-alter><release/></bend>")
+    ck("…규격대로 벤딩+릴리스는 <bend> **두 개**로 온다 (휘었다 돌아온다)",
+       [(0.0, 0.0), (0.1667, 2.0), (0.3333, 2.0), (0.5, 0.0), (1.0, 0.0)], _r[0].get("bend"),
+       _r[0].get("bend") == [(0.0, 0.0), (0.1667, 2.0), (0.3333, 2.0), (0.5, 0.0), (1.0, 0.0)])
+    if _r and write_midi(_r, 120, "data/sing/selftest-bendmid.mid")[0]:
+        _bt = _mido.MidiFile("data/sing/selftest-bendmid.mid").tracks[0]
+        _pw = [m.pitch for m in _bt if m.type == "pitchwheel"]
+        ck("…그리고 그 곡선이 피치휠로 실제로 나간다 (0 → 최대 → 0)", True,
+           [len(_pw) > 8, max(_pw) > 4000, _pw[-1] == 0],
+           len(_pw) > 8 and max(_pw) > 4000 and _pw[-1] == 0)
+        os.remove("data/sing/selftest-bendmid.mid")
+    _r, _ = _tecrows("<harmonic><natural/></harmonic>", prog=25)
+    ck("⭐ 하모닉스는 **음색**이다 — GM 이 주는 하모닉스 음색으로 (기타 24 → 31)", 31,
+       _r[0].get("program"), _r[0].get("program") == 31)
+    _r, _sc = _tecrows("<harmonic><natural/></harmonic>", prog=41)
+    _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
+    ck("…GM 이 그 악기의 하모닉스를 안 주면 안 바꾸고 말한다 (바이올린 40)",
+       [40, True], [_r[0].get("program"), any("하모닉스" in k for k in _sk)],
+       _r[0].get("program") == 40 and any("하모닉스" in k for k in _sk))
 
     # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
     _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
