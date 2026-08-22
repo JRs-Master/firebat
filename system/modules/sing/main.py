@@ -1884,8 +1884,13 @@ def render_arrangement(arr, spb, total_beats, mixmap=None, filecc7=None, ctl=Non
             * expr_at((((ctl or {}).get(e["part"]) or {}).get("cc") or {}).get(CC_EXPRESSION),
                       e["beat"])
         if e["part"] == "drum":
-            seg = hits[e["drum"]] * float(e.get("vel", 0.8)) * lvl
-            key = e["drum"]
+            # sf2 는 번호를 그대로 친다. 내장 신디는 샘플이 **이름으로** 서 있어서, 이름 없는
+            # 번호는 제일 가까운 번호의 샘플로 근사한다 — 근사는 내장 신디의 성질이지 손실이
+            # 아니고, 여기서 버리면 두 엔진이 서로 다른 음표를 연주하게 된다.
+            key = e.get("drum")
+            if key not in hits:
+                key = _nearest_drum_name(e.get("drumNote"))
+            seg = hits[key] * float(e.get("vel", 0.8)) * lvl
         else:
             held = e["beats"]
             for a, b in pedal_spans.get(e["part"], ()):  # noqa: B007
@@ -2154,7 +2159,12 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
                     marks.append((b0 + int((b1 - b0) * frac), 3, val, 0))
                 marks.append((b1, 3, 0, 0))
             start = int(round(e["beat"] * tpb))
-            pitch = DRUM_NOTE.get(e["drum"], 42) if part == "drum" else e["pitch"]
+            if part == "drum":
+                # 파일에서 온 행은 자기 번호를 들고 있다. 편곡기가 만든 행만 이름표를 거친다.
+                pitch = (int(e["drumNote"]) if e.get("drumNote") is not None
+                         else DRUM_NOTE.get(e.get("drum"), 42))
+            else:
+                pitch = e["pitch"]
             # 벨로시티는 **바이트 그대로** 나간다 — 곡선도 스케일도 없다. 세게 친 음이 얼마나
             # 커지고 어느 샘플 레이어를 고르는지는 폰트가 정한다(SF2 기본 모듈레이터
             # velocity → attenuation). 여기서 우리가 손대면 그 판단을 두 번 하는 것이 된다.
@@ -2882,6 +2892,14 @@ def _prog_at(changes, tick):
 _NOTE_DRUM = {v: k for k, v in DRUM_NOTE.items()}
 
 
+def _nearest_drum_name(note):
+    """번호 → 우리 어휘에서 제일 가까운 드럼 이름. **내장 신디 전용 근사** — sf2 는 파일이
+    적은 번호를 그대로 친다."""
+    if note is None:
+        return "hat"
+    return _NOTE_DRUM[min(_NOTE_DRUM, key=lambda k: (abs(k - int(note)), k))]
+
+
 def _patch_for_program(g):
     """GM program -> the nearest builtin patch (the sf2 engine uses the program itself)."""
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[max(0, min(127, int(g))) // 8])
@@ -2913,6 +2931,23 @@ def global_sysex_name(data):
     if (len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C and d[3:6] == [0x00, 0x00, 0x7E]):
         return "XG System On"
     return None
+
+
+def _note_beats(warp, tpb, start, dur, b0):
+    """그 음의 길이(박). 파일이 적은 그대로 두되 **길이 0 만** 막는다.
+
+    ⚠️ 바닥은 `1/tpb` 가 아니다 — 그건 **안 휜** 틱 크기다. 템포맵이 있으면 같은 한 틱이
+    구간마다 다른 박이 되므로, 안 휜 값으로 바닥을 깔면 멀쩡한 짧은 음까지 늘어난다
+    (실측: 저자 데모 Umi 가 0.00625 박짜리 음을 0.010417 로 늘려 받고 있었다).
+    """
+    b1 = warp((start + dur) / tpb)
+    if b1 <= b0:
+        # 파일이 길이 0 을 적었다. 우리 격자가 표현할 수 있는 **제일 짧은 것**을 준다 —
+        # 라이터가 어차피 한 틱을 바닥으로 깔기 때문이고(같은 틱에 note_off 를 놓으면 정렬에서
+        # note_on 앞에 서서 음이 안 꺼진다), 0 과 한 틱은 어택+릴리스뿐이라 같게 들린다.
+        # ⚠️ 그래도 **우리 결정**이라 verify 가 `changed` 로 말한다(J-cycle 1,177음).
+        return 1.0 / MIDI_TPB
+    return max(1e-6, b1 - b0)
 
 
 def midi_to_parts(path):
@@ -2969,18 +3004,41 @@ def midi_to_parts(path):
                 # GM fixes the kit on channel 10 (index 9): there a note NUMBER names a drum.
                 # Deciding this per TRACK is what played the kick as a piano note.
                 for note, start, dur, vel in by_ch[ch]:
+                    # 길이도 파일이 적은 그대로. `0.25` 가 박혀 있었다 — 대부분의 킷은
+                    # 원샷이라 안 들리지만 그건 우리가 고른 값이었고, verify 를 처음 돌린
+                    # 자리에서 바로 잡혔다(원본 0.5 → 우리 0.25). 안 들린다는 것이 고쳐도
+                    # 된다는 뜻은 아니다.
+                    b0 = warp(start / tpb)
+                    # ⚠️ **번호가 원본이다.** 예전엔 우리 이름표에 없는 키를 통째로 버렸다 —
+                    # 저자 데모 10개에서 21·23·24번 **256음**이 그렇게 사라졌고, GS Standard
+                    # 킷은 그 셋을 갖고 있다(키 0~127). 이름은 편곡기와 내장 신디가 쓰는 우리
+                    # 어휘일 뿐이라, 이름이 없다고 소리를 없앨 이유가 없다.
+                    row = {"beat": b0,
+                           "beats": _note_beats(warp, tpb, start, dur, b0),
+                           "part": "drum", "drumNote": int(note),
+                           "vel": round(vel / 127.0, 3)}
                     name = _NOTE_DRUM.get(note)
                     if name:
-                        # 길이도 파일이 적은 그대로. `0.25` 가 박혀 있었다 — 대부분의 킷은
-                        # 원샷이라 안 들리지만 그건 우리가 고른 값이었고, verify 를 처음 돌린
-                        # 자리에서 바로 잡혔다(원본 0.5 → 우리 0.25). 안 들린다는 것이 고쳐도
-                        # 된다는 뜻은 아니다.
-                        b0 = warp(start / tpb)
-                        rows.append({"beat": b0,
-                                     "beats": max(1.0 / tpb,
-                                                  warp((start + dur) / tpb) - b0),
-                                     "part": "drum", "drum": name,
-                                     "vel": round(vel / 127.0, 3)})
+                        row["drum"] = name
+                    rows.append(row)
+                # ⚠️ 드럼 채널의 컨트롤러가 통째로 사라지고 있었다 — 파트를 안 만들고
+                # continue 했기 때문이다. 저자 데모 **10개 전부**가 ch10 에 CC7·CC10·CC91·
+                # CC93 을 쓴다(드럼 버스의 페이더·팬·센드). 그건 파일이 정한 밸런스다.
+                c9 = ctl.get(ch) or {}
+                if any(c9.get(k) for k in ("cc", "bend", "press", "poly")):
+                    dm = meta.setdefault("drum", {"name": "drum", "cc7": None, "cc": {},
+                                                  "bend": [], "press": [], "poly": []})
+                    for n2, series in (c9.get("cc") or {}).items():
+                        dm["cc"].setdefault(int(n2), []).extend(
+                            (round(warp(t2 / tpb), 4), v2) for t2, v2 in series)
+                    dm["bend"] += [(round(warp(t2 / tpb), 4), v2)
+                                   for t2, v2 in (c9.get("bend") or [])]
+                    dm["press"] += [(round(warp(t2 / tpb), 4), v2)
+                                    for t2, v2 in (c9.get("press") or [])]
+                    dm["poly"] += [(round(warp(t2 / tpb), 4), n3, v2)
+                                   for t2, n3, v2 in (c9.get("poly") or [])]
+                    if dm["cc7"] is None and (c9.get("cc") or {}).get(CC_VOLUME):
+                        dm["cc7"] = c9["cc"][CC_VOLUME][0][1]
                 continue
             pidx += 1
             part = f"p{pidx}"
@@ -2995,7 +3053,7 @@ def midi_to_parts(path):
                 # (실측 2026-08-21 알함브라: 2,727음 중 2,082음이 0.125 로 늘어나 있었다).
                 # 바닥은 **그 파일의 틱 하나** — 길이 0 인 음만 막고 그 위는 안 건드린다.
                 row = {"beat": b0,
-                       "beats": max(1.0 / tpb, warp((start + dur) / tpb) - b0),
+                       "beats": _note_beats(warp, tpb, start, dur, b0),
                        "part": part, "patch": _patch_for_program(prog), "program": prog,
                        "pitch": int(note), "vel": round(vel / 127.0, 3), "gate": 1.0}
                 if pan is not None:
@@ -5021,12 +5079,16 @@ def action_render(inp):
                 if e.get("part") != "drum":
                     continue
                 d = e.get("drum")
-                if DRUM_NOTE.get(d, 42) in have:
+                cur = e.get("drumNote")
+                if cur is None:
+                    cur = DRUM_NOTE.get(d, 42)
+                if int(cur) in have:
                     continue
                 sub = DRUM_GM1_SUB.get(d)
                 if sub and DRUM_NOTE[sub] in have:
                     swapped[d] = sub
                     e["drum"] = sub
+                    e["drumNote"] = DRUM_NOTE[sub]
     engine = str(inp.get("engine") or "").strip().lower()
     if engine not in ("", "auto", "sf2", "builtin"):
         return {"success": False,
@@ -6295,6 +6357,8 @@ def action_selftest():
     _zt.append(_mido.Message("control_change", channel=0, control=7, value=100, time=0))
     _zt.append(_mido.Message("control_change", channel=1, control=7, value=64, time=0))
     _zt.append(_mido.Message("control_change", channel=0, control=11, value=40, time=0))
+    _zt.append(_mido.Message("control_change", channel=9, control=7, value=110, time=0))
+    _zt.append(_mido.Message("control_change", channel=9, control=91, value=55, time=0))
     # 우리가 뜻을 해석하지 않는 것들 — 폰트는 안다.
     _zt.append(_mido.Message("control_change", channel=0, control=1, value=64, time=0))
     _zt.append(_mido.Message("control_change", channel=0, control=64, value=127, time=0))
@@ -6317,6 +6381,9 @@ def action_selftest():
         _zt.append(_mido.Message("note_off", channel=1, note=36, velocity=0, time=480))
         _zt.append(_mido.Message("note_on", channel=9, note=36, velocity=110, time=0))
         _zt.append(_mido.Message("note_off", channel=9, note=36, velocity=0, time=240))
+        # 우리 이름표 밖의 키 + 드럼 버스의 페이더 — 둘 다 예전엔 사라졌다
+        _zt.append(_mido.Message("note_on", channel=9, note=21, velocity=65, time=0))
+        _zt.append(_mido.Message("note_off", channel=9, note=21, velocity=0, time=120))
     _z.save("data/sing/selftest-t0.mid")
     zrows, _zb, zmeta, zerr = midi_to_parts("data/sing/selftest-t0.mid")
     zprog = sorted({(r["part"], r.get("program")) for r in zrows or [] if "pitch" in r})
@@ -6351,8 +6418,14 @@ def action_selftest():
     # 파일 값을 우리 0~1 로 환산했다 되돌리면 반올림과 MIX_TOP 상한에서 값이 변한다.
     ck("…그리고 그 바이트가 그대로 나간다 (환산은 또 하나의 결정이다)", [[100], [64]],
        [_cc("p1", 7), _cc("p2", 7)], _cc("p1", 7) == [100] and _cc("p2", 7) == [64])
-    ck("…선언이 없는 파트에는 CC7 을 아예 안 보낸다 (예전엔 우리 표가 답했다)", [],
-       _cc("drum", 7), _cc("drum", 7) == [])
+    ck("⭐ 드럼 채널의 페이더·센드도 파일의 것이다 (예전엔 파트를 안 만들어 통째로 버렸다)",
+       [[110], [55]], [_cc("drum", 7), _cc("drum", 91)],
+       _cc("drum", 7) == [110] and _cc("drum", 91) == [55])
+    _dnotes = sorted({x.note for t in (_bk.tracks if _bk else [])
+                      if any(getattr(y, "name", None) == "drum" for y in t)
+                      for x in t if x.type == "note_on"})
+    ck("⭐ 이름표 밖의 드럼 키(21)도 그 번호 그대로 나간다", [21, 36], _dnotes,
+       _dnotes == [21, 36])
     ck("CC11 익스프레션이 실린다 — 크레셴도가 사는 층", [40], _cc("p1", 11),
        _cc("p1", 11) == [40])
     # 컨트롤러는 고르지 않는다. 우리가 뜻을 아는 것만 나른다면 그건 손목록이고, 그 목록에 없는
@@ -6962,23 +7035,38 @@ def action_selftest():
        bool(_vd.get("exact")))
     ck("…드럼 길이도 파일이 적은 대로 (0.25 가 박혀 있었고 verify 첫 실행이 잡았다)", [],
        _vd.get("changed"), not _vd.get("changed"))
-    # 그물이 실제로 잡나 — 우리 드럼 표에 없는 키는 리더가 조용히 버린다. 그 침묵을 봐야 한다.
+    # ⭐ 우리 드럼 표에 없는 키. 예전엔 리더가 **조용히 버렸고** 이 검사는 그 침묵을 확인하는
+    # 것이었다 — 즉 결손을 못박아 둔 시험이었다. 저자 데모 10개에서 21·23·24번 256음이 그렇게
+    # 사라졌고 GS 는 그 셋을 갖고 있다. 이제 번호가 원본이라 이름 없이도 그대로 나간다.
     _v3.append(_mido.Message("note_on", channel=9, note=13, velocity=100, time=0))
     _v3.append(_mido.Message("note_off", channel=9, note=13, velocity=0, time=240))
     _vf.save("data/sing/selftest-verify-lost.mid")
     _lr = (action_verify({"action": "verify",
                           "scoreMediaPath": "data/sing/selftest-verify-lost.mid"})
            .get("data") or {})
-    ck("verify: 우리가 조용히 버리는 음을 잡아낸다 (표에 없는 드럼 키)", [False, 1],
-       [_lr.get("exact"), len(_lr.get("lost") or [])],
-       _lr.get("exact") is False and len(_lr.get("lost") or []) == 1)
-    ck("…그리고 왜 다른지 응답이 말한다", True, (_lr.get("note") or "")[:40],
-       "사라진 음" in (_lr.get("note") or ""))
+    ck("⭐ 이름표에 없는 드럼 키도 그대로 연주된다 (이름은 우리 어휘지 파일의 것이 아니다)",
+       [True, 0], [_lr.get("exact"), len(_lr.get("lost") or [])],
+       _lr.get("exact") is True and not _lr.get("lost"))
+    # 그물 자체는 살아 있어야 한다. 남아 있는 진짜 차이 하나 = **길이 0 인 음** — 파일은 0 을
+    # 쓸 수 있는데 우리는 그 파일의 틱 하나로 바닥을 깐다(실측: 저자 데모 J-cycle 에 1,177개).
+    # 소리는 사실상 같지만(어택+릴리스뿐) 그건 **우리 결정**이라, verify 가 말해야 한다.
+    _v3.append(_mido.Message("note_on", channel=9, note=38, velocity=100, time=240))
+    _v3.append(_mido.Message("note_off", channel=9, note=38, velocity=0, time=0))
+    _vf.save("data/sing/selftest-verify-dangle.mid")
+    _dr = (action_verify({"action": "verify",
+                          "scoreMediaPath": "data/sing/selftest-verify-dangle.mid"})
+           .get("data") or {})
+    ck("verify: 우리가 바꾼 것은 바꿨다고 말한다 (길이 0 → 틱 하나)", [False, 1],
+       [_dr.get("exact"), len(_dr.get("changed") or [])],
+       _dr.get("exact") is False and len(_dr.get("changed") or []) == 1)
+    ck("…그리고 왜 다른지 응답이 말한다", True, (_dr.get("note") or "")[:40],
+       "달라진" in (_dr.get("note") or "") or "길이" in (_dr.get("note") or ""))
     _bad = action_verify({"action": "verify", "scoreMediaPath": "data/sing/selftest-parts.musicxml"}) \
         if os.path.exists("data/sing/selftest-parts.musicxml") else {"error": "verify 는 .mid"}
     ck("…MusicXML 은 대조 기준이 없다고 이유를 대며 거부한다", True,
        (_bad.get("error") or "")[:30], "verify" in (_bad.get("error") or ""))
-    for _f in ("data/sing/selftest-verify.mid", "data/sing/selftest-verify-lost.mid"):
+    for _f in ("data/sing/selftest-verify.mid", "data/sing/selftest-verify-lost.mid",
+               "data/sing/selftest-verify-dangle.mid"):
         if os.path.exists(_f):
             os.remove(_f)
 
