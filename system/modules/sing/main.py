@@ -811,7 +811,14 @@ _GM_VARIANT = {}
 
 
 def gm_named_variant(program, word):
-    """그 악기의 `word` 판(뮤트·하모닉스…)이 GM 안에 있으면 그 번호, 없으면 None.
+    """그 악기의 `word` 판(뮤트·하모닉스·피치카토…)이 GM 안에 있으면 그 번호, 없으면 None.
+
+    규칙 = **같은 8칸 패밀리 안에서 이름에 그 낱말이 든 프로그램.** 출처는 참조 구현이 악기마다
+    선언해 둔 주법 채널의 program 이다(MuseScore `instruments.xml`) — 이 규칙이 거기 값을 전부
+    재현한다: 트럼펫56·호른60·트롬본57 → 59 · 기타 24/25/27 → 28 · 현 40~47 → 피치카토 45 ·
+    같은 자리 트레몰로 44 · 기타 → 하모닉스 31.
+    ⚠️ 처음엔 여기에 "이름이 겹칠 때만" 을 걸어 통기타를 제외했는데, **그건 내가 지어낸 조건이고
+    참조는 정반대다** — 나일론 기타의 mute 채널도 28 이다. 걷었다.
 
     표를 새로 적지 않는다 — GM 이름표에서 파생한다. 규격의 128칸은 **여덟 칸씩 한 패밀리**라,
     같은 패밀리 안에서 이름에 'muted' 가 붙은 것을 찾고 **나머지 이름이 겹칠 때만** 짝으로 본다.
@@ -828,9 +835,8 @@ def gm_named_variant(program, word):
         for pr, nm in by_prog.items():
             if word not in nm:
                 continue
-            stem = nm.replace(word, "")
-            for other, onm in by_prog.items():
-                if other != pr and other // 8 == pr // 8 and stem and stem in onm:
+            for other in by_prog:
+                if other != pr and other // 8 == pr // 8:
                     found[other] = pr
         _GM_VARIANT[word] = found
     return _GM_VARIANT[word].get(int(program)) if program is not None else None
@@ -3428,6 +3434,16 @@ _XML_ART_GATE = {"staccato": 0.50, "staccatissimo": 0.33, "spiccato": 0.33,
 #   · soft-accent·stress·unstress — 심볼은 있는데 gateTime·velocity 항목이 없다
 _XML_ART_UNPLAYED = ("breath-mark", "caesura", "soft-accent", "stress", "unstress",
                      "doit", "falloff", "plop", "scoop", "other-articulation")
+# <technical> 중 **음색을 바꾸는 것**. 값은 여기 없다 — 낱말만 있고, 번호는 GM 이름표에서
+# 찾는다(gm_named_variant). 참조 구현이 악기마다 선언한 주법 채널의 program 과 같은 결과다.
+_XML_TECH_VOICE = {"snap-pizzicato": "pizzicato", "stopped": "muted",
+                   "half-muted": "muted", "harmon-mute": "muted"}
+# 소리에 걸리지만 **아무 관례도 연주값을 안 주는 것** — 안 하고 고지한다.
+# (fingering·fret·string·heel·toe·hole·arrow·handbell·thumb-position·fingernails 는 표시라 없다.
+#  `open`·`open-string` 은 "뮤트 아님" 이고 그게 우리 기본이라 잃는 것이 없다.)
+_XML_TECH_UNPLAYED = ("hammer-on", "pull-off", "up-bow", "down-bow", "double-tongue",
+                      "triple-tongue", "brass-bend", "flip", "smear", "golpe", "tap",
+                      "pluck", "other-technical")
 # 세기는 **셈여림 표의 한 칸**으로 움직인다. 예전엔 +0.12·+0.18 이라는 내가 고른 값이었는데,
 # "조금 세게" 를 말해 주는 출처가 우리에게 _XML_DYN 하나뿐이라 거기서 파생한다.
 _XML_ART_STEP = {"accent": 1, "strong-accent": 2, "marcato": 2}
@@ -4109,6 +4125,17 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 n_prog = _hv
                             else:
                                 skip_mark("하모닉스 (GM 에 이 악기의 하모닉스 음색이 없음)")
+                        for _te in _tec:
+                            _tn = _strip_ns(_te.tag)
+                            _tw = _XML_TECH_VOICE.get(_tn)
+                            if _tw:
+                                _tv = gm_named_variant(n_prog, _tw)
+                                if _tv is not None:
+                                    n_prog = _tv
+                                else:
+                                    skip_mark("%s (GM 에 이 악기의 그 음색이 없음)" % _tn)
+                            elif _tn in _XML_TECH_UNPLAYED:
+                                skip_mark("주법 %s" % _tn)
                         _bends = kids(_tec, "bend")
                         if _bends:
                             _bend_curve = _xml_bend_curve(_bends)
@@ -6708,6 +6735,17 @@ def action_selftest():
     _r, _ = _tecrows("<harmonic><natural/></harmonic>", prog=25)
     ck("⭐ 하모닉스는 **음색**이다 — GM 이 주는 하모닉스 음색으로 (기타 24 → 31)", 31,
        _r[0].get("program"), _r[0].get("program") == 31)
+    _r, _ = _tecrows("<snap-pizzicato/>", prog=41)
+    ck("⭐ 스냅 피치카토 → GM 피치카토 음색 (바이올린 40 → 45, 참조 값과 같다)", 45,
+       _r[0].get("program"), _r[0].get("program") == 45)
+    _r, _ = _tecrows("<stopped/>", prog=58)
+    ck("…스톱트/하몬뮤트는 뮤트 음색 (트롬본 57 → 59, 참조도 59)", 59, _r[0].get("program"),
+       _r[0].get("program") == 59)
+    _r, _sc = _tecrows("<hammer-on/><up-bow/>", prog=41)
+    _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
+    ck("…값을 주는 관례가 없는 주법은 그대로 두고 **말한다** (참조 구현도 재생을 안 한다)",
+       [40, 2], [_r[0].get("program"), len([k for k in _sk if k.startswith("주법")])],
+       _r[0].get("program") == 40 and len([k for k in _sk if k.startswith("주법")]) == 2)
     _r, _sc = _tecrows("<harmonic><natural/></harmonic>", prog=41)
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
     ck("…GM 이 그 악기의 하모닉스를 안 주면 안 바꾸고 말한다 (바이올린 40)",
@@ -6758,10 +6796,15 @@ def action_selftest():
     ck("뮤트 짝은 **GM 이름표에서 파생**한다 — 트럼펫 56 → 뮤트 트럼펫 59", 59,
        gm_muted_variant(56), gm_muted_variant(56) == 59)
     ck("…일렉기타 27 → 뮤트 기타 28", 28, gm_muted_variant(27), gm_muted_variant(27) == 28)
-    ck("…⭐ 통기타 24 는 **짝이 없다** (일렉 뮤트 음색을 씌우는 건 우리가 지어내는 것)", None,
-       gm_muted_variant(24), gm_muted_variant(24) is None)
-    ck("…GM 이 뮤트를 안 주는 악기도 None (바이올린 40)", None, gm_muted_variant(40),
-       gm_muted_variant(40) is None)
+    # ⚠️ 이 검사는 원래 "통기타 24 는 짝이 없다" 였다 — 내가 건 "이름 겹침" 조건의 결과였고,
+    # 참조 구현이 정반대를 한다(나일론 기타의 mute 채널도 28). 조건을 걷고 단언을 뒤집었다.
+    ck("…통기타 24 도 28 (참조 구현이 나일론 기타 mute 를 28 로 준다)", 28,
+       gm_muted_variant(24), gm_muted_variant(24) == 28)
+    ck("…GM 이 뮤트를 안 주는 갈래는 None (바이올린 40 — 현 갈래에 muted 가 없다)", None,
+       gm_muted_variant(40), gm_muted_variant(40) is None)
+    ck("…같은 규칙이 피치카토·트레몰로도 준다 (현 40 → 45 · 44, 참조 값과 같다)", [45, 44],
+       [gm_named_variant(40, "pizzicato"), gm_named_variant(40, "tremolo")],
+       gm_named_variant(40, "pizzicato") == 45 and gm_named_variant(40, "tremolo") == 44)
     _mu_doc = ('<score-partwise><part-list><score-part id="P1">'
                '<midi-instrument id="P1-I1"><midi-program>57</midi-program></midi-instrument>'
                '</score-part></part-list><part id="P1">'
