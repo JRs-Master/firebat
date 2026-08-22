@@ -807,6 +807,35 @@ def resolve_instrument(name):
     return GM_BUILTIN_OVERRIDE.get(g, FAMILY_FALLBACK[g // 8]), g
 
 
+_GM_MUTED = None
+
+
+def gm_muted_variant(program):
+    """그 악기의 **뮤트 음색**이 GM 안에 있으면 그 번호, 없으면 None.
+
+    표를 새로 적지 않는다 — GM 이름표에서 파생한다. 규격의 128칸은 **여덟 칸씩 한 패밀리**라,
+    같은 패밀리 안에서 이름에 'muted' 가 붙은 것을 찾고 **나머지 이름이 겹칠 때만** 짝으로 본다.
+    · 56 trumpet → 59 mutedtrumpet ('muted' 를 떼면 'trumpet', 원본에 들어 있다)
+    · 27 electricguitarclean → 28 electricguitarmuted ('electricguitar' 가 겹친다)
+    · 24 acousticguitarnylon → **None** (겹치는 이름이 'electricguitar' 라 안 맞는다 — 통기타를
+      일렉 뮤트 음색으로 바꾸는 건 우리가 지어내는 것이지 GM 이 주는 게 아니다)
+    GM 이 안 주는 악기(현·목관 뮤트)는 None 이고, 부르는 쪽이 그렇다고 고지한다."""
+    global _GM_MUTED
+    if _GM_MUTED is None:
+        by_prog = {}
+        for nm, pr in GM_OFFICIAL.items():
+            by_prog.setdefault(pr, nm)
+        _GM_MUTED = {}
+        for pr, nm in by_prog.items():
+            if "muted" not in nm:
+                continue
+            stem = nm.replace("muted", "")
+            for other, onm in by_prog.items():
+                if other != pr and other // 8 == pr // 8 and stem and stem in onm:
+                    _GM_MUTED[other] = pr
+    return _GM_MUTED.get(int(program)) if program is not None else None
+
+
 def font_bank_of(name):
     """그 이름이 뱅크 0 이 아닌 프리셋을 가리키면 뱅크 번호, 아니면 None.
     .mid 를 쓸 때만 필요하다 — 뱅크 셀렉트(CC0)가 program_change 앞에 서야 한다."""
@@ -3825,6 +3854,26 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     cur = max(0.0, cur)
                 elif tag == "note":
                     dur = float(text_of(el, "duration") or 0) / divisions
+                    # 큐 음표 — 규격: 다른 악기가 지금 무엇을 연주하는지 **보여 주는** 작은 음표다
+                    # (들어올 자리를 알려 주려고 적는다). 연주하는 음이 아니다. 시간은 차지하므로
+                    # 쉼표처럼 커서만 밀고 소리는 안 낸다 — 통째로 건너뛰면 그 마디의 박이 밀린다.
+                    if kid(el, "cue") is not None:
+                        if kid(el, "chord") is None and kid(el, "grace") is None:
+                            cur += dur
+                            m_len = max(m_len, cur)
+                        continue
+                    # <play><mute> — 규격: "represents muting playback for different
+                    # instruments, including brass, winds, and strings". 값이 "off" 가 아니면
+                    # 뮤트다. GM 이 그 악기의 뮤트 음색을 주면 그 번호로, 아니면 고지한다.
+                    n_prog = f_prog
+                    _ply = kid(el, "play")
+                    _mut = (text_of(_ply, "mute") or "").strip().lower() if _ply is not None                         else ""
+                    if _mut and _mut != "off":
+                        _mv = gm_muted_variant(f_prog)
+                        if _mv is not None:
+                            n_prog = _mv
+                        else:
+                            skip_mark("뮤트 %s (GM 에 이 악기의 뮤트 음색이 없음)" % _mut)
                     is_grace = kid(el, "grace") is not None
                     unp = kid(el, "unpitched")
                     if unp is not None:
@@ -3861,20 +3910,27 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                                       else XML_DEFAULT_VEL),
                                               "_at": onset, "_st": u_staff, "_sung": dur,
                                               "_unp": True})
-                        elif dname and parts_out is not None:
+                        elif nn is not None and parts_out is not None:
                             # `_src` = 이 드럼이 원래 어느 파트의 것인가. 드럼은 전부 한 채널로
                             # 모이므로 파트 이름을 잃는데, **셈여림 쐐기는 파트 단위로 걸린다** —
                             # 실측 2026-08-21 아로하: 크레셴도 셋이 전부 Drums 파트에 있었고
                             # 램프가 `part == f_part` 로만 찾아 셋 다 버려졌다.
                             # 길이도 적힌 대로. 0.25 가 박혀 있었다(MIDI 리더와 같은 자리).
+                            # ⚠️ 예전엔 `dname` 이 있을 때만 냈다 — 우리 이름표에 없는 키는
+                            # 고지는 했지만 **소리가 없었다**(MIDI 쪽과 같은 결손, 8/22 실측에서
+                            # 저자 데모 10개가 256음을 그렇게 잃고 있었다). 번호가 원본이다.
                             parts_out.append({"beat": onset, "beats": max(0.03, dur),
-                                              "part": "drum", "_src": f_part, "drum": dname,
+                                              "part": "drum", "_src": f_part,
+                                              "drumNote": int(nn),
+                                              **({"drum": dname} if dname else {}),
                                               **({"pan": f_mix["pan"]}
                                                  if "pan" in f_mix else {}),
                                               "vel": (uv if uv is not None
                                                       else XML_DEFAULT_VEL)})
                         elif parts_out is not None:
-                            skip_mark("드럼(매핑 없음)")
+                            # 여기 남는 것은 **파일이 어느 소리인지 안 적은** 경우다 —
+                            # <instrument> 가 없거나 그 id 에 <midi-unpitched> 가 없다.
+                            skip_mark("드럼(파일이 midi-unpitched 를 안 적음)", "file")
                         if not st:
                             cur += dur
                             m_len = max(m_len, cur)
@@ -4016,8 +4072,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                         # 바닥은 divisions 한 칸 — 길이 0 만 막는다.
                         base_row = {"beat": onset + stolen,
                                     "beats": max(1.0 / max(1.0, divisions), dur - stolen),
-                                    "part": f_part, "patch": _patch_for_program(f_prog),
-                                    "program": f_prog, "pitch": midi, "vel": nvel,
+                                    "part": f_part, "patch": _patch_for_program(n_prog),
+                                    "program": n_prog, "pitch": midi, "vel": nvel,
                                     # 성부도 싣는다 — 파일이 선언한 값이고, 붙임줄이 제 성부에
                                     # 붙었는지 **밖에서 확인할 방법**이 이것뿐이다. staff 와 같은 층.
                                     "gate": gate, "staff": n_staff, "voice": n_voice}
@@ -6154,6 +6210,70 @@ def action_selftest():
     # Which part is the song. Counting notes gave the tune to whoever plays the most of them:
     # 실측 8/20, 아로하's "Voice" (536 notes) lost to its "Piano" (968) and the lead was the
     # piano's right hand in every style. The part names itself; we only had to read it.
+    # ── 1군: cue · 이름표 밖 드럼 · 뮤트 ────────────────────────────────────────────────
+    _cue_doc = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                + _n("C", 4, 2)
+                + '<note><cue/><pitch><step>E</step><octave>4</octave></pitch>'
+                  '<duration>2</duration></note>' 
+                + _n("G", 4, 4) + '</measure>' + E)
+    with open("data/sing/selftest-cue.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_cue_doc)
+    _crows = []
+    _csc, _cerr = musicxml_to_score("data/sing/selftest-cue.musicxml", parts_out=_crows)
+    _cp = [r["pitch"] for r in _crows if "pitch" in r]
+    _cb = [round(r["beat"], 3) for r in _crows if "pitch" in r]
+    ck("⭐ 큐 음표는 소리를 안 낸다 (다른 악기 것을 보여 주는 음표다)", [60, 67], _cp,
+       _cerr is None and _cp == [60, 67])
+    ck("…그래도 **시간은 차지한다** — 건너뛰면 뒤 음의 박이 밀린다", [0.0, 4.0], _cb,
+       _cb == [0.0, 4.0])
+    os.remove("data/sing/selftest-cue.musicxml")
+
+    _dr_doc = ('<score-partwise><part-list><score-part id="P1">'
+               '<part-name>Drums</part-name>'
+               '<midi-instrument id="P1-I1"><midi-unpitched>39</midi-unpitched></midi-instrument>'
+               '<midi-instrument id="P1-I2"><midi-unpitched>22</midi-unpitched></midi-instrument>'
+               '</score-part></part-list><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<note><unpitched><display-step>C</display-step>'
+               '<display-octave>5</display-octave></unpitched><duration>2</duration>'
+               '<instrument id="P1-I1"/></note>'
+               '<note><unpitched><display-step>C</display-step>'
+               '<display-octave>5</display-octave></unpitched><duration>2</duration>'
+               '<instrument id="P1-I2"/></note>'
+               '</measure></part></score-partwise>')
+    with open("data/sing/selftest-drumnote.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_dr_doc)
+    _drows = []
+    musicxml_to_score("data/sing/selftest-drumnote.musicxml", parts_out=_drows)
+    _dn = sorted(r.get("drumNote") for r in _drows if r.get("part") == "drum")
+    # 38 = 우리 이름표에 있는 스네어(파일 39 는 1-based) · 21 = 이름표 밖
+    ck("⭐ 악보의 드럼도 이름표 밖이면 번호로 낸다 (MIDI 쪽과 같은 규칙)", [21, 38], _dn,
+       _dn == [21, 38])
+    os.remove("data/sing/selftest-drumnote.musicxml")
+
+    ck("뮤트 짝은 **GM 이름표에서 파생**한다 — 트럼펫 56 → 뮤트 트럼펫 59", 59,
+       gm_muted_variant(56), gm_muted_variant(56) == 59)
+    ck("…일렉기타 27 → 뮤트 기타 28", 28, gm_muted_variant(27), gm_muted_variant(27) == 28)
+    ck("…⭐ 통기타 24 는 **짝이 없다** (일렉 뮤트 음색을 씌우는 건 우리가 지어내는 것)", None,
+       gm_muted_variant(24), gm_muted_variant(24) is None)
+    ck("…GM 이 뮤트를 안 주는 악기도 None (바이올린 40)", None, gm_muted_variant(40),
+       gm_muted_variant(40) is None)
+    _mu_doc = ('<score-partwise><part-list><score-part id="P1">'
+               '<midi-instrument id="P1-I1"><midi-program>57</midi-program></midi-instrument>'
+               '</score-part></part-list><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               + _n("C", 5, 2, extra="<play><mute>straight</mute></play>")
+               + _n("D", 5, 2)
+               + '</measure></part></score-partwise>')
+    with open("data/sing/selftest-mute.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_mu_doc)
+    _mrows = []
+    musicxml_to_score("data/sing/selftest-mute.musicxml", parts_out=_mrows)
+    _mp = [r.get("program") for r in _mrows if "pitch" in r]
+    ck("⭐ <play><mute> 가 붙은 음만 뮤트 음색으로 (56 트럼펫 → 59)", [59, 56], _mp,
+       _mp == [59, 56])
+    os.remove("data/sing/selftest-mute.musicxml")
+
     def _mxpart(pid, pname, notes):
         body = "".join(f'<note><pitch><step>{st}</step><octave>{oc}</octave></pitch>'
                        f'<duration>1</duration><type>quarter</type></note>' for st, oc in notes)
