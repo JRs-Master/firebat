@@ -62,7 +62,8 @@ export type TransportSpan = { start: number; end: number };
 
 export function AudioTransport({
   src, audioRef: outerRef, onTime, onDur, study = true, theme = 'plain', snapTo = [],
-  downloads = [], abA: pAbA, abB: pAbB, setAbA: pSetAbA, setAbB: pSetAbB, preload = 'metadata',
+  downloads = [], guideSrc, guideLabel = '가이드',
+  abA: pAbA, abB: pAbB, setAbA: pSetAbA, setAbB: pSetAbB, preload = 'metadata',
   children,
 }: {
   src: string;
@@ -78,6 +79,9 @@ export function AudioTransport({
   snapTo?: TransportSpan[];
   /** 우리가 그리는 ⋮ 내려받기 — 네이티브를 걷었으니 그 자리를 여기서 갚는다. */
   downloads?: Array<{ href: string; label: string }>;
+  /** 같은 곡의 두 번째 스템(노래 선율을 부는 악기로). 있으면 켜고 끄는 알약이 선다. */
+  guideSrc?: string;
+  guideLabel?: string;
   abA?: number | null; abB?: number | null;
   setAbA?: (t: number | null) => void; setAbB?: (t: number | null) => void;
   preload?: 'none' | 'metadata' | 'auto';
@@ -97,6 +101,44 @@ export function AudioTransport({
   const [ownA, setOwnA] = useState<number | null>(null);
   const [ownB, setOwnB] = useState<number | null>(null);
   const loopingRef = useRef(false); // A-B 되돌아가는 0.5초 사이의 재트리거 방지
+
+  // ── 가이드 스템 ────────────────────────────────────────────────────────────────────────
+  // `<audio>` 를 하나 더 두지 않는다: 두 element 는 각자 시계를 들고 있어 어긋나고, 브라우저가
+  // 그 둘을 맞춰 주지 않는다. 가이드는 AudioBuffer 로 받아 BufferSource 로 울리고 **기준 시계는
+  // 언제나 element** — 어긋나면 가이드가 쫓아간다.
+  // element 를 그래프에 물리지 않는 것도 결정이다: 노래방 녹음이 자기 element source 를 만들고
+  // (한 element 에 하나뿐이다) 우리가 먼저 만들면 그쪽이 죽는다. 덕분에 **가이드는 녹음에
+  // 안 실린다** — 모니터 전용이라는 설계가 배선으로 지켜진다.
+  const [guideOn, setGuideOn] = useState(false);
+  const [guideBusy, setGuideBusy] = useState(false);
+  const [guideNote, setGuideNote] = useState<string | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const bufRef = useRef<AudioBuffer | null>(null);
+  const nodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
+  const startedRef = useRef<{ ctxAt: number; at: number; rate: number } | null>(null);
+
+  const stopGuide = React.useCallback(() => {
+    const n = nodeRef.current;
+    nodeRef.current = null;
+    startedRef.current = null;
+    if (!n) return;
+    try { n.stop(); } catch { /* 이미 끝난 소스는 stop 이 던진다 */ }
+    n.disconnect();
+  }, []);
+
+  const startGuide = React.useCallback((at: number) => {
+    const ctx = ctxRef.current; const buf = bufRef.current; const g = gainRef.current;
+    stopGuide();
+    if (!ctx || !buf || !g || at >= buf.duration) return;
+    const n = ctx.createBufferSource();
+    n.buffer = buf;
+    n.playbackRate.value = speed;
+    n.connect(g);
+    n.start(0, Math.max(0, at));
+    nodeRef.current = n;
+    startedRef.current = { ctxAt: ctx.currentTime, at, rate: speed };
+  }, [speed, stopGuide]);
 
   const controlled = !!(pSetAbA && pSetAbB);
   const abA = controlled ? (pAbA ?? null) : ownA;
@@ -180,15 +222,71 @@ export function AudioTransport({
     const tick = () => {
       const a = audioRef.current;
       if (a && !a.paused) { setCur(a.currentTime); onTime?.(a.currentTime); }
+      // 가이드가 어긋나면 쫓아간다. 위치를 옮겼거나(seek) element 시계가 밀렸거나 — 원인을
+      // 가릴 필요 없이 **차이 하나만** 본다. 50ms 는 앞뒤로 한 음이 갈라져 들리기 시작하는 선.
+      const st = startedRef.current; const ctx = ctxRef.current;
+      if (a && !a.paused && st && ctx && nodeRef.current) {
+        const want = st.at + (ctx.currentTime - st.ctxAt) * st.rate;
+        if (Math.abs(want - a.currentTime) > 0.05) startGuide(a.currentTime);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, audioRef, onTime]);
+  }, [playing, audioRef, onTime, startGuide]);
 
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.loop = loop; }, [loop, audioRef]);
+
+
+  // 켜고 끄기 = 게인 하나. 처음 켤 때만 받아서 디코드한다(그 한 번은 곡 길이만큼 걸린다).
+  const toggleGuide = async () => {
+    if (!guideSrc) return;
+    if (guideOn) { setGuideOn(false); return; }
+    setGuideBusy(true); setGuideNote(null);
+    try {
+      const Ctor: typeof AudioContext = window.AudioContext
+        || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = ctxRef.current ?? new Ctor();
+      ctxRef.current = ctx;
+      if (!gainRef.current) {
+        gainRef.current = ctx.createGain();
+        gainRef.current.connect(ctx.destination);
+      }
+      await ctx.resume();
+      if (!bufRef.current) {
+        const r = await fetch(guideSrc);
+        if (!r.ok) throw new Error(String(r.status));
+        bufRef.current = await ctx.decodeAudioData(await r.arrayBuffer());
+      }
+      setGuideOn(true);
+    } catch {
+      setGuideNote('가이드 트랙을 불러오지 못했습니다');
+    } finally {
+      setGuideBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (gainRef.current) gainRef.current.gain.value = guideOn ? vol : 0;
+  }, [guideOn, vol]);
+
+  // 배속을 쓰면 element 는 음정을 지키고 BufferSource 는 못 지킨다 — 그대로 두면 둘이 서로
+  // 다른 조로 울린다. 가이드가 켜져 있는 동안은 element 도 음정을 안 지키게 해서, 테이프를
+  // 느리게 돌리듯 **둘이 같은 조로** 간다. 1배속에선 아무 차이가 없다.
+  useEffect(() => {
+    const a = audioRef.current as (HTMLAudioElement & { preservesPitch?: boolean }) | null;
+    if (!a || !guideSrc) return;
+    a.preservesPitch = !guideOn;
+  }, [guideOn, guideSrc, speed, audioRef]);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!guideOn || !a || a.paused) { stopGuide(); return; }
+    startGuide(a.currentTime);
+    return stopGuide;
+  }, [guideOn, playing, speed, src, audioRef, startGuide, stopGuide]);
 
   const toggle = () => {
     const a = audioRef.current; if (!a) return;
@@ -254,6 +352,13 @@ export function AudioTransport({
             </svg>
           </button>
         </span>
+        {guideSrc && (
+          <button type="button" onClick={() => { void toggleGuide(); }} disabled={guideBusy}
+            className={`${pillCls} shrink-0 text-[11px] ml-0.5`} style={pillStyle(guideOn)}
+            title={guideOn ? '가이드 끄기' : '가이드 켜기 — 노래 선율을 부는 악기로 얹습니다'}>
+            {guideBusy ? '…' : guideLabel}
+          </button>
+        )}
         {downloads.length > 0 && (
           <span className="relative shrink-0">
             <button type="button" aria-label="내려받기" onClick={() => setMenu((v) => !v)}
@@ -274,6 +379,10 @@ export function AudioTransport({
           </span>
         )}
       </span>
+      {/* 실패는 말한다 — 눌렀는데 아무 일도 안 일어나는 것이 제일 나쁘다. */}
+      {guideNote && (
+        <span className="block mt-1 text-[11px]" style={{ color: th.muted }}>{guideNote}</span>
+      )}
       {/* 둘째 줄 = 연습 도구(배속·전체반복·구간). 없는 모드엔 줄 자체가 안 선다 — 볼륨은 위
           막대에 있어 계속 쓸 수 있다. */}
       {study && (

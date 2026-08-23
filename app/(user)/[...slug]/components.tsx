@@ -98,6 +98,7 @@ const TYPE_ALIAS: Record<string, string> = {
   concept: 'Concept', explainer: 'Concept', lesson: 'Concept',
   listening: 'Listening', lc: 'Listening',
   karaoke: 'Karaoke', sing_along: 'Karaoke', singalong: 'Karaoke',
+  player: 'Player', audio: 'Player', audio_player: 'Player',
   live_feed: 'LiveFeed', livefeed: 'LiveFeed', live_chart: 'LiveChart', livechart: 'LiveChart',
   live_stock_chart: 'LiveStockChart', livestockchart: 'LiveStockChart',
   function_plot: 'FunctionPlot', functionplot: 'FunctionPlot', fplot: 'FunctionPlot',
@@ -851,7 +852,8 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
-    case 'Karaoke':       return <KaraokeComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url ?? p.mrUrl} lrcUrl={p.lrcUrl ?? p.lrc_url ?? p.lyricsUrl} lrc={p.lrc ?? p.lyrics} offset={p.offset ?? p.lrcOffset} record={p.record} />;
+    case 'Karaoke':       return <KaraokeComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url ?? p.mrUrl} guideUrl={p.guideUrl ?? p.guide} lrcUrl={p.lrcUrl ?? p.lrc_url ?? p.lyricsUrl} lrc={p.lrc ?? p.lyrics} offset={p.offset ?? p.lrcOffset} record={p.record} />;
+    case 'Player':        return <PlayerComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} guideUrl={p.guideUrl ?? p.guide} note={p.note ?? p.caption} />;
     case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} image={p.image ?? p.photo ?? p.imageUrl} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} mode={p.mode ?? p.kind} view={p.view} />;
     // module 블록(페이지 전용) — 서버가 채운 _baked render blocks 를 그대로 재귀 렌더.
     // publish = save 시 bake / request = SSR 이 주입(page.tsx). 비어 있으면 조용히 없음.
@@ -1688,9 +1690,11 @@ function KaraokeLineRow({ line, active, at, align }: {
   );
 }
 
-function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
+function KaraokeComp({ title, audioUrl, guideUrl, lrcUrl, lrc, offset, record = true }: {
   title?: string;
   audioUrl?: string;
+  /** 같은 렌더의 가이드 스템 — 노래 선율을 부는 악기로. 재생기 알약이 켜고 끈다. */
+  guideUrl?: string;
   lrcUrl?: string;
   lrc?: string;
   offset?: number;
@@ -1862,7 +1866,9 @@ function KaraokeComp({ title, audioUrl, lrcUrl, lrc, offset, record = true }: {
 
       <div className="px-3 py-2 border-t border-slate-100">
         <AudioTransport src={audioUrl} audioRef={audioRef} onTime={setCur} snapTo={lineSpans}
+          guideSrc={guideUrl} guideLabel="가이드"
           downloads={[{ href: audioUrl, label: 'MR 저장' },
+                      ...(guideUrl ? [{ href: guideUrl, label: '가이드 저장' }] : []),
                       ...(lrcUrl ? [{ href: lrcUrl, label: '가사 저장' }] : [])]}>
           {/* 노래방만의 칸 — 한 줄에 들어가야 한다(모바일 실측: 두 줄로 접혔다). 버튼은 숫자만
               남기되 라벨은 안 뺀다: ± 숫자만 남으면 무엇을 미는 버튼인지 화면이 말하지 않는다.
@@ -1960,6 +1966,27 @@ function dictationDiff(script: string, typed: string) {
   }
   const scorable = sNorm.filter(Boolean).length || 1;
   return { sWords, matched, accuracy: Math.round((matched.size / scorable) * 100) };
+}
+
+// 소리 하나를 듣는 카드. 노래방이 아닌 렌더(연주곡)가 서는 자리다 — 그 전에는 파일 링크뿐이라
+// 스템이 둘이어도 화면이 그걸 한 곡으로 보여 줄 방법이 없었다.
+function PlayerComp({ title, audioUrl, guideUrl, note }: {
+  title?: string; audioUrl?: string; guideUrl?: string; note?: string;
+}) {
+  if (!audioUrl) return null;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+      {title && (
+        <div className="px-3 pt-2.5 pb-1 text-[13px] font-semibold text-slate-700 break-keep">{title}</div>
+      )}
+      <div className="px-3 pb-2 pt-1">
+        <AudioTransport src={audioUrl} guideSrc={guideUrl} guideLabel="가이드"
+          downloads={[{ href: audioUrl, label: '저장' },
+                      ...(guideUrl ? [{ href: guideUrl, label: '가이드 저장' }] : [])]} />
+        {note && <p className="mt-1.5 text-[11px] text-slate-500 break-keep">{note}</p>}
+      </div>
+    </div>
+  );
 }
 
 // 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독

@@ -6267,6 +6267,7 @@ def action_render(inp):
         imports = [{"path": out_path, "contentType": audio_type, "filenameHint": hint}]
     # 가이드는 반주 **바로 뒤**에 선다 — 노래방 카드가 `{$media: 0}` 을 반주로, 맨 뒤를
     # 가사로 집기 때문에 사이에 끼워야 두 주소가 그대로 맞는다.
+    guide_at = len(imports) if guide_paths else None
     for i, gp in enumerate(guide_paths, 1):
         imports.append({"path": gp, "contentType": audio_type,
                         "filenameHint": hint + "-가이드"
@@ -6286,7 +6287,17 @@ def action_render(inp):
         data["_render"] = {"component": "karaoke", "props": {
             "title": _slug_name(inp.get("scoreMediaPath") or "") or "노래방",
             "audioUrl": {"$media": 0},
+            **({"guideUrl": {"$media": guide_at}} if guide_at is not None else {}),
             "lrcUrl": {"$media": len(imports) - 1},
+        }}
+    elif guide_at is not None:
+        # 가사가 없으면 노래방이 아니다 — 그래도 스템이 둘이면 **화면이 한 곡으로 보여 줘야**
+        # 켜고 끌 수 있다. 파일 링크 두 개로는 그게 안 된다.
+        data["_render"] = {"component": "player", "props": {
+            "title": _slug_name(inp.get("scoreMediaPath") or "") or "연주",
+            "audioUrl": {"$media": 0},
+            "guideUrl": {"$media": guide_at},
+            "note": "가이드 = 노래 선율을 오카리나로. 켜고 끄는 동안 반주는 그대로 흐릅니다.",
         }}
     if guide_paths:
         # 어느 성부가 어느 스템으로 갔는지 응답이 말한다 — 캐스팅은 한 번 조용히 어긋난 적이
