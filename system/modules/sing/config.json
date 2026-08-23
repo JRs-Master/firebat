@@ -301,6 +301,13 @@
         "type": "boolean",
         "description": "Also write the arrangement as a .mid beside the wav (data.media then carries both, and the chat shows a download card). Only set this when the user asks for the MIDI file — the wav alone is the normal answer."
       },
+      "click": {
+        "type": [
+          "boolean",
+          "null"
+        ],
+        "description": "[render] true = also render a metronome stem beside the piece: a click every beat, a bell on each downbeat, following the file's own barlines (pickup bars and mid-piece meter changes included). The player switches it on and off while the music keeps playing. Only set it when the user asks for a beat/tempo guide (박자 가이드, 메트로놈)."
+      },
       "midiOutPath": {
         "type": "string",
         "description": "Workspace-relative .mid path. Implies midiOut. Default = the wav path with a .mid extension."

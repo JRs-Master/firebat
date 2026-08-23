@@ -2137,7 +2137,9 @@
         "lyrics": "lrc",
         "lrcOffset": "offset",
         "name": "title",
-        "guide": "guideUrl"
+        "guide": "guideUrl",
+        "click": "clickUrl",
+        "metronome": "clickUrl"
       },
       "properties": {
         "title": {
@@ -2157,6 +2159,13 @@
             "null"
           ],
           "description": "URL of the guide stem the same sing render returned (the sung line played by an instrument). A pill in the transport turns it on and off while the backing keeps playing; it is never in the recording."
+        },
+        "clickUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL of the metronome stem the same sing render returned (click:true) — a click every beat, a bell on the file's own downbeats. A pill in the transport switches it while the music keeps playing."
         },
         "lrcUrl": {
           "type": [
@@ -3799,7 +3808,7 @@
     "name": "player",
     "componentType": "Player",
     "description": "One audio file with a real transport — play, position, volume, speed, whole-track repeat and A-B section repeat — plus a save menu. Use it for a rendered piece that has no lyrics to follow; with lyrics use `karaoke` instead. guideUrl adds a second stem the listener can switch on and off while the first keeps playing.",
-    "semanticText": "재생기 플레이어 오디오 audio player 음원 듣기 연주 감상 배속 구간반복 AB반복 볼륨 저장 내려받기 가이드 스템 stem 보컬 가이드 minus one 반주",
+    "semanticText": "재생기 플레이어 오디오 audio player 음원 듣기 연주 감상 배속 구간반복 AB반복 볼륨 저장 내려받기 가이드 스템 stem 보컬 가이드 minus one 반주 메트로놈 박자 클릭 metronome click beat 박치",
     "propsSchema": {
       "type": "object",
       "synonyms": {
@@ -3807,7 +3816,9 @@
         "url": "audioUrl",
         "guide": "guideUrl",
         "name": "title",
-        "caption": "note"
+        "caption": "note",
+        "click": "clickUrl",
+        "metronome": "clickUrl"
       },
       "properties": {
         "title": {
@@ -3827,6 +3838,13 @@
             "null"
           ],
           "description": "a second stem of the SAME take, switched on and off by a pill in the transport. Both stay in sync because the second one rides the first's clock; it is fetched only when first switched on."
+        },
+        "clickUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL of the metronome stem the same sing render returned (click:true) — a click every beat, a bell on the file's own downbeats. A pill in the transport switches it while the music keeps playing."
         },
         "note": {
           "type": [

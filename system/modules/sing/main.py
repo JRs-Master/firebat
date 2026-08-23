@@ -3962,6 +3962,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     doc_title = ((text_of(_wk, "work-title") if _wk is not None else "") or "").strip()         or (text_of(root, "movement-title") or "").strip()
 
     prog_of, unp_of, bank_of = {}, {}, {}
+    bar_starts_raw = []          # 첫 파트 마디 시작(원시 박) — 박자 가이드의 강박 자리
     pl = kid(root, "part-list")
     name_of, mix_of, iname_of, isound_of = {}, {}, {}, {}
     for sp in (kids(pl, "score-part") if pl is not None else []):
@@ -4059,6 +4060,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         # 것인데 문서 순서대로 전 성부에 들러붙어 왼손이 더 커졌다 — 악보가 아니라 우리
         # 부산물). staff 없는 지시는 "1" 로.
         notes, harmonies, pos = [], [], 0.0
+        first_part = not bar_starts_raw          # 마디선은 전 파트 공통 — 첫 파트 것만 적는다
         lead_voice = None
         f_prog = prog_of.get(part.get("id"), named_progs.get(part.get("id"), 0))
         f_part = f"p{pi + 1}"
@@ -4158,6 +4160,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         for mi_idx in (order if len(order) else range(len(measures))):
             meas = measures[mi_idx]
             m_base, cur, m_len = pos, 0.0, 0.0
+            if first_part:
+                # 마디의 시작 — 못갖춘마디(anacrusis)와 도중 박자 변경까지 파일이 그은 대로.
+                # 박자 산수(0, meter, 2*meter…)는 못갖춘마디에서 첫 강박이 밀린다.
+                bar_starts_raw.append(pos)
             for el in meas:
                 tag = _strip_ns(el.tag)
                 if tag == "attributes":
@@ -4980,6 +4986,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     score = {"bpm": max(20.0, min(300.0, master)), "notes": out_notes}
     if doc_title:
         score["_title"] = doc_title[:80]
+    if bar_starts_raw:
+        # 행들과 같은 시계로 — 워프(템포 변화)와 카이수라 이동을 똑같이 태운다.
+        score["_barStarts"] = sorted({
+            round(warp(b) + _caesura_shift(warp(b)), 4) for b in bar_starts_raw})
     # Which line became the tune, and what else was on offer. A wrong pick used to be silent —
     # the render just sounded like a different song and nothing in the reply said why.
     if len(parsed_parts) > 1:
@@ -5562,6 +5572,7 @@ def _encode_gain(lu, peak):
 TAIL_FADE_MS = 10.0
 GUIDE_PROGRAM = 79      # GM Ocarina — 사용자가 여섯 후보를 듣고 고른 가이드 음색 (8/23)
 GUIDE_GAIN_DB = 8.0     # 켬. 끔은 파일에 안 실린다 — 0 dB 상태를 따로 둘 이유가 없다
+CLICK_GAIN_DB = 8.0     # 박자 스템 — 가이드와 같은 사다리 실측값에서 출발 (귀로 재조정 여지)
 
 
 def programme_end(x, sr=None, gain_db=0.0):
@@ -5857,6 +5868,7 @@ def action_render(inp):
     # Lift the reader's report off the score before it is parsed — it is about the FILE, not
     # about the music, and the caller needs it whether or not the parse succeeds.
     doc_title = score.pop("_title", None) if isinstance(score, dict) else None
+    bar_starts = score.pop("_barStarts", None) if isinstance(score, dict) else None
     lead_part = score.pop("_leadPart", None) if isinstance(score, dict) else None
     lead_row = score.pop("_leadRow", None) if isinstance(score, dict) else None
     vocal_rows = set(score.pop("_vocalRows", None) or []) if isinstance(score, dict) else set()
@@ -6034,12 +6046,37 @@ def action_render(inp):
     # A drum whose note this font's kit does not answer to would come out as nothing at all, and
     # silence reads as a mixing decision rather than a missing sample. Substitute the GM1 stand-in
     # and SAY which ones moved (the module knows; the listener cannot).
+    # ── 박자 가이드 — 요청했을 때만, 파일에 굽는 스템으로 (사용자 확정 8/24. 재생기에서
+    # 시계로 치는 안은 배속·이동마다 스케줄을 다시 짜는 새 기계라 기각 — 스템은 이미 있는
+    # 배관이고, 켜고 끄는 알약도 가이드 것과 같은 것 하나다).
+    # 소리는 GM2 가 이 용도로 정해 둔 그 건반 — 강박 = metronome_bell(34), 나머지 = click(33).
+    # 강박 자리는 파일이 그은 마디선(_barStarts — 못갖춘마디·중간 박자 변경 포함)이 원본이고,
+    # 마디선이 없는 소스(MIDI·작곡 score)만 박자 산수(0, meter, 2meter…)로 내려간다.
+    click_rows = []
+    if inp.get("click"):
+        _bars = sorted(b for b in (bar_starts or []) if 0.0 <= b < total_beats)
+        if not _bars:
+            _bars = [float(b) for b in range(0, int(total_beats), max(1, int(feel["meter"])))]
+        _downs = set()
+        for _b in _bars:
+            _downs.add(round(_b, 4))
+        _ends = _bars[1:] + [float(total_beats)]
+        for _b, _e in zip(_bars, _ends):
+            _t = _b
+            while _t < _e - 1e-6:
+                _is_down = round(_t, 4) in _downs
+                click_rows.append({"beat": round(_t, 4), "beats": 0.25, "part": "drum",
+                                   "drum": "metronome_bell" if _is_down else "metronome_click",
+                                   "drumNote": DRUM_NOTE["metronome_bell" if _is_down
+                                                         else "metronome_click"],
+                                   "vel": 0.9 if _is_down else 0.6})
+                _t += 1.0
     swapped = {}
     inv = font_inventory(font_path) if font_path else None
     if inv:
         have = (inv["kits"].get(kit_prog) or inv["kits"].get(0) or {}).get("keys") or set()
         if have:
-            for e in arr:
+            for e in arr + click_rows:
                 if e.get("part") != "drum":
                     continue
                 d = e.get("drum")
@@ -6120,6 +6157,15 @@ def action_render(inp):
             mix, send = _play(arr)
             if mix is None:
                 return {"success": False, "error": f"engine:sf2 사용 불가 — {send}"}
+    click, click_note = None, None
+    if click_rows:
+        cmix, csend = _play(click_rows)
+        if cmix is None:
+            click_note = "박자 가이드 렌더 실패 — 이번 파일에는 박자 스템이 없습니다"
+        else:
+            if csend is not None and np.any(csend):
+                cmix = add_room(cmix, csend)
+            click = (cmix * (10.0 ** (CLICK_GAIN_DB / 20.0))).astype(np.float32)
     if vocal_path:
         if not os.path.isfile(vocal_path):
             return {"success": False,
@@ -6136,8 +6182,12 @@ def action_render(inp):
         mix = add_room(mix, send)
     # 여기가 곡이 끝나는 자리다. **악장 분할보다 먼저** — 안 그러면 무음으로 된 악장이
     # 하나 더 생기고, 파일 이름도 자르기 전 길이로 지어진다.
-    if guide is not None:
-        (mix, guide), stem_loud = level_and_trim([mix, guide])
+    _extras = [x for x in (guide, click) if x is not None]
+    if _extras:
+        (mix, *_rest), stem_loud = level_and_trim([mix] + _extras)
+        _it = iter(_rest)
+        guide = next(_it) if guide is not None else None
+        click = next(_it) if click is not None else None
     else:
         mix, stem_loud = trim_to_programme(mix), None
     fmt = str(inp.get("audioFormat") or "flac").strip().lower()
@@ -6161,7 +6211,9 @@ def action_render(inp):
     # that long ships as several flacs in one _mediaImport array (the door is already plural),
     # cut on bar lines. Lossless and playable everywhere — ogg is free but Safari will not play
     # it, so splitting beats transcoding.
-    part_paths, guide_paths = [], []
+    part_paths = []
+    stems_named = ([("guide", guide)] if guide is not None else [])         + ([("click", click)] if click is not None else [])
+    stem_paths = {k: [] for k, _x in stems_named}
     stem0, ext0 = out_path.rsplit(".", 1)
     bounds = _movement_bounds(len(mix), spb, feel["meter"], ext0.lower())
     if len(bounds) > 1:
@@ -6171,17 +6223,17 @@ def action_render(inp):
             # ⚠️ 스템이 있으면 그럴 수 없다: 크기는 이미 합친 믹스에서 한 번 정해졌다.
             loud_report = write_wav(pp, mix[a:b], loud=stem_loud)
             part_paths.append(pp)
-            if guide is not None:
-                gp = f"{stem0}-guide-{i}of{len(bounds)}.{ext0}"
-                write_wav(gp, guide[a:b], loud=stem_loud)
-                guide_paths.append(gp)
+            for k, x in stems_named:
+                gp = f"{stem0}-{k}-{i}of{len(bounds)}.{ext0}"
+                write_wav(gp, x[a:b], loud=stem_loud)
+                stem_paths[k].append(gp)
         out_path = part_paths[0]
     else:
         loud_report = write_wav(out_path, mix, loud=stem_loud)
-        if guide is not None:
-            gp = f"{stem0}-guide.{ext0}"
-            write_wav(gp, guide, loud=stem_loud)
-            guide_paths.append(gp)
+        for k, x in stems_named:
+            gp = f"{stem0}-{k}.{ext0}"
+            write_wav(gp, x, loud=stem_loud)
+            stem_paths[k].append(gp)
     # The .mid beside the wav — same arrangement, played by whatever the listener owns. Our one
     # tone generator is the ceiling on the wav; it is not a ceiling on this.
     midi_out = str(inp.get("midiOutPath") or "").strip()
@@ -6299,11 +6351,17 @@ def action_render(inp):
         imports = [{"path": out_path, "contentType": audio_type, "filenameHint": hint}]
     # 가이드는 반주 **바로 뒤**에 선다 — 노래방 카드가 `{$media: 0}` 을 반주로, 맨 뒤를
     # 가사로 집기 때문에 사이에 끼워야 두 주소가 그대로 맞는다.
-    guide_at = len(imports) if guide_paths else None
-    for i, gp in enumerate(guide_paths, 1):
-        imports.append({"path": gp, "contentType": audio_type,
-                        "filenameHint": hint + "-가이드"
-                        + (f"-{i}of{len(guide_paths)}" if len(guide_paths) > 1 else "")})
+    _STEM_KO = {"guide": "가이드", "click": "박자"}
+    stem_at = {}
+    for k, _x in stems_named:
+        paths = stem_paths.get(k) or []
+        if not paths:
+            continue
+        stem_at[k] = len(imports)
+        for i, gp in enumerate(paths, 1):
+            imports.append({"path": gp, "contentType": audio_type,
+                            "filenameHint": hint + "-" + _STEM_KO[k]
+                            + (f"-{i}of{len(paths)}" if len(paths) > 1 else "")})
     if midi_written:
         imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": hint})
     if lrc_path:
@@ -6319,29 +6377,42 @@ def action_render(inp):
         data["_render"] = {"component": "karaoke", "props": {
             "title": doc_title or _display_name(stem) or "노래방",
             "audioUrl": {"$media": 0},
-            **({"guideUrl": {"$media": guide_at}} if guide_at is not None else {}),
+            **({"guideUrl": {"$media": stem_at["guide"]}} if "guide" in stem_at else {}),
+            **({"clickUrl": {"$media": stem_at["click"]}} if "click" in stem_at else {}),
             "lrcUrl": {"$media": len(imports) - 1},
         }}
-    elif guide_at is not None:
+    elif stem_at:
         # 가사가 없으면 노래방이 아니다 — 그래도 스템이 둘이면 **화면이 한 곡으로 보여 줘야**
         # 켜고 끌 수 있다. 파일 링크 두 개로는 그게 안 된다.
+        _notes = []
+        if "guide" in stem_at:
+            _notes.append("가이드 = 노래 선율을 오카리나로")
+        if "click" in stem_at:
+            _notes.append("박자 = 강박은 벨, 나머지는 클릭")
         data["_render"] = {"component": "player", "props": {
             "title": doc_title or _display_name(stem) or "연주",
             "audioUrl": {"$media": 0},
-            "guideUrl": {"$media": guide_at},
-            "note": "가이드 = 노래 선율을 오카리나로. 켜고 끄는 동안 반주는 그대로 흐릅니다.",
+            **({"guideUrl": {"$media": stem_at["guide"]}} if "guide" in stem_at else {}),
+            **({"clickUrl": {"$media": stem_at["click"]}} if "click" in stem_at else {}),
+            "note": " · ".join(_notes) + ". 켜고 끄는 동안 반주는 그대로 흐릅니다.",
         }}
-    if guide_paths:
+    if click_note:
+        data["clickNote"] = click_note
+    if stem_paths.get("click"):
+        data.setdefault("stems", {})
+        data["stems"]["click"] = {"beats": len(click_rows),
+                                  "downbeats": "파일의 마디선" if bar_starts else "박자 산수",
+                                  "gainDb": CLICK_GAIN_DB}
+    if stem_paths.get("guide"):
         # 어느 성부가 어느 스템으로 갔는지 응답이 말한다 — 캐스팅은 한 번 조용히 어긋난 적이
         # 있고(8/23 아로하), 스템이 둘이면 틀렸을 때 알아채기가 더 어렵다.
         _nm = part_names or {}
-        data["stems"] = {
-            "backing": sorted({_nm.get(e.get("part"), e.get("part"))
-                               for e in backing_rows if e.get("part")}),
-            "guide": {"parts": [_nm.get(r, r) for r in sorted(vocal_rows)],
-                      "instrument": "Ocarina", "program": GUIDE_PROGRAM,
-                      "gainDb": GUIDE_GAIN_DB},
-        }
+        data.setdefault("stems", {})
+        data["stems"]["backing"] = sorted({_nm.get(e.get("part"), e.get("part"))
+                                           for e in backing_rows if e.get("part")})
+        data["stems"]["guide"] = {"parts": [_nm.get(r, r) for r in sorted(vocal_rows)],
+                                  "instrument": "Ocarina", "program": GUIDE_PROGRAM,
+                                  "gainDb": GUIDE_GAIN_DB}
     if lead_part:
         data["leadPart"] = lead_part
         data["partsSeen"] = parts_seen
@@ -8815,6 +8886,48 @@ def action_selftest():
     ck("cutting there cannot move the loudness — the gate had already dropped it", 0.0,
        None if (_before is None or _after is None) else round(_after - _before, 3),
        _before is not None and _after is not None and abs(_after - _before) < 0.01)
+    # ⑦ 박자 가이드 — 마디선은 파일 것, 클릭은 강박 벨 + 박 클릭, 스템은 반주와 같은 길이.
+    _ck2 = ('<score-partwise><part-list><score-part id="P1"><part-name>Piano</part-name>'
+            '</score-part></part-list><part id="P1">'
+            '<measure number="0"><attributes><divisions>1</divisions>'
+            '<time><beats>4</beats><beat-type>4</beat-type></time></attributes>'
+            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>'
+            '<type>quarter</type></note></measure>'          # 못갖춘마디 1박
+            '<measure number="1">' + ''.join(
+                '<note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration>'
+                '<type>quarter</type></note>' for _ in range(4)) + '</measure>'
+            '<measure number="2">' + ''.join(
+                '<note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration>'
+                '<type>quarter</type></note>' for _ in range(4)) + '</measure>'
+            '</part></score-partwise>')
+    with open("data/sing/selftest-click.musicxml", "w", encoding="utf-8") as fh:
+        fh.write(_ck2)
+    _csc, _cerr = musicxml_to_score("data/sing/selftest-click.musicxml")
+    ck("barlines come from the file — the pickup bar keeps the downbeats honest",
+       [0.0, 1.0, 5.0], (_csc or {}).get("_barStarts"),
+       _cerr is None and (_csc or {}).get("_barStarts") == [0.0, 1.0, 5.0])
+    _cr = action_render({"score": {"bpm": 240, "notes": [
+        {"syl": "라", "note": "C4", "beats": 1.0}] * 8, "style": "none"},
+        "click": True, "engine": "builtin", "outPath": "data/sing/selftest-click.flac"})
+    _cd = _cr.get("data") or {}
+    _cmi = _cd.get("_mediaImport")
+    _cmi = _cmi if isinstance(_cmi, list) else [_cmi]
+    ck("click:true ships the piece plus its metronome stem", 2, len(_cmi),
+       _cr.get("success") and len(_cmi) == 2)
+    ck("the response says what the click stem is", True,
+       (_cd.get("stems") or {}).get("click"),
+       bool((_cd.get("stems") or {}).get("click")))
+    import soundfile as _sf2
+    if _cr.get("success") and len(_cmi) == 2:
+        _ln = [_sf2.info(e["path"]).frames for e in _cmi]
+        ck("the click stem ends where the piece ends", _ln[0], _ln[1], _ln[0] == _ln[1])
+        for e in _cmi:
+            try:
+                os.remove(e["path"])
+            except OSError:
+                pass
+    os.remove("data/sing/selftest-click.musicxml")
+
     _whole = len(trim_to_programme(_tail[:int(2.0 * SR)].copy()))
     ck("a piece with nothing to cut is handed back untouched", int(2.0 * SR),
        _whole, _whole == int(2.0 * SR))
