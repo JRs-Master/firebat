@@ -8148,6 +8148,44 @@ def action_selftest():
        any(abs(r["beats"] - 2.0) < 1e-4 for r in _fr if "pitch" in r))
     os.remove("data/sing/selftest-ferm.musicxml")
 
+    # ── MusicXML 커버리지 원장 ────────────────────────────────────────────────────────
+    # 규격 원소마다 **판정과 근거 한 줄**을 파일 하나가 들고, 이 감사가 그 표를 지킨다.
+    # 눈대중으로 "나머지는 대부분 표시 전용" 이라 뭉치면 검산이 불가능하고, 실제로 그 뭉치
+    # 안에 `non-arpeggiate`·`open` 이 숨어 있었다(8/23 사용자 지적). **표가 원본, 여기가 그물.**
+    _cov_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "musicxml-coverage.json")
+    _cov = {}
+    try:
+        with open(_cov_path, encoding="utf-8") as _cf:
+            _cov = json.load(_cf).get("elements") or {}
+    except Exception as _ce:                                    # noqa: BLE001
+        ck("the MusicXML coverage ledger loads", "loaded", "%s" % _ce, False)
+    _VERDICTS = ("read", "display", "silent", "announce", "todo")
+    _badv = sorted(e for e, v in _cov.items() if v.get("v") not in _VERDICTS)
+    ck("every element in the ledger carries a known verdict", [], _badv, not _badv)
+    # 근거 없는 판정은 판정이 아니다 — read 만 면제(코드가 곧 근거).
+    _noev = sorted(e for e, v in _cov.items()
+                   if v.get("v") != "read" and not (v.get("why") or "").strip())
+    ck("every non-read verdict cites its ground", [], _noev[:8], not _noev)
+    # 고정 개수는 안 센다(규격이 자라면 새 원소가 빠진 채로 초록이 되면 안 된다) — 바닥값.
+    ck("the ledger covers the whole spec", True, len(_cov) >= 400, len(_cov) >= 400)
+    try:
+        with open(os.path.abspath(__file__), encoding="utf-8") as _sf:
+            _own = _sf.read()
+    except Exception:                                           # noqa: BLE001
+        _own = ""
+    if _own:
+        # read 로 적힌 원소가 소스에서 사라지면 표가 거짓말을 하기 시작한다.
+        _gone = sorted(e for e, v in _cov.items() if v.get("v") == "read"
+                       and '"%s"' % e not in _own and "'%s'" % e not in _own)
+        ck("every element the ledger calls read is still named in the source",
+           [], _gone[:8], not _gone)
+        # 반대쪽 — 안건으로 적어 둔 것을 구현하고 표를 안 고치면 그것도 거짓말이다.
+        _done = sorted(e for e, v in _cov.items() if v.get("v") == "todo"
+                       and ('"%s"' % e in _own or "'%s'" % e in _own))
+        ck("no open item is already implemented behind the ledger's back",
+           [], _done, not _done)
+
     # 테누토는 제 길이를 지킨다 — 넘기지 않는다. 1.05 는 테누토가 아니었다.
     ck("tenuto holds the full value and no more", 1.0, _XML_ART_GATE["tenuto"],
        _XML_ART_GATE["tenuto"] == 1.0 and _XML_ART_GATE["staccato"] == 0.5)

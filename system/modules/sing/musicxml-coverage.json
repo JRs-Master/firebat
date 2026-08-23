@@ -1,0 +1,1774 @@
+{
+ "_": "MusicXML 4.0 원소마다 판정과 근거. 판정 = read(읽는다) · display(표시 전용) · silent(읽어도 할 일 없음) · announce(관례 없음, 응답이 고지) · todo(안건). 감사가 '판정 없는 원소 0' 과 '소스가 이름을 대면 read' 를 단언한다.",
+ "elements": {
+  "accent": {
+   "v": "read",
+   "why": ""
+  },
+  "accidental": {
+   "v": "display",
+   "why": "기호를 그리는 법 — 음고는 <pitch> 가 말한다"
+  },
+  "accidental-mark": {
+   "v": "read",
+   "why": ""
+  },
+  "accidental-text": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "accord": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "accordion-high": {
+   "v": "display",
+   "why": "아코디언 레지스터 기호"
+  },
+  "accordion-low": {
+   "v": "display",
+   "why": "아코디언 레지스터 기호"
+  },
+  "accordion-middle": {
+   "v": "display",
+   "why": "아코디언 레지스터 기호"
+  },
+  "accordion-registration": {
+   "v": "announce",
+   "why": "GM 에 아코디언이 한 종뿐 — 레지스터를 옮길 대응이 없다"
+  },
+  "actual-notes": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "alter": {
+   "v": "read",
+   "why": ""
+  },
+  "appearance": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "arpeggiate": {
+   "v": "read",
+   "why": ""
+  },
+  "arrow": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "arrow-direction": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "arrow-style": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "arrowhead": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "articulations": {
+   "v": "read",
+   "why": ""
+  },
+  "artificial": {
+   "v": "todo",
+   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+  },
+  "assess": {
+   "v": "silent",
+   "why": "라이브 연주 추종(score following)용 — 오프라인 렌더와 무관"
+  },
+  "attributes": {
+   "v": "read",
+   "why": ""
+  },
+  "backup": {
+   "v": "read",
+   "why": ""
+  },
+  "bar-style": {
+   "v": "display",
+   "why": "마디선·리허설·묶음 표기"
+  },
+  "barline": {
+   "v": "read",
+   "why": ""
+  },
+  "barre": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "base-pitch": {
+   "v": "todo",
+   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+  },
+  "bass": {
+   "v": "read",
+   "why": ""
+  },
+  "bass-alter": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "bass-separator": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "bass-step": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "beam": {
+   "v": "display",
+   "why": "음표를 그리는 법"
+  },
+  "beat-repeat": {
+   "v": "silent",
+   "why": "규격: 반복되는 음악은 파일에 다 적힌다"
+  },
+  "beat-type": {
+   "v": "display",
+   "why": "박자표 표기"
+  },
+  "beat-unit": {
+   "v": "read",
+   "why": ""
+  },
+  "beat-unit-dot": {
+   "v": "read",
+   "why": ""
+  },
+  "beat-unit-tied": {
+   "v": "display",
+   "why": "메트로놈 기호를 그리는 법"
+  },
+  "beater": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "beats": {
+   "v": "read",
+   "why": ""
+  },
+  "bend": {
+   "v": "read",
+   "why": ""
+  },
+  "bend-alter": {
+   "v": "read",
+   "why": ""
+  },
+  "bookmark": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "bottom-margin": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "bracket": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "brass-bend": {
+   "v": "read",
+   "why": ""
+  },
+  "breath-mark": {
+   "v": "read",
+   "why": ""
+  },
+  "caesura": {
+   "v": "read",
+   "why": ""
+  },
+  "cancel": {
+   "v": "display",
+   "why": "기호를 그리는 법 — 음고는 <pitch> 가 말한다"
+  },
+  "capo": {
+   "v": "silent",
+   "why": "규격: staff-tuning 을 바꾼다 = 타브 조현이지 <pitch> 아님"
+  },
+  "chord": {
+   "v": "read",
+   "why": ""
+  },
+  "chromatic": {
+   "v": "read",
+   "why": ""
+  },
+  "circular-arrow": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "clef": {
+   "v": "read",
+   "why": ""
+  },
+  "clef-octave-change": {
+   "v": "silent",
+   "why": "8va 는 그리는 법 — <pitch> 가 이미 실음(8/21 전수 1,431음)"
+  },
+  "coda": {
+   "v": "read",
+   "why": ""
+  },
+  "concert-score": {
+   "v": "display",
+   "why": "이조 표기 — <transpose> 가 실음을 정한다"
+  },
+  "creator": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "credit": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "credit-image": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "credit-symbol": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "credit-type": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "credit-words": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "cue": {
+   "v": "read",
+   "why": ""
+  },
+  "damp": {
+   "v": "read",
+   "why": ""
+  },
+  "damp-all": {
+   "v": "read",
+   "why": ""
+  },
+  "dashes": {
+   "v": "read",
+   "why": ""
+  },
+  "defaults": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "degree": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "degree-alter": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "degree-type": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "degree-value": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "delayed-inverted-turn": {
+   "v": "read",
+   "why": ""
+  },
+  "delayed-turn": {
+   "v": "read",
+   "why": ""
+  },
+  "detached-legato": {
+   "v": "read",
+   "why": ""
+  },
+  "diatonic": {
+   "v": "display",
+   "why": "기호를 그리는 법 — 음고는 <pitch> 가 말한다"
+  },
+  "direction": {
+   "v": "read",
+   "why": ""
+  },
+  "direction-type": {
+   "v": "read",
+   "why": ""
+  },
+  "directive": {
+   "v": "silent",
+   "why": "표시"
+  },
+  "display-octave": {
+   "v": "read",
+   "why": ""
+  },
+  "display-step": {
+   "v": "read",
+   "why": ""
+  },
+  "display-text": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "distance": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "divisions": {
+   "v": "read",
+   "why": ""
+  },
+  "doit": {
+   "v": "read",
+   "why": ""
+  },
+  "dot": {
+   "v": "display",
+   "why": "음표를 그리는 법"
+  },
+  "double": {
+   "v": "read",
+   "why": ""
+  },
+  "double-tongue": {
+   "v": "read",
+   "why": ""
+  },
+  "down-bow": {
+   "v": "read",
+   "why": ""
+  },
+  "duration": {
+   "v": "read",
+   "why": ""
+  },
+  "dynamics": {
+   "v": "read",
+   "why": ""
+  },
+  "effect": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "elevation": {
+   "v": "announce",
+   "why": "3D 상하 정위 — GM/SF2 에 대응이 없다"
+  },
+  "elision": {
+   "v": "read",
+   "why": ""
+  },
+  "encoder": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "encoding": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "encoding-date": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "encoding-description": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "end-line": {
+   "v": "read",
+   "why": ""
+  },
+  "end-paragraph": {
+   "v": "read",
+   "why": ""
+  },
+  "ending": {
+   "v": "read",
+   "why": ""
+  },
+  "ensemble": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "except-voice": {
+   "v": "display",
+   "why": "마디선·리허설·묶음 표기"
+  },
+  "extend": {
+   "v": "display",
+   "why": "가사 표기"
+  },
+  "eyeglasses": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "f": {
+   "v": "read",
+   "why": ""
+  },
+  "falloff": {
+   "v": "read",
+   "why": ""
+  },
+  "feature": {
+   "v": "display",
+   "why": "마디선·리허설·묶음 표기"
+  },
+  "fermata": {
+   "v": "read",
+   "why": ""
+  },
+  "ff": {
+   "v": "read",
+   "why": ""
+  },
+  "fff": {
+   "v": "read",
+   "why": ""
+  },
+  "ffff": {
+   "v": "read",
+   "why": ""
+  },
+  "fffff": {
+   "v": "read",
+   "why": ""
+  },
+  "ffffff": {
+   "v": "read",
+   "why": ""
+  },
+  "fifths": {
+   "v": "read",
+   "why": ""
+  },
+  "figure": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "figure-number": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "figured-bass": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "fingering": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "fingernails": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "first": {
+   "v": "read",
+   "why": ""
+  },
+  "first-fret": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "flip": {
+   "v": "read",
+   "why": ""
+  },
+  "footnote": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "for-part": {
+   "v": "silent",
+   "why": "이조 파트 생성용 메타데이터"
+  },
+  "forward": {
+   "v": "read",
+   "why": ""
+  },
+  "fp": {
+   "v": "read",
+   "why": ""
+  },
+  "frame": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "frame-frets": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "frame-note": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "frame-strings": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "fret": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "function": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "fz": {
+   "v": "read",
+   "why": ""
+  },
+  "glass": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "glissando": {
+   "v": "read",
+   "why": ""
+  },
+  "glyph": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "golpe": {
+   "v": "read",
+   "why": ""
+  },
+  "grace": {
+   "v": "read",
+   "why": ""
+  },
+  "group": {
+   "v": "display",
+   "why": "마디선·리허설·묶음 표기"
+  },
+  "group-abbreviation": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "group-abbreviation-display": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "group-barline": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "group-link": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "group-name": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "group-name-display": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "group-symbol": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "group-time": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "grouping": {
+   "v": "display",
+   "why": "마디선·리허설·묶음 표기"
+  },
+  "half-muted": {
+   "v": "read",
+   "why": ""
+  },
+  "hammer-on": {
+   "v": "read",
+   "why": ""
+  },
+  "handbell": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "harmon-closed": {
+   "v": "announce",
+   "why": "뮤트의 정도 — GM 뮤트 음색은 켜고 끄는 것뿐"
+  },
+  "harmon-mute": {
+   "v": "read",
+   "why": ""
+  },
+  "harmonic": {
+   "v": "read",
+   "why": ""
+  },
+  "harmony": {
+   "v": "read",
+   "why": ""
+  },
+  "harp-pedals": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "haydn": {
+   "v": "read",
+   "why": ""
+  },
+  "heel": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "hole": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "hole-closed": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "hole-shape": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "hole-type": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "humming": {
+   "v": "read",
+   "why": ""
+  },
+  "identification": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "image": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "instrument": {
+   "v": "read",
+   "why": ""
+  },
+  "instrument-abbreviation": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "instrument-change": {
+   "v": "read",
+   "why": ""
+  },
+  "instrument-link": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "instrument-name": {
+   "v": "todo",
+   "why": "우리는 <part-name> 만 읽는다 — 아로하는 여기에 '목소리'라고 적혀 있다"
+  },
+  "instrument-sound": {
+   "v": "todo",
+   "why": "규격이 주는 표준 음색 id — <midi-program> 이 없을 때 파트 이름 추측보다 정확"
+  },
+  "instruments": {
+   "v": "silent",
+   "why": "표시"
+  },
+  "interchangeable": {
+   "v": "display",
+   "why": "박자표 표기"
+  },
+  "inversion": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "inverted-mordent": {
+   "v": "read",
+   "why": ""
+  },
+  "inverted-turn": {
+   "v": "read",
+   "why": ""
+  },
+  "inverted-vertical-turn": {
+   "v": "read",
+   "why": ""
+  },
+  "ipa": {
+   "v": "announce",
+   "why": "발음 기호 — 우리 보컬 경로가 IPA 를 안 받는다"
+  },
+  "key": {
+   "v": "read",
+   "why": ""
+  },
+  "key-accidental": {
+   "v": "display",
+   "why": "기호를 그리는 법 — 음고는 <pitch> 가 말한다"
+  },
+  "key-alter": {
+   "v": "display",
+   "why": "기호를 그리는 법 — 음고는 <pitch> 가 말한다"
+  },
+  "key-octave": {
+   "v": "silent",
+   "why": "표시"
+  },
+  "key-step": {
+   "v": "display",
+   "why": "기호를 그리는 법 — 음고는 <pitch> 가 말한다"
+  },
+  "kind": {
+   "v": "read",
+   "why": ""
+  },
+  "laughing": {
+   "v": "read",
+   "why": ""
+  },
+  "left-divider": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "left-margin": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "level": {
+   "v": "read",
+   "why": ""
+  },
+  "line": {
+   "v": "display",
+   "why": "컨테이너·루트"
+  },
+  "line-detail": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "line-width": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "link": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "listen": {
+   "v": "silent",
+   "why": "라이브 연주 추종(score following)용 — 오프라인 렌더와 무관"
+  },
+  "listening": {
+   "v": "silent",
+   "why": "라이브 연주 추종(score following)용 — 오프라인 렌더와 무관"
+  },
+  "lyric": {
+   "v": "read",
+   "why": ""
+  },
+  "lyric-font": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "lyric-language": {
+   "v": "display",
+   "why": "가사 표기"
+  },
+  "measure": {
+   "v": "read",
+   "why": ""
+  },
+  "measure-distance": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "measure-layout": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "measure-numbering": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "measure-repeat": {
+   "v": "silent",
+   "why": "규격: 반복되는 음악은 파일에 다 적힌다"
+  },
+  "measure-style": {
+   "v": "display",
+   "why": "박자표 표기"
+  },
+  "membrane": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "metal": {
+   "v": "read",
+   "why": ""
+  },
+  "metronome": {
+   "v": "read",
+   "why": ""
+  },
+  "metronome-arrows": {
+   "v": "display",
+   "why": "메트로놈 기호를 그리는 법"
+  },
+  "metronome-beam": {
+   "v": "display",
+   "why": "메트로놈 기호를 그리는 법"
+  },
+  "metronome-dot": {
+   "v": "read",
+   "why": ""
+  },
+  "metronome-note": {
+   "v": "read",
+   "why": ""
+  },
+  "metronome-relation": {
+   "v": "read",
+   "why": ""
+  },
+  "metronome-tied": {
+   "v": "display",
+   "why": "메트로놈 기호를 그리는 법"
+  },
+  "metronome-tuplet": {
+   "v": "display",
+   "why": "메트로놈 기호를 그리는 법"
+  },
+  "metronome-type": {
+   "v": "read",
+   "why": ""
+  },
+  "mf": {
+   "v": "read",
+   "why": ""
+  },
+  "midi-bank": {
+   "v": "read",
+   "why": ""
+  },
+  "midi-channel": {
+   "v": "silent",
+   "why": "우리가 파트를 채널에 재배치한다(GM 은 음색을 프로그램이 정하므로 무해)"
+  },
+  "midi-device": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "midi-instrument": {
+   "v": "read",
+   "why": ""
+  },
+  "midi-name": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "midi-program": {
+   "v": "read",
+   "why": ""
+  },
+  "midi-unpitched": {
+   "v": "read",
+   "why": ""
+  },
+  "millimeters": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "miscellaneous": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "miscellaneous-field": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "mode": {
+   "v": "read",
+   "why": ""
+  },
+  "mordent": {
+   "v": "read",
+   "why": ""
+  },
+  "movement-number": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "movement-title": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "mp": {
+   "v": "read",
+   "why": ""
+  },
+  "multiple-rest": {
+   "v": "silent",
+   "why": "쉼의 길이는 <duration> 이 이미 말한다"
+  },
+  "music-font": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "mute": {
+   "v": "read",
+   "why": ""
+  },
+  "n": {
+   "v": "read",
+   "why": ""
+  },
+  "natural": {
+   "v": "read",
+   "why": ""
+  },
+  "non-arpeggiate": {
+   "v": "silent",
+   "why": "규격: this does not involve playback"
+  },
+  "normal-dot": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "normal-notes": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "normal-type": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "notations": {
+   "v": "read",
+   "why": ""
+  },
+  "note": {
+   "v": "read",
+   "why": ""
+  },
+  "note-size": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "notehead": {
+   "v": "display",
+   "why": "음표를 그리는 법"
+  },
+  "notehead-text": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "numeral": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "numeral-alter": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "numeral-fifths": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "numeral-key": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "numeral-mode": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "numeral-root": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "octave": {
+   "v": "read",
+   "why": ""
+  },
+  "octave-change": {
+   "v": "read",
+   "why": ""
+  },
+  "octave-shift": {
+   "v": "silent",
+   "why": "8va 는 그리는 법 — <pitch> 가 이미 실음(8/21 전수)"
+  },
+  "offset": {
+   "v": "read",
+   "why": ""
+  },
+  "open": {
+   "v": "todo",
+   "why": "규격: 기본 글리프가 brassMuteOpen = <stopped>(뮤트 켬)의 짝인데 우리 뮤트 래치를 푸는 곳이 없다 — 한 번 뮤트되면 안 풀린다"
+  },
+  "open-string": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "opus": {
+   "v": "read",
+   "why": ""
+  },
+  "ornaments": {
+   "v": "read",
+   "why": ""
+  },
+  "other-appearance": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "other-articulation": {
+   "v": "read",
+   "why": ""
+  },
+  "other-direction": {
+   "v": "display",
+   "why": "벤더 확장 자리"
+  },
+  "other-dynamics": {
+   "v": "read",
+   "why": ""
+  },
+  "other-listen": {
+   "v": "display",
+   "why": "벤더 확장 자리"
+  },
+  "other-listening": {
+   "v": "display",
+   "why": "벤더 확장 자리"
+  },
+  "other-notation": {
+   "v": "display",
+   "why": "벤더 확장 자리"
+  },
+  "other-ornament": {
+   "v": "read",
+   "why": ""
+  },
+  "other-percussion": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "other-play": {
+   "v": "display",
+   "why": "벤더 확장 자리"
+  },
+  "other-technical": {
+   "v": "read",
+   "why": ""
+  },
+  "p": {
+   "v": "read",
+   "why": ""
+  },
+  "page-height": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "page-layout": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "page-margins": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "page-width": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "pan": {
+   "v": "read",
+   "why": ""
+  },
+  "part": {
+   "v": "read",
+   "why": ""
+  },
+  "part-abbreviation": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "part-abbreviation-display": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "part-clef": {
+   "v": "display",
+   "why": "이조 표기 — <transpose> 가 실음을 정한다"
+  },
+  "part-group": {
+   "v": "display",
+   "why": "마디선·리허설·묶음 표기"
+  },
+  "part-link": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "part-list": {
+   "v": "read",
+   "why": ""
+  },
+  "part-name": {
+   "v": "read",
+   "why": ""
+  },
+  "part-name-display": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "part-symbol": {
+   "v": "silent",
+   "why": "표시"
+  },
+  "part-transpose": {
+   "v": "display",
+   "why": "이조 표기 — <transpose> 가 실음을 정한다"
+  },
+  "pedal": {
+   "v": "read",
+   "why": ""
+  },
+  "pedal-alter": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "pedal-step": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "pedal-tuning": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "per-minute": {
+   "v": "read",
+   "why": ""
+  },
+  "percussion": {
+   "v": "read",
+   "why": ""
+  },
+  "pf": {
+   "v": "read",
+   "why": ""
+  },
+  "pitch": {
+   "v": "read",
+   "why": ""
+  },
+  "pitched": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "play": {
+   "v": "read",
+   "why": ""
+  },
+  "player": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "player-name": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "plop": {
+   "v": "read",
+   "why": ""
+  },
+  "pluck": {
+   "v": "read",
+   "why": ""
+  },
+  "pp": {
+   "v": "read",
+   "why": ""
+  },
+  "ppp": {
+   "v": "read",
+   "why": ""
+  },
+  "pppp": {
+   "v": "read",
+   "why": ""
+  },
+  "ppppp": {
+   "v": "read",
+   "why": ""
+  },
+  "pppppp": {
+   "v": "read",
+   "why": ""
+  },
+  "pre-bend": {
+   "v": "read",
+   "why": ""
+  },
+  "prefix": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "principal-voice": {
+   "v": "silent",
+   "why": "Hauptstimme/Nebenstimme 괄호 = 분석·표시"
+  },
+  "print": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "pull-off": {
+   "v": "read",
+   "why": ""
+  },
+  "rehearsal": {
+   "v": "display",
+   "why": "마디선·리허설·묶음 표기"
+  },
+  "relation": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "release": {
+   "v": "read",
+   "why": ""
+  },
+  "repeat": {
+   "v": "read",
+   "why": ""
+  },
+  "rest": {
+   "v": "read",
+   "why": ""
+  },
+  "rf": {
+   "v": "read",
+   "why": ""
+  },
+  "rfz": {
+   "v": "read",
+   "why": ""
+  },
+  "right-divider": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "right-margin": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "rights": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "root": {
+   "v": "read",
+   "why": ""
+  },
+  "root-alter": {
+   "v": "read",
+   "why": ""
+  },
+  "root-step": {
+   "v": "read",
+   "why": ""
+  },
+  "scaling": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "schleifer": {
+   "v": "read",
+   "why": ""
+  },
+  "scoop": {
+   "v": "read",
+   "why": ""
+  },
+  "scordatura": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "score-instrument": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "score-part": {
+   "v": "read",
+   "why": ""
+  },
+  "score-partwise": {
+   "v": "display",
+   "why": "컨테이너·루트"
+  },
+  "score-timewise": {
+   "v": "read",
+   "why": ""
+  },
+  "second": {
+   "v": "read",
+   "why": ""
+  },
+  "segno": {
+   "v": "read",
+   "why": ""
+  },
+  "semi-pitched": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "senza-misura": {
+   "v": "silent",
+   "why": "자리는 duration 이 정한다"
+  },
+  "sf": {
+   "v": "read",
+   "why": ""
+  },
+  "sffz": {
+   "v": "read",
+   "why": ""
+  },
+  "sfp": {
+   "v": "read",
+   "why": ""
+  },
+  "sfpp": {
+   "v": "read",
+   "why": ""
+  },
+  "sfz": {
+   "v": "read",
+   "why": ""
+  },
+  "sfzp": {
+   "v": "read",
+   "why": ""
+  },
+  "shake": {
+   "v": "read",
+   "why": ""
+  },
+  "sign": {
+   "v": "read",
+   "why": ""
+  },
+  "slash": {
+   "v": "read",
+   "why": ""
+  },
+  "slash-dot": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "slash-type": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "slide": {
+   "v": "read",
+   "why": ""
+  },
+  "slur": {
+   "v": "silent",
+   "why": "MuseScore 규칙 = gateTime 100%, 우리 기본이 이미 1.0"
+  },
+  "smear": {
+   "v": "read",
+   "why": ""
+  },
+  "snap-pizzicato": {
+   "v": "read",
+   "why": ""
+  },
+  "soft-accent": {
+   "v": "read",
+   "why": ""
+  },
+  "software": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "solo": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "sound": {
+   "v": "read",
+   "why": ""
+  },
+  "sounding-pitch": {
+   "v": "todo",
+   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+  },
+  "source": {
+   "v": "read",
+   "why": ""
+  },
+  "spiccato": {
+   "v": "read",
+   "why": ""
+  },
+  "staccatissimo": {
+   "v": "read",
+   "why": ""
+  },
+  "staccato": {
+   "v": "read",
+   "why": ""
+  },
+  "staff": {
+   "v": "read",
+   "why": ""
+  },
+  "staff-details": {
+   "v": "read",
+   "why": ""
+  },
+  "staff-distance": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "staff-divide": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "staff-layout": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "staff-lines": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "staff-size": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "staff-tuning": {
+   "v": "read",
+   "why": ""
+  },
+  "staff-type": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "staves": {
+   "v": "silent",
+   "why": "보표 수 = 표시"
+  },
+  "stem": {
+   "v": "display",
+   "why": "음표를 그리는 법"
+  },
+  "step": {
+   "v": "read",
+   "why": ""
+  },
+  "stick": {
+   "v": "read",
+   "why": ""
+  },
+  "stick-location": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "stick-material": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "stick-type": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "stopped": {
+   "v": "read",
+   "why": ""
+  },
+  "straight": {
+   "v": "read",
+   "why": ""
+  },
+  "stress": {
+   "v": "read",
+   "why": ""
+  },
+  "string": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "string-mute": {
+   "v": "read",
+   "why": ""
+  },
+  "strong-accent": {
+   "v": "read",
+   "why": ""
+  },
+  "suffix": {
+   "v": "display",
+   "why": "화성 분석 표기 — 코드 심볼은 연주 대상이 아니다(<harmony> 는 편곡에만 쓴다)"
+  },
+  "supports": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "swing": {
+   "v": "read",
+   "why": ""
+  },
+  "swing-style": {
+   "v": "silent",
+   "why": "규격: a string describing the style — 비율은 <first>/<second> 가 준다"
+  },
+  "swing-type": {
+   "v": "read",
+   "why": ""
+  },
+  "syllabic": {
+   "v": "read",
+   "why": ""
+  },
+  "symbol": {
+   "v": "display",
+   "why": "컨테이너·루트"
+  },
+  "sync": {
+   "v": "silent",
+   "why": "라이브 연주 추종(score following)용 — 오프라인 렌더와 무관"
+  },
+  "system-distance": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "system-dividers": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "system-layout": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "system-margins": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "tap": {
+   "v": "read",
+   "why": ""
+  },
+  "technical": {
+   "v": "read",
+   "why": ""
+  },
+  "tenths": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "tenuto": {
+   "v": "read",
+   "why": ""
+  },
+  "text": {
+   "v": "read",
+   "why": ""
+  },
+  "thumb-position": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "tie": {
+   "v": "read",
+   "why": ""
+  },
+  "tied": {
+   "v": "display",
+   "why": "음표를 그리는 법"
+  },
+  "time": {
+   "v": "read",
+   "why": ""
+  },
+  "time-modification": {
+   "v": "silent",
+   "why": "<duration> 에 이미 반영"
+  },
+  "time-relation": {
+   "v": "display",
+   "why": "박자표 표기"
+  },
+  "timpani": {
+   "v": "read",
+   "why": ""
+  },
+  "toe": {
+   "v": "display",
+   "why": "타브 표기 — 음고는 <pitch>"
+  },
+  "top-margin": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "top-system-distance": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "touching-pitch": {
+   "v": "todo",
+   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+  },
+  "transpose": {
+   "v": "read",
+   "why": ""
+  },
+  "tremolo": {
+   "v": "read",
+   "why": ""
+  },
+  "trill-mark": {
+   "v": "read",
+   "why": ""
+  },
+  "triple-tongue": {
+   "v": "read",
+   "why": ""
+  },
+  "tuning-alter": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "tuning-octave": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "tuning-step": {
+   "v": "silent",
+   "why": "조현·페달을 바꾼다 = 타브/하프 기보지 <pitch> 가 아니다(capo 와 같은 부류)"
+  },
+  "tuplet": {
+   "v": "display",
+   "why": "음표를 그리는 법"
+  },
+  "tuplet-actual": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "tuplet-dot": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "tuplet-normal": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "tuplet-number": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "tuplet-type": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "turn": {
+   "v": "read",
+   "why": ""
+  },
+  "type": {
+   "v": "read",
+   "why": ""
+  },
+  "unpitched": {
+   "v": "read",
+   "why": ""
+  },
+  "unstress": {
+   "v": "read",
+   "why": ""
+  },
+  "up-bow": {
+   "v": "read",
+   "why": ""
+  },
+  "vertical-turn": {
+   "v": "read",
+   "why": ""
+  },
+  "virtual-instrument": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "virtual-library": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "virtual-name": {
+   "v": "silent",
+   "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
+  },
+  "voice": {
+   "v": "read",
+   "why": ""
+  },
+  "volume": {
+   "v": "read",
+   "why": ""
+  },
+  "wait": {
+   "v": "silent",
+   "why": "라이브 연주 추종(score following)용 — 오프라인 렌더와 무관"
+  },
+  "wavy-line": {
+   "v": "read",
+   "why": ""
+  },
+  "wedge": {
+   "v": "read",
+   "why": ""
+  },
+  "with-bar": {
+   "v": "display",
+   "why": "규격: content indicates how this should be **notated** (scoop/dip = SMuFL 글리프) — 음정 곡선은 bend-alter 가 준다"
+  },
+  "wood": {
+   "v": "display",
+   "why": "어느 타악기인지 그리는 지시 — 소리는 <unpitched> 가 낸다"
+  },
+  "word-font": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "words": {
+   "v": "read",
+   "why": ""
+  },
+  "work": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "work-number": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  },
+  "work-title": {
+   "v": "display",
+   "why": "표시·메타 전용(이름 규칙)"
+  }
+ },
+ "source": "MusicXML 4.0 XSD (w3c/musicxml)"
+}
