@@ -932,6 +932,50 @@ def named_program(name):
     return got[1] if got else None
 
 
+def sound_id_program(sound_id):
+    """`<instrument-sound>` 의 표준 음색 id → GM 번호, 못 알아들으면 None.
+
+    규격: "describes the default timbre of the score-instrument. This description is
+    **independent of a particular virtual or MIDI instrument specification** and allows
+    playback to be shared more easily between applications and libraries." 즉 이름표가 아니라
+    **규격이 정한 어휘**라, 사람이 쓴 파트 이름보다 앞에 세운다.
+
+    id 는 굵은 갈래에서 가는 갈래로 점을 찍는다(`wind.flutes.flute` · `keyboard.piano`).
+    **뒤가 구체적**이므로 뒤에서부터 우리 별칭표에 묻는다 — 새 표를 손으로 만들지 않는다.
+    """
+    raw = str(sound_id or "").strip().lower()
+    if not raw:
+        return None
+    parts = [p for p in raw.split(".") if p]
+    for i in range(len(parts), 0, -1):          # 뒤에서부터: flute → flutes.flute → wind…
+        got = resolve_instrument(" ".join(parts[i - 1:]))
+        if got:
+            return got[1]
+    return None
+
+
+def part_sings(pp):
+    """이 파트가 "나는 노래한다" 고 말하나 — 2 = 그렇다 · 1 = 말 없음 · 0 = 악기를 댄다.
+
+    ⚠️ **가사로만 판정할 수 없다.** 한국 악보는 가사를 안 싣는 게 보통이라(아로하도 `<lyric>`
+    0개) 그 단은 대개 안 걸리고, 실제로 판정하는 것은 **이름**이다. 그런데 이름은 세 곳에
+    적힐 수 있다 — 아로하는 `<part-name>Voice` 인데 `<instrument-name>` 이 "목소리" 다.
+    한 곳만 읽으면 같은 뜻이 언어와 표기에 따라 갈린다.
+
+    순서 = 표준 음색 id(`voice.*` = 규격의 어휘) > 파트 이름 > 악기 이름. 앞엣것이 말하면
+    거기서 끝내고, **아무 말도 안 할 때만** 다음으로 넘어간다 — 뒤엣것으로 앞엣것을 덮지 않는다.
+    """
+    sid = str(pp.get("isound") or "").strip().lower()
+    if sid.startswith("voice."):
+        return 2
+    if sid:
+        return 0 if "." in sid else 1          # 다른 갈래를 댔으면 악기다
+    v = part_is_vocal(pp.get("name"))
+    if v != 1:
+        return v
+    return part_is_vocal(pp.get("iname"))
+
+
 def _meter_groups(meter):
     """How an odd bar is actually counted: threes lead (5 = 3+2 — Take Five's own grouping),
     compound meters are all threes (6 = 3+3, 9 = 3+3+3), plain even bars are twos."""
@@ -3805,7 +3849,7 @@ def _ornament_rows(row, kind, up=2, down=2):
 # right hand as the lead, in every style, and the melody wandered above and below the vocal line
 # because it was never the vocal line.
 VOCAL_PART_HINTS = ("voice", "vocal", "vox", "lead", "melody", "sing", "singer", "song", "tune",
-                    "노래", "보컬", "가창", "멜로디", "주선율", "리드")
+                    "노래", "보컬", "가창", "멜로디", "주선율", "리드", "목소리", "성악")
 ACCOMP_PART_HINTS = ("piano", "guitar", "gtr", "bass", "drum", "perc", "strings", "synth",
                      "organ", "pad", "accomp", "반주", "피아노", "기타", "베이스", "드럼")
 
@@ -3897,9 +3941,21 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
 
     prog_of, unp_of, bank_of = {}, {}, {}
     pl = kid(root, "part-list")
-    name_of, mix_of = {}, {}
+    name_of, mix_of, iname_of, isound_of = {}, {}, {}, {}
     for sp in (kids(pl, "score-part") if pl is not None else []):
         name_of[sp.get("id")] = (text_of(sp, "part-name") or "").strip()
+        # 파트 이름 말고도 편성을 말하는 자리가 둘 더 있다. 아로하는 <part-name>Voice 인데
+        # <instrument-name> 이 "목소리" 다 — 한쪽만 읽으면 언어에 따라 판정이 갈린다.
+        # <instrument-sound> 는 규격이 주는 **표준 음색 id**("voice.vocals"·"keyboard.piano"):
+        # "independent of a particular virtual or MIDI instrument specification and allows
+        # playback to be shared more easily between applications and libraries."
+        for _si in kids(sp, "score-instrument"):
+            _in = (text_of(_si, "instrument-name") or "").strip()
+            _is = (text_of(_si, "instrument-sound") or "").strip()
+            if _in and sp.get("id") not in iname_of:
+                iname_of[sp.get("id")] = _in
+            if _is and sp.get("id") not in isound_of:
+                isound_of[sp.get("id")] = _is
         for mi2 in kids(sp, "midi-instrument"):
             mp = text_of(mi2, "midi-program")
             mu = text_of(mi2, "midi-unpitched")
@@ -3952,9 +4008,16 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     named_progs = {}
     if not prog_of:
         for _pid, _nm in name_of.items():
-            _g = named_program(_nm)
-            if _g is not None:
-                named_progs[_pid] = _g
+            # 순서 = 표준 음색 id > 악기 이름 > 파트 이름. 앞엣것일수록 **선언에 가깝다** —
+            # id 는 규격이 정한 어휘고 이름은 사람이 쓴 글자다.
+            # ⚠️ `or` 로 잇지 않는다 — **프로그램 0(피아노)이 거짓값**이라 앞엣것이 0 을
+            # 내면 사슬이 통째로 건너뛰고 뒤엣것이 이긴다(이 시험이 그걸 잡았다).
+            for _cand in (sound_id_program(isound_of.get(_pid)),
+                          named_program(iname_of.get(_pid)),
+                          named_program(_nm)):
+                if _cand is not None:
+                    named_progs[_pid] = _cand
+                    break
 
     order = _playback_order([_measure_flags(m) for m in kids(parts[0], "measure")])
 
@@ -4286,18 +4349,37 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # ── <technical> — 지금까지 한 원소도 안 읽던 갈래 ─────────────────────
                     _nots0 = kid(el, "notations")
                     _tec = kid(_nots0, "technical") if _nots0 is not None else None
-                    _bend_curve, _hammered = None, False
+                    _bend_curve, _hammered, _open_now = None, False, False
                     if _tec is not None:
                         # <harmonic> — 규격상 <pitch> 는 그대로 울리는 음이고 이건 **음색**이다
                         # (자식 base/touching/sounding 은 "어느 음을 적었나"를 말한다).
                         # GM 이 하모닉스를 하나 준다(31 Guitar Harmonics) — 뮤트와 **같은 규칙**
                         # 으로 이름표에서 파생한다. 그 판이 없는 악기면 안 바꾸고 고지한다.
-                        if kid(_tec, "harmonic") is not None:
+                        _harm = kid(_tec, "harmonic")
+                        if _harm is not None:
                             _hv = gm_named_variant(n_prog, "harmonics")
                             if _hv is not None:
                                 n_prog = _hv
                             else:
                                 skip_mark("하모닉스 (GM 에 이 악기의 하모닉스 음색이 없음)")
+                            # ⚠️ **「<pitch> 는 울리는 음」의 유일한 예외가 여기다.**
+                            # 규격 <natural>: "These are usually notated at **base pitch**
+                            # rather than sounding pitch." 셋은 빈 표시자로, 이 음의 <pitch>
+                            # 가 무엇인지를 이름표로 말한다. sounding 이면 현행이 맞고,
+                            # base·touching 이면 **실음은 다른 음**인데 규격이 그 값을 주지
+                            # 않는다(줄과 접는 자리를 알아야 계산된다). 지어내지 않고 고지한다.
+                            if _xk1(_harm, "base-pitch") is not None:
+                                skip_mark("자연 하모닉스: 적힌 음이 기음이라 울리는 음이 더 "
+                                          "높다 (규격이 그 값을 안 준다)")
+                            elif _xk1(_harm, "touching-pitch") is not None:
+                                skip_mark("하모닉스: 적힌 음이 접는 자리라 울리는 음이 다르다 "
+                                          "(규격이 그 값을 안 준다)")
+                            elif (_xk1(_harm, "sounding-pitch") is None
+                                    and _xk1(_harm, "natural") is not None):
+                                # 표시자가 없는 자연 하모닉스 — 규격이 "usually base pitch"
+                                # 라 했으므로 적힌 대로 내되 그 사실을 말한다.
+                                skip_mark("자연 하모닉스: 적힌 음을 그대로 냈다 (규격은 보통 "
+                                          "기음으로 적는다고 한다 — 파일이 안 말했다)")
                         for _te in _tec:
                             _tn = _strip_ns(_te.tag)
                             # 해머온·풀오프의 **두 번째** 음(type="stop")은 뜯지 않고 낸다.
@@ -4316,6 +4398,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                     n_prog = _tv
                                 else:
                                     skip_mark("%s (GM 에 이 악기의 그 음색이 없음)" % _tn)
+                            elif _tn == "open":
+                                # 규격: 기본 글리프가 **brassMuteOpen** — <stopped>(뮤트 켬)의
+                                # 짝이다. 이걸 안 읽으면 한 번 뮤트된 파트가 영영 안 풀린다.
+                                _open_now = True
                             elif _tn in _XML_TECH_UNPLAYED:
                                 skip_mark("주법 %s" % _tn)
                         _bends = kids(_tec, "bend")
@@ -4327,6 +4413,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     _mut = (text_of(_ply, "mute") or "").strip().lower() if _ply is not None                         else ""
                     if mute_now[0] and not _mut:
                         _mut = "on"
+                    if _open_now:
+                        _mut = "off"          # <open> = 이 음은 뮤트를 뗀다
                     if _mut and _mut != "off":
                         _mv = gm_muted_variant(f_prog)
                         if _mv is not None:
@@ -4742,6 +4830,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         if notes:
             parsed_parts.append({"notes": notes, "harmonies": harmonies,
                                  "id": part.get("id"), "name": name_of.get(part.get("id"), ""),
+                                 "iname": iname_of.get(part.get("id"), ""),
+                                 "isound": isound_of.get(part.get("id"), ""),
                                  "row": f_part,
                                  "lyrics": sum(1 for n in notes if n["syl"]),
                                  "unp": sum(1 for n in notes if n.get("_unp"))})
@@ -4807,7 +4897,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     # Lyrics first (a part with words IS the song), then what the part CALLS itself, and only
     # then the note count. Count alone hands the tune to whoever plays the most notes.
     best = (_wanted_part(parsed_parts, want_part)
-            or max(parsed_parts, key=lambda pp: (pp["lyrics"], part_is_vocal(pp["name"]),
+            or max(parsed_parts, key=lambda pp: (pp["lyrics"], part_sings(pp),
                                                  len(_pitched(pp["notes"])))))
 
     lyr = list(str(lyrics or "").replace(" ", "").replace("\n", ""))
@@ -8147,6 +8237,64 @@ def action_selftest():
        next((round(r["beats"], 4) for r in _fr if "pitch" in r), None),
        any(abs(r["beats"] - 2.0) < 1e-4 for r in _fr if "pitch" in r))
     os.remove("data/sing/selftest-ferm.musicxml")
+
+    # ── score-part 가 말하는 편성: 이름 셋과 표준 음색 id ────────────────────────────
+    def _sp_doc(spx, tech=""):
+        return ('<score-partwise><part-list>' + spx + '</part-list><part id="P1">'
+                '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>'
+                + tech + '</note></measure></part></score-partwise>')
+
+    def _sp_run(spx, tech=""):
+        with open("data/sing/selftest-sp.musicxml", "w", encoding="utf-8") as _fh:
+            _fh.write(_sp_doc(spx, tech))
+        _rr = []
+        _sc, _ = musicxml_to_score("data/sing/selftest-sp.musicxml", parts_out=_rr)
+        os.remove("data/sing/selftest-sp.musicxml")
+        return _sc, _rr
+
+    # 표준 음색 id 는 규격의 어휘라 사람이 쓴 이름보다 앞에 선다.
+    ck("instrument-sound picks the program when no midi-program is written", 73,
+       sound_id_program("wind.flutes.flute"), sound_id_program("wind.flutes.flute") == 73)
+    ck("…and an unknown id invents nothing", None,
+       sound_id_program("zzz.nope.nothing"), sound_id_program("zzz.nope.nothing") is None)
+    _spA, _rA = _sp_run('<score-part id="P1"><part-name>P1</part-name>'
+                        '<score-instrument id="I1"><instrument-name>Flute</instrument-name>'
+                        '<instrument-sound>keyboard.piano</instrument-sound>'
+                        '</score-instrument></score-part>')
+    ck("the standard sound id outranks the written instrument name", 0,
+       next((r.get("program") for r in _rA if "pitch" in r), None),
+       any(r.get("program") == 0 for r in _rA if "pitch" in r))
+
+    # 한국 악보는 가사를 안 싣는 게 보통이라(아로하 <lyric> 0개) 노래 파트를 가려내는 것은
+    # 이름이다. 그 이름이 <instrument-name> 에만 있으면 한쪽만 읽는 판정은 못 잡는다.
+    ck("a part that only names itself in <instrument-name> still reads as the song", 2,
+       part_sings({"name": "P1", "iname": "목소리", "isound": ""}),
+       part_sings({"name": "P1", "iname": "목소리", "isound": ""}) == 2)
+    ck("…and the part name still wins when it speaks", 0,
+       part_sings({"name": "Piano", "iname": "목소리", "isound": ""}),
+       part_sings({"name": "Piano", "iname": "목소리", "isound": ""}) == 0)
+    ck("voice.* in the sound id says it sings", 2,
+       part_sings({"name": "P1", "iname": "", "isound": "voice.vocals"}),
+       part_sings({"name": "P1", "iname": "", "isound": "voice.vocals"}) == 2)
+
+    # <open> = brassMuteOpen — <stopped> 의 짝이다. 이걸 안 읽으면 뮤트가 안 풀린다.
+    _mSP = ('<score-part id="P1"><part-name>Trumpet</part-name><midi-instrument id="I1">'
+            '<midi-program>57</midi-program></midi-instrument></score-part>')
+    _sm, _rm = _sp_run(_mSP, '<notations><technical><stopped/></technical></notations>')
+    _so, _ro = _sp_run(_mSP, '<notations><technical><open/></technical></notations>')
+    _pm = next((r.get("program") for r in _rm if "pitch" in r), None)
+    _po = next((r.get("program") for r in _ro if "pitch" in r), None)
+    ck("<stopped> mutes the trumpet and <open> takes the mute off", [59, 56], [_pm, _po],
+       [_pm, _po] == [59, 56])
+
+    # 하모닉스: <pitch> 가 울리는 음이 아닐 수 있는 유일한 자리 — 지어내지 않고 고지한다.
+    _sh, _rh = _sp_run('<score-part id="P1"><part-name>Gtr</part-name></score-part>',
+                       '<notations><technical><harmonic><natural/><base-pitch/>'
+                       '</harmonic></technical></notations>')
+    _hn = json.dumps((_sh or {}).get("_notation_skipped") or {}, ensure_ascii=False)
+    ck("a harmonic written at base pitch says the sounding pitch is not what we played",
+       True, "기음" in _hn, "기음" in _hn)
 
     # ── MusicXML 커버리지 원장 ────────────────────────────────────────────────────────
     # 규격 원소마다 **판정과 근거 한 줄**을 파일 하나가 들고, 이 감사가 그 표를 지킨다.

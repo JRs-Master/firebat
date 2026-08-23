@@ -74,8 +74,8 @@
    "why": ""
   },
   "artificial": {
-   "v": "todo",
-   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+   "v": "silent",
+   "why": "규격이 인공 하모닉스를 기음 표기라고 말하지 않는다 — 실제 정보는 sounding/touching 표시자가 준다(그 셋을 읽는다)"
   },
   "assess": {
    "v": "silent",
@@ -102,8 +102,8 @@
    "why": "표시·메타 전용(이름 규칙)"
   },
   "base-pitch": {
-   "v": "todo",
-   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+   "v": "read",
+   "why": ""
   },
   "bass": {
    "v": "read",
@@ -674,12 +674,12 @@
    "why": "악기 선언 메타 — 실제 선택은 <midi-program>/<midi-bank>"
   },
   "instrument-name": {
-   "v": "todo",
-   "why": "우리는 <part-name> 만 읽는다 — 아로하는 여기에 '목소리'라고 적혀 있다"
+   "v": "read",
+   "why": ""
   },
   "instrument-sound": {
-   "v": "todo",
-   "why": "규격이 주는 표준 음색 id — <midi-program> 이 없을 때 파트 이름 추측보다 정확"
+   "v": "read",
+   "why": ""
   },
   "instruments": {
    "v": "silent",
@@ -1014,8 +1014,8 @@
    "why": ""
   },
   "open": {
-   "v": "todo",
-   "why": "규격: 기본 글리프가 brassMuteOpen = <stopped>(뮤트 켬)의 짝인데 우리 뮤트 래치를 푸는 곳이 없다 — 한 번 뮤트되면 안 풀린다"
+   "v": "read",
+   "why": ""
   },
   "open-string": {
    "v": "display",
@@ -1414,8 +1414,8 @@
    "why": ""
   },
   "sounding-pitch": {
-   "v": "todo",
-   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+   "v": "read",
+   "why": ""
   },
   "source": {
    "v": "read",
@@ -1630,8 +1630,8 @@
    "why": "표시·메타 전용(이름 규칙)"
   },
   "touching-pitch": {
-   "v": "todo",
-   "why": "자연 하모닉스는 <pitch> 에 **기음**이 적힐 수 있다(규격 <natural> 주석) — sounding 이면 현행이 맞고 base/touching 이면 실음이 다르다"
+   "v": "read",
+   "why": ""
   },
   "transpose": {
    "v": "read",
