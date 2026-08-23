@@ -4959,6 +4959,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
     if len(parsed_parts) > 1:
         score["_leadPart"] = best.get("name") or best.get("id") or ""
         score["_leadRow"] = best.get("row")
+        # 노래하는 성부 — **가락 파트와 다른 물음이다.** 가락은 어느 악보에나 있고, 이건
+        # "그 줄을 사람이 부른다"고 파일이 말한 경우만이다. 연주 렌더가 무엇을 빼야 하는지가
+        # 여기서 갈린다: 피아노 독주는 뺄 것이 없고, 아로하는 Voice 한 줄이 나온다.
+        score["_vocalRows"] = sorted({pp["row"] for pp in parsed_parts
+                                      if pp.get("row") and part_sings(pp) == 2})
         # 행의 파트 id(p1·p3)는 우리 내부 번호다. 캐스팅 보고가 그걸 그대로 대면 읽는 쪽이
         # 어느 성부인지 알 수 없다 — 이름은 파일이 이미 말해 준다.
         score["_partNames"] = {pp["row"]: (pp.get("name") or pp.get("id") or pp["row"])
@@ -5518,53 +5523,98 @@ def _peak_of(x, chunk=1 << 20):
 
 
 def _encode_gain(lu, peak):
-    """The gain the encoder will apply: up to the target, or up to the ceiling, whichever
-    comes first. One place — the tail trim has to know the same number, because the gate
-    it cuts on is an ABSOLUTE level and therefore about the file as written."""
+    """The gain the encoder applies: up to the target, or up to the ceiling, whichever
+    comes first. Named because it is the one place size is decided."""
     want = 10.0 ** ((LUFS_TARGET - lu) / 20.0)
     room = (10.0 ** (PEAK_CEILING_DB / 20.0)) / peak
     return min(want, room), want
 
 
 TAIL_FADE_MS = 10.0
+GUIDE_PROGRAM = 79      # GM Ocarina — 사용자가 여섯 후보를 듣고 고른 가이드 음색 (8/23)
+GUIDE_GAIN_DB = 8.0     # 켬. 끔은 파일에 안 실린다 — 0 dB 상태를 따로 둘 이유가 없다
 
 
-def trim_to_programme(x, sr=None):
-    """Drop the tail the loudness standard already refuses to measure.
+def programme_end(x, sr=None, gain_db=0.0):
+    """Where the programme ends, in samples — the end of the last block BS.1770 counts.
 
     The synth decides its own ending: fluidsynth renders until the SoundFont's volume
-    envelope formally finishes, and a font may declare a very slow one — GeneralUser GS
-    gives its toms a 39.99 s decay, so one tom in the last fill kept 아로하 rendering
-    30.1 s past the music (20.2 s of that is exactly zero once the file is 16-bit).
+    envelope formally finishes, and a font may declare a very slow one. GeneralUser GS
+    gives its toms a 39.99 s decay, so one tom in 아로하's last fill kept the render
+    going 30.1 s past the music (20.2 s of that is exactly zero once written as 16-bit).
 
-    We do not invent a threshold for that. BS.1770 already names it: blocks under the
-    absolute gate are not programme, and the integrated loudness we match to is computed
-    without them. So cutting at the last surviving block CANNOT move the loudness —
-    실측 열두 곡 전부 0.000 LU — and what leaves is only what the measurement refused.
+    We do not invent a threshold for that. BS.1770 already declares which blocks are not
+    programme — the absolute gate — and the integrated loudness we match to is computed
+    without them. So ending there cannot move the loudness: 실측 열두 곡 전부 0.000 LU.
 
-    The head is left alone. A score's own intro rest is music, and moving the start would
-    shift every line of the .lrc that rides on it.
+    `gain_db` = what the file will be written at, because the gate is an ABSOLUTE level.
     """
     sr = sr or SR
-    x = np.asarray(x, dtype=np.float32)
     tot, hop, bl = _block_energies(x, sr)
-    lu = _integrated_from(tot)
-    peak = _peak_of(x)
-    if lu is None or peak <= 0:
-        return x                                  # 못 잰 것은 안 건드린다
-    g, _want = _encode_gain(lu, peak)
-    keep = np.flatnonzero(_block_lufs(tot) > LUFS_ABS_GATE - 20.0 * math.log10(g))
+    if tot is None:
+        return len(x)
+    keep = np.flatnonzero(_block_lufs(tot) > LUFS_ABS_GATE - gain_db)
     if not len(keep):
-        return x
-    end = min(len(x), int(keep[-1]) * hop + bl)
-    if end >= len(x):
-        return x
-    x = x[:end]
-    n = min(len(x), int(sr * TAIL_FADE_MS / 1000.0))
+        return len(x)
+    return min(len(x), int(keep[-1]) * hop + bl)
+
+
+def _fade_out(x, sr, ms=TAIL_FADE_MS):
+    n = min(len(x), int(sr * ms / 1000.0))
     if n > 1:                                     # 경계가 0 이 아닐 수 있다 — 딸깍 방지
         ramp = np.linspace(1.0, 0.0, n, dtype=np.float32)
         x[-n:] *= ramp[:, None] if x.ndim == 2 else ramp
     return x
+
+
+def level_and_trim(stems, sr=None):
+    """Size and length, decided ONCE on the sum and applied to every stem identically.
+
+    A stem the player can switch off must not move the level of the rest, so the level
+    cannot be per file — 8/23 실측: matching each rung of the guide ladder separately
+    pushed the band around by up to 6.63 dB. Same for the length: both stems end where
+    the piece ends, not where each one happens to fall quiet.
+
+    The head is left alone. A score's own intro rest is music, and moving the start would
+    shift every line of the .lrc that rides on it.
+
+    Returns (stems, loudness report).
+    """
+    sr = sr or SR
+    stems = [np.asarray(x, dtype=np.float32) for x in stems]
+    n = max(len(x) for x in stems)
+    stems = [x if len(x) == n else np.pad(x, ((0, n - len(x)), (0, 0))) for x in stems]
+    single = len(stems) == 1
+    total = stems[0] if single else stems[0] + stems[1]
+    for x in stems[2:]:
+        total += x
+    total, rep = match_loudness(total, sr)        # 크기는 이 함수 하나가 정한다
+    g = 10.0 ** (rep["gainDb"] / 20.0)
+    end = programme_end(total, sr)                # total 은 이미 쓰일 크기다
+    out = []
+    for i, x in enumerate(stems):
+        if not (single and i == 0):               # single 이면 match_loudness 가 이미 걸었다
+            for j in range(0, len(x), 1 << 20):
+                x[j:j + (1 << 20)] *= g
+        x = x[:end]
+        out.append(_fade_out(x, sr) if end < n else x)
+    return out, rep
+
+
+def trim_to_programme(x, sr=None):
+    """The single-file path: cut where the programme ends, leave the level to the writer.
+
+    Same rule as level_and_trim, minus the gain — write_wav still decides size here, so
+    all this needs to know is what size it WILL decide (the gate is absolute)."""
+    sr = sr or SR
+    x = np.asarray(x, dtype=np.float32)
+    lu = integrated_lufs(x, sr)
+    peak = _peak_of(x)
+    if lu is None or peak <= 0:
+        return x                                  # 못 잰 것은 안 건드린다
+    g, _want = _encode_gain(lu, peak)
+    end = programme_end(x, sr, 20.0 * math.log10(g))
+    return x if end >= len(x) else _fade_out(x[:end], sr)
 
 
 def match_loudness(x, sr=None):
@@ -5598,7 +5648,9 @@ def match_loudness(x, sr=None):
     return x, rep
 
 
-def write_wav(path, x):
+def write_wav(path, x, loud=None):
+    """`loud` = an earlier level_and_trim report. Given one, x is already at level and
+    this only writes — the stems of one piece must not be levelled separately."""
     # soundfile picks the container from the extension — wav/flac ride PCM_16, mp3 goes through
     # libsndfile's LAME encoder (subtype MPEG_LAYER_III, its own default rate ~150 kbps VBR).
     #
@@ -5609,7 +5661,9 @@ def write_wav(path, x):
     # 값이 흘러가는 다음 홉을 안 열면 앞에서 지운 것이 뒤에서 그대로 산다.
     import soundfile as sf
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    x, loud = match_loudness(np.asarray(x, dtype=np.float32))
+    x = np.asarray(x, dtype=np.float32)
+    if loud is None:
+        x, loud = match_loudness(x)
     ext = path.rsplit(".", 1)[-1].lower()
     if ext == "opus":
         sf.write(path, x, SR, format="OGG", subtype="OPUS")
@@ -5775,6 +5829,7 @@ def action_render(inp):
     # about the music, and the caller needs it whether or not the parse succeeds.
     lead_part = score.pop("_leadPart", None) if isinstance(score, dict) else None
     lead_row = score.pop("_leadRow", None) if isinstance(score, dict) else None
+    vocal_rows = set(score.pop("_vocalRows", None) or []) if isinstance(score, dict) else set()
     # 파일이 선언한 페이더·부풀림 (MIDI 만; MusicXML 은 셈여림을 벨로시티로 적는다).
     file_cc7 = locals().get("file_cc7") or {}
     file_ctl = locals().get("file_ctl") or {}
@@ -5974,26 +6029,66 @@ def action_render(inp):
                 "error": "engine must be sf2 | builtin (omit = auto: sf2 when installed)"}
     engine_used, engine_note, sf2_font = "builtin", None, None
     sf2_font_path = None
-    mix = send = None
-    if engine != "builtin":
-        binp, font, why = _fbin, _ffont, _fwhy
-        if engine == "sf2" and why:
-            return {"success": False, "error": f"engine:sf2 사용 불가 — {why}"}
-        if not why:
-            stereo, err = render_sf2(arr, spb, binp, font, mixmap=feel.get("mix"),
-                                     filecc7=file_cc7, ctl=file_ctl, sysex=file_sysex)
-            if stereo is None:
-                engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
-            else:
-                engine_used, sf2_font = "sf2", os.path.basename(font)
-                sf2_font_path = font
-                # ⚠️ 여기 `stereo *= 0.45` 가 있었다 — 설명이 없는 상수였고, 라우드니스
-                # 정규화가 뒤에서 그대로 되돌리므로 지워도 소리가 안 바뀐다(2026-08-22).
-                mix, send = stereo, np.zeros(len(stereo), dtype=np.float32)
-    if mix is None:
-        mix, send = render_arrangement(arr, spb, total_beats, mixmap=feel.get("mix"),
-                                       filecc7=file_cc7, ctl=file_ctl)
+
+    def _play(rows):
+        """These rows through whichever engine is standing. Returns (mix, send).
+
+        A callable because the guide stem is the same arrangement played twice — the
+        backing without the sung line, and that line alone. Rendering twice is exact
+        rather than approximate: reverb and the envelopes are linear, so backing + guide
+        is what one pass over both would have given.
+        """
+        nonlocal engine_used, engine_note, sf2_font, sf2_font_path
+        if engine != "builtin":
+            binp, font, why = _fbin, _ffont, _fwhy
+            if engine == "sf2" and why:
+                return None, why
+            if not why:
+                stereo, err = render_sf2(rows, spb, binp, font, mixmap=feel.get("mix"),
+                                         filecc7=file_cc7, ctl=file_ctl, sysex=file_sysex)
+                if stereo is None:
+                    engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
+                else:
+                    engine_used, sf2_font = "sf2", os.path.basename(font)
+                    sf2_font_path = font
+                    # ⚠️ 여기 `stereo *= 0.45` 가 있었다 — 설명이 없는 상수였고, 라우드니스
+                    # 정규화가 뒤에서 그대로 되돌리므로 지워도 소리가 안 바뀐다(2026-08-22).
+                    return stereo, np.zeros(len(stereo), dtype=np.float32)
         # 내장 신디 쪽 ×0.45 도 같이 걷었다 — 크기는 인코딩 때 정규화가 정한다.
+        return render_arrangement(rows, spb, total_beats, mixmap=feel.get("mix"),
+                                  filecc7=file_cc7, ctl=file_ctl)
+
+    # 노래하는 줄은 **연주 렌더의 본 파일에서 뺀다.** 사람이 부를 자리를 악기가 대신 부르면
+    # 그건 연주가 아니라 가이드다 (사용자 확정 8/23). 그 줄은 오카리나로 따로 나가고, 재생기
+    # 버튼이 켜고 끈다. 노래가 이미 실려 있으면(vocal_path) 가이드는 군더더기라 안 만든다.
+    guide_rows = []
+    if faithful and vocal_rows and not vocal_path:
+        guide_rows = [r for r in arr if r.get("part") in vocal_rows]
+        if not guide_rows or len(guide_rows) == len(arr):
+            guide_rows = []                       # 뺄 것이 없거나, 빼면 아무것도 안 남는다
+    backing_rows = ([r for r in arr if r.get("part") not in vocal_rows]
+                    if guide_rows else arr)
+    mix, send = _play(backing_rows)
+    if mix is None:
+        return {"success": False, "error": f"engine:sf2 사용 불가 — {send}"}
+    guide, guide_arr = None, []
+    if guide_rows:
+        # 같은 음, 부는 악기로. 켬 = +8 dB (사다리 실측 8/23) — 세기는 파일에 굳혀 두고
+        # 버튼은 켜고 끄기만 한다. 그래야 재생기가 취향 값을 또 들고 있지 않는다.
+        guide_arr = [dict(r, program=GUIDE_PROGRAM) for r in guide_rows]
+        gmix, gsend = _play(guide_arr)
+        if gmix is not None:
+            gain = 10.0 ** (GUIDE_GAIN_DB / 20.0)
+            if gsend is not None and np.any(gsend):
+                gmix = add_room(gmix, gsend)
+            guide = (gmix * gain).astype(np.float32)
+        else:
+            # 가이드가 안 나왔는데 반주에서 이미 뺐다 = 그 성부가 조용히 사라진다.
+            # 없어지느니 원래대로 함께 울린다.
+            guide_rows, guide_arr, backing_rows = [], [], arr
+            mix, send = _play(arr)
+            if mix is None:
+                return {"success": False, "error": f"engine:sf2 사용 불가 — {send}"}
     if vocal_path:
         if not os.path.isfile(vocal_path):
             return {"success": False,
@@ -6010,7 +6105,10 @@ def action_render(inp):
         mix = add_room(mix, send)
     # 여기가 곡이 끝나는 자리다. **악장 분할보다 먼저** — 안 그러면 무음으로 된 악장이
     # 하나 더 생기고, 파일 이름도 자르기 전 길이로 지어진다.
-    mix = trim_to_programme(mix)
+    if guide is not None:
+        (mix, guide), stem_loud = level_and_trim([mix, guide])
+    else:
+        mix, stem_loud = trim_to_programme(mix), None
     fmt = str(inp.get("audioFormat") or "flac").strip().lower()
     if fmt not in _FMT_BYTES:
         return {"success": False,
@@ -6032,19 +6130,27 @@ def action_render(inp):
     # that long ships as several flacs in one _mediaImport array (the door is already plural),
     # cut on bar lines. Lossless and playable everywhere — ogg is free but Safari will not play
     # it, so splitting beats transcoding.
-    part_paths = []
-    bounds = _movement_bounds(len(mix), spb, feel["meter"],
-                              out_path.rsplit(".", 1)[-1].lower())
+    part_paths, guide_paths = [], []
+    stem0, ext0 = out_path.rsplit(".", 1)
+    bounds = _movement_bounds(len(mix), spb, feel["meter"], ext0.lower())
     if len(bounds) > 1:
-        stem0, ext0 = out_path.rsplit(".", 1)
         for i, (a, b) in enumerate(bounds, 1):
             pp = f"{stem0}-{i}of{len(bounds)}.{ext0}"
             # 악장마다 따로 맞춘다 — 한 곡이 여러 파일로 나가도 사이에서 크기가 안 튄다.
-            loud_report = write_wav(pp, mix[a:b])
+            # ⚠️ 스템이 있으면 그럴 수 없다: 크기는 이미 합친 믹스에서 한 번 정해졌다.
+            loud_report = write_wav(pp, mix[a:b], loud=stem_loud)
             part_paths.append(pp)
+            if guide is not None:
+                gp = f"{stem0}-guide-{i}of{len(bounds)}.{ext0}"
+                write_wav(gp, guide[a:b], loud=stem_loud)
+                guide_paths.append(gp)
         out_path = part_paths[0]
     else:
-        loud_report = write_wav(out_path, mix)
+        loud_report = write_wav(out_path, mix, loud=stem_loud)
+        if guide is not None:
+            gp = f"{stem0}-guide.{ext0}"
+            write_wav(gp, guide, loud=stem_loud)
+            guide_paths.append(gp)
     # The .mid beside the wav — same arrangement, played by whatever the listener owns. Our one
     # tone generator is the ceiling on the wav; it is not a ceiling on this.
     midi_out = str(inp.get("midiOutPath") or "").strip()
@@ -6085,7 +6191,9 @@ def action_render(inp):
         data["notationNote"] = " / ".join(_parts)
     if locals().get("loud_report"):
         data["loudness"] = loud_report
-    _oor = notes_out_of_range(arr, sf2_font_path)
+    # 음역 점검은 **실제로 울린 것**을 봐야 한다 — 가이드는 오카리나로 갈아입었고 그 음색은
+    # 음역이 좁다. arr(원래 악기)로 재면 가이드가 통째로 안 들려도 응답이 조용하다.
+    _oor = notes_out_of_range((backing_rows + guide_arr) if guide_arr else arr, sf2_font_path)
     if _oor:
         data["outOfRange"] = _oor[:20]
         data["outOfRangeNote"] = (
@@ -6157,6 +6265,12 @@ def action_render(inp):
         data["movements"] = len(part_paths)
     else:
         imports = [{"path": out_path, "contentType": audio_type, "filenameHint": hint}]
+    # 가이드는 반주 **바로 뒤**에 선다 — 노래방 카드가 `{$media: 0}` 을 반주로, 맨 뒤를
+    # 가사로 집기 때문에 사이에 끼워야 두 주소가 그대로 맞는다.
+    for i, gp in enumerate(guide_paths, 1):
+        imports.append({"path": gp, "contentType": audio_type,
+                        "filenameHint": hint + "-가이드"
+                        + (f"-{i}of{len(guide_paths)}" if len(guide_paths) > 1 else "")})
     if midi_written:
         imports.append({"path": midi_written, "contentType": "audio/midi", "filenameHint": hint})
     if lrc_path:
@@ -6174,6 +6288,17 @@ def action_render(inp):
             "audioUrl": {"$media": 0},
             "lrcUrl": {"$media": len(imports) - 1},
         }}
+    if guide_paths:
+        # 어느 성부가 어느 스템으로 갔는지 응답이 말한다 — 캐스팅은 한 번 조용히 어긋난 적이
+        # 있고(8/23 아로하), 스템이 둘이면 틀렸을 때 알아채기가 더 어렵다.
+        _nm = part_names or {}
+        data["stems"] = {
+            "backing": sorted({_nm.get(e.get("part"), e.get("part"))
+                               for e in backing_rows if e.get("part")}),
+            "guide": {"parts": [_nm.get(r, r) for r in sorted(vocal_rows)],
+                      "instrument": "Ocarina", "program": GUIDE_PROGRAM,
+                      "gainDb": GUIDE_GAIN_DB},
+        }
     if lead_part:
         data["leadPart"] = lead_part
         data["partsSeen"] = parts_seen
@@ -7629,6 +7754,14 @@ def action_selftest():
        "Voice", lead, terr is None and lead == "Voice")
     ck("…and the reply says what else was on offer", True, (tsc or {}).get("_partsSeen"),
        bool(tsc) and len(tsc.get("_partsSeen") or []) == 2)
+    # 노래하는 성부는 **가락 파트와 다른 물음**이다 — 연주 렌더가 무엇을 빼는지가 이걸로 갈린다.
+    _vr = (tsc or {}).get("_vocalRows")
+    ck("the singing part is named, and only the singing one", 1, None if _vr is None else len(_vr),
+       bool(_vr) and len(_vr) == 1)
+    _isc, _ = musicxml_to_score("data/sing/selftest-parts.musicxml", want_part="Piano")
+    ck("choosing another lead does not make the piano sing", 1,
+       len((_isc or {}).get("_vocalRows") or []),
+       len((_isc or {}).get("_vocalRows") or []) == 1)
     osc, _ = musicxml_to_score("data/sing/selftest-parts.musicxml", want_part="Piano")
     ck("melodyPart overrides the pick by name", "Piano", (osc or {}).get("_leadPart"),
        bool(osc) and osc.get("_leadPart") == "Piano")
@@ -8634,6 +8767,23 @@ def action_selftest():
        _whole, _whole == int(2.0 * SR))
     ck("the cut ends in a fade, so the join cannot click", True,
        float(np.abs(_cutn[-1]).max()) < 1e-6, float(np.abs(_cutn[-1]).max()) < 1e-6)
+
+    # ⑥ 스템 — 크기와 길이는 **합친 믹스에서 한 번** 정해져 둘에 똑같이 걸린다. 따로 맞추면
+    #    재생기에서 가이드를 끌 때 반주 크기가 같이 움직인다(8/23 사다리 실측 −6.63 dB).
+    _sa = np.stack([(0.30 * np.sin(2 * math.pi * 220.0 * (np.arange(int(3.0 * SR)) / SR))
+                     ).astype(np.float32)] * 2, axis=1)
+    _sb = np.stack([(0.05 * np.sin(2 * math.pi * 660.0 * (np.arange(int(3.0 * SR)) / SR))
+                     ).astype(np.float32)] * 2, axis=1)
+    (_SA, _SB), _srep = level_and_trim([_sa.copy(), _sb.copy()])
+    _ga = float(np.abs(_SA).max()) / float(np.abs(_sa).max())
+    _gb = float(np.abs(_SB).max()) / float(np.abs(_sb).max())
+    ck("both stems take the same gain", True, "%.4f vs %.4f" % (_ga, _gb),
+       abs(_ga - _gb) < 1e-3)
+    ck("both stems end at the same sample", len(_SA), len(_SB), len(_SA) == len(_SB))
+    _sum = integrated_lufs(_SA + _SB, SR)
+    ck("the level is the SUM's, so switching one off cannot move the other",
+       LUFS_TARGET, None if _sum is None else round(_sum, 1),
+       _sum is not None and abs(_sum - LUFS_TARGET) < 0.1)
 
     write_wav("data/sing/selftest-level.wav", _lvl.copy())
     import soundfile as _sfmod
