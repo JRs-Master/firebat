@@ -5450,33 +5450,51 @@ def _hop_energy(x1, sr, hop):
     return acc[:n // hop]                 # 온전한 칸만
 
 
-def integrated_lufs(x, sr):
-    """통합 라우드니스(LUFS). 400ms 블록 · 100ms 간격 · 두 단 게이팅(−70 절대, −10 상대)."""
+LUFS_ABS_GATE = -70.0   # BS.1770 Γa — below this a block is not programme material
+
+
+def _block_energies(x, sr):
+    """BS.1770 blocks over the whole signal — 400ms window, 100ms hop, weighted energy
+    per block. Returns (tot, hop, bl); tot[i] is the block ENDING at i*hop + bl.
+
+    Split out of integrated_lufs because the tail trim needs the same blocks: one place
+    decides what a block is, so the level we match and the end we cut cannot disagree.
+    """
     if x.ndim == 1:
         x = x[:, None]
     hop = int(round(0.1 * sr))
     bl = 4 * hop
     if x.shape[0] < bl:
-        return None
+        return None, hop, bl
     per = [_hop_energy(x[:, c], sr, hop) for c in range(x.shape[1])]
     nb = min(len(p) for p in per) - 3
     if nb < 1:
-        return None
+        return None, hop, bl
     # 블록 = 이웃한 네 칸. G = 1.0 (L/R) — 서라운드가 아니라 가중이 필요 없다.
     z = np.zeros((nb, len(per)))
     for c, p in enumerate(per):
         cs = np.concatenate(([0.0], np.cumsum(p)))
         z[:, c] = (cs[np.arange(nb) + 4] - cs[np.arange(nb)]) / bl
-    tot = z.sum(axis=1)
+    return z.sum(axis=1), hop, bl
+
+
+def _block_lufs(tot):
+    with np.errstate(divide="ignore"):
+        return np.where(tot > 0, -0.691 + 10 * np.log10(np.maximum(tot, 1e-300)),
+                        -float("inf"))
+
+
+def _integrated_from(tot):
+    """두 단 게이팅(−70 절대, −10 상대) 뒤의 통합값."""
+    if tot is None:
+        return None
 
     def _l(rows):
         e = tot[rows].mean() if len(rows) else 0.0
         return -0.691 + 10 * math.log10(e) if e > 0 else -float("inf")
 
-    with np.errstate(divide="ignore"):
-        lj = np.where(tot > 0, -0.691 + 10 * np.log10(np.maximum(tot, 1e-300)),
-                      -float("inf"))
-    keep = np.flatnonzero(lj > -70.0)
+    lj = _block_lufs(tot)
+    keep = np.flatnonzero(lj > LUFS_ABS_GATE)
     if not len(keep):
         return None
     keep2 = keep[lj[keep] > _l(keep) - 10.0]
@@ -5486,12 +5504,67 @@ def integrated_lufs(x, sr):
     return None if v == -float("inf") else v
 
 
+def integrated_lufs(x, sr):
+    """통합 라우드니스(LUFS). 400ms 블록 · 100ms 간격 · 두 단 게이팅(−70 절대, −10 상대)."""
+    return _integrated_from(_block_energies(x, sr)[0])
+
+
 def _peak_of(x, chunk=1 << 20):
     """조각 최대값 — abs() 사본을 통째로 만들지 않는다."""
     pk = 0.0
     for i in range(0, len(x), chunk):
         pk = max(pk, float(np.abs(x[i:i + chunk]).max()))
     return pk
+
+
+def _encode_gain(lu, peak):
+    """The gain the encoder will apply: up to the target, or up to the ceiling, whichever
+    comes first. One place — the tail trim has to know the same number, because the gate
+    it cuts on is an ABSOLUTE level and therefore about the file as written."""
+    want = 10.0 ** ((LUFS_TARGET - lu) / 20.0)
+    room = (10.0 ** (PEAK_CEILING_DB / 20.0)) / peak
+    return min(want, room), want
+
+
+TAIL_FADE_MS = 10.0
+
+
+def trim_to_programme(x, sr=None):
+    """Drop the tail the loudness standard already refuses to measure.
+
+    The synth decides its own ending: fluidsynth renders until the SoundFont's volume
+    envelope formally finishes, and a font may declare a very slow one — GeneralUser GS
+    gives its toms a 39.99 s decay, so one tom in the last fill kept 아로하 rendering
+    30.1 s past the music (20.2 s of that is exactly zero once the file is 16-bit).
+
+    We do not invent a threshold for that. BS.1770 already names it: blocks under the
+    absolute gate are not programme, and the integrated loudness we match to is computed
+    without them. So cutting at the last surviving block CANNOT move the loudness —
+    실측 열두 곡 전부 0.000 LU — and what leaves is only what the measurement refused.
+
+    The head is left alone. A score's own intro rest is music, and moving the start would
+    shift every line of the .lrc that rides on it.
+    """
+    sr = sr or SR
+    x = np.asarray(x, dtype=np.float32)
+    tot, hop, bl = _block_energies(x, sr)
+    lu = _integrated_from(tot)
+    peak = _peak_of(x)
+    if lu is None or peak <= 0:
+        return x                                  # 못 잰 것은 안 건드린다
+    g, _want = _encode_gain(lu, peak)
+    keep = np.flatnonzero(_block_lufs(tot) > LUFS_ABS_GATE - 20.0 * math.log10(g))
+    if not len(keep):
+        return x
+    end = min(len(x), int(keep[-1]) * hop + bl)
+    if end >= len(x):
+        return x
+    x = x[:end]
+    n = min(len(x), int(sr * TAIL_FADE_MS / 1000.0))
+    if n > 1:                                     # 경계가 0 이 아닐 수 있다 — 딸깍 방지
+        ramp = np.linspace(1.0, 0.0, n, dtype=np.float32)
+        x[-n:] *= ramp[:, None] if x.ndim == 2 else ramp
+    return x
 
 
 def match_loudness(x, sr=None):
@@ -5513,9 +5586,7 @@ def match_loudness(x, sr=None):
     if lu is None or peak <= 0:
         rep["note"] = "너무 짧거나 무음이라 라우드니스를 못 쟀습니다 — 손대지 않았습니다"
         return x, rep
-    want = 10.0 ** ((LUFS_TARGET - lu) / 20.0)
-    room = (10.0 ** (PEAK_CEILING_DB / 20.0)) / peak
-    g = min(want, room)
+    g, want = _encode_gain(lu, peak)
     if g < want:
         rep["ceilingHit"] = True
         rep["shortByDb"] = round(20 * math.log10(want / g), 1)
@@ -5937,6 +6008,9 @@ def action_render(inp):
         send += v * 0.18
     if np.any(send):
         mix = add_room(mix, send)
+    # 여기가 곡이 끝나는 자리다. **악장 분할보다 먼저** — 안 그러면 무음으로 된 악장이
+    # 하나 더 생기고, 파일 이름도 자르기 전 길이로 지어진다.
+    mix = trim_to_programme(mix)
     fmt = str(inp.get("audioFormat") or "flac").strip().lower()
     if fmt not in _FMT_BYTES:
         return {"success": False,
@@ -8538,6 +8612,28 @@ def action_selftest():
        (_crep["ceilingHit"], float(np.max(np.abs(_cq))) <= 10 ** (PEAK_CEILING_DB / 20) + 1e-6),
        _crep["ceilingHit"] and float(np.max(np.abs(_cq))) <= 10 ** (PEAK_CEILING_DB / 20) + 1e-6
        and _crep.get("shortByDb", 0) > 0)
+
+    # ⑤ 꼬리 — 신디가 엔벨로프 끝까지 렌더한 뒤에도 파일은 곡이 끝난 자리에서 끝나야 한다.
+    #    소리 2초 + 들리지 않는 여운 8초(−80 dBFS)로 실제 상황을 그대로 만든다.
+    _body = (0.2 * np.sin(2 * math.pi * 220.0 * (np.arange(int(2.0 * SR)) / SR))
+             ).astype(np.float32)
+    _ring = (1e-4 * np.sin(2 * math.pi * 220.0 * (np.arange(int(8.0 * SR)) / SR))
+             ).astype(np.float32)
+    _tail = np.stack([np.concatenate([_body, _ring])] * 2, axis=1)
+    _before = integrated_lufs(_tail, SR)
+    _cutn = trim_to_programme(_tail.copy())
+    ck("the tail below the loudness gate is not shipped", True,
+       "%.2f초 → %.2f초" % (len(_tail) / SR, len(_cutn) / SR),
+       1.9 < len(_cutn) / SR < 3.5)
+    _after = integrated_lufs(_cutn, SR)
+    ck("cutting there cannot move the loudness — the gate had already dropped it", 0.0,
+       None if (_before is None or _after is None) else round(_after - _before, 3),
+       _before is not None and _after is not None and abs(_after - _before) < 0.01)
+    _whole = len(trim_to_programme(_tail[:int(2.0 * SR)].copy()))
+    ck("a piece with nothing to cut is handed back untouched", int(2.0 * SR),
+       _whole, _whole == int(2.0 * SR))
+    ck("the cut ends in a fade, so the join cannot click", True,
+       float(np.abs(_cutn[-1]).max()) < 1e-6, float(np.abs(_cutn[-1]).max()) < 1e-6)
 
     write_wav("data/sing/selftest-level.wav", _lvl.copy())
     import soundfile as _sfmod
