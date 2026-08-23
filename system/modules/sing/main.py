@@ -3939,6 +3939,11 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
         skipped.setdefault(whose, {})
         skipped[whose][what] = skipped[whose].get(what, 0) + 1
 
+    # 곡 이름은 파일이 이미 말한다 — 규격의 자리는 <work><work-title> 과 <movement-title>
+    # 이다. 안 읽으면 카드가 파일 이름("2026-08-19-alohaaloha-…-cd3f")을 제목이라고 내건다.
+    _wk = kid(root, "work")
+    doc_title = ((text_of(_wk, "work-title") if _wk is not None else "") or "").strip()         or (text_of(root, "movement-title") or "").strip()
+
     prog_of, unp_of, bank_of = {}, {}, {}
     pl = kid(root, "part-list")
     name_of, mix_of, iname_of, isound_of = {}, {}, {}, {}
@@ -4954,6 +4959,8 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
             row["vel"] = n["vel"]
         out_notes.append(row)
     score = {"bpm": max(20.0, min(300.0, master)), "notes": out_notes}
+    if doc_title:
+        score["_title"] = doc_title[:80]
     # Which line became the tune, and what else was on offer. A wrong pick used to be silent —
     # the render just sounded like a different song and nothing in the reply said why.
     if len(parsed_parts) > 1:
@@ -5827,6 +5834,7 @@ def action_render(inp):
                              "are neither MThd, zip nor XML) — hum-to-score is a later slice"}
     # Lift the reader's report off the score before it is parsed — it is about the FILE, not
     # about the music, and the caller needs it whether or not the parse succeeds.
+    doc_title = score.pop("_title", None) if isinstance(score, dict) else None
     lead_part = score.pop("_leadPart", None) if isinstance(score, dict) else None
     lead_row = score.pop("_leadRow", None) if isinstance(score, dict) else None
     vocal_rows = set(score.pop("_vocalRows", None) or []) if isinstance(score, dict) else set()
@@ -6285,7 +6293,7 @@ def action_render(inp):
         # files are pointed at by the position we imported them in. 실측 8/19: both files came
         # back and the answer was two markdown links, because nothing said a component existed.
         data["_render"] = {"component": "karaoke", "props": {
-            "title": _slug_name(inp.get("scoreMediaPath") or "") or "노래방",
+            "title": doc_title or _display_name(stem) or "노래방",
             "audioUrl": {"$media": 0},
             **({"guideUrl": {"$media": guide_at}} if guide_at is not None else {}),
             "lrcUrl": {"$media": len(imports) - 1},
@@ -6294,7 +6302,7 @@ def action_render(inp):
         # 가사가 없으면 노래방이 아니다 — 그래도 스템이 둘이면 **화면이 한 곡으로 보여 줘야**
         # 켜고 끌 수 있다. 파일 링크 두 개로는 그게 안 된다.
         data["_render"] = {"component": "player", "props": {
-            "title": _slug_name(inp.get("scoreMediaPath") or "") or "연주",
+            "title": doc_title or _display_name(stem) or "연주",
             "audioUrl": {"$media": 0},
             "guideUrl": {"$media": guide_at},
             "note": "가이드 = 노래 선율을 오카리나로. 켜고 끄는 동안 반주는 그대로 흐릅니다.",
@@ -7755,8 +7763,8 @@ def action_selftest():
     v_hdr, v_body = _mxpart("P1", "Voice", [("C", 5), ("D", 5), ("E", 5)])
     p_hdr, p_body = _mxpart("P2", "Piano", [("C", 3), ("D", 3), ("E", 3), ("F", 3),
                                             ("G", 3), ("A", 3), ("B", 3), ("C", 4)])
-    two = ("<score-partwise><part-list>" + v_hdr + p_hdr + "</part-list>"
-           + v_body + p_body + "</score-partwise>")
+    two = ("<score-partwise><work><work-title>아침 이슬</work-title></work><part-list>"
+           + v_hdr + p_hdr + "</part-list>" + v_body + p_body + "</score-partwise>")
     with open("data/sing/selftest-parts.musicxml", "w", encoding="utf-8") as fh:
         fh.write(two)
     tsc, terr = musicxml_to_score("data/sing/selftest-parts.musicxml")
@@ -7766,6 +7774,9 @@ def action_selftest():
     ck("…and the reply says what else was on offer", True, (tsc or {}).get("_partsSeen"),
        bool(tsc) and len(tsc.get("_partsSeen") or []) == 2)
     # 노래하는 성부는 **가락 파트와 다른 물음**이다 — 연주 렌더가 무엇을 빼는지가 이걸로 갈린다.
+    # 카드 제목은 파일이 말한 곡 이름이다 — 안 읽으면 화면에 파일 이름이 걸린다.
+    ck("the score's own title is read", "아침 이슬", (tsc or {}).get("_title"),
+       (tsc or {}).get("_title") == "아침 이슬")
     _vr = (tsc or {}).get("_vocalRows")
     ck("the singing part is named, and only the singing one", 1, None if _vr is None else len(_vr),
        bool(_vr) and len(_vr) == 1)
