@@ -29,9 +29,12 @@ import numpy as np
 # 24000 cut everything above 12 kHz — cymbals, attack transients and the top of a synth patch all
 # live up there, and the patches below are tuned by ear. Doubling costs render time and file size,
 # both of which are a spike per render rather than anything resident.
-SR = 48000  # everything resampled here on load. 48k is Opus's ONLY supported rate (libsndfile
-# refuses 44.1k outright), fluidsynth's own default, and what every browser decodes to anyway —
-# so the render, the engine and the container finally agree on one clock.
+SR = 48000  # everything resampled here on load. Grounds, each checked 8/23:
+# · libsndfile's OGG/OPUS writer refuses 44.1k (실측 — Opus itself resamples internally to 48k);
+# · fluidsynth's default is 44100 (`synth.sample-rate` docs), so we pass -r 48000 explicitly;
+# · browsers decode to the device rate, typically 48k. One clock for render, engine, container.
+# Opus is a declared output format (audioFormat), not the default — flac won on encode time
+# (0.4s vs 7.9s for 245s; the full table lives on _out_path_for, where the format is chosen).
 
 # ── score ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -2115,8 +2118,11 @@ def expr_at(series, beat):
 # 여기 `PAN`(파트·드럼 보이스마다 좌우 자리) 과 `SEND`(파트마다 리버브 양) 표가 있었다. 둘 다
 # 우리가 지어낸 것이고, **SF2 는 존마다 자기 팬을 선언한다**(generator 17) — 우리가 CC10 을
 # 보내면 그 선언을 덮는다. 이제 팬은 **행이 말할 때만** 나가고(파일의 CC10 이 그 출처),
-# 리버브는 파트를 안 가린다. 내장 신디의 방도 하나 — GM 기본 센드(CC91 = 40)를 균일하게.
-ROOM_SEND = 40 / 127.0     # GM Level 1 이 정한 기본값. 파트별 차등은 우리 취향이었다
+# 리버브는 파트를 안 가린다. 내장 신디의 방도 하나 — 균일한 센드 40.
+ROOM_SEND = 40 / 127.0     # ⚠️ GM Level 1 에는 CC91 자체가 없다(8/23 대조 — GM1 컨트롤러는
+#                            0·1·7·10·11·64·66·67·121·123 뿐). 40 은 GS/GM2 계열 기기들이
+#                            리버브 센드 초기값으로 널리 쓰는 값이라는 관례에서 왔고, 규격
+#                            문장을 손에 쥐고 고른 수는 아니다. 파트별 차등은 우리 취향이었다
 
 
 def _reverb_ir(seconds, seed):
@@ -2154,7 +2160,7 @@ def add_room(stereo, send, wet=0.9):
     return stereo
 
 
-def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
+def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None, meter=None):
     """The MIDI backend — the same arrangement as a .mid, for any synth worth more than ours.
 
     Optional dependency on purpose: this is the one output that needs no audio stack at all, so a
@@ -2359,6 +2365,12 @@ def write_midi(arr, bpm, path, mix=None, filecc7=None, ctl=None, sysex=None):
             prev = tick
     mid.tracks[0].insert(0, mido.MetaMessage("set_tempo",
                                              tempo=mido.bpm2tempo(bpm), time=0))
+    # 박자표 — 읽기만 하고 안 쓰고 있었다: midiOut 으로 나간 .mid 에 이 메타가 없어서 DAW 가
+    # 전부 4/4 로 그렸다(Take Five 포함). 우리 시계는 박 = 4분음표라 분모는 4 하나다 — 두
+    # 리더 모두 박자를 4분음표 개수로 눕혀서 들여온다(6/8 도 여기서는 박 수로 산다).
+    if meter and 1 <= int(meter) <= 32:
+        mid.tracks[0].insert(0, mido.MetaMessage("time_signature",
+                                                 numerator=int(meter), denominator=4, time=0))
     # 파일이 보낸 전역 시스템 메시지는 **자기 트랙**에 실린다 — 파트 트랙에 끼우면 그 파트의
     # 채널 배치에 묶여 읽히고, 애초에 이건 파트의 것이 아니다. 없으면 트랙도 안 생긴다.
     if sysex:
@@ -2742,7 +2754,8 @@ def fluidsynth_argv(binp, font, mid_path, wav_path, cfg_path=None):
     return argv + ["-F", wav_path, font, mid_path]
 
 
-def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None, sysex=None):
+def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None, sysex=None,
+               meter=None):
     """The arrangement through fluidsynth: the same .mid midiOut writes, played on the GM font.
 
     Returns (stereo, why_not) — any why_not drops the render back to the builtin synth, so a
@@ -2756,7 +2769,7 @@ def render_sf2(arr, spb, binp, font, mixmap=None, filecc7=None, ctl=None, sysex=
     cfg_path = f"data/sing/tmp-{tag}.cfg"
     try:
         written, note = write_midi(arr, 60.0 / spb, mid_path, mix=mixmap,
-                                   filecc7=filecc7, ctl=ctl, sysex=sysex)
+                                   filecc7=filecc7, ctl=ctl, sysex=sysex, meter=meter)
         if not written:
             return None, note or "mido unavailable — the sf2 engine goes through a .mid"
         # 우리 취향은 여전히 0 이다. 달라진 것은 **누구의 기본값이냐** — 그냥 fluidsynth 것을
@@ -3414,8 +3427,10 @@ _XML_KIND = {"major": "", "minor": "m", "dominant": "7", "dominant-seventh": "7"
              "major-seventh": "maj7", "minor-seventh": "m7", "diminished": "dim",
              "augmented": "aug", "suspended-second": "sus2", "suspended-fourth": "sus4",
              "major-sixth": "6", "minor-sixth": "m6", "": ""}
-# MusicXML 규격 §sound: `dynamics` 는 **벨로시티 90 에 대한 백분율**이고, 아무것도 안 적힌
-# 음의 벨로시티도 90 이다. 그래서 우리 기본값은 이 하나에서 나온다 — 내가 고른 수가 아니라.
+# MusicXML 규격 §sound: `dynamics` 는 "percentage of the default forte value (90)" — 규격이
+# 직접 주는 것은 **forte 기준 90** 까지다. "아무것도 안 적힌 음도 90" 은 그 문장에서 우리가
+# 편 파생이다(지시가 없으면 기준값으로 친다): dynamics=100% 인 음과 무표기 음이 같은 세기여야
+# 하므로 자연스럽지만, 규격 인용은 아니다.
 XML_DEFAULT_VEL = 90 / 127.0        # ≈ 0.709
 
 # 기호(p·f)만 있고 `<sound dynamics>` 가 없는 파일용 **폴백**. 규격은 기호와 벨로시티의 대응을
@@ -3504,8 +3519,10 @@ _XML_ART_GATE = {"staccato": 0.50, "staccatissimo": 0.33, "spiccato": 0.33,
                  "detached-legato": 0.67, "strong-accent": 0.67, "marcato": 0.67,
                  "tenuto": 1.0}
 # 규격에는 있는데 **아무 관례도 연주값을 안 주는** 것들. 우리가 지어내지 않고, 안 걸었다고 말한다.
-#   · breath-mark·caesura — 참조 구현의 기본 멈춤이 0.0 이다(breath.cpp `_pause = 0.0`)
 #   · soft-accent·stress·unstress — 심볼은 있는데 gateTime·velocity 항목이 없다
+# ⚠️ breath-mark·caesura 는 이제 이 목록이 아니다(6d5f0e06 — 숨은 앞 음을 줄여 쉰다, 카이수라는
+#   시간을 넣는다). 참조의 `_pause = 0.0` 은 **덧붙이는 멈춤**이 0 이라는 것이지 아무것도 하지
+#   말라는 뜻이 아니었다 — 한동안 그 줄을 근거로 이 목록에 잘못 서 있었다.
 # 숨은 **앞 음에서 꺼내 쉰다.** 연주 관례(Wikipedia, Breath mark): "This pause is normally
 # intended to **shorten the duration of the preceding note** and **not to alter the tempo**;
 # in this function it can be thought of as a **grace rest**." — 그래서 뒤 음은 제자리에 있고
@@ -4591,7 +4608,9 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                                 # ⚠️ `delayed-turn` 은 본음을 끌다가 늦게 도는 것인데, 참조
                                 # 구현이 **`turn` 과 같은 심볼로** 읽는다(늦음을 안 싣는다).
                                 # 우리도 같게 둔다 — 늦추는 시점을 말해 주는 출처가 없다.
-                                # `vertical-turn` 은 같은 턴을 세로로 그린 것(기보 변형)이다.
+                                # `vertical-turn` = 같은 턴의 세로 글리프라는 판단은 규격
+                                # 주석("appears vertically")에서 편 **우리 파생**이다 — 참조
+                                # 구현에는 이 심볼의 연주 항목이 아예 없다(8/23 대조).
                                 orn_kind = "turn"
                             elif ot in ("inverted-turn", "inverted-vertical-turn",
                                         "delayed-inverted-turn"):
@@ -5370,7 +5389,10 @@ def read_wav_mono(path):
 # 우리는 솔로 피아노가 섞이므로 다이내믹이 남는 −18 이 맞다 — 목표가 높을수록 천장에 먼저
 # 걸려서 조용한 곡이 목표에 못 미친 채 나간다.
 LUFS_TARGET = -18.0
-PEAK_CEILING_DB = -1.0  # 목표를 맞추다 넘칠 것 같으면 여기서 멈춘다(자르지 않는다)
+PEAK_CEILING_DB = -1.0  # 목표를 맞추다 넘칠 것 같으면 여기서 멈춘다(자르지 않는다).
+# ⚠️ R128 의 −1 은 **dBTP**(오버샘플한 트루피크)고 우리가 재는 것은 **표본 피크**다 — 같은
+# 숫자, 다른 자(8/23 대조). 트루피크는 표본 사이에서 더 높을 수 있으나 인터샘플 초과는 수
+# dB 이하고, 우리는 무손실(FLAC) 기본이라 그 여유로 충분하다. 트루피크 측정기는 안 들였다.
 
 
 # BS.1770 의 K-weighting 두 단. 규격이 싣는 것은 **48kHz 계수표**뿐이라 다른 표본율에서는
@@ -6053,7 +6075,8 @@ def action_render(inp):
                 return None, why
             if not why:
                 stereo, err = render_sf2(rows, spb, binp, font, mixmap=feel.get("mix"),
-                                         filecc7=file_cc7, ctl=file_ctl, sysex=file_sysex)
+                                         filecc7=file_cc7, ctl=file_ctl, sysex=file_sysex,
+                                         meter=feel.get("meter"))
                 if stereo is None:
                     engine_note = f"sf2 렌더 실패 — 내장 신디로 강등: {err}"
                 else:
@@ -6166,7 +6189,8 @@ def action_render(inp):
         midi_out = out_path.rsplit(".", 1)[0] + ".mid"
     midi_written, midi_note = (None, None)
     if midi_out:
-        midi_written, midi_note = write_midi(arr, 60.0 / spb, midi_out, sysex=file_sysex)
+        midi_written, midi_note = write_midi(arr, 60.0 / spb, midi_out, sysex=file_sysex,
+                                              meter=feel["meter"])
     # No workspace paths here. `data/sing/x.flac` is an address the CALLER cannot open — AI file
     # access is confined to `user/` — so handing one over invites a detour that ends in a wrong
     # answer (실측 8/19: the lyrics action led with such a path and the model burned 17 calls
@@ -7022,9 +7046,16 @@ def action_selftest():
     pfirst = [{"beat": 0.0, "beats": 4.0, "part": "p1", "pedal": True},
               {"beat": 0.01, "beats": 1.0, "part": "p1", "patch": "piano", "program": 0,
                "pitch": 60, "vel": 0.5, "gate": 1.0}]
-    ok_pf, _ = write_midi(pfirst, 120, "data/sing/selftest-pf.mid")
+    ok_pf, _ = write_midi(pfirst, 120, "data/sing/selftest-pf.mid", meter=5)
     ck("a pedal row sorted first cannot crash the .mid writer (월광 실측)", True,
        bool(ok_pf), bool(ok_pf))
+    # 박자표 왕복 — 읽기만 하고 안 쓰던 결손(DAW 가 Take Five 를 4/4 로 그렸다).
+    if ok_pf:
+        _tsig = next((m2 for tr2 in _mido.MidiFile("data/sing/selftest-pf.mid").tracks
+                      for m2 in tr2 if m2.type == "time_signature"), None)
+        ck("the meter we play is the meter the .mid declares", "5/4",
+           "%s/%s" % (_tsig.numerator, _tsig.denominator) if _tsig else None,
+           _tsig is not None and _tsig.numerator == 5 and _tsig.denominator == 4)
     if ok_pf and os.path.exists("data/sing/selftest-pf.mid"):
         os.remove("data/sing/selftest-pf.mid")
         dry = apply_performance([{"beat": 0.0, "beats": 2.0, "part": "p1", "patch": "piano",
