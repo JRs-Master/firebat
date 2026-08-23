@@ -129,13 +129,36 @@ const EXT_BADGE: Record<string, string> = {
 };
 const EXT_BADGE_DEFAULT = 'text-slate-700 bg-slate-100 border-slate-300';
 
+/** A filename is one unbroken token, so CSS line breaking is the wrong ruler for it: it
+ *  breaks greedily at the hyphens, and a first token too wide for the card leaves the line
+ *  holding nothing but the prefix ("최종-" on ten cards, 2026-08-23 실측). Cut by character
+ *  count instead, and let the lines fill character by character (`break-all` on the span).
+ *  Budget is columns, not chars — 한글·가나·한자 take two. */
+const CARD_LABEL_COLS = 40;
+
+// East Asian Wide/Fullwidth blocks — the ranges a monospace terminal also draws double-width.
+const WIDE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x1100, 0x115f], [0x2e80, 0xa4cf], [0xac00, 0xd7a3], [0xf900, 0xfaff],
+  [0xfe30, 0xfe6f], [0xff00, 0xff60], [0xffe0, 0xffe6],
+];
+
+function clampToColumns(name: string, cols: number): string {
+  const chars = Array.from(name);
+  let used = 0;
+  for (let i = 0; i < chars.length; i++) {
+    const cp = chars[i].codePointAt(0) ?? 0;
+    used += WIDE_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi) ? 2 : 1;
+    if (used > cols) return chars.slice(0, Math.max(1, i)).join('') + '…';
+  }
+  return name;
+}
+
 /** Card label: the badge already names the format, so a trailing ".pptx" / "-pptx" (media
  *  slugs turn dots into dashes) is noise on the second line — strip it when it matches the
  *  item's ext. Never strips down to an empty label. */
 function cardLabel(name: string, ext: string): string {
-  if (!ext) return name;
-  const stripped = name.replace(new RegExp(`[._-]${ext}$`, 'i'), '');
-  return stripped || name;
+  const stripped = ext ? (name.replace(new RegExp(`[._-]${ext}$`, 'i'), '') || name) : name;
+  return clampToColumns(stripped, CARD_LABEL_COLS);
 }
 
 // Browsers leave file.type empty for extensions the OS never registered (hwpx above all) —
@@ -517,7 +540,7 @@ export function MediaPanel({
                       </span>
                       <span
                         title={item.filenameHint || item.slug}
-                        className="text-[10.5px] leading-snug font-medium text-slate-600 text-center break-words line-clamp-2 px-0.5"
+                        className="text-[10.5px] leading-snug font-medium text-slate-600 text-center break-all line-clamp-2 px-0.5"
                       >
                         {cardLabel(item.filenameHint || item.slug, item.ext)}
                       </span>
