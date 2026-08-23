@@ -28,6 +28,7 @@ import { readSetting, writeSetting, setSettingsKeyPrefix } from './hooks/setting
 import { useTranslations } from '../../lib/i18n';
 import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
+import { copyText } from '../../lib/clipboard';
 import { Message, PendingAction, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, AudioFileCard, FileCard, ProducedFileStrip, ProducedNames, useProducedName, fileAddressKey, type ProducedFile } from '../../lib/file-card';
@@ -676,22 +677,7 @@ function ThinkingBlock({
   );
 }
 
-// ─── 복사 버튼 ─────────────────────────────────────────────────────────────────
-function fallback(text: string, onOk: () => void) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    ta.style.top = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    if (ok) onOk();
-  } catch { /* 무시 */ }
-}
+// ─── 복사 버튼 ── 복사 자체는 lib/clipboard 한 곳 ────────────────────────────────
 
 /** chat block (text / html / component) → 복사용 마크다운 직렬화.
  *  컴포넌트 종류별로 사람이 읽기 좋은 형태로 변환 — 표는 |---| 표, Metric 은 "라벨: 값" 등. */
@@ -788,19 +774,11 @@ function serializeBlockToMarkdown(b: any): string {
 
 function CopyButton({ text }: { text: string }) {
   const tr = useTranslations();
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(() => {
-    const showOk = () => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    };
-    // 1) 모던 clipboard API (secure context)
-    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(showOk).catch(() => fallback(text, showOk));
-      return;
-    }
-    // 2) 폴백 (execCommand)
-    fallback(text, showOk);
+  const [copied, setCopied] = useState<'ok' | 'err' | null>(null);
+  const handleCopy = useCallback(async () => {
+    const ok = await copyText(text);
+    setCopied(ok ? 'ok' : 'err');   // 실패도 말한다 — 조용하면 직전 클립보드가 붙는 걸 본다
+    setTimeout(() => setCopied(null), 1800);
   }, [text]);
   return (
     <div className="relative inline-flex">
@@ -809,10 +787,10 @@ function CopyButton({ text }: { text: string }) {
           onClick={handleCopy}
           className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
         >
-          {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+          {copied === 'ok' ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
         </button>
       </Tooltip>
-      <FeedbackBadge state={copied ? 'ok' : null} okLabel="복사됨" absolute />
+      <FeedbackBadge state={copied} okLabel="복사됨" errLabel="복사 실패" absolute />
     </div>
   );
 }

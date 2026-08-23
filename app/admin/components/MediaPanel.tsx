@@ -12,6 +12,7 @@ import { confirmDialog, alertDialog } from './Dialog';
 import { useEvents } from '../hooks/events-manager';
 import { useViewportSize } from '../../../lib/use-viewport-size';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { copyText } from '../../../lib/clipboard';
 
 interface MediaItem {
   slug: string;
@@ -639,13 +640,11 @@ function MediaDetailModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [hasPrev, hasNext, onPrev, onNext, onClose]);
 
-  const copy = (text: string, field: string) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => {
-        setCopiedField(field);
-        setTimeout(() => setCopiedField(null), 1500);
-      });
-    }
+  const copy = async (text: string, field: string) => {
+    // HTTP 에선 navigator.clipboard 가 없다 — 옛 `if` 는 그때 아무 말 없이 아무 일도 안 했다.
+    const ok = await copyText(text);
+    setCopiedField(ok ? field : `${field}:fail`);
+    setTimeout(() => setCopiedField(null), 1500);
   };
   const url = `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
   const sizeKb = (item.bytes / 1024).toFixed(1);
@@ -874,7 +873,7 @@ function MediaDetailModal({
                   >
                     <Copy size={12} /> {t('media.copy_url')}
                   </button>
-                  <FeedbackBadge state={copiedField === 'url' ? 'ok' : null} okLabel={t('media.copied')} absolute />
+                  <FeedbackBadge state={copiedField === 'url' ? 'ok' : copiedField === 'url:fail' ? 'err' : null} okLabel={t('media.copied')} errLabel={t('media.copy_failed')} absolute />
                 </div>
               )}
               {!isError && (
@@ -891,7 +890,7 @@ function MediaDetailModal({
                   >
                     <Copy size={12} /> {t('media.copy_md')}
                   </button>
-                  <FeedbackBadge state={copiedField === 'md' ? 'ok' : null} okLabel={t('media.copied')} absolute />
+                  <FeedbackBadge state={copiedField === 'md' ? 'ok' : copiedField === 'md:fail' ? 'err' : null} okLabel={t('media.copied')} errLabel={t('media.copy_failed')} absolute />
                 </div>
               )}
               <button

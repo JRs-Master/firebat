@@ -51,25 +51,5 @@ export async function createShareLink(input: ShareInput): Promise<{ url: string;
   }
 }
 
-/** 클립보드 복사 — 공유 URL 등. secure context 우선, 실패 시 textarea fallback. */
-export function copyToClipboard(text: string): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
-    return navigator.clipboard.writeText(text).then(() => true).catch(() => fallbackCopy(text));
-  }
-  return Promise.resolve(fallbackCopy(text));
-}
-
-function fallbackCopy(text: string): boolean {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch { return false; }
-}
+/** 클립보드 복사 — lib/clipboard 위임. 이름은 부르는 쪽(Sidebar·page)이 이미 쓰는 것. */
+export { copyText as copyToClipboard } from '../../../lib/clipboard';

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { loadCdn } from '@/lib/util/load-cdn';
+import { copyText } from '../../lib/clipboard';
 
 /**
  * Code block — highlight.js syntax highlighting + optional line numbers / title.
@@ -32,7 +33,7 @@ export function CodeComp({ code, language, showLineNumbers, title }: {
   code: string; language: string; showLineNumbers: boolean; title?: string | null;
 }) {
   const ref = useRef<HTMLElement>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'ok' | 'fail' | null>(null);
   useEffect(() => {
     if (!ref.current || !code) return;
     const target = ref.current;
@@ -54,12 +55,11 @@ export function CodeComp({ code, language, showLineNumbers, title }: {
     });
   }, [code, language]);
 
-  const copy = () => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+  const copy = async () => {
+    // 옛 `if (!navigator.clipboard) return` — HTTP 에서 버튼이 조용히 죽는 그 분기였다.
+    const ok = await copyText(code);
+    setCopied(ok ? 'ok' : 'fail');
+    setTimeout(() => setCopied(null), 1500);
   };
 
   const lines = showLineNumbers ? code.split('\n') : [];
@@ -75,7 +75,7 @@ export function CodeComp({ code, language, showLineNumbers, title }: {
           onClick={copy}
           className="ml-auto shrink-0 text-[11px] font-bold text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded transition-colors hover:bg-slate-300/60"
         >
-          {copied ? '복사됨' : '복사'}
+          {copied === 'ok' ? '복사됨' : copied === 'fail' ? '복사 실패' : '복사'}
         </button>
       </div>
       <div className="flex">

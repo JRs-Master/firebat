@@ -13,6 +13,7 @@ import { confirmDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPut } from '../../../lib/api-fetch';
 import { safeJsonParse } from '../../../lib/util';
+import { copyText } from '../../../lib/clipboard';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -392,14 +393,14 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved, load
     setChat(prev => prev.map(t => t.id === turnId ? { ...t, applied: true } : t));
   }, [chat]);
 
-  // 특정 턴 복사
-  const copyTurn = useCallback((turnId: string, idx: number) => {
+  // 특정 턴 복사 — HTTP 에선 navigator.clipboard 가 없어 여기서 그대로 죽고 있었다.
+  const copyTurn = useCallback(async (turnId: string, idx: number) => {
     const turn = chat.find(t => t.id === turnId);
     if (!turn) return;
-    navigator.clipboard.writeText(turn.content).then(() => {
+    if (await copyText(turn.content)) {
       setCopiedIdx(idx);
       setTimeout(() => setCopiedIdx(null), 1500);
-    });
+    }
   }, [chat]);
 
   // 키보드 단축키

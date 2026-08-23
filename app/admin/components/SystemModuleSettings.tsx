@@ -16,6 +16,7 @@ import type { Lang } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
+import { copyText } from '../../../lib/clipboard';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list' | 'structured-list' | 'file' | 'files';
@@ -605,30 +606,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   };
 
   const copyToClipboard = async (text: string, setCopied: (v: boolean) => void) => {
-    // navigator.clipboard is only available in secure contexts (HTTPS / localhost).
-    // The admin is often served over plain HTTP (no domain/TLS yet), where it is
-    // undefined — fall back to a hidden-textarea execCommand copy so buttons still work.
-    let ok = false;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        ok = true;
-      }
-    } catch { /* fall through to legacy copy */ }
-    if (!ok) {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        ok = document.execCommand('copy');
-        document.body.removeChild(ta);
-      } catch { ok = false; }
-    }
-    if (!ok) return;
+    // 복사 자체는 lib/clipboard 한 곳 — 여기 살던 폴백이 그 원본이 됐다.
+    if (!await copyText(text)) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

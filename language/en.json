@@ -973,6 +973,7 @@
     "copy_url": "Copy URL",
     "copy_md": "Copy Markdown",
     "copied": "Copied",
+    "copy_failed": "Copy failed — please select and copy manually",
     "delete": "Delete",
     "kind_all": "All",
     "kind_image": "Images",

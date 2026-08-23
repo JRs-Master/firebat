@@ -973,6 +973,7 @@
     "copy_url": "URL 복사",
     "copy_md": "마크다운 복사",
     "copied": "복사됨",
+    "copy_failed": "복사 실패 — 직접 선택해 복사해 주세요",
     "delete": "삭제",
     "kind_all": "전체",
     "kind_image": "이미지",

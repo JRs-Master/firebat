@@ -9,6 +9,7 @@ import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import type { HubInstancePb, LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
+import { copyText } from '../../../lib/clipboard';
 
 type HubApiResponse<T> = { success: boolean; data?: T; error?: string };
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
@@ -226,20 +227,18 @@ export function HubInstanceDetail({
     : '(서버 URL 결정 중...)';
 
   const handleCopyEmbed = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(embedSnippet);
+    if (await copyText(embedSnippet)) {
       await alertDialog({ title: '복사됨', message: '위젯 코드가 클립보드에 복사됐습니다. 외부 사이트 HTML 에 붙여넣어 주세요.' });
-    } catch (e) {
-      logger.debug('hub', 'copy_embed 실패', { error: e });
+    } else {
+      await alertDialog({ title: '복사 실패', message: '클립보드에 접근하지 못했습니다. 아래 코드를 직접 선택해 복사해 주세요.' });
     }
   }, [embedSnippet]);
 
   const handleCopyToken = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(apiToken);
+    if (await copyText(apiToken)) {
       await alertDialog({ title: '복사됨', message: '클립보드에 API 토큰이 복사됐습니다.' });
-    } catch {
-      // ignore
+    } else {
+      await alertDialog({ title: '복사 실패', message: '클립보드에 접근하지 못했습니다. 토큰을 직접 선택해 복사해 주세요.' });
     }
   }, [apiToken]);
 
