@@ -876,7 +876,13 @@ impl ModuleManager {
                         module_name
                     ));
                 }
-                cfg.get("input").map(|s| schema_with_row_actions(s, &ids))
+                // merge 모드(enum 잔존) — 집합의 원본은 input 이고 행은 주석이라 덮지
+                // 않는다. enum 이 없을 때만(선언 모드) 행에서 파생해 주입한다.
+                if cfg.pointer("/input/properties/action/enum").is_some() {
+                    None
+                } else {
+                    cfg.get("input").map(|s| schema_with_row_actions(s, &ids))
+                }
             }
             _ => None,
         };

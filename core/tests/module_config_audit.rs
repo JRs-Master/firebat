@@ -353,15 +353,22 @@ fn every_module_declaration_names_something_that_exists() {
                     ));
                 }
             }
-            // 원본 하나 (2026-08-25): rows are the original of the action set — the runtime
-            // derives the validation enum from them, so an enum left in the config is a copy
-            // that can only drift.
-            if config.pointer("/input/properties/action/enum").is_some() {
-                say(
-                    "`input.properties.action.enum` next to catalog rows is a copy — the rows \
-                     are the original and the enum is derived at runtime; drop it"
-                        .to_string(),
-                );
+            // 원본 하나, 두 모양 (2026-08-25): enum 이 없으면 선언 모드 — 행이 집합의
+            // 원본이고 런타임이 검증 enum 을 파생한다. enum 이 있으면 merge 모드 — enum 이
+            // 집합의 원본이고 행은 그 안의 id 를 주석한다(파생 모듈이 게이트 하나를 행
+            // 한 줄로 다는 자리). 그 모드에서 enum 밖의 행 id 는 아무것도 주석하지 못한다.
+            if let Some(enum_ids) = declared_actions(&config) {
+                for row in &rows {
+                    if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
+                        if !enum_ids.contains(id) {
+                            say(format!(
+                                "row `{id}` is not in the action enum — with an enum present \
+                                 (merge mode) the enum is the original of the action set and \
+                                 this row annotates nothing"
+                            ));
+                        }
+                    }
+                }
             }
             // Same rule one level down: a row param whose prose is a verbatim copy of the input
             // schema's description is the drift seed the list form exists to prevent — declare
@@ -389,15 +396,14 @@ fn every_module_declaration_names_something_that_exists() {
         }
 
         let params = declared_params(&config);
-        // 원본 하나: the enum is gone from catalog modules, so "what is an action here" is
-        // answered by the rows first and the (non-catalog) enum second.
-        let actions = {
+        // 원본 하나: 집합의 원본은 merge 모드(enum 잔존)에선 enum, 선언 모드에선 행이다.
+        let actions = declared_actions(&config).or_else(|| {
             let row_ids: BTreeSet<String> = rows
                 .iter()
                 .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(str::to_string))
                 .collect();
-            if row_ids.is_empty() { declared_actions(&config) } else { Some(row_ids) }
-        };
+            if row_ids.is_empty() { None } else { Some(row_ids) }
+        });
         let check_action = |decl: &str, action: &str, say: &mut dyn FnMut(String)| {
             if let Some(known) = &actions {
                 if !known.contains(action) {

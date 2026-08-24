@@ -122,7 +122,10 @@ impl DynamicToolRegistry {
     /// `action_choices` and the selector keep reading the place they always did. Rows that fail
     /// to load leave the config untouched; dispatch fails closed on its own.
     async fn with_row_enum(&self, module: &str, config: serde_json::Value) -> serde_json::Value {
-        if config.get("actionCatalog").is_none() {
+        if config.get("actionCatalog").is_none()
+            // merge 모드(enum 잔존)의 집합 원본은 input — 행 주석으로 덮지 않는다.
+            || config.pointer("/input/properties/action/enum").is_some()
+        {
             return config;
         }
         let ids = self.module.action_row_ids(module).await;

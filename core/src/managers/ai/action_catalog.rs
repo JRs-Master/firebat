@@ -204,6 +204,19 @@ impl ModuleActionSource {
         } else {
             catalog_rows(decl).unwrap_or_default()
         };
+        // ── merge 모드 (원본 하나의 둘째 모양, 2026-08-25) ────────────────────────
+        // enum 이 남아 있으면 액션 **집합**의 원본은 여전히 input 이고, 행은 **주석**이다 —
+        // 파생 모듈이 게이트 하나를 달자고 카탈로그를 통째로 옮겨 적을 필요가 없다:
+        // `"actionCatalog": [{ "id": "send", "approval": true }]` 한 줄이면 된다. 엔트리는
+        // 파생 경로가 만들고 행이 그 위에 겹쳐진다(게이트 표시·설명 보강·hidden 미발행).
+        // enum 밖의 행 id 는 아무것도 주석하지 못한다 — 감사가 죽은 행으로 거부한다.
+        // enum 이 없으면 아래 선언 모드: 행이 집합의 원본이고 검증 enum 이 행에서 파생된다.
+        if config.pointer("/input/properties/action/enum").is_some() {
+            let mut entries = derive_entries_from_input(name, config, approval_decl);
+            overlay_annotations(&mut entries, &actions, name);
+            return entries;
+        }
+
         let entries: Vec<CatalogEntry> = actions
             .into_iter()
             .filter_map(|a| {
@@ -687,6 +700,46 @@ fn params_from_input(config: &serde_json::Value) -> serde_json::Value {
 /// theoretical one: it once listed fifteen params for `kma-weather/short` with nothing marking
 /// the two it actually needs, and the 22:00 cron died on `coords_required` (2026-07-09). The
 /// filter is what makes deleting a catalog's `params` block safe.
+/// Merge mode: each declared row annotates its DERIVED entry — discovery gate flags, a better
+/// description (appended, so the identity clause and derived signal stay), extra tag/alias
+/// vocabulary, `hidden` to unpublish. The runtime gates read the raw rows either way, so the
+/// annotation is about what discovery shows, never about what dispatch enforces.
+fn overlay_annotations(entries: &mut Vec<CatalogEntry>, rows: &[serde_json::Value], module: &str) {
+    for row in rows {
+        let Some(id) = row.get("id").and_then(|v| v.as_str()) else { continue };
+        let key = format!("{}:{}", module, id);
+        if row.get("hidden").and_then(|v| v.as_bool()).unwrap_or(false) {
+            entries.retain(|e| e.id != key);
+            continue;
+        }
+        let Some(e) = entries.iter_mut().find(|e| e.id == key) else { continue };
+        if let Some(n) = row.get("name").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+        {
+            e.name = n.to_string();
+        }
+        if let Some(d) =
+            row.get("description").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+        {
+            e.description = format!("{} {}", e.description, d);
+            e.extra["display"] = serde_json::Value::String(d.to_string());
+        }
+        if row.get("approval").and_then(|v| v.as_bool()).unwrap_or(false) {
+            e.extra["requiresApproval"] = serde_json::Value::Bool(true);
+        }
+        if row.get("uiOnly").and_then(|v| v.as_bool()).unwrap_or(false) {
+            e.extra["uiOnly"] = serde_json::Value::Bool(true);
+        }
+        if let Some(needs) = row.get("needs") {
+            e.extra["needs"] = needs.clone();
+        }
+        for w in ["tags", "aliases"] {
+            if let Some(list) = row.get(w).and_then(|v| v.as_array()) {
+                e.vocab.extend(list.iter().filter_map(|x| x.as_str().map(String::from)));
+            }
+        }
+    }
+}
+
 fn fill_param_docs_from_input(
     extra: &mut serde_json::Value,
     config: &serde_json::Value,
@@ -1854,6 +1907,39 @@ impl ModuleActionCatalog {
             .into_iter()
             .map(|(domain, count)| serde_json::json!({ "domain": domain, "actions": count }))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod merge_mode_tests {
+    use super::*;
+
+    fn entry(id: &str) -> CatalogEntry {
+        CatalogEntry {
+            id: format!("m:{id}"),
+            name: id.to_string(),
+            description: format!("m {id}"),
+            extra: serde_json::json!({ "requiresApproval": false }),
+            vocab: vec!["m".to_string()],
+        }
+    }
+
+    /// Merge mode: rows annotate derived entries — a gate flag lights up, `hidden` unpublishes,
+    /// vocabulary extends, and a row whose id the derivation never produced annotates nothing
+    /// (the audit rejects it; the overlay must simply not panic).
+    #[test]
+    fn rows_annotate_derived_entries() {
+        let mut entries = vec![entry("send"), entry("old")];
+        let rows = vec![
+            serde_json::json!({ "id": "send", "approval": true, "aliases": ["보내기"] }),
+            serde_json::json!({ "id": "old", "hidden": true }),
+            serde_json::json!({ "id": "ghost", "approval": true }),
+        ];
+        overlay_annotations(&mut entries, &rows, "m");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "m:send");
+        assert_eq!(entries[0].extra["requiresApproval"], serde_json::Value::Bool(true));
+        assert!(entries[0].vocab.iter().any(|w| w == "보내기"));
     }
 }
 

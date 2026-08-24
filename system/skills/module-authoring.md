@@ -76,10 +76,13 @@ A caller reaches an action through `search_module_actions` → `get_action_schem
   accepted on purpose", so an audit can tell it from an omission.
 - Descriptions say **what a thing is, never what to do about it.** Instructions belong in the
   response at the moment they apply.
-- **With a catalog, do not also write the `action` enum in `input`.** The rows are the original
-  of the action set; the runtime derives the validation enum from them, and the audit refuses a
-  config-side enum as a copy. Keep `input.properties.action` itself (type + description) — only
-  the enum goes.
+- **Where does the action SET live? Exactly one place, and the enum decides which.** No enum in
+  `input` = the rows are the original (a full catalog; the runtime derives the validation enum
+  from them). Enum present = the enum stays the original and the rows are **annotations** on ids
+  it already names — the audit rejects a row id outside the enum as dead. Annotation rows are
+  how a derived module takes a gate without adopting a whole catalog:
+  `"actionCatalog": [{ "id": "send", "approval": true }]` — one line, everything else stays
+  derived.
 - **`"hidden": true`** on a row registers the action for dispatch, gates and the derived enum
   but keeps it out of search and schema — for a vendor-word alias that must stay callable but
   has nothing to advertise (binance `klines`).
