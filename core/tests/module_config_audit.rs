@@ -720,16 +720,18 @@ fn every_action_catalog_file_names_runnable_actions() {
 
 /// The other direction: an action the module can RUN must be one discovery offers.
 ///
-/// Every check above asks whether a declaration names something real. None asked whether something
-/// real is named, and that gap has the same shape as the ones they catch — silence. Add an action
-/// to `input.properties.action.enum`, forget the catalog row, and the module answers to a name no
-/// search will ever produce: no error, no log, and the capability is simply invisible.
+/// 원본 하나 (2026-08-25) made the forgotten-row version of this failure structurally impossible:
+/// in declare mode the runnable set IS the rows (the validation enum derives from them), and in
+/// merge mode discovery derives its entries from the enum itself — run and discovery read the same
+/// original either way, so nothing runnable can be silently unpublished. The deliberate exceptions
+/// are declarations now: `hidden: true` keeps a row runnable and unpublished, and `aliases` folds
+/// a vendor word into a visible row's search text (binance `klines` uses both — a hidden row for
+/// dispatch, an alias for search).
 ///
-/// A deliberate omission is declared as such. binance accepts `klines` because that is Binance's
-/// own word for `get_candles`, and publishing both would advertise one capability twice — so the
-/// entry lists it under `aliases`, where the loader also folds it into the row's search text. The
-/// point is that the file now distinguishes "on purpose" from "forgotten", which prose in the
-/// action description could not.
+/// What is left to audit is the precondition dispatch fail-closes on: a module that declares a
+/// catalog whose rows do not load has runnable actions nobody can run OR discover — every call is
+/// refused (부재는 동의가 아니다). Both catalog shapes are audited here; the file shape's content
+/// rules live in `every_action_catalog_file_names_runnable_actions` above.
 #[test]
 fn every_runnable_action_is_discoverable() {
     let mut problems = Vec::new();
@@ -740,58 +742,26 @@ fn every_runnable_action_is_discoverable() {
         let Ok(config) = serde_json::from_str::<Value>(&raw) else { continue };
         let name = dir.file_name().unwrap().to_string_lossy().to_string();
 
-        let Some(enum_actions) = config
-            .pointer("/input/properties/action/enum")
-            .and_then(|v| v.as_array())
-        else {
-            continue; // no selector — the module is one action, always discoverable
-        };
-
-        // Rows come from the same two places the loader reads: an inline list, or the named file.
-        let rows: Vec<Value> = if let Some(list) =
-            config.pointer("/actionCatalog/actions").and_then(|v| v.as_array())
-        {
-            list.clone()
-        } else if let Some(file) = config.pointer("/actionCatalog/file").and_then(|v| v.as_str()) {
-            let Ok(craw) = fs::read_to_string(dir.join(file)) else { continue };
-            let Ok(cat) = serde_json::from_str::<Value>(&craw) else { continue };
-            match firebat_core::managers::ai::action_catalog::catalog_rows(&cat) {
-                Some(l) => l,
-                None => continue,
-            }
-        } else {
-            continue; // no catalog: entries are derived FROM the enum, so it cannot miss one
-        };
-        audited += 1;
-
-        let mut covered: BTreeSet<String> = BTreeSet::new();
-        for e in &rows {
-            if let Some(id) = e.get("id").and_then(|v| v.as_str()) {
-                covered.insert(id.to_string());
-            }
-            for a in e.get("aliases").and_then(|v| v.as_array()).unwrap_or(&vec![]) {
-                if let Some(a) = a.as_str() {
-                    covered.insert(a.to_string());
-                }
-            }
+        if config.get("actionCatalog").is_none() {
+            // No catalog: entries derive from the enum, or the module is a single action —
+            // discovery and dispatch already share a source.
+            continue;
         }
-        let missing: Vec<&str> = enum_actions
-            .iter()
-            .filter_map(|v| v.as_str())
-            .filter(|a| !covered.contains(*a))
-            .collect();
-        if !missing.is_empty() {
+        audited += 1;
+        let rows = catalog_rows_of(&dir, &config);
+        if rows.is_empty() {
             problems.push(format!(
-                "{name}: runs {} action(s) discovery never offers — {}. Add a catalog row, or list \
-                 it under an existing row's `aliases` if that is deliberate.",
-                missing.len(),
-                missing
-                    .iter()
-                    .take(8)
-                    .map(|s| format!("`{s}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "{name}: declares actionCatalog but zero rows load — dispatch fail-closes on \
+                 this, so every action the module could run is refused and undiscoverable"
             ));
+            continue;
+        }
+        // The inline shape has no other auditor; a row without an id registers nothing and
+        // publishes nothing, silently.
+        for (i, row) in rows.iter().enumerate() {
+            if row.get("id").and_then(|v| v.as_str()).map_or(true, |s| s.trim().is_empty()) {
+                problems.push(format!("{name}: catalog row {i} has no `id`"));
+            }
         }
     }
     assert!(audited >= 8, "only {audited} catalogs audited — the path drifted");
