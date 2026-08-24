@@ -659,6 +659,32 @@ mod module_contract_tests {
         "get_candles",
     ];
 
+    /// The module's action set, read from wherever the original lives (원본 하나, 2026-08-25):
+    /// the config enum where one remains (merge mode), otherwise the catalog rows (declare mode —
+    /// the runtime derives the validation enum from them). Every test here that asks "can this
+    /// module run this action" must read through this, not the enum directly — the enum is gone
+    /// from catalog modules, and a direct read silently checks nothing.
+    fn action_set_of(dir: &Path, config: &serde_json::Value) -> Vec<String> {
+        if let Some(e) = config["input"]["properties"]["action"]["enum"].as_array() {
+            return e.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+        }
+        let rows = match &config["actionCatalog"] {
+            v if v["file"].is_string() => {
+                std::fs::read_to_string(dir.join(v["file"].as_str().unwrap_or_default()))
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            }
+            serde_json::Value::Array(a) => Some(serde_json::Value::Array(a.clone())),
+            v if v["actions"].is_array() => Some(v["actions"].clone()),
+            _ => None,
+        };
+        rows.and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|e| e["id"].as_str().map(str::to_string))
+            .collect()
+    }
+
     #[test]
     fn a_broker_declares_the_neutral_calls_it_implements() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("system/modules");
@@ -674,10 +700,11 @@ mod module_contract_tests {
             let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_raw) else {
                 continue;
             };
-            let Some(declared) = config["input"]["properties"]["action"]["enum"].as_array() else {
-                continue;
-            };
-            let declared: Vec<&str> = declared.iter().filter_map(|v| v.as_str()).collect();
+            let declared = action_set_of(&dir, &config);
+            if declared.is_empty() {
+                continue; // no action set at all — a single-action module, not a broker
+            }
+            let declared: Vec<&str> = declared.iter().map(String::as_str).collect();
             // The entry point may be a wrapper over a dialect shared with the module's public
             // half — reading only the directory would make this check pass on twenty lines that
             // implement nothing, which is worse than not having it.
@@ -704,14 +731,7 @@ mod module_contract_tests {
             let quotes_raw = std::fs::read_to_string(quotes.join("config.json")).unwrap_or_default();
             let quotes_cfg: serde_json::Value =
                 serde_json::from_str(&quotes_raw).unwrap_or(serde_json::Value::Null);
-            let quotes_actions: Vec<String> = quotes_cfg["input"]["properties"]["action"]["enum"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or(&[])
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(str::to_string)
-                .collect();
+            let quotes_actions: Vec<String> = action_set_of(&quotes, &quotes_cfg);
             declared.extend(quotes_actions.iter().map(String::as_str));
             let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
             // A split broker is `<name>` (quotes) and `<name>-trade` (orders). The public half
@@ -774,10 +794,8 @@ mod module_contract_tests {
             let dir = entry.path();
             let Ok(raw) = std::fs::read_to_string(dir.join("config.json")) else { continue };
             let Ok(config) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
-            let places_orders = config["input"]["properties"]["action"]["enum"]
-                .as_array()
-                .map(|a| a.iter().any(|v| v.as_str() == Some("place_order")))
-                .unwrap_or(false);
+            let places_orders =
+                action_set_of(&dir, &config).iter().any(|a| a == "place_order");
             if !places_orders {
                 continue;
             }
@@ -888,13 +906,7 @@ mod module_contract_tests {
             // borrows the whole list through `credentialScope`. Holding a token that happens to be
             // issued for an account is not being able to trade in it — that is the action list,
             // checked below.
-            for action in config["input"]["properties"]["action"]["enum"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or(&[])
-                .iter()
-                .filter_map(|v| v.as_str())
-            {
+            for action in action_set_of(&dir, &config) {
                 let mut lower = action.to_lowercase();
                 for w in PUBLIC_WORDS {
                     lower = lower.replace(w, "");
@@ -971,13 +983,16 @@ mod module_contract_tests {
                 problems.push(format!("{name}/{file}: does not parse"));
                 continue;
             };
-            let enumerated: Vec<&str> = config["input"]["properties"]["action"]["enum"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or(&[])
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect();
+            // 원본 하나 (2026-08-25): with no enum in the config (declare mode) the rows ARE the
+            // action set — there is no second copy left to disagree with, so the cross-check below
+            // only applies in merge mode, where an enum remains the original and a stray row id
+            // annotates nothing. Declare-mode misrouting is covered from the other side: the
+            // 선언→구현 audit and each module's selftest check that the code handles the row ids.
+            let Some(enum_field) = config["input"]["properties"]["action"]["enum"].as_array()
+            else {
+                continue;
+            };
+            let enumerated: Vec<&str> = enum_field.iter().filter_map(|v| v.as_str()).collect();
             let ids: Vec<&str> = catalog
                 .as_array()
                 .map(Vec::as_slice)
@@ -1048,17 +1063,14 @@ mod module_contract_tests {
                     problems.push(format!("{name}.{stream}: realtimeMatch missing"));
                 }
             }
-            // A websocket-served action is reached through the module's own action enum. Declared
+            // A websocket-served action is reached through the module's own action set. Declared
             // in one module and enumerated in another it is simply unreachable, which is what the
             // broker split did to Kiwoom's two screening actions — the declaration went to the
             // trading half and the enum entries stayed on the public one.
-            let enumerated: Vec<&str> = config["input"]["properties"]["action"]["enum"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or(&[])
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect();
+            // 원본 하나 (2026-08-25): the set is the enum where one remains (merge mode), and the
+            // catalog rows where it does not (declare mode — the runtime derives the enum from
+            // them), so this reader follows the set to wherever it lives.
+            let enumerated: Vec<String> = action_set_of(&dir, &config);
             for key in ["actions", "unsupportedActions"] {
                 let declared: Vec<String> = match &ws[key] {
                     serde_json::Value::Object(m) => m.keys().cloned().collect(),
@@ -1068,8 +1080,8 @@ mod module_contract_tests {
                     _ => vec![],
                 };
                 for action in declared {
-                    if !enumerated.contains(&action.as_str()) {
-                        problems.push(format!("{name}: ws.{key} declares '{action}' but the module's action enum does not"));
+                    if !enumerated.contains(&action) {
+                        problems.push(format!("{name}: ws.{key} declares '{action}' but the module's action set does not"));
                     }
                 }
             }
