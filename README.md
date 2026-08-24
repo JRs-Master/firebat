@@ -37,7 +37,7 @@ Firebat is an **AI-Powered Visual Automation Agent (VAA)** — a self-hosted pla
 One prompt flows through **design → implementation → deployment → scheduling → notification**.
 
 **Why VAA?** Firebat sits at the intersection of three categories:
-- **Visual** — results are pages, charts, tables, cards, live realtime feeds (42 built-in components), not chat logs.
+- **Visual** — results are pages, charts, tables, cards, live realtime feeds (46 built-in components), not chat logs.
 - **Automation** — cron + pipelines run while you're away (not one-shot chat).
 - **Agent** — native Function Calling multi-turn tool loop (no brittle JSON parsing).
 
@@ -196,13 +196,13 @@ Exposes 30+ tools: page CRUD, file CRUD, module execution + introspection (`list
 
 ### Built-in Components
 
-Define UI via PageSpec JSON and Firebat renders it automatically. In chat, the AI emits them inline through a ` ```firebat-render ` fence in its reply text (content = fence / actions = tools — large datasets go by `dataCacheKey` reference so the server injects the full cached rows, no hand-copying). 42 built-in components:
+Define UI via PageSpec JSON and Firebat renders it automatically. In chat, the AI emits them inline through a ` ```firebat-render ` fence in its reply text (content = fence / actions = tools — large datasets go by `dataCacheKey` reference so the server injects the full cached rows, no hand-copying). 46 built-in components:
 
 `Header` · `Text` · `List` · `Divider` · `Card` · `Grid` · `Image` · `Table` · `Badge` · `StatusBadge` · `Callout` · `Progress` · `Metric` · `Countdown` · `KeyValue` · `Compare` · `Timeline` · `Chart` · `StockChart` · `Diagram` · `Math` · `Code` · `Network` · `Map` · `Slideshow` · `Lottie` · `Quiz` · `QuizGroup` · `PlanCard` · `Form` · `Button` · `Slider` · `Tabs` · `Accordion` · `Carousel` · `Sentence` · `Vocab` · `Passage` · `Concept` · `Listening` · `LiveFeed` · `LiveChart`
 
 Each block's `props` is validated against the component's JSON Schema. A recursive **`sanitize_to_schema`** runs first so the AI's natural output (synonym keys dropped by `additionalProperties:false`, optional enum/type mismatches, nullable required props missing) passes without losing the block: extras are dropped, missing required props are filled from `default` or `null` where allowed, and optional props that still fail validation get pruned so the renderer's default kicks in — recursing into nested objects and arrays. Truly-missing essential props still surface as a `failed[]` entry with `gotKeys` (the original keys the AI sent) so the model can retry with the right shape.
 
-> 🇰🇷 **빌트인 컴포넌트 42종** — PageSpec JSON으로 선언하면 자동 렌더링. 채팅에서는 AI가 답변 본문 안 ` ```firebat-render ` fence 로 인라인 선언(콘텐츠=fence/액션=도구 — 큰 데이터는 `dataCacheKey` 참조로 서버가 캐시 전체 주입). 각 block의 `props`는 컴포넌트 JSON Schema로 검증되며, 검증 전에 **재귀 `sanitize_to_schema`**가 돌아 AI 출력을 자동 정리합니다 — `additionalProperties:false`의 미지 키 drop, 누락 required는 `default`/null 채움, optional 위반(잘못된 enum/타입)은 drop(렌더러 기본값 적용), 중첩 객체·배열까지 재귀. 진짜 필수가 빠진 경우만 `failed[]`로 `gotKeys`(AI가 보낸 원본 키)와 함께 노출해 재시도 신호.
+> 🇰🇷 **빌트인 컴포넌트 46종** — PageSpec JSON으로 선언하면 자동 렌더링. 채팅에서는 AI가 답변 본문 안 ` ```firebat-render ` fence 로 인라인 선언(콘텐츠=fence/액션=도구 — 큰 데이터는 `dataCacheKey` 참조로 서버가 캐시 전체 주입). 각 block의 `props`는 컴포넌트 JSON Schema로 검증되며, 검증 전에 **재귀 `sanitize_to_schema`**가 돌아 AI 출력을 자동 정리합니다 — `additionalProperties:false`의 미지 키 drop, 누락 required는 `default`/null 채움, optional 위반(잘못된 enum/타입)은 drop(렌더러 기본값 적용), 중첩 객체·배열까지 재귀. 진짜 필수가 빠진 경우만 `failed[]`로 `gotKeys`(AI가 보낸 원본 키)와 함께 노출해 재시도 신호.
 
 ### Capability-Provider System
 
@@ -635,7 +635,7 @@ Single v1.0 Final milestone — **Rust Core + Next.js Frontend, Vultr systemd + 
 **Target architecture**:
 
 ```
-Frontend  Next.js + React + 42 built-in components
+Frontend  Next.js + React + 46 built-in components
                           ↓
                 per-service typed clients (lib/api-gen/*.ts) → @connectrpc gRPC transport (Phase B-typed)
                           ↓

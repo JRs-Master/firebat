@@ -79,17 +79,18 @@ middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layou
 
 ---
 
-## 제2장: 컴포넌트 목록 (레지스트리 42종)
+## 제2장: 컴포넌트 목록 (레지스트리 46종)
 
 페이지용 컴포넌트. `save_page`로 DB에 저장 → `app/(user)/[slug]/page.tsx`가 렌더.
 채팅에서는 본문 안 ` ```firebat-render ` fence(제3장 제3항)로 직접 렌더.
 
-> 채팅 render 레지스트리(`system/components.json`) 기준 **42 컴포넌트**:
-> - 기본·시각화 27: stock_chart · chart · table · badge · callout · progress · header · text · list · divider · countdown · image · card · grid · metric · timeline · compare · key_value · plan_card · status_badge · diagram · math · code · slideshow · lottie · network · map
+> 채팅 render 레지스트리(`system/components.json`) 기준 **46 컴포넌트**:
+> - 기본·시각화 28: stock_chart · chart · table · badge · callout · progress · header · text · list · divider · countdown · image · card · grid · metric · timeline · compare · key_value · plan_card · status_badge · diagram · math · function_plot · code · slideshow · lottie · network · map
 > - 퀴즈 2: quiz · quiz_group
 > - 인터랙티브 6 (2026-06-16): form(모듈 바인딩) · button · slider · tabs · accordion · carousel (children/items = grid 미러 `{type,props}`)
 > - 학습 5 (2026-06-19~20): sentence(구문독해 S/V/O·직독직해) · vocab(인출·Leitner·니모닉) · passage · concept · listening(LC 플레이어·받아쓰기·노래방 정렬)
-> - 라이브 2 (2026-07-05, WS 2b): live_feed · live_chart — `stream_watch_start` 의 SSE topic 구독. **수명 = 뷰포트 가시성**(보일 때만 live, 벗어나면 마지막 값+타임스탬프 동결, 영속 = 생성 시점 스냅샷)
+> - 미디어 2 (2026-08): karaoke(두 줄 무대·이중 녹음·가이드/박자 스템) · player(공용 재생기 카드 — 스템 알약 + `tracks` 재생목록·셔플·반복, 2026-08-25)
+> - 라이브 3 (2026-07): live_feed · live_chart · live_stock_chart(분봉 집계 라이브 봉차트) — `stream_watch_start` 의 SSE topic 구독. **수명 = 뷰포트 가시성**(보일 때만 live, 벗어나면 마지막 값+타임스탬프 동결, 영속 = 생성 시점 스냅샷)
 > (아래 표의 Alert / ResultDisplay / Html / AdSlot 은 PageSpec 페이지 전용.)
 
 ### 기본 UI
