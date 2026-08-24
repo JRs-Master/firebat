@@ -238,6 +238,7 @@ system/modules/<name>/
 - core 는 값의 모양(6자리·KRX 접두 등)을 **아무것도 모른다** — 옛 grounding 기계(코퍼스·패턴·
   벤더 장식 스트립)는 개별 모듈 사정이 core 에 스민 것이라 은퇴했다. 새 브로커 = 행 선언만.
 - resolver 성 액션(lookup 류)은 자기 `needs` 를 선언하지 않으면 된다 — 면제 목록이 따로 없다.
+- **액션 알갱이도 된다** (2026-08-18): `"needs": ["sing:scores"]` — 같은 모듈의 선행 액션(보관함 조회 등)도 게이트할 수 있다. 성공 실행 기록이 모듈·`모듈:액션` 두 벌로 남아 어느 알갱이 선언이든 맞는다.
 
 #### `ws` — WebSocket 전용 API (스냅샷 + 상시 감시, 2026-07-05)
 ```json
@@ -369,6 +370,15 @@ system/modules/<name>/
 - **왜**: 큰 결과는 캐시되고 호출자는 키만 받는데, 그 rows 를 먹는 모듈이 키를 못 받으면 600행을 인자로 되돌려 보내야 한다. 그러면 모델은 도구를 부르는 대신 직접 계산한다(수수료·세금·슬리피지 없이) — **도구가 안 쓰는 것보다 비싸면 안 쓴다**(2026-07-31 골든크로스 실측). 렌더 쪽 `dataCacheKey` 의 입력측 대응물.
 - **object 파라미터도 된다**: 선언한 파라미터의 input 스키마가 `object`(또는 `["object","null"]`)면 확장이 1-원소 배열 대신 **레코드 자체**를 넣는다. 짝 = 아래 `autoCacheWhole`.
 
+#### `collection` — 설정 보관함 행을 인자 값에 시맨틱 매칭 (인자 축, 2026-08-20)
+```jsonc
+// input.properties 의 그 인자 칸에
+"song": { "type": "string", "collection": "scores" }
+```
+- 선언한 settings 필드(보관함 rows)를 그 인자의 값과 **로컬 임베더(E5)로 랭킹**해 `_collectionMatches.<param>`(상위 행 + `score`)로 spawn 전에 입력에 주입한다 — `_call`·recall 주입과 같은 자리.
+- **왜**: 한↔영 표기·띄어쓰기가 다르면 문자 매칭이 보관함 행을 놓친다("aloha" ↔ "아로하"). 모듈 자신의 정규화 매칭은 바닥으로 유지하고, 시맨틱 랭킹은 프레임워크가 얹는다(모듈에 임베딩 코드 0).
+- 구현 = `ModuleManager::inject_collection_matches` (`3b404f86`).
+
 #### `autoCacheWhole` — 다섹션 응답을 한 레코드로 캐시 (2026-08-11)
 ```json
 { "autoCacheWhole": ["국내주식-187"] }
@@ -409,6 +419,13 @@ system/modules/<name>/
 - **보안**: `requiresApproval` 액션은 선언해도 전면 거부(page-form 게이트 미러) / hub-scope 저장 = bake skip(inert 저장) / `_baked` 캡 = 블록 50 · 256KB · 스펙당 바인딩 20. 게이트 로직 = Rust `page_binding.rs` ↔ TS `lib/page-binding-gate.ts` 미러(단일 정책).
 - **`alias`** (선택) = 템플릿 텍스트 sugar — text 블록의 `{stock symbol="005930.KS"}` 가 `get_template` 시 module 블록으로 컴파일(등록 alias 만, 미등록 `{word}` = 리터럴 유지).
 
+#### `pageExport` — 페이지 내보내기 메뉴 선언 (2026-08-18)
+```json
+{ "pageExport": [ { "action": "make_pptx", "label": "PPTX" },
+                  { "action": "make_pdf",  "label": "PDF" } ] }
+```
+- Sidebar 의 페이지 내보내기 메뉴가 **켜진 모듈들의 이 선언에서 파생**된다(`/api/settings/modules/page-exports` — 손목록 아님). 항목 = 그 모듈의 내보내기 액션 + 표시 라벨. 모듈을 끄면 메뉴에서 사라지고, 새 산출 포맷 = config 한 항목이다. 첫 소비자 = docs(PPTX·XLSX·DOCX·PDF).
+
 #### `_mediaImport` — 모듈 산출 파일의 미디어 반출 (2026-08-10)
 ```json
 { "success": true, "data": { "_mediaImport": {
@@ -419,6 +436,14 @@ system/modules/<name>/
 - config 필드가 아니라 **출력 선언** — 모듈이 자기 `data/` 스크래치에 파일을 쓰고 `data._mediaImport` 로 선언하면, 프레임워크가 그 파일을 **업로드와 같은 게이트 저장**(magic byte 검증 포함)으로 미디어 스토리지에 편입하고 선언을 `data.media = {slug, url, bytes, contentType}` 로 치환한다. 모듈은 서빙·URL·갤러리를 모른다.
 - 경로 confinement = `data/`·`user/` 아래 상대경로만(단위테스트). 성공 시 `data/` 원본은 삭제(이동이지 복사가 아님), `user/` 는 사용자 것이라 보존. 실패 = 실행은 성공 유지 + `data.mediaExportError` + WARN(조용히 사라지지 않는다).
 - 구현 = `ModuleManager::export_declared_media` + `IMediaIntakePort`(`IImageImportPort` 미러 — leaf↔leaf 를 포트로 끊는 선례). 첫 소비자 = docs 모듈(pptx·xlsx·docx 산출).
+
+#### `_prepare` — 서비스 산출물 선언 (출력 선언, 2026-08-18)
+```json
+{ "success": true, "data": { "_prepare": { "service": "tts", "text": "…", "into": "vocalWav" } } }
+```
+- config 필드가 아니라 **출력 선언** — 모듈이 "이 입력 칸을 채우려면 플랫폼 서비스가 필요하다"를 반환으로 선언하면, 프레임워크가 그 서비스(예: `tts`)를 수행하고 산출물을 `into` 칸에 넣어 **같은 액션을 1회 재실행**한다. 이미 채워진 칸을 다시 요청하면 거부(루프 차단).
+- `_mediaImport`·`_render` 와 같은 **밑줄 출력 채널**(프레임워크가 소비, 모델에 안 실림). 1호 소비자 = sing 보컬 TTS — 이 선언으로 core 의 sing 전용 브리지 도구가 은퇴했다(브리지에 자라던 악기·스타일 목록 사본 소멸, `d613cc40`).
+- 구현 = `ModuleManager.run` 의 `_prepare` 처리 + `IPrepareServicePort`.
 
 #### 모듈 내장 이미지 — `assets/` 디렉토리 (2026-07-18)
 모듈 디렉토리의 `assets/` 에 둔 이미지는 `/module-assets/<module>/<file>` 로 공개 서빙된다(system·user 공통, Rust axum route → next.config rewrite). 확장자 allowlist(png/jpg/jpeg/webp/gif/svg/ico) + 세그먼트 charset 가드 + CSP/nosniff(svg XSS 완화) + `Cache-Control: public,max-age=3600`. 페이지·render 블록에서 안정 URL 로 참조 — base64 인라인·외부 URL 의존이 필요 없어진다.
@@ -445,6 +470,15 @@ system/modules/<name>/
 - 채팅 노출 = `get_action_schema` 의 `account` 파라미터(등록 별칭·계좌번호·모드·시장) + `get_module_config` 의 `accounts.registered`. 계좌 목록은 색인이 아니라 **호출 시점 조회**(vault 쓰기 즉시 반영).
 - `listAction` = 브로커에서 계좌번호를 받아 오는 액션(표시용, 인증에 안 씀).
 
+#### `schedules` / `schedulesFrom` — 크론 선언·파생 (수명 축, 2026-08-17)
+```jsonc
+"schedules": ["cron-health.json"],                        // 점검 루프 — 모듈이 켜진 동안 정적 등록
+"schedulesFrom": { "setting": "trades", "field": "loop",  // 결정 루프 — 설정 행이 파일을 가리킨다
+                   "skipWhen": { "field": "state", "equals": "off" } }
+```
+- `schedules` = 아무 일이 없어도 돌아야 하는 **점검 루프**(봉캐시·복기)의 정적 선언.
+- `schedulesFrom` = 어느 루프가 도는지가 운영자 설정에 달렸을 때 — 둘째 목록을 손으로 들지 않고 **행이 크론 파일을 가리키게** 한다(매매 행 `loop` → `cron-upbit.json`). 행을 켜면 등록, 끄면 회수(`skipWhen`), 멱등은 `_registeredSchedules`. 파일명 규칙을 프레임워크가 짓지 않는다(숨은 대응표 금지) — 가리키는 행이 없는 루프 파일은 잠자는 템플릿일 뿐이다(`7cf1bb02`).
+
 #### 선언형 필드 요약 표
 
 | 필드 | 기능 | 처리 계층 |
@@ -467,6 +501,11 @@ system/modules/<name>/
 | `_mediaImport` (출력 선언) | 모듈이 만든 파일을 미디어 스토리지로 반출 (게이트 저장 → `data.media`) | `ModuleManager.run` (`IMediaIntakePort`) |
 | `ws.streams.<k>.tick1s` | 실시간 프레임 → 코어 1초 집계 → 시계열 store (`tick1s:<모듈>:<real|mock>:<종목>`, `read_ticks` 로 조회). 선언 = `{items, type:{field,equals}, symbol, values, map:{price,signedVolume,…}}` — `items`/`values` 생략 = 프레임 자체가 아이템(업비트). `signedVolume` = 필드명(부호 내장, 키움) 또는 `{field, negateWhen:{field,equals}}`(무부호 수량 + 매도 플래그, 업비트 `ask_bid:"ASK"`). **`equals` 는 문자열·불리언·숫자 아무 스칼라**(바이낸스 `m: true`) — 예전엔 문자열만 읽어 불리언 venue 에서 절이 통째로 무시되고 **매도가 전부 매수로 집계**됐다(실패 신호 없음). 집계기는 브로커 지식 0 | 이벤트 sink (`tick_agg.rs`) — watch 등록 시 meta 에 해석 |
 | `settings_fields[].editorSchema` | structured-list 카드 폼을 config 선언으로 렌더 (`fields[]` = text/number/toggle/select/**ref**/json/rules · `required` = 저장 게이트 · `showWhen` · `summary` · `newItem`). 필드 추가 = config 수정 + pull 로 끝 | 프론트 `StructuredListEditor` (legacy 하드코딩 카드는 스키마 없는 config 의 폴백) |
+| `schedules` / `schedulesFrom` | 점검 루프 정적 등록 / 설정 행이 가리키는 결정 루프 파생 (켜면 등록·끄면 회수, 멱등 `_registeredSchedules`) | `ModuleManager`(config 읽기) + ScheduleManager |
+| `pageExport` | Sidebar 페이지 내보내기 메뉴를 켜진 모듈 선언에서 파생 (`{action, label}`) | 프론트 (`page-exports` 라우트) |
+| `_prepare` (출력 선언) | 플랫폼 서비스 수행 → `into` 칸 주입 → 같은 액션 1회 재실행 (1호 = sing 보컬 TTS) | `ModuleManager.run` (`IPrepareServicePort`) |
+| 인자 `collection` | 설정 보관함 rows 를 인자 값과 E5 랭킹해 `_collectionMatches.<param>` 주입 (한↔영 별칭) | `ModuleManager`(`inject_collection_matches`) |
+| `settings_fields[].type:"files"` | 복수 파일 보관함 — 참조 목록 `[{url,name,alias,default?}]`, blob 은 미디어 창고 소유, `accept` 확장자 제한 | 설정 화면 + 미디어 창고 |
 
 ---
 
@@ -636,7 +675,7 @@ timeseries 를 전부 건너뛰었다** — config 에 선언해도 읽는 데�
 | field | 영역 |
 |---|---|
 | `key` | settings 객체의 field 이름 |
-| `type` | `text` / `number` / `toggle` / `textarea` / `oauth` / `secret` / `select` / `widget-list` / `verifications` / `color-presets` / `color-overrides` / `structured-list` |
+| `type` | `text` / `number` / `toggle` / `textarea` / `oauth` / `secret` / `select` / `widget-list` / `verifications` / `color-presets` / `color-overrides` / `structured-list` / `files` |
 | `tab` | 탭 그룹 (없으면 기본 탭). **탭 순서 = 필드 선언 순서** |
 | `group` | 탭 안 sub-section heading |
 | `secretName` | secret type 전용 — Vault 키 이름 |
@@ -650,6 +689,12 @@ timeseries 를 전부 건너뛰었다** — config 에 선언해도 읽는 데�
 — 화면만 바뀐다. 폼은 자기가 아는 키만 고쳐 쓰고 모르는 키는 보존하며(reconciler 원칙), 깨진 JSON
 은 저장 경로에 도달하지 못한다(마지막 유효 상태 유지). 새 카드 종류가 필요하면 `editor` 값과 카드
 컴포넌트를 추가한다 — 기존 두 종은 autotrade 의 매매·전략 행.
+
+**`files`** (2026-08-18): 복수 파일 보관함 — 값 = **참조 목록** `[{url, name, alias, default?}]`,
+blob 은 미디어 창고 소유(행 삭제 = 참조만 삭제). `accept` 로 확장자를 제한한다(sing `scores` =
+`.mid,.mxl,…`). 별칭 매칭은 정규화(대소문자·띄어쓰기 무시, 파일명 겸용)이고 보관함 조회는 **정식
+액션**으로 낸다(sing `scores` · docs `masters`, query 필터) — 틀려서 알아내게 하지 않는다. 개수
+무관 동일 절차(1개 자동 특례 금지) — 무명 폴백은 `defaultPerKind` 로 **선언한** 대표뿐이다.
 
 ---
 
