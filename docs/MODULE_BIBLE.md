@@ -83,7 +83,7 @@ Node ESM: `./` 또는 `../` 명시 상대 경로 사용 (예: `./helpers.mjs`).
 
 ```
 system/modules/<name>/
-├── config.json            # 액션 enum · 입력 스키마 · 선언 블록
+├── config.json            # 액션 선언(카탈로그 행 또는 enum) · 입력 스키마 · 선언 블록
 ├── actions.json           # 액션마다 name·description·params·required·_call   (많을 때)
 └── index.mjs              # 코드
 ```
@@ -333,7 +333,7 @@ system/modules/<name>/
   - ⚠️ **`params` 는 이름 **목록**이지 설명 맵이 아니다** (2026-08-16). 맵이던 시절 선택을 적으려면 스키마에 이미 있는 문장을 또 써야 했고 — **형식이 사본을 강제했다** — 그 사본이 어긋나 daum-search `sort` 가 실제 enum `["accuracy","recency","latest"]` 옆에서 "newest-first" 를 광고했다. 게다가 한 줄 더 쓰기 싫으니 **선택이 짧아졌다**(naver-ads 46개 중 33개만). 지금은 목록이라 설명을 넣을 자리가 없고, 문구는 항상 `input.properties.<param>.description` 에서 온다.
   - **인자를 안 받는 액션은 `"params": []`** — 생략과 다르다. 생략 = "스키마에서 파생", 빈 목록 = "없음". 빈 목록이 없으면 태그 필터가 *전부* 를 돌려주는 폴백에 걸려 `fa/selftest` 가 `ratios` 의 11개를 광고했다(2026-08-16).
   - **`required`** = 그 액션이 없으면 거부되는 인자. `get_action_schema` 의 `fill` 이 여기서 나온다. 벤더 시트의 `required:true` 를 생성기가 **한국어 `(필수)` 문구로만** 적던 시절엔 `fill` 이 늘 비어 있었다 — 구조는 구조로 남긴다.
-  - **`aliases`** = 실행기는 받지만 발행하지 않을 다른 이름(binance `klines` = `get_candles`). 로더가 검색어로도 쓰고, **감사가 "enum 에 있는데 카탈로그에 없는 액션"을 빌드 실패로 잡을 때 의도적 생략을 구분하는 근거**가 된다.
+  - **`aliases`** = 그 행을 사람들이 부르는 다른 이름 — 로더가 검색어로 싣는다. **호출까지 받아야 하는 벤더 낱말은 aliases 가 아니라 `hidden: true` 행**이다(binance `klines` — aliases 는 검색어일 뿐 디스패치 id 가 아니다).
   - ⚠️ **`envelope` 은 폐기** (2026-08-15). 호출 봉투를 산문으로 적던 자리인데, `get_action_schema` 가 **조립된 `call`**(도구명 + `action` 채움 + `fill` = 없으면 거부되는 값 이름)을 내주므로 문장에서 모양을 유추할 이유가 없어졌다.
 
 - **⭐ 액션이 여럿이면 카탈로그를 쓴다 (신규 모듈 필수)**. 파생 폴백은 authoring 0 이 목적이지 품질 목표가 아니다 — 파생은 액션별 설명이 없어서 **`action.description` 덩어리에서 조각을 긁고**, 못 찾으면 모듈 설명을 쓰고, 거기에 파라미터 enum 값을 덧붙인다. 액션이 많을수록 문서가 서로 닮아 **검색이 못 가른다**(2026-08-06 upbit: 캔들 일/주/월 세 액션이 같은 문서가 됐다). 2026-08-15 실측 = 35모듈 중 **18개가 카탈로그 없음**, 그중 dart 82액션·upbit-trade 33·kma-weather 28.
@@ -350,8 +350,9 @@ system/modules/<name>/
   **한 번도 CI 에서 안 돌았다** — `3c020e49` 에서 `--tests` 로 수리). 선언은 **오류가 아니라 침묵**으로
   틀리기 때문에:
   ① **선언 → 존재**: `needs`·`pageBinding`·카탈로그가 가리키는 모듈·액션·파일이 있나
-  ② **존재 → 발견**: `input.properties.action.enum` 의 액션이 카탈로그 id 나 `aliases` 에 있나
-     (없으면 그 액션은 실행되는데 검색으로는 못 찾는다)
+  ② **존재 → 발견** (원본 하나 이후 모드별): 선언 모드는 행이 곧 존재라 방향이 소멸했고,
+     merge 모드는 반대 방향을 잡는다 — **enum 밖의 행 id = 죽은 행**(아무것도 주석 못 함).
+     발행 없이 호출만 받을 액션은 `hidden: true` 행으로 선언한다(감사 통과·검색 미노출)
   ③ **선언 → 구현**: 스키마가 선언한 인자를 **모듈 소스가 이름으로라도 쓰나**. 전수 783개 중 10개가
      허구였다 — browser-scrape 가 스크린샷·뷰포트·헤더·JS 토글을 광고했는데 114줄 구현이 하나도 안 읽었다.
      `<param>CacheKey/Limit/Range` 면제(검증 전 확장) · **`_call.by` 축 면제**(방언이 `data[call.by]` 로

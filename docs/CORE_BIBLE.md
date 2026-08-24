@@ -198,7 +198,7 @@ interface FirebatInfraContainer {
 `AiManager.buildToolDefinitions()` 가 매 요청마다 도구 목록 생성:
 - 정적 Core 도구 60+ (테스트 단언 기준 **65** — `render`, `image_gen`, `save_page`, `schedule_task`, `run_task`, `search_library`, `search_module_actions`, `stream_watch_*` 등 — `core/src/tool_registry.rs`. ToolManager 등록 → MCP auto-sync = FC·MCP 단일 소스)
 - **회상 계단 3단** (2026-07-31): `search_history`(의미 검색 — 히트 = **발언 하나**, convId·msgIdx 반환) → `read_conversation(convId, from, to, maxChars)`(그 구간 펼치기, 상한 초과 시 `nextFrom`) → `list_conversations(limit, since, until)`(세션 목록, 시간 창). 검색 하나만 있던 시절엔 20문답 대화를 **원리상 재구성할 수 없었다**(3자짜리 답변은 벡터로 안 걸리고 히트를 펼칠 도구가 없었음).
-- 동적 sysmod 도구 (`sysmod_kiwoom_quote`, `sysmod_toss_invest_order` 등 — config.json description 자동 주입). config `domains[]` 필드로 도메인별 LLM 도구 분리 노출 (단일 sysmod 코드 + N 도구 — action enum 좁힘).
+- 동적 sysmod 도구 — **2026-08-15 재편 후 발행 0**: 모든 모듈은 `run_module_action` 한 칸 + 4단 계단(search_module_actions → get_action_schema → 호출 → 검증)으로 간다. `sysmod_<name>` 이름은 **등록만 유지**(tools/call 은 가시성을 안 보므로 캐시된 클라이언트 목록·크론이 이름으로 계속 돈다 — 발행과 디스패치는 다른 층). 액션이 많은 모듈은 search 의 `domain` 좁힘이 enum 덤프를 대신한다.
 - 외부 MCP 도구 (`mcp_*` 접두사로 서버별 prefix)
 
 ### Step 1-1. 시맨틱 발견 엔진 — progressive disclosure (2026-07-07)
