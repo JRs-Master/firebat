@@ -76,6 +76,15 @@ A caller reaches an action through `search_module_actions` → `get_action_schem
   accepted on purpose", so an audit can tell it from an omission.
 - Descriptions say **what a thing is, never what to do about it.** Instructions belong in the
   response at the moment they apply.
+- **With a catalog, do not also write the `action` enum in `input`.** The rows are the original
+  of the action set; the runtime derives the validation enum from them, and the audit refuses a
+  config-side enum as a copy. Keep `input.properties.action` itself (type + description) — only
+  the enum goes.
+- **`"hidden": true`** on a row registers the action for dispatch, gates and the derived enum
+  but keeps it out of search and schema — for a vendor-word alias that must stay callable but
+  has nothing to advertise (binance `klines`).
+- A declared catalog that cannot be read **refuses every call of the module** (fail closed) —
+  the approval gates live on those rows, and an unreadable file must not read as "no gates".
 
 ## The run, in order
 

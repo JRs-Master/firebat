@@ -207,6 +207,12 @@ impl ModuleActionSource {
         let entries: Vec<CatalogEntry> = actions
             .into_iter()
             .filter_map(|a| {
+                // 등록과 발행은 다른 층: `hidden: true` 행은 디스패치·게이트·enum 파생에는
+                // 서되(모듈 쪽 리더가 전 행을 읽는다) 검색·스키마에는 안 실린다. 벤더 낱말
+                // 별칭처럼 부를 수는 있어야 하지만 광고할 이유는 없는 액션의 자리다.
+                if a.get("hidden").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    return None;
+                }
                 let id = a.get("id").and_then(|v| v.as_str())?.to_string();
                 let a_name = a
                     .get("name")

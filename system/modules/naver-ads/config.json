@@ -147,28 +147,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "keyword-tool",
-          "estimate",
-          "managed-keywords",
-          "biz-categories",
-          "seasonal-events",
-          "stats",
-          "bizmoney",
-          "list-campaigns",
-          "get-campaign",
-          "list-adgroups",
-          "get-adgroup",
-          "list-keywords",
-          "get-keyword",
-          "list-ads",
-          "get-ad",
-          "list-channels",
-          "list-extensions",
-          "list-labels",
-          "list-shared-budgets",
-          "raw"
-        ],
         "default": "keyword-tool",
         "description": "API action"
       },

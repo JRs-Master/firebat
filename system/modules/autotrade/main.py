@@ -3650,10 +3650,10 @@ def action_selftest():
             _rows = []
     _gated = set(_cfg.get("requiresApproval") or [])
     _gated |= {_r.get("id") for _r in _rows if _r.get("approval") is True}
-    # The enum is the authority on what is a module action. Without it the scan also catches the
-    # broker-call names compared inside a body — `cancel_order` is upbit's, not ours.
-    _declared = set(((_cfg.get("input") or {}).get("properties") or {})
-                    .get("action", {}).get("enum") or [])
+    # The rows are the authority on what is a module action (원본 하나 — the config enum is
+    # gone, derived at runtime). Without this set the scan also catches the broker-call names
+    # compared inside a body — `cancel_order` is upbit's, not ours.
+    _declared = {_r.get("id") for _r in _rows if _r.get("id")}
     _src = open(_os.path.abspath(__file__), encoding="utf-8").read()
     _blocks = re.split(r'\n        if action (?:==|in) ', _src)
     _ungated = []
@@ -5343,18 +5343,21 @@ def action_selftest():
                    "ok": (mc2["placed"] or [{}])[0].get("strategyId") == "z"
                          and (mc2["placed"] or [{}])[0].get("price") == 50.0})
 
-    # --- what the dispatcher answers and what the schema allows must be the same list -------
-    # Validation happens before the sandbox runs, against the declared enum. An action added to
-    # the dispatcher but not to the declaration is refused at the door with "not one of […]",
-    # which reads as a caller mistake rather than a missing declaration — measured 2026-08-02,
-    # a live pipeline died at step 4 on exactly that.
+    # --- what the dispatcher answers and what the declaration allows must be the same list --
+    # Validation happens before the sandbox runs, against the enum the runtime derives from the
+    # catalog rows (원본 하나 — the config carries no enum any more). An action added to the
+    # dispatcher but not to the rows is refused at the door with "not one of […]", which reads
+    # as a caller mistake rather than a missing declaration — measured 2026-08-02, a live
+    # pipeline died at step 4 on exactly that.
     import re as _re
     _src = open(os.path.abspath(__file__), encoding="utf-8").read()
     _tail = _src[_src.index('if action == "gate"'):] if 'if action == "gate"' in _src else ""
     _dispatched = set(_re.findall(r'action == "([a-z_]+)"', _tail))
-    _cfgp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    with open(_cfgp, encoding="utf-8") as _fh:
-        _enum = set(json.load(_fh)["input"]["properties"]["action"]["enum"])
+    _catp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "actions.json")
+    with open(_catp, encoding="utf-8") as _fh:
+        _cat = json.load(_fh)
+    _enum = {(_r or {}).get("id")
+             for _r in (_cat if isinstance(_cat, list) else _cat.get("actions") or [])}
     _undeclared = sorted(_dispatched - _enum)
     checks.append({"name": "every action the module answers is declared in its schema",
                    "want": [], "got": _undeclared, "ok": not _undeclared})
@@ -5363,6 +5366,7 @@ def action_selftest():
     # offending value rather than the missing declaration, so it reads as bad data. Measured
     # 2026-08-02: `trades`, `plan` and `signals` were all undeclared and the live pipeline died
     # on them one after another.
+    _cfgp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
     with open(_cfgp, encoding="utf-8") as _fh:
         _declared = set(json.load(_fh)["input"]["properties"])
     _read = set(_re.findall(r'inp\.get\("([a-zA-Z][a-zA-Z0-9_]*)"', _src))

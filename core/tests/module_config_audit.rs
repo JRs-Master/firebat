@@ -343,7 +343,8 @@ fn every_module_declaration_names_something_that_exists() {
         // 1b. Action-axis gates live on rows where rows exist (v2). The dual-home OR keeps a
         // half-migrated module safe, but one home is the standard — this line is what lets the
         // legacy reader retire without a hand-kept list of who migrated.
-        if !catalog_rows_of(&module_dir, &config).is_empty() {
+        let rows = catalog_rows_of(&module_dir, &config);
+        if !rows.is_empty() {
             for legacy in ["requiresApproval", "uiOnly"] {
                 if config.get(legacy).is_some() {
                     say(format!(
@@ -352,10 +353,51 @@ fn every_module_declaration_names_something_that_exists() {
                     ));
                 }
             }
+            // 원본 하나 (2026-08-25): rows are the original of the action set — the runtime
+            // derives the validation enum from them, so an enum left in the config is a copy
+            // that can only drift.
+            if config.pointer("/input/properties/action/enum").is_some() {
+                say(
+                    "`input.properties.action.enum` next to catalog rows is a copy — the rows \
+                     are the original and the enum is derived at runtime; drop it"
+                        .to_string(),
+                );
+            }
+            // Same rule one level down: a row param whose prose is a verbatim copy of the input
+            // schema's description is the drift seed the list form exists to prevent — declare
+            // `params: [\"name\", …]` and the docs ride in from the schema.
+            for row in &rows {
+                let Some(id) = row.get("id").and_then(|v| v.as_str()) else { continue };
+                let Some(pm) = row.get("params").and_then(|v| v.as_object()) else { continue };
+                for (pn, pv) in pm {
+                    let Some(prose) = pv.as_str().filter(|t| !t.trim().is_empty()) else {
+                        continue;
+                    };
+                    let input_doc = config
+                        .pointer(&format!("/input/properties/{pn}/description"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !input_doc.trim().is_empty() && input_doc.trim() == prose.trim() {
+                        say(format!(
+                            "row `{id}` param `{pn}` repeats the input schema's description \
+                             verbatim — use the list form (`params: [\"{pn}\", …]`); the schema \
+                             prose rides in on its own"
+                        ));
+                    }
+                }
+            }
         }
 
         let params = declared_params(&config);
-        let actions = declared_actions(&config);
+        // 원본 하나: the enum is gone from catalog modules, so "what is an action here" is
+        // answered by the rows first and the (non-catalog) enum second.
+        let actions = {
+            let row_ids: BTreeSet<String> = rows
+                .iter()
+                .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(str::to_string))
+                .collect();
+            if row_ids.is_empty() { declared_actions(&config) } else { Some(row_ids) }
+        };
         let check_action = |decl: &str, action: &str, say: &mut dyn FnMut(String)| {
             if let Some(known) = &actions {
                 if !known.contains(action) {

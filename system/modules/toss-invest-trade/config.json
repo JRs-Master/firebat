@@ -52,23 +52,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "holdings",
-          "buying-power",
-          "sellable-quantity",
-          "commissions",
-          "accounts",
-          "list-orders",
-          "order-detail",
-          "create-order",
-          "modify-order",
-          "cancel-order",
-          "create-conditional-order",
-          "modify-conditional-order",
-          "cancel-conditional-order",
-          "list-conditional-orders",
-          "conditional-order-detail"
-        ],
         "description": "토스증권 계좌·주문 API."
       },
       "accountSeq": {

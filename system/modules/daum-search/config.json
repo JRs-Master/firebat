@@ -48,9 +48,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "search"
-        ],
         "default": "search",
         "description": "API action"
       },

@@ -41,10 +41,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "is_trading_day",
-          "sessions"
-        ],
         "description": "is_trading_day = one date; sessions = a range, day by day."
       },
       "market": {

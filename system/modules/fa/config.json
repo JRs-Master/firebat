@@ -49,10 +49,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "ratios",
-          "selftest"
-        ],
         "description": "ratios = DART statement rows -> financial ratios. selftest = offline checks."
       },
       "statements": {

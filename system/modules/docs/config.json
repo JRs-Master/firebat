@@ -92,16 +92,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "read",
-          "make_pptx",
-          "make_xlsx",
-          "make_docx",
-          "make_hwpx",
-          "make_pdf",
-          "masters",
-          "selftest"
-        ],
         "description": "read = document -> {text, tables, meta}. make_* = render blocks -> file in the media store. selftest = offline round-trips. masters = list the shelved master/template files (alias, kind, default) — check it when the user names a template, then pass the alias as masterMediaPath."
       },
       "path": {

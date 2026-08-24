@@ -8472,20 +8472,17 @@ def action_selftest():
        [round(_want, 4), round(_XML_DYN["f"], 4)], abs(_want - _XML_DYN["f"]) > 0.01)
     os.remove("data/sing/selftest-dyn.musicxml")
 
-    # 선언 표면 셋이 서로를 가리킨다 — enum · 카탈로그 행 · input 속성. 어긋나면 조용하지
-    # 않고 **계단이 거부한다**: `verify` 와 `font` 는 enum 에 넣고 행을 안 만들어서
-    # get_action_schema 가 "no catalog entry" 로 막았다(2026-08-21 실측, 실호출에서 잡힘).
-    # 반대 방향도 있다 — 걷은 노브 아홉이 행의 params 목록에 남아 **빈 설명으로 광고**되고
-    # 있었다. 모델은 그걸 보고 부르고, 거부를 맞는다.
+    # 선언 표면: **행이 액션의 원본이다** (원본 하나, 8/25 — config 의 enum 은 걷었고
+    # 런타임이 행에서 파생한다). 옛 검사 둘(enum↔행 동치)이 지키던 드리프트는 구조가
+    # 불가능하게 만들었다. 남는 검사 = enum 사본이 되살아나지 않는가 · 행이 부르는 인자가
+    # input 에 선언돼 있는가(빈 설명 광고) · 걷은 노브가 안 남았는가.
     _cfgp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
     with open(_cfgp, encoding="utf-8") as _fh:
         _cfg = json.load(_fh)
-    _enum = set(_cfg["input"]["properties"]["action"]["enum"])
     _rows = {r["id"]: r for r in _cfg.get("actionCatalog") or []}
-    ck("선언한 액션은 전부 카탈로그에 행이 있다 (없으면 계단이 거부한다)", [],
-       sorted(_enum - set(_rows)), not (_enum - set(_rows)))
-    ck("…그리고 행만 있고 선언에 없는 액션도 없다", [], sorted(set(_rows) - _enum),
-       not (set(_rows) - _enum))
+    ck("config 는 enum 을 다시 들지 않는다 (행이 원본, 런타임이 파생)", None,
+       _cfg["input"]["properties"]["action"].get("enum"),
+       _cfg["input"]["properties"]["action"].get("enum") is None)
     _declared = set(_cfg["input"]["properties"])
     _ghost = sorted({p for r in _rows.values() for p in r.get("params", [])} - _declared)
     ck("행이 부르는 인자는 전부 선언돼 있다 (빈 설명으로 광고되던 자리)", [], _ghost, not _ghost)

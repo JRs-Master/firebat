@@ -299,6 +299,14 @@ system/modules/<name>/
 - **전제 = 표준 OHLCV 필드**: 캔들 rows 는 `{date, open, high, low, close, volume}` 으로 정규화해 반환한다(kiwoom/korea-invest/toss 는 모듈 내부에서 rename — stock_chart `dataCacheKey` 주입·cache_grep 과 한 어휘).
 
 #### `actionCatalog` / `tags` — 4단 도구 계단: 발견 → 상세 → 호출 → 검증 (모든 모듈, 2026-07-09)
+
+> **원본 하나 (2026-08-25)** — 카탈로그를 선언한 모듈은 **행이 액션 집합의 원본**이다.
+> `input.properties.action.enum` 은 런타임이 행에서 파생하므로 **config 에 적지 않는다**(감사가
+> 사본으로 거부). 행 `params` 는 **이름 목록**(`["symbol", …]`) — 문구는 `input` 이 원본이고
+> 스키마 응답이 거기서 실어 온다(행에 문구를 다시 적으면 감사가 거부). 행 `"hidden": true` =
+> 디스패치·게이트·파생 enum 에는 서되 검색·스키마에는 안 실리는 액션(벤더 낱말 별칭 — binance
+> `klines`). 카탈로그를 선언했는데 행을 못 읽으면 그 모듈의 **모든 호출이 닫힘으로 거부**된다
+> — 승인 게이트가 행에 사니, 안 읽힘이 "게이트 없음"으로 읽히면 안 된다.
 ```json
 {
   "tags": ["헌법", "법률", "명령", "조례", "규칙", "판례"],

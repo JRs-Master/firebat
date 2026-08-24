@@ -31,6 +31,7 @@
   "actionCatalog": {
     "envelope": "{ \"action\": \"<id>\", ...params at top level }",
     "actions": [
+      { "id": "klines", "hidden": true, "name": "klines", "description": "get_candles 의 벤더명 — 같은 호출을 벤더 낱말로 부를 때만. 발행은 안 하고 디스패치만 받는다.", "params": ["symbol", "interval", "bars"] },
       {
         "id": "get_candles",
         "name": "Candles (OHLCV)",
@@ -111,20 +112,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "get_candles",
-          "klines",
-          "ticker",
-          "ticker_24h",
-          "book_ticker",
-          "avg_price",
-          "orderbook",
-          "trades",
-          "agg_trades",
-          "screen",
-          "symbols",
-          "server_time"
-        ],
         "description": "Binance public market-data action. get_candles is the broker-neutral candle contract. screen ranks a quote asset's pairs by 24h turnover. No account or order action exists here. klines is accepted as an alias of get_candles — it is the venue's own word."
       },
       "symbol": {

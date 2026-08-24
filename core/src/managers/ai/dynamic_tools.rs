@@ -113,7 +113,29 @@ impl DynamicToolRegistry {
         // filesystem for it on every call would be the same miss forever.
         self.known.write().await.insert(module.to_string());
         let Some(config) = config else { return };
+        let config = self.with_row_enum(module, config).await;
         self.absorb_declarations(module, &config).await;
+    }
+
+    /// Rows are the original of a module's action set (원본 하나): a catalog module's config
+    /// carries no enum, so this registry's own copy of the form gets one derived from the rows —
+    /// `action_choices` and the selector keep reading the place they always did. Rows that fail
+    /// to load leave the config untouched; dispatch fails closed on its own.
+    async fn with_row_enum(&self, module: &str, config: serde_json::Value) -> serde_json::Value {
+        if config.get("actionCatalog").is_none() {
+            return config;
+        }
+        let ids = self.module.action_row_ids(module).await;
+        if ids.is_empty() {
+            return config;
+        }
+        let mut c = config;
+        if let Some(a) = c.pointer_mut("/input/properties/action") {
+            a["enum"] = serde_json::Value::Array(
+                ids.iter().map(|i| serde_json::Value::String(i.clone())).collect(),
+            );
+        }
+        c
     }
 
     /// Fold one module's gate declarations into the maps. The parse comes from `build_surface`, the
@@ -286,6 +308,7 @@ impl DynamicToolRegistry {
             let Some(config) = self.module.get_module_config("system", &entry.name).await else {
                 continue;
             };
+            let config = self.with_row_enum(&entry.name, config).await;
             new_known.insert(entry.name.clone());
             // The whole derivation — tool name, description (+tags), thin params, selector
             // judgment, grounding — comes from the shared builder. The MCP transport reads the same

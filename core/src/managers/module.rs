@@ -101,6 +101,9 @@ struct CachedCalls {
     /// Empty when the module declares no `_call` anywhere, which is most of them. Cached all the
     /// same: "this module has nothing to inject" is an answer worth not re-deriving per call.
     calls: Arc<HashMap<String, serde_json::Value>>,
+    /// Row ids, in row order — the ORIGINAL of what is an action of this module (원본 하나).
+    /// The validation enum derives from this; a config-side enum is a copy the audit refuses.
+    ids: Arc<Vec<String>>,
     /// Row-declared gates (`approval` / `uiOnly` / `unsupported`) — the v2 home of what the
     /// top-level lists used to say. Read out of the same rows in the same pass.
     gates: Arc<crate::utils::action_decl::ActionGates>,
@@ -856,12 +859,34 @@ impl ModuleManager {
         )?;
         let input_data: &serde_json::Value = repaired.as_ref().unwrap_or(input_data);
 
+        // ── 행이 액션의 원본이다 (원본 하나, 2026-08-25) ─────────────────────────────
+        // 카탈로그를 선언한 모듈의 `input.properties.action.enum` 은 파생이다: 행 id 를 검증
+        // 스키마에 주입하고, config 에 남은 enum 은 감사가 사본으로 거부한다. 행에는 발행하지
+        // 않는 액션도 선다(`hidden: true` — 등록과 발행은 다른 층, binance `klines`).
+        // 카탈로그가 선언됐는데 행을 못 읽으면 **닫힘으로 실패**한다 — 빈 행을 "액션 없음"으로
+        // 읽으면 그 행들에 실린 승인 게이트까지 조용히 열린다(부재는 동의가 아니다).
+        let schema_override: Option<serde_json::Value> = match &config {
+            Some(cfg) if cfg.get("actionCatalog").is_some() => {
+                let ids = self.cached_rows_for(scope, module_name, &dir_fp, cfg).await.2;
+                if ids.is_empty() {
+                    return Err(format!(
+                        "{}: actionCatalog is declared but no action rows could be read — \
+                         refusing to run anything (fail closed: the approval gates live on \
+                         those rows). Fix the catalog file and retry.",
+                        module_name
+                    ));
+                }
+                cfg.get("input").map(|s| schema_with_row_actions(s, &ids))
+            }
+            _ => None,
+        };
+
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now
         // discoverable (explicit actionCatalog OR derived from the input schema), so the hint
         // uniformly points back to search_module_actions → get_action_schema.
         if let Some(config) = &config {
-            if let Some(input_schema) = config.get("input") {
+            if let Some(input_schema) = schema_override.as_ref().or(config.get("input")) {
                 let for_val = input_for_validation(input_data, input_schema);
                 if let Err(detail) = validate_value(&for_val, input_schema) {
                     // 도구↔액션 짝 어긋남이면 소유 모듈을 짚어준다 — 실측 2026-07-27:
@@ -1516,11 +1541,12 @@ impl ModuleManager {
     ) -> (
         Arc<HashMap<String, serde_json::Value>>,
         Arc<crate::utils::action_decl::ActionGates>,
+        Arc<Vec<String>>,
     ) {
         let key = format!("{}:{}", scope, module_name);
         if let Ok(cache) = self.action_calls.lock() {
             if let Some(hit) = cache.get(&key).filter(|c| c.fingerprint == dir_fp) {
-                return (hit.calls.clone(), hit.gates.clone());
+                return (hit.calls.clone(), hit.gates.clone(), hit.ids.clone());
             }
         }
         let rows = match crate::utils::action_decl::catalog_file(config) {
@@ -1534,6 +1560,11 @@ impl ModuleManager {
         };
         let calls = Arc::new(crate::utils::action_decl::action_calls(&rows));
         let gates = Arc::new(crate::utils::action_decl::action_gates(&rows));
+        let ids = Arc::new(
+            rows.iter()
+                .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(String::from))
+                .collect::<Vec<String>>(),
+        );
         if let Ok(mut cache) = self.action_calls.lock() {
             cache.insert(
                 key,
@@ -1541,10 +1572,43 @@ impl ModuleManager {
                     fingerprint: dir_fp.to_string(),
                     calls: calls.clone(),
                     gates: gates.clone(),
+                    ids: ids.clone(),
                 },
             );
         }
-        (calls, gates)
+        (calls, gates, ids)
+    }
+
+    /// Row ids for a module resolved by name — the action set the rows declare (원본 하나).
+    /// Empty when the module has no catalog or the catalog cannot be read; the run path treats
+    /// the latter as fail-closed, callers here use it as "derive the enum when non-empty".
+    pub async fn action_row_ids(&self, module_name: &str) -> Arc<Vec<String>> {
+        if !is_safe_name(module_name) {
+            return Arc::new(Vec::new());
+        }
+        for scope in ["user", "system"] {
+            let dir = format!("{}/modules/{}", scope, module_name);
+            let Ok(entries) = self.storage.list_dir(&dir).await else {
+                continue;
+            };
+            let mut parts: Vec<String> = entries
+                .iter()
+                .filter(|e| !e.is_directory)
+                .map(|e| {
+                    format!("{}:{}:{}", e.name, e.size.unwrap_or(0), e.modified_ms.unwrap_or(0))
+                })
+                .collect();
+            parts.sort();
+            let dir_fp = parts.join("\n");
+            let Some(config) = self.get_module_config(scope, module_name).await else {
+                break;
+            };
+            return self
+                .cached_rows_for(scope, module_name, &dir_fp, &config)
+                .await
+                .2;
+        }
+        Arc::new(Vec::new())
     }
 
     /// Row-declared gates for a module, resolved by name from outside the run path — what the
@@ -2437,6 +2501,12 @@ impl ModuleManager {
                 .get("input")
                 .map(|s| schema_declares_action(s, action))
                 .unwrap_or(false)
+            {
+                return Some(name);
+            }
+            // 카탈로그 모듈의 config 에는 enum 이 없다(행이 원본) — 행에서 찾는다.
+            if config.get("actionCatalog").is_some()
+                && self.action_row_ids(&name).await.iter().any(|i| i == action)
             {
                 return Some(name);
             }
@@ -4011,6 +4081,19 @@ fn compiled_schema_cached(
 
 /// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).
 /// input 스키마의 `action` enum 에 그 값이 선언돼 있나. enum 이 없으면(단일 액션 모듈) false.
+/// The validation schema with the action enum derived from catalog row ids — the rows are the
+/// original, so a config-side enum (legacy leftover) is overridden rather than merged. A schema
+/// with no `properties.action` (single-action module) is returned unchanged.
+fn schema_with_row_actions(input_schema: &serde_json::Value, ids: &[String]) -> serde_json::Value {
+    let mut s = input_schema.clone();
+    if let Some(a) = s.pointer_mut("/properties/action") {
+        a["enum"] = serde_json::Value::Array(
+            ids.iter().map(|i| serde_json::Value::String(i.clone())).collect(),
+        );
+    }
+    s
+}
+
 fn schema_declares_action(input_schema: &serde_json::Value, action: &str) -> bool {
     input_schema
         .get("properties")
@@ -4298,6 +4381,33 @@ impl ModuleManager {
 // Tests 이관 — `infra/tests/module_manager_test.rs` (integration test).
 
 // 순수 함수 단위 테스트만 여기 — ModuleManager 통합 테스트는 위 주석의 integration 파일.
+#[cfg(test)]
+mod row_enum_tests {
+    use super::{schema_declares_action, schema_with_row_actions};
+
+    /// Rows are the original of the action set: the derived enum overrides a legacy config
+    /// enum instead of merging with it, and a schema without an action selector passes
+    /// through untouched.
+    #[test]
+    fn derived_enum_overrides_and_single_action_passes_through() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": { "action": { "type": "string", "enum": ["stale"] } }
+        });
+        let ids = vec!["quote".to_string(), "klines".to_string()];
+        let derived = schema_with_row_actions(&schema, &ids);
+        assert!(schema_declares_action(&derived, "quote"));
+        assert!(schema_declares_action(&derived, "klines"));
+        assert!(!schema_declares_action(&derived, "stale"));
+
+        let no_selector = serde_json::json!({
+            "type": "object",
+            "properties": { "text": { "type": "string" } }
+        });
+        assert_eq!(schema_with_row_actions(&no_selector, &ids), no_selector);
+    }
+}
+
 #[cfg(test)]
 mod media_export_path_tests {
     use super::media_export_path;

@@ -65,19 +65,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "geocoding",
-          "reverse-geocoding",
-          "search-address",
-          "search-keyword",
-          "coord2region",
-          "transcoord",
-          "search-category",
-          "route-transit",
-          "route-walk",
-          "route-bicycle",
-          "static-map"
-        ],
         "description": "geocoding/search-address=address to coordinates, reverse-geocoding=coordinates to address, coord2region=coordinates to administrative (H) and legal (B) division codes, transcoord=between coordinate systems, search-keyword=places by name, search-category=places by category code with no keyword, route-transit/route-walk/route-bicycle=directions, static-map=a PNG of the map, for documents and notifications where an interactive map cannot go"
       },
       "address": {

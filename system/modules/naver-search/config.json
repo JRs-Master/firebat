@@ -93,18 +93,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "search",
-          "search-trend",
-          "shopping-categories",
-          "shopping-category-by-device",
-          "shopping-category-by-gender",
-          "shopping-category-by-age",
-          "shopping-keywords",
-          "shopping-by-device",
-          "shopping-by-gender",
-          "shopping-by-age"
-        ],
         "default": "search",
         "description": "API action. search=Naver search, search-trend=search interest over time, shopping-categories=category click trend, shopping-category-by-*=that category split by one axis, shopping-keywords=keywords inside a category, shopping-by-*=one keyword split by one axis"
       },

@@ -42,21 +42,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "orderbook",
-          "prices",
-          "trades",
-          "price-limits",
-          "candles",
-          "stocks",
-          "stock-warnings",
-          "exchange-rate",
-          "market-calendar",
-          "rankings",
-          "market-indicator-prices",
-          "market-indicator-candles",
-          "investor-trading"
-        ],
         "description": "토스증권 시세 API."
       },
       "accountSeq": {

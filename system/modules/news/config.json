@@ -52,11 +52,6 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": [
-          "impact",
-          "timeline",
-          "selftest"
-        ],
         "description": "impact = news + daily bars -> measured reaction with a control. timeline = counts + clusters only. selftest = offline checks."
       },
       "items": {
