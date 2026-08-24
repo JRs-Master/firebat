@@ -824,12 +824,10 @@ def gm_named_variant(program, word):
     참조는 정반대다** — 나일론 기타의 mute 채널도 28 이다. 걷었다.
 
     표를 새로 적지 않는다 — GM 이름표에서 파생한다. 규격의 128칸은 **여덟 칸씩 한 패밀리**라,
-    같은 패밀리 안에서 이름에 'muted' 가 붙은 것을 찾고 **나머지 이름이 겹칠 때만** 짝으로 본다.
-    · 56 trumpet → 59 mutedtrumpet ('muted' 를 떼면 'trumpet', 원본에 들어 있다)
-    · 27 electricguitarclean → 28 electricguitarmuted ('electricguitar' 가 겹친다)
-    · 24 acousticguitarnylon → **None** (겹치는 이름이 'electricguitar' 라 안 맞는다 — 통기타를
-      일렉 뮤트 음색으로 바꾸는 건 우리가 지어내는 것이지 GM 이 주는 게 아니다)
-    GM 이 안 주는 악기(현·목관 뮤트)는 None 이고, 부르는 쪽이 그렇다고 고지한다."""
+    같은 패밀리 안에서 이름에 그 낱말('muted' 등)이 든 프로그램을 찾아 패밀리 전원의 짝으로
+    삼는다. · 56 trumpet → 59 muted trumpet · 24/25/27 기타 전부 → 28 muted (참조도 나일론
+    기타 mute 를 28 로 준다). GM 이 안 주는 갈래(현·목관 뮤트)는 None 이고, 부르는 쪽이
+    그렇다고 고지한다."""
     if word not in _GM_VARIANT:
         by_prog = {}
         for nm, pr in GM_OFFICIAL.items():
@@ -3592,27 +3590,37 @@ _XML_TECH_VOICE = {"snap-pizzicato": "pizzicato", "stopped": "muted",
 _XML_TECH_UNPLAYED = ("up-bow", "down-bow", "double-tongue",
                       "triple-tongue", "brass-bend", "flip", "smear", "golpe", "tap",
                       "pluck", "other-technical")
-# 세기는 **셈여림 표의 한 칸**으로 움직인다. 예전엔 +0.12·+0.18 이라는 내가 고른 값이었는데,
-# "조금 세게" 를 말해 주는 출처가 우리에게 _XML_DYN 하나뿐이라 거기서 파생한다.
-_XML_ART_STEP = {
-    "accent": 1, "strong-accent": 2, "marcato": 2,
+# 세기는 참조 표의 **velocity 열**을 곱한다. 게이트를 꺼내 온 바로 그 표(instruments.xml
+# Articulation)가 세기도 준다 — sforzato(악센트) <velocity>150</velocity> · marcato 120.
+# ⚠️ 예전 "셈여림 한 칸" 파생은 "'조금 세게'의 출처가 우리에게 없다"는 전제였는데, 8/25
+# 재대조에서 그 전제가 거짓으로 판명됐다(같은 표에 열이 있었다). 값 하나를 위해 출처를
+# 둘로 두지 않는다 — 게이트와 세기는 한 표에서 온다.
+_XML_ART_VEL = {
+    "accent": 1.5,                          # instruments.xml sforzato 150%
+    "strong-accent": 1.2, "marcato": 1.2,   # instruments.xml marcato 120%
     # 규격: "The <soft-accent> element indicates a soft accent that is **not as heavy as a
-    # normal accent**." — 방향과 **상한**을 둘 다 말한다. 정상 악센트가 한 칸이므로 그 사이,
-    # 즉 반 칸. (참조 구현은 이 기호에 재생 타입만 두고 숫자는 사운드 프로필에 있어 못 봤다.)
-    "soft-accent": 0.5,
-    # 규격: "The <stress> element indicates a stressed note." — 방향만 말하고 크기도, 악센트와의
-    # 관계도 안 말한다. 그래서 **우리 어휘가 낼 수 있는 제일 작은 강조**를 준다(반 칸).
+    # normal accent**." — 방향과 **상한**을 준다. 표에는 이 기호가 없어 값은 파생:
+    # 평음(×1)과 악센트(×1.5) 사이 = ×1.25.
+    "soft-accent": 1.25,
+    # 규격: "The <stress> element indicates a stressed note." — 방향만 말한다. 그래서
+    # **우리 어휘가 낼 수 있는 제일 작은 강조**(×1.1, 옛 반 칸과 같은 크기)를 준다.
     # ⚠️ soft-accent 보다 근거가 얕다 — 규격이 상한을 안 줬다.
-    "stress": 0.5, "unstress": -0.5,
+    "stress": 1.1, "unstress": 1 / 1.1,
 }
+
+
+def _vel_mult(vel, mult):
+    """참조 표의 velocity % 를 우리 0~1 세기에 곱한다. 위로는 1.0, 아래로는 바닥에서 멈춘다."""
+    return max(0.02, min(1.0, vel * mult))
 
 
 def _dyn_step(vel, steps):
     """셈여림 표에서 `steps` 칸 옮긴 세기. 표 밖으로는 안 나간다.
 
-    악센트가 "얼마나 더 세게" 인지, 목표 없는 쐐기가 "얼마나 부푸는지" 를 말해 주는 곳이
+    목표 없는 쐐기가 "얼마나 부푸는지", 해머온이 얼마나 여려지는지를 말해 주는 곳이
     악보에도 규격에도 없다. 우리가 가진 유일한 세기 눈금이 이 표이므로 거기서 한 칸씩
-    움직인다 — 새 숫자를 만들지 않고, 표를 고치면 셋이 같이 따라온다.
+    움직인다. (아티큘레이션 악센트는 여기가 아니다 — 참조 표의 velocity 열이 값을 주므로
+    `_XML_ART_VEL` 곱으로 간다.)
     """
     if not steps:
         return vel
@@ -3642,7 +3650,7 @@ def _dyn_step(vel, steps):
 
 
 def _art_of(el):
-    """그 음표의 아티큘레이션 → (게이트, 셈여림 칸 수).
+    """그 음표의 아티큘레이션 → (게이트, 세기 곱).
 
     ⚠️ 한 곳에 둔다. 예전엔 음표 가지 안에만 있어서 **드럼(unpitched) 가지가 이걸 안 읽었고**,
     실측 2026-08-22 아로하: 파일이 드럼에 악센트를 40개 적어 놨는데 880행이 전부 평평하게
@@ -3650,21 +3658,31 @@ def _art_of(el):
     """
     nots = _xk1(el, "notations")          # 모듈 레벨 헬퍼 — kid/text_of 는 파서 안 지역명이다
     arts = _xk1(nots, "articulations") if nots is not None else None
-    gate, steps, unplayed, breath = 1.0, 0, [], False
+    gate, vmult, unplayed, breath, tags = 1.0, 1.0, [], False, set()
     if arts is not None:
         for a in arts:
             tag = _strip_ns(a.tag)
+            tags.add(tag)
             gate = min(gate, _XML_ART_GATE.get(tag, 1.0))
-            _st2 = _XML_ART_STEP.get(tag, 0)
-            # ⚠️ `max` 로 고르면 **음수(unstress)가 0 에 먹힌다.** 세기를 제일 크게 움직이는
-            # 것을 고른다 — 한 음에 악센트와 언스트레스가 같이 붙는 일은 없다.
-            if abs(_st2) > abs(steps):
-                steps = _st2
+            _m2 = _XML_ART_VEL.get(tag, 1.0)
+            # ⚠️ 곱을 누적하면 겹친 기호가 세기를 제곱한다. 세기를 제일 크게 움직이는 것
+            # 하나를 고른다 — 한 음에 악센트와 언스트레스가 같이 붙는 일은 없다.
+            if abs(_m2 - 1.0) > abs(vmult - 1.0):
+                vmult = _m2
             if tag in _XML_ART_UNPLAYED:
                 unplayed.append(tag)
             if tag == "breath-mark":
                 breath = True
-    return gate, steps, unplayed, breath
+    # 조합은 참조 표의 **조합 행**이 정한다. `min` 은 marcatoStaccato(50)·sforzatoStaccato(50)
+    # 를 재현하지만 전부는 아니다 — marcatoTenuto 는 **100**(테누토가 이긴다), tenuto+staccato
+    # 는 portato 의 **67** 이다. 8/23 대조는 min 이 맞는 한 행만 검산했었다(한 사례는 규칙이
+    # 아니다 — 8/25 재대조에서 잡힘).
+    if "tenuto" in tags:
+        if "staccato" in tags:
+            gate = _XML_ART_GATE["detached-legato"]     # tenuto+staccato = portato 67
+        elif tags & {"marcato", "strong-accent"}:
+            gate = _XML_ART_GATE["tenuto"]              # marcatoTenuto 100
+    return gate, vmult, unplayed, breath
 
 # 물결선으로 지시된 화음 굴리기(rolled chord). ⚠️ 우리말 "아르페지오 주법"(손가락으로 뜯는
 # 분산화음)과 **다른 물건**이다 — 그쪽은 악보에 음표로 다 적히고 우리는 그대로 연주한다.
@@ -4470,7 +4488,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             skip_mark("아티큘레이션 %s" % _t)
                         _upa = pend_accent.pop(u_staff, None)
                         uv = (_upa if _upa is not None
-                              else _dyn_step(_staff_vel(u_staff), _ust))
+                              else _vel_mult(_staff_vel(u_staff), _ust))
                         if usyl:
                             # A rhythm-lyric lead sheet (실측 아로하: 가사 344개가 슬래시 음표에
                             # 얹혀 멜로디 음고가 없다): the slash carries WHEN, the lyric carries
@@ -4585,7 +4603,7 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                             vel_by_staff[_ds] = _dv
                             vel_any[0] = _dv
                         deferred_dyn = [q for q in deferred_dyn if q[0] > _now + 1e-9]
-                    gate, vsteps, _unp_art, _breath = _art_of(el)
+                    gate, vmult, _unp_art, _breath = _art_of(el)
                     for _t in _unp_art:
                         if _t == "caesura":
                             # 카이수라는 그 음 **뒤**에서 음악을 끊는다 — 숨과 달리 시간을
@@ -4691,10 +4709,10 @@ def musicxml_to_score(path, lyrics=None, parts_out=None, want_part=None):
                     # 안 보면 남의 것을 집는다 — 실측 2026-08-21 아로하 Gtr1 41→42마디:
                     # 성부 1 과 성부 5 가 A2·E3·G3·D4 에 똑같이 붙임줄을 걸어 놓았다.
                     n_voice = _xt(el, "voice", "1") or "1"
-                    if _hammered:
-                        vsteps -= 1
+                    _hstep = -1 if _hammered else 0
                     _pa = pend_accent.pop(n_staff, None)
-                    nvel = _pa if _pa is not None else _dyn_step(_staff_vel(n_staff), vsteps)
+                    nvel = (_pa if _pa is not None
+                            else _vel_mult(_dyn_step(_staff_vel(n_staff), _hstep), vmult))
                     if parts_out is not None and not is_tab:
                         stolen = 0.0
                         if graces and not is_stack:
@@ -7274,7 +7292,7 @@ def action_selftest():
        [len(_XML_DYN), len(set(_XML_DYN.values()))],
        len(_XML_DYN) == 14 and len(set(_XML_DYN.values())) == 12
        and _XML_DYN["p"] == 49 / 127.0)
-    ck("…그 사다리 위에서 악센트 한 칸은 여전히 f → ff", round(112 / 127.0, 6),
+    ck("…그 사다리 위에서 한 칸(쐐기·해머온의 눈금)은 여전히 f → ff", round(112 / 127.0, 6),
        round(_dyn_step(_XML_DYN["f"], 1), 6),
        abs(_dyn_step(_XML_DYN["f"], 1) - _XML_DYN["ff"]) < 1e-9)
 
@@ -7297,6 +7315,28 @@ def action_selftest():
     ck("⭐ 아티큘레이션 게이트가 MuseScore 표 그대로 (스타카티시모는 0.25→0.33 로 출처 통일)",
        [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0], _g,
        _g == [1.0, 0.5, 0.33, 0.33, 0.67, 0.67, 1.0])
+
+    def _gates2(pairs):
+        body = ""
+        for a, b in pairs:
+            body += _n("C", 4, 4, extra='<notations><articulations><' + a + '/><' + b
+                                        + '/></articulations></notations>')
+        with open("data/sing/selftest-art2.musicxml", "w", encoding="utf-8") as fh:
+            fh.write(P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+                     + body + '</measure>' + E)
+        rows = []
+        musicxml_to_score("data/sing/selftest-art2.musicxml", parts_out=rows)
+        os.remove("data/sing/selftest-art2.musicxml")
+        return [round(r.get("gate", 1.0), 2) for r in rows if "pitch" in r]
+
+    # 조합은 참조 표의 조합 **행**이 정한다 — min 하나로는 marcatoTenuto(100) 가 67 이 된다.
+    # 8/23 대조는 min 이 우연히 맞는 marcatoStaccato 한 행만 검산했었다.
+    ck("⭐ 조합 게이트 = 참조의 조합 행 (marcato+staccato 50 · tenuto+staccato 67 = portato ·"
+       " marcato+tenuto 100 = marcatoTenuto)",
+       [0.5, 0.67, 1.0],
+       _gates2([("strong-accent", "staccato"), ("tenuto", "staccato"), ("strong-accent", "tenuto")]),
+       _gates2([("strong-accent", "staccato"), ("tenuto", "staccato"),
+                ("strong-accent", "tenuto")]) == [0.5, 0.67, 1.0])
     _g, _sc = _gates(["other-articulation"])
     _sk = ((_sc.get("_notation_skipped") or {}).get("us") or {})
     ck("⭐ 값을 못 대는 것만 남았고, 그건 여전히 **안 걸었다고 말한다**", [[1.0], 1],
@@ -7413,13 +7453,12 @@ def action_selftest():
 
     _av = _artvels([None, "soft-accent", "accent", "stress", "unstress"])
     _plain, _soft, _acc, _str, _uns = _av
-    ck("⭐ `soft-accent` 은 악센트인데 **덜 무겁다** (규격이 그렇게 정의한다) — 평음<약악센트<악센트",
-       "80 < %s < 96" % _soft, _av, _plain < _soft < _acc
-       and _plain == 80.0 and _acc == 96.0)
-    ck("…그 값은 표 두 칸 사이를 나눈 것이지 새 상수가 아니다 (mf 80 · f 96 → 88)", 88.0,
-       _soft, _soft == 88.0)
+    ck("⭐ 악센트 세기 = 참조 표의 velocity 열 (sforzato 150% — mf 80 → 120)",
+       120.0, _acc, _plain == 80.0 and _acc == 120.0)
+    ck("⭐ `soft-accent` 은 악센트인데 **덜 무겁다** (규격의 상한) — 평음<약악센트<악센트",
+       "80 < %s < 120" % _soft, _av, _plain < _soft < _acc and _soft == 100.0)
     ck("…`stress` 는 위로, `unstress` 는 아래로 (규격이 방향만 말한다)",
-       [88.0, 72.0], [_str, _uns], _str > _plain and _uns < _plain)
+       [88.0, 72.7], [_str, _uns], _str > _plain and _uns < _plain)
 
     def _offvels(off_attr):
         body = ('<direction><direction-type><dynamics><f/></dynamics></direction-type>'
@@ -8503,8 +8542,8 @@ def action_selftest():
        next((r["pitch"] for r in _cr if "pitch" in r), None) == 60)
     os.remove("data/sing/selftest-clefoct.musicxml")
 
-    # 세기 델타는 **셈여림 표 한 칸**이다. 악센트 +0.12·마르카토 +0.18 은 내가 고른 값이었다.
-    ck("an accent is one step up the dynamics table, not a number of mine",
+    # 사다리 자체의 검산 — 한 칸은 이제 쐐기·해머온의 눈금이다(악센트는 velocity 곱).
+    ck("one ladder step lands exactly on the next table value, not on a number of mine",
        (round(_XML_DYN["mf"], 4), round(_XML_DYN["f"], 4)),
        (round(_dyn_step(_XML_DYN["p"], 1), 4), round(_dyn_step(_XML_DYN["p"], 2), 4)),
        abs(_dyn_step(_XML_DYN["p"], 1) - _XML_DYN["mp"]) < 1e-9
@@ -8512,8 +8551,8 @@ def action_selftest():
        and _dyn_step(_XML_DYN["fff"], 1) <= 1.0
        and _dyn_step(_XML_DYN["ppp"], -1) > 0)
 
-    # …그리고 그 계단이 **음표 경로에서** 실제로 쓰이는지. 헬퍼만 재면 호출부를 되돌려도
-    # 초록이 나온다(카나리아로 확인). p 로 선언된 마디에서 악센트 붙은 음은 정확히 mp 다.
+    # …그리고 그 곱이 **음표 경로에서** 실제로 쓰이는지. 헬퍼만 재면 호출부를 되돌려도
+    # 초록이 나온다(카나리아로 확인). p 로 선언된 마디에서 악센트 붙은 음은 p × 1.5 다.
     _ad = (P + '<measure number="1"><attributes><divisions>1</divisions></attributes>'
            '<direction><direction-type><dynamics><p/></dynamics></direction-type></direction>'
            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>'
@@ -8526,11 +8565,11 @@ def action_selftest():
     musicxml_to_score("data/sing/selftest-accent.musicxml", parts_out=_ap)
     _plain = next((r["vel"] for r in _ap if r.get("pitch") == 60), None)
     _accd = next((r["vel"] for r in _ap if r.get("pitch") == 62), None)
-    ck("…and the note path uses that step — an accent under p comes out exactly mp",
-       (round(_XML_DYN["p"], 4), round(_XML_DYN["mp"], 4)),
+    ck("…and the note path uses that multiplier — an accent under p is p x 1.5 (sforzato 150%)",
+       (round(_XML_DYN["p"], 4), round(_XML_DYN["p"] * 1.5, 4)),
        (_plain and round(_plain, 4), _accd and round(_accd, 4)),
        _plain is not None and _accd is not None
-       and abs(_plain - _XML_DYN["p"]) < 1e-9 and abs(_accd - _XML_DYN["mp"]) < 1e-9)
+       and abs(_plain - _XML_DYN["p"]) < 1e-9 and abs(_accd - _XML_DYN["p"] * 1.5) < 1e-9)
     os.remove("data/sing/selftest-accent.musicxml")
 
     # 드럼도 악센트를 읽는다. 실측 2026-08-22 아로하: 파일이 40개 적었는데 전부 버려졌다.
