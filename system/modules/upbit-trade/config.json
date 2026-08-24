@@ -398,20 +398,7 @@
     },
     "additionalProperties": true
   },
-  "requiresApproval": [
-    "order-create",
-    "order-cancel",
-    "order-cancel-and-new",
-    "order-cancel-uuids",
-    "order-cancel-open",
-    "withdraw-coin",
-    "withdraw-krw",
-    "withdraw-cancel",
-    "deposit-krw",
-    "deposit-create-address",
-    "place_order",
-    "cancel_order"
-  ],
+  "actionCatalog": { "file": "actions.json", "envelope": "{ \"action\": \"<id>\", <params flat at top level> }" },
   "ws": {
     "endpoint": "wss://api.upbit.com/websocket/v1/private",
     "matchField": "type",
