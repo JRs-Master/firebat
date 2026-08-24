@@ -31,7 +31,7 @@ import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { copyText } from '../../lib/clipboard';
 import { Message, PendingAction, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
-import { FILE_CARD_EXTS, AUDIO_PLAYER_EXTS, AudioFileCard, FileCard, ProducedFileStrip, ProducedNames, useProducedName, fileAddressKey, type ProducedFile } from '../../lib/file-card';
+import { MediaLink, ProducedFileStrip, ProducedNames, fileAddressKey, type ProducedFile } from '../../lib/file-card';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
 import { parseSkillMd, skillToMd } from '../../lib/util/skill-md';
@@ -62,7 +62,7 @@ const mdComponents = {
   li: (props: any) => <li className="pl-0.5" {...props} />,
   strong: (props: any) => <strong className="font-bold text-slate-900" {...props} />,
   a: ({ href, children, ...props }: any) => (
-    <MdMediaLink href={href} {...props}>{children}</MdMediaLink>
+    <MediaLink href={href} {...props}>{children}</MediaLink>
   ),
   code: ({ className, children, ...props }: any) => {
     const text = String(children).replace(/\n$/, '');
@@ -94,38 +94,7 @@ const mdComponents = {
 };
 
 
-// ── 미디어 파일 링크 → 카드 승격 ────────────────────────────────────────────────
-// The docs module hands back a bare markdown link and it read as an afterthought (2026-08-10
-// 사용자: "다운로드가 허접"). A DISPLAY-layer upgrade beats teaching the model a component:
-// any /user|system/media (hub 포함) link whose extension we know becomes a file card — office
-// files get a typed badge + download, audio gets an inline player. Retroactive for old
-// messages, zero model cooperation needed. The card itself now lives in lib/file-card so the
-// Image block can degrade to the same look (a render fence pointing at a .xlsx is not an image).
-const MEDIA_LINK_RE = /^\/(?:user|system)\/(?:hub\/[^?#]+\/)?media\/([^/?#]+)\.([a-z0-9]+)(?:[?#].*)?$/i;
-
-function MdMediaLink({ href, children, ...props }: any) {
-  const m = typeof href === 'string' ? href.match(MEDIA_LINK_RE) : null;
-  const ext = m?.[2]?.toLowerCase() ?? '';
-  // The name the backend recorded for this address wins over the one in the url: the slug carries
-  // a uniquifying hash that is storage's business, not the reader's, and this label is also the
-  // browser's download name (FileCard sets `download` from it).
-  const recorded = useProducedName(typeof href === 'string' ? href : '');
-  if (m && (FILE_CARD_EXTS[ext] || AUDIO_PLAYER_EXTS.has(ext))) {
-    const name = recorded ? recorded.replace(new RegExp(`\.${ext}$`, 'i'), '') : (() => {
-      try { return decodeURIComponent(m[1]); } catch { return m[1]; }
-    })();
-    if (AUDIO_PLAYER_EXTS.has(ext)) {
-      return <AudioFileCard href={href} name={name} ext={ext} />;
-    }
-    return <FileCard href={href} name={name} ext={ext} />;
-  }
-  return (
-    <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" href={href} {...props}>
-      {children}
-    </a>
-  );
-}
-
+// 미디어 파일 링크 → 카드 승격은 lib/file-card 의 MediaLink 한 곳에 산다(채팅·공유·페이지 공용).
 function renderMarkdownInner(text: string) {
   // cleanMarkdown → escapeHtmlTagMentions 순서: JSON/render 블록 제거 후, 남은 텍스트의 HTML 태그 이름 보호.
   // **bold** 가 한국어/괄호 인접 시 commonmark 인식 실패(raw ** 노출) → 명시적 <strong> 변환 (user TextComp 동일).

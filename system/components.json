@@ -3807,8 +3807,8 @@
   {
     "name": "player",
     "componentType": "Player",
-    "description": "One audio file with a real transport — play, position, volume, speed, whole-track repeat and A-B section repeat — plus a save menu. Use it for a rendered piece that has no lyrics to follow; with lyrics use `karaoke` instead. guideUrl adds a second stem the listener can switch on and off while the first keeps playing.",
-    "semanticText": "재생기 플레이어 오디오 audio player 음원 듣기 연주 감상 배속 구간반복 AB반복 볼륨 저장 내려받기 가이드 스템 stem 보컬 가이드 minus one 반주 메트로놈 박자 클릭 metronome click beat 박치",
+    "description": "One audio file with a real transport — play, position, volume, speed, whole-track repeat and A-B section repeat — plus a save menu. Use it for a rendered piece that has no lyrics to follow; with lyrics use `karaoke` instead. guideUrl adds a second stem the listener can switch on and off while the first keeps playing. Give `tracks` (2+ entries) instead of audioUrl for a playlist: a track list with shuffle, whole-list repeat, prev/next and auto-advance.",
+    "semanticText": "재생기 플레이어 오디오 audio player 음원 듣기 연주 감상 배속 구간반복 AB반복 볼륨 저장 내려받기 가이드 스템 stem 보컬 가이드 minus one 반주 메트로놈 박자 클릭 metronome click beat 박치 재생목록 playlist 연속재생 여러 곡 앨범 셔플 shuffle 랜덤재생 random 전체 반복 repeat",
     "propsSchema": {
       "type": "object",
       "synonyms": {
@@ -3818,7 +3818,9 @@
         "name": "title",
         "caption": "note",
         "click": "clickUrl",
-        "metronome": "clickUrl"
+        "metronome": "clickUrl",
+        "playlist": "tracks",
+        "items": "tracks"
       },
       "properties": {
         "title": {
@@ -3846,6 +3848,29 @@
           ],
           "description": "URL of the metronome stem the same sing render returned (click:true) — a click every beat, a bell on the file's own downbeats. A pill in the transport switches it while the music keeps playing."
         },
+        "tracks": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "playlist — [{title, audioUrl}, …]. With 2+ entries the card shows the track list with shuffle, whole-list repeat, prev/next and auto-advance; audioUrl and the stem props are then ignored. Track repeat stays on the transport's own repeat button.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "row label — the song name"
+              },
+              "audioUrl": {
+                "type": "string",
+                "description": "the audio URL of this track"
+              }
+            }
+          }
+        },
         "note": {
           "type": [
             "string",
@@ -3853,10 +3878,7 @@
           ],
           "description": "one line under the transport — what the stems are, say"
         }
-      },
-      "required": [
-        "audioUrl"
-      ]
+      }
     }
   }
 ]

@@ -61,7 +61,7 @@ const TRANSPORT_CSS = `
 export type TransportSpan = { start: number; end: number };
 
 export function AudioTransport({
-  src, audioRef: outerRef, onTime, onDur, study = true, theme = 'plain', snapTo = [],
+  src, audioRef: outerRef, onTime, onDur, onEnded, study = true, theme = 'plain', snapTo = [],
   downloads = [], stems: pStems, guideSrc, guideLabel = '가이드',
   abA: pAbA, abB: pAbB, setAbA: pSetAbA, setAbB: pSetAbB, preload = 'metadata',
   children,
@@ -71,6 +71,8 @@ export function AudioTransport({
   audioRef?: React.RefObject<HTMLAudioElement | null>;
   onTime?: (t: number) => void;
   onDur?: (d: number) => void;
+  /** 트랙이 끝까지 갔을 때(전체반복이 꺼져 있을 때만) — 재생목록이 다음 곡으로 넘어가는 자리. */
+  onEnded?: () => void;
   /** 연습 모드 = 배속·전체반복·구간반복 노출. false = 재생+위치+볼륨만. */
   study?: boolean;
   /** 프리셋 이름이거나, 프리셋 위에 덮을 색 몇 개. 표면이 자기 색을 가진다. */
@@ -216,7 +218,7 @@ export function AudioTransport({
       }
     };
     const onMeta = () => { setDur(a.duration || 0); onDur?.(a.duration || 0); };
-    const onEnd = () => { if (!a.loop) setPlaying(false); };
+    const onEnd = () => { if (!a.loop) { setPlaying(false); onEnded?.(); } };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     a.addEventListener('timeupdate', onT); a.addEventListener('loadedmetadata', onMeta);
@@ -228,7 +230,7 @@ export function AudioTransport({
       a.removeEventListener('durationchange', onMeta); a.removeEventListener('ended', onEnd);
       a.removeEventListener('play', onPlay); a.removeEventListener('pause', onPause);
     };
-  }, [audioRef, abA, abB, onTime, onDur]);
+  }, [audioRef, abA, abB, onTime, onDur, onEnded]);
 
   // 재생 중엔 rAF — timeupdate 는 초당 네 번이라 슬라이더도 가사도 뚝뚝 끊긴다.
   useEffect(() => {

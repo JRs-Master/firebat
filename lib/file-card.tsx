@@ -216,3 +216,38 @@ export function ProducedFileStrip({ files, bodyText, shownAddresses }: {
     </div>
   );
 }
+
+// ── 미디어 링크 → 카드 승격, 한 곳 ───────────────────────────────────────────────────────────
+// A markdown link whose address is one of our media files should read as the file, not as
+// prose: office files get the typed download card, audio gets the inline player. This started
+// in the admin chat, was copied for the share page, and was about to be copied a third time
+// for published pages — three surfaces, one behavior, so the component lives here now.
+// Name preference: the name the backend recorded for this turn's produced files (chat only —
+// the context is empty on other surfaces) → the text the author put in the brackets → the
+// address slug.
+export const MEDIA_LINK_RE = /^\/(?:user|system)\/(?:hub\/[^?#]+\/)?media\/([^/?#]+)\.([a-z0-9]+)(?:[?#].*)?$/i;
+
+export function MediaLink({ href, children, fallbackClassName = 'text-blue-600 hover:text-blue-800 underline', ...props }: {
+  href?: string;
+  children?: React.ReactNode;
+  /** 승격되지 않는 보통 링크의 모양 — 표면(채팅·공유·페이지)이 자기 톤을 정한다. */
+  fallbackClassName?: string;
+  [key: string]: unknown;
+}) {
+  const recorded = useProducedName(typeof href === 'string' ? href : '');
+  const m = typeof href === 'string' ? href.match(MEDIA_LINK_RE) : null;
+  const ext = m?.[2]?.toLowerCase() ?? '';
+  if (m && (FILE_CARD_EXTS[ext] || AUDIO_PLAYER_EXTS.has(ext))) {
+    const text = (Array.isArray(children) ? children : [children])
+      .filter((c): c is string => typeof c === 'string').join('').trim();
+    const slug = (() => { try { return decodeURIComponent(m[1]); } catch { return m[1]; } })();
+    const name = (recorded || text || slug).replace(new RegExp(`\.${ext}$`, 'i'), '');
+    if (AUDIO_PLAYER_EXTS.has(ext)) return <AudioFileCard href={href!} name={name} ext={ext} />;
+    return <FileCard href={href!} name={name} ext={ext} />;
+  }
+  return (
+    <a className={fallbackClassName} target="_blank" rel="noopener noreferrer" href={href} {...(props as object)}>
+      {children}
+    </a>
+  );
+}

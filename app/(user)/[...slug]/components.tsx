@@ -22,7 +22,7 @@ import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFireba
 import { compileExpression, sampleFunction, fitYRange, niceTicks, tickLabel, viewSegments } from '../../../lib/util/function-plot';
 import { loadCdn } from '@/lib/util/load-cdn';
 import { CodeComp } from '@/app/components/CodeBlock';
-import { FileCard, documentTarget } from '../../../lib/file-card';
+import { FileCard, MediaLink, documentTarget } from '../../../lib/file-card';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -853,7 +853,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
     case 'Karaoke':       return <KaraokeComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url ?? p.mrUrl} guideUrl={p.guideUrl ?? p.guide} clickUrl={p.clickUrl ?? p.click} lrcUrl={p.lrcUrl ?? p.lrc_url ?? p.lyricsUrl} lrc={p.lrc ?? p.lyrics} offset={p.offset ?? p.lrcOffset} record={p.record} />;
-    case 'Player':        return <PlayerComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} guideUrl={p.guideUrl ?? p.guide} clickUrl={p.clickUrl ?? p.click} note={p.note ?? p.caption} />;
+    case 'Player':        return <PlayerComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} guideUrl={p.guideUrl ?? p.guide} clickUrl={p.clickUrl ?? p.click} note={p.note ?? p.caption} tracks={p.tracks ?? p.playlist ?? p.items} />;
     case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} image={p.image ?? p.photo ?? p.imageUrl} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} mode={p.mode ?? p.kind} view={p.view} />;
     // module 블록(페이지 전용) — 서버가 채운 _baked render blocks 를 그대로 재귀 렌더.
     // publish = save 시 bake / request = SSR 이 주입(page.tsx). 비어 있으면 조용히 없음.
@@ -1975,10 +1975,122 @@ function dictationDiff(script: string, typed: string) {
 
 // 소리 하나를 듣는 카드. 노래방이 아닌 렌더(연주곡)가 서는 자리다 — 그 전에는 파일 링크뿐이라
 // 스템이 둘이어도 화면이 그걸 한 곡으로 보여 줄 방법이 없었다.
-function PlayerComp({ title, audioUrl, guideUrl, clickUrl, note }: {
+function PlayerComp({ title, audioUrl, guideUrl, clickUrl, note, tracks }: {
   title?: string; audioUrl?: string; guideUrl?: string; clickUrl?: string; note?: string;
+  /** 재생목록 — 두 곡부터 목록 UI 가 선다. 한 곡짜리 목록은 단일 재생과 같다. */
+  tracks?: Array<{ title?: string; audioUrl?: string; url?: string; src?: string }>;
 }) {
-  if (!audioUrl) return null;
+  // ── 재생목록 상태 ─────────────────────────────────────────────────────────
+  // 순서는 셔플이 정하고, 끝은 반복이 정한다. 한곡 반복은 재생기 자신의 전체반복 버튼이
+  // 이미 한다(element loop 가 켜져 있으면 ended 가 안 오므로 목록도 자연히 안 넘어간다).
+  const list = useMemo(() =>
+    (Array.isArray(tracks) ? tracks : [])
+      .map((t, i) => ({ src: t?.audioUrl ?? t?.url ?? t?.src ?? '', title: t?.title || `트랙 ${i + 1}` }))
+      .filter((t) => t.src),
+    [tracks]);
+  const [idx, setIdx] = useState(0);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeatAll, setRepeatAll] = useState(false);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
+  // 셔플 한 바퀴 = "전 곡이 한 번씩". 매번 랜덤을 던지면 같은 곡이 곧장 또 나온다.
+  const playedRef = useRef<Set<number>>(new Set());
+  const historyRef = useRef<number[]>([]);
+  // 곡을 바꾼 것이 손(선택·이전/다음)이나 자동 넘김일 때만 새 src 를 바로 재생한다.
+  const wantPlayRef = useRef(false);
+  const shuffleRef = useRef(shuffle); shuffleRef.current = shuffle;
+  const repeatRef = useRef(repeatAll); repeatRef.current = repeatAll;
+  const idxRef = useRef(idx); idxRef.current = idx;
+
+  const go = useCallback((i: number, pushHistory: boolean) => {
+    if (pushHistory) historyRef.current.push(idxRef.current);
+    playedRef.current.add(i);
+    wantPlayRef.current = true;
+    setIdx(i);
+  }, []);
+  const pickNext = useCallback((): number | null => {
+    const n = list.length;
+    const cur = idxRef.current;
+    if (!shuffleRef.current) {
+      const next = cur + 1;
+      if (next < n) return next;
+      return repeatRef.current ? 0 : null;
+    }
+    let cands = list.map((_t, i) => i).filter((i) => i !== cur && !playedRef.current.has(i));
+    if (!cands.length) {
+      if (!repeatRef.current) return null;
+      playedRef.current = new Set();
+      cands = list.map((_t, i) => i).filter((i) => i !== cur);
+    }
+    return cands.length ? cands[Math.floor(Math.random() * cands.length)] : null;
+  }, [list]);
+  const stepNext = useCallback(() => {
+    // 손으로 누른 다음은 항상 간다 — 반복이 꺼져 있어도 끝에서 처음으로 감는다.
+    let next = pickNext();
+    if (next == null) {
+      playedRef.current = new Set();
+      next = shuffleRef.current ? pickNext() : 0;
+    }
+    if (next != null) go(next, true);
+  }, [pickNext, go]);
+  const stepPrev = useCallback(() => {
+    const back = historyRef.current.pop();
+    if (back != null) { playedRef.current.add(back); wantPlayRef.current = true; setIdx(back); return; }
+    go((idxRef.current - 1 + list.length) % list.length, false);
+  }, [go, list.length]);
+  const autoNext = useCallback(() => {
+    if (list.length < 2) return;
+    const next = pickNext();
+    if (next != null) go(next, true); // null = 목록 끝 + 반복 꺼짐 → 멈춘다
+  }, [list.length, pickNext, go]);
+  useEffect(() => {
+    if (!wantPlayRef.current) return;
+    wantPlayRef.current = false;
+    void playerRef.current?.play().catch(() => { /* 자동재생 차단 등 — 손으로 재생하면 된다 */ });
+  }, [idx]);
+
+  if (!audioUrl && !list.length) return null;
+
+  if (list.length >= 2) {
+    const cur = list[Math.min(idx, list.length - 1)];
+    const pill = (on: boolean) =>
+      `px-2 py-1 rounded-md text-[11px] font-semibold transition-colors ${on ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-500 border border-transparent hover:bg-slate-200'}`;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        {title && (
+          <div className="px-3 pt-2.5 pb-1 text-[13px] font-semibold text-slate-700 break-keep">{title}</div>
+        )}
+        <div className="px-3 pb-2 pt-1">
+          <AudioTransport src={cur.src} audioRef={playerRef} onEnded={autoNext}
+            downloads={[{ href: cur.src, label: '저장' }]} />
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            <button type="button" onClick={stepPrev} className={pill(false)} title="이전 곡">◀ 이전</button>
+            <button type="button" onClick={stepNext} className={pill(false)} title="다음 곡">다음 ▶</button>
+            <button type="button" onClick={() => { playedRef.current = new Set([idxRef.current]); setShuffle((v) => !v); }}
+              className={pill(shuffle)} title="랜덤 순서로 — 한 바퀴에 전 곡이 한 번씩">셔플</button>
+            <button type="button" onClick={() => setRepeatAll((v) => !v)}
+              className={pill(repeatAll)} title="마지막 곡 다음에 처음부터 다시">전체 반복</button>
+          </div>
+          <ol className="mt-2 border-t border-slate-100 pt-1">
+            {list.map((t, i) => (
+              <li key={i}>
+                <button type="button" onClick={() => go(i, i !== idx)}
+                  className={`w-full flex items-center gap-2 px-1.5 py-1.5 text-left text-[13px] rounded-md transition-colors ${i === idx ? 'bg-blue-50/60 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'}`}>
+                  <span className={`w-5 shrink-0 text-right text-[11px] tabular-nums ${i === idx ? 'text-blue-500' : 'text-slate-400'}`}>
+                    {i === idx ? '▶' : i + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate break-keep">{t.title}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {note && <p className="mt-1.5 text-[11px] text-slate-500 break-keep">{note}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  const src = audioUrl ?? list[0]?.src;
+  if (!src) return null;
   const stems = [
     ...(guideUrl ? [{ src: guideUrl, label: '가이드', title: '노래 선율을 부는 악기로 얹습니다' }] : []),
     ...(clickUrl ? [{ src: clickUrl, label: '박자', title: '매 박 클릭, 강박은 벨' }] : []),
@@ -1989,8 +2101,8 @@ function PlayerComp({ title, audioUrl, guideUrl, clickUrl, note }: {
         <div className="px-3 pt-2.5 pb-1 text-[13px] font-semibold text-slate-700 break-keep">{title}</div>
       )}
       <div className="px-3 pb-2 pt-1">
-        <AudioTransport src={audioUrl} stems={stems}
-          downloads={[{ href: audioUrl, label: '저장' },
+        <AudioTransport src={src} stems={stems}
+          downloads={[{ href: src, label: '저장' },
                       ...(guideUrl ? [{ href: guideUrl, label: '가이드 저장' }] : []),
                       ...(clickUrl ? [{ href: clickUrl, label: '박자 저장' }] : [])]} />
         {note && <p className="mt-1.5 text-[11px] text-slate-500 break-keep">{note}</p>}
@@ -2736,7 +2848,7 @@ function TextComp({ content }: { content: string }) {
   // to $-form before maskMath discards the "this is math by declaration" signal, and the currency
   // escape then breaks digit-leading spans like \( 4 \) (2026-08-09 cubic-answer pairing shift).
   const md = (s: string) => (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={{ img: (p: any) => <MdImg src={p.src} alt={p.alt} /> }}>{mdReady(s)}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={{ img: (p: any) => <MdImg src={p.src} alt={p.alt} />, a: (p: any) => <MediaLink fallbackClassName="underline" {...p} /> }}>{mdReady(s)}</ReactMarkdown>
   );
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
