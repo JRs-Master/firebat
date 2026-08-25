@@ -56,6 +56,14 @@
         "params": ["name"]
       },
       {
+        "id": "duration",
+        "name": "오디오 길이",
+        "description": "미디어 창고 오디오 파일의 길이(초)를 잰다 — 대사(voices)와 말풍선·talk 액트를 타임라인에 배치하기 전에 줄마다 부른다.",
+        "domain": "제작",
+        "params": ["media"],
+        "tags": ["오디오 길이", "대사 싱크", "타임라인"]
+      },
+      {
         "id": "assets",
         "name": "에셋·씬 문법 사전",
         "description": "이 모듈이 그릴 수 있는 것 전부 — 레이어 종류별 필드, 캐릭터 포즈 파라미터, 배경 종류, 캡·기본값. render 를 부르기 전에 여기부터 읽는다.",
@@ -101,7 +109,7 @@
       },
       "audio": {
         "type": "object",
-        "description": "[render] Optional sound: {bgm:'/user/media/x.flac', voice:'/user/media/line.wav', bgmGainDb:-8}. voice is mixed over bgm with automatic ducking, and drives mouth movement of sprites whose talk act has lipsync."
+        "description": "[render] Optional sound: {bgm, voice, voices:[{media, at}], bgmGainDb:-8}. voice = one file at t=0; voices places dialogue lines on the timeline (measure each with the duration action, then align bubble/talk windows to the same at). Voice ducks the bgm and its envelope drives the mouth of sprites whose talk act has lipsync — mouth sync is automatic."
       },
       "stills": {
         "type": "array",
@@ -114,6 +122,10 @@
       "name": {
         "type": "string",
         "description": "[sticker|save_asset|delete_asset] Asset name. sticker exports any clip-art declaration — the seeds shipped with the module (firebat, heart, star, moon, balloon) or one saved with save_asset; save_asset names the new declaration (1-24 chars, letters/digits/한글/-/_)."
+      },
+      "media": {
+        "type": "string",
+        "description": "[duration] Media-store path of an audio file (/user/media/...)."
       },
       "parts": {
         "type": "array",

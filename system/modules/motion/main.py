@@ -487,7 +487,21 @@ class Scene:
             bg["_path"] = media_path(bg.get("media"))
         audio = inp.get("audio") or {}
         self.bgm = media_path(audio["bgm"]) if audio.get("bgm") else None
-        self.voice = media_path(audio["voice"]) if audio.get("voice") else None
+        # One `voice` starts at 0; `voices` places each line on the timeline —
+        # {media, at}. The mouth follows the MIXED envelope, so lipsync lands on
+        # whichever line is speaking without any per-line bookkeeping.
+        voices = audio.get("voices")
+        if voices is None and audio.get("voice"):
+            voices = [{"media": audio["voice"], "at": 0}]
+        self.voices = []
+        for i, v in enumerate(voices or []):
+            if not isinstance(v, dict) or not v.get("media"):
+                raise SceneError(f"audio.voices[{i}] must be {{media, at}}")
+            self.voices.append(
+                (media_path(v["media"]),
+                 _num(v.get("at", 0), f"audio.voices[{i}].at", 0, self.dur)))
+        if len(self.voices) > 12:
+            raise SceneError("audio.voices: at most 12 lines")
         self.bgm_gain_db = _num(audio.get("bgmGainDb", -8), "audio.bgmGainDb", -40, 6)
         self.voice_env = None  # filled by prepare_audio
         korean = any(has_hangul(s) for s in texts)
@@ -874,7 +888,7 @@ class Scene:
     def prepare_audio(self, tmp_dir):
         """Mix bgm+voice into one wav (voice ducks the bgm) and build the
         voice envelope for lipsync. Returns a wav path or None."""
-        if not self.bgm and not self.voice:
+        if not self.bgm and not self.voices:
             return None
         try:
             import soundfile as sf
@@ -900,8 +914,14 @@ class Scene:
 
         mix = np.zeros(n)
         env_n = None
-        if self.voice:
-            v = load(self.voice)
+        if self.voices:
+            v = np.zeros(n)
+            for path, at in self.voices:
+                one = load(path)
+                off = int(at * RATE)
+                m = min(n - off, len(one))
+                if m > 0:
+                    v[off:off + m] += one[:m]
             hop = RATE // 20
             frames = np.abs(v[:len(v) // hop * hop]).reshape(-1, hop).max(axis=1)
             k = np.ones(5) / 5
@@ -1081,6 +1101,25 @@ def action_delete_asset(inp):
             "note": "the declaration is gone; thumbnails already in the media store stay "
                     "until removed there"}}
 
+def action_duration(inp):
+    """Length of an audio file in seconds — what the scene author needs to place a
+    line's bubble and talk act on the timeline before rendering."""
+    try:
+        path = media_path(inp.get("media"))
+    except SceneError as e:
+        return {"success": False, "error": str(e)}
+    try:
+        import soundfile as sf
+    except ImportError as e:
+        return {"success": False, "error": f"soundfile is not importable ({e})"}
+    try:
+        info = sf.info(path)
+    except Exception as e:  # noqa: BLE001 — the envelope reports
+        return {"success": False, "error": f"could not read {path}: {e}"}
+    return {"success": True,
+            "data": {"media": inp.get("media"), "seconds": round(info.frames / info.samplerate, 3),
+                     "sampleRate": info.samplerate}}
+
 def action_assets(_inp):
     return {"success": True, "data": {
         "envelope": {"render": "{action:'render', duration, size?, fps?, background?, "
@@ -1120,9 +1159,17 @@ def action_assets(_inp):
             "confetti": "{at?} one confetti burst at `from`",
         },
         "audio": {"bgm": "media path (flac/wav/mp3) — render one with the sing module",
-                  "voice": "media path — make one with the tts tool; ducks the bgm "
+                  "voice": "one media path starting at t=0 (tts output); ducks the bgm "
                            "and drives lipsync",
+                  "voices": "dialogue on the timeline: [{media, at}] (max 12). The mouth "
+                            "follows the mixed envelope automatically; call the duration "
+                            "action per line, then place each line's bubble/talk at the "
+                            "same `at` for that long",
                   "bgmGainDb": "default -8"},
+        "dialogueSync": "the recipe: tts each line → duration each file → for line i "
+                        "at time T: voices += {media, at:T}, bubble from T to T+len, "
+                        "sprite act {at:T, do:'talk', for:len, lipsync}. The mouth needs "
+                        "no manual sync — it follows the sound energy",
         "saved": {
             "what": "clip art declarations — the parts JSON is the original, the "
                     "media-store PNG is only a thumbnail; scenes and stickers reference "
@@ -1307,6 +1354,8 @@ def main():
             out = action_sticker(inp)
         elif action == "assets":
             out = action_assets(inp)
+        elif action == "duration":
+            out = action_duration(inp)
         elif action == "save_asset":
             out = action_save_asset(inp)
         elif action == "delete_asset":
@@ -1316,7 +1365,7 @@ def main():
         else:
             out = {"success": False,
                    "error": f"unknown action {action!r} — one of: render, sticker, "
-                            "assets, save_asset, delete_asset, selftest"}
+                            "assets, save_asset, delete_asset, duration, selftest"}
     except SceneError as e:
         out = {"success": False,
                "error": f"{e} — call {{\"action\": \"assets\"}} for the scene grammar"}
