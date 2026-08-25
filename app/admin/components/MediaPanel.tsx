@@ -45,7 +45,7 @@ const PAGE_SIZE = 48;
  *  (`media_kind_of` in infra/src/adapters/media.rs) — **두 벌이니 한쪽만 고치지 말 것.**
  *  `music` 은 종류가 아니라 묶음(음원 ∪ 악보 ∪ 가사)이라 아이콘 표에는 없다. */
 type MediaKind = 'image' | 'video' | 'audio' | 'score' | 'lyrics' | 'document' | 'other';
-type KindChip = MediaKind | 'music' | 'all';
+type KindChip = MediaKind | 'music' | 'all' | 'generated' | 'clipart' | 'photo';
 const DOC_CONTENT_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -70,6 +70,7 @@ function kindOf(contentType: string, ext?: string): MediaKind {
   return 'other';
 }
 const MUSIC_KINDS: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
+const IMAGE_KINDS: KindChip[] = ['image', 'generated', 'clipart', 'photo'];
 
 /** 악보 미리듣기 — 브라우저엔 MIDI 신디사이저가 없어서, 소리는 이쪽에서 만들어야 한다.
  *  굽는 엔진은 sing 이 렌더에 쓰는 바로 그것이라 **여기서 들리는 것이 곧 렌더 결과**다.
@@ -182,6 +183,8 @@ const UPLOAD_MAX_MB = 25;
 // 서로 옆에 있어야 한다(전엔 .mid 는 오디오, .mxl 은 기타로 같은 곡이 두 탭에 흩어졌다).
 const KINDS: KindChip[] = ['all', 'image', 'video', 'music', 'document', 'other'];
 const MUSIC_SUB: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
+// 이미지도 같은 문법 — 첫 칩이 전체, 나머지는 출처(source)로 갈린다: 생성·클립아트·그 외.
+const IMAGE_SUB: KindChip[] = ['image', 'generated', 'clipart', 'photo'];
 const SORTS = ['newest', 'oldest', 'name', 'size'] as const;
 type SortKey = typeof SORTS[number];
 
@@ -432,7 +435,8 @@ export function MediaPanel({
               key={k}
               onClick={() => setKind(k)}
               className={`flex-1 px-1 py-1 text-[10px] font-bold rounded-md transition-colors ${
-                (k === 'music' ? MUSIC_KINDS.includes(kind) : kind === k)
+                (k === 'music' ? MUSIC_KINDS.includes(kind)
+                  : k === 'image' ? IMAGE_KINDS.includes(kind) : kind === k)
                   ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
               }`}
             >
@@ -440,9 +444,9 @@ export function MediaPanel({
             </button>
           ))}
         </div>
-        {MUSIC_KINDS.includes(kind) && (
+        {(MUSIC_KINDS.includes(kind) || IMAGE_KINDS.includes(kind)) && (
           <div className="flex gap-1 pl-2">
-            {MUSIC_SUB.map(k => (
+            {(MUSIC_KINDS.includes(kind) ? MUSIC_SUB : IMAGE_SUB).map(k => (
               <button
                 key={k}
                 onClick={() => setKind(k)}
@@ -450,7 +454,7 @@ export function MediaPanel({
                   kind === k ? 'bg-slate-200 text-slate-800' : 'text-slate-400 hover:bg-slate-100'
                 }`}
               >
-                {k === 'music' ? t('media.kind_all') : t(`media.kind_${k}`)}
+                {k === 'music' || k === 'image' ? t('media.kind_all') : t(`media.kind_${k}`)}
               </button>
             ))}
           </div>
