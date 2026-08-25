@@ -1457,9 +1457,18 @@ impl ModuleManager {
             .or_else(|| {
                 norm.rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(stem, _)| stem.to_string())
             });
+        // A module may declare what KIND of product this is (`source: "clipart"`) — the
+        // media panel's image sub-groups read it. Undeclared imports keep the provenance
+        // default, so nothing existing moves.
         let opts = crate::ports::MediaSaveOptions {
             filename_hint: filename_hint.clone(),
-            source: Some(format!("module:{module_name}")),
+            source: decl
+                .get("source")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && s.len() <= 40)
+                .map(String::from)
+                .or(Some(format!("module:{module_name}"))),
             ..Default::default()
         };
         match intake.intake(binary, &content_type, opts).await {

@@ -160,13 +160,20 @@ impl LocalMediaAdapter {
         }
     }
 
-    /// Does a record belong under the chip the caller asked for? `music` is the one chip that
-    /// is a group rather than a kind — it is where the three musical forms live together.
-    fn kind_matches(record_kind: &str, asked: &str) -> bool {
-        if asked == "music" {
-            matches!(record_kind, "audio" | "score" | "lyrics")
-        } else {
-            record_kind == asked
+    /// Does a record belong under the chip the caller asked for? `music` and `image` are
+    /// groups; the image sub-chips split by `source` — the record kind stays `image`, what
+    /// differs is where the picture came from (generated / a module's declared clip-art /
+    /// the rest, which is uploads and ordinary module output).
+    fn kind_matches(record_kind: &str, source: Option<&str>, asked: &str) -> bool {
+        match asked {
+            "music" => matches!(record_kind, "audio" | "score" | "lyrics"),
+            "generated" => record_kind == "image" && source == Some("ai-generated"),
+            "clipart" => record_kind == "image" && source == Some("clipart"),
+            "photo" => {
+                record_kind == "image"
+                    && !matches!(source, Some("ai-generated") | Some("clipart"))
+            }
+            _ => record_kind == asked,
         }
     }
 
@@ -559,7 +566,13 @@ impl IMediaPort for LocalMediaAdapter {
         }
         // 종류 필터 — content_type 분류. 페이지네이션 앞에서 걸러야 offset/total 이 맞는다.
         if let Some(kind) = opts.kind.as_deref().filter(|k| !k.is_empty() && *k != "all") {
-            all.retain(|r| Self::kind_matches(Self::media_kind_of(&r.content_type, &r.ext), kind));
+            all.retain(|r| {
+                Self::kind_matches(
+                    Self::media_kind_of(&r.content_type, &r.ext),
+                    r.source.as_deref(),
+                    kind,
+                )
+            });
         }
         // 정렬 — 기본 최신순. name 은 표시 이름(filenameHint 우선) 기준, size 는 큰 것부터.
         match opts.sort.as_deref().unwrap_or("newest") {
