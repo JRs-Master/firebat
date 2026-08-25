@@ -426,9 +426,11 @@ def media_path(ref, want="file"):
             "(image_gen and media uploads land in /user/media/...) and pass that path")
     r = os.path.normpath(r.lstrip("/")).replace("\\", "/")
     parts = r.split("/")
+    # user/attachments/ carries tts output — the same workspace trust domain as the
+    # media store (measured 8/25: every dialogue line lands there and was refused).
     if ".." in parts or not (
             r.startswith("user/media/") or r.startswith("system/media/")
-            or r.startswith("data/")):
+            or r.startswith("user/attachments/") or r.startswith("data/")):
         raise SceneError(f"not a media path: {ref!r} — expected /user/media/<file>")
     if not os.path.isfile(r):
         raise SceneError(f"media file not found: {r}")
