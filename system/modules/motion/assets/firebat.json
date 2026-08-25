@@ -1,0 +1,460 @@
+{
+ "aspect": 1.05,
+ "parts": [
+  {
+   "shape": "polygon",
+   "points": [
+    [
+     15.5,
+     53.2
+    ],
+    [
+     1.5,
+     51.2
+    ],
+    [
+     5.5,
+     64.8
+    ],
+    [
+     15.5,
+     62.8
+    ]
+   ],
+   "fill": [
+    150,
+    74,
+    30
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 1.0,
+   "role": "flap",
+   "pivot": [
+    15.5,
+    58
+   ]
+  },
+  {
+   "shape": "polygon",
+   "points": [
+    [
+     84.5,
+     53.2
+    ],
+    [
+     98.5,
+     51.2
+    ],
+    [
+     94.5,
+     64.8
+    ],
+    [
+     84.5,
+     62.8
+    ]
+   ],
+   "fill": [
+    150,
+    74,
+    30
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 1.0,
+   "role": "flap",
+   "pivot": [
+    84.5,
+    58
+   ]
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    34.2,
+    98.5
+   ],
+   "size": [
+    13,
+    7
+   ],
+   "fill": [
+    196,
+    90,
+    18
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 1.0,
+   "role": "foot"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    65.8,
+    98.5
+   ],
+   "size": [
+    13,
+    7
+   ],
+   "fill": [
+    196,
+    90,
+    18
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 1.0,
+   "role": "foot"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    50,
+    65
+   ],
+   "size": [
+    75,
+    70
+   ],
+   "fill": [
+    255,
+    138,
+    42
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 1.5
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    50,
+    79.5
+   ],
+   "size": [
+    46.5,
+    32.5
+   ],
+   "fill": [
+    255,
+    208,
+    128
+   ]
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    50,
+    22
+   ],
+   "size": [
+    22,
+    24
+   ],
+   "fill": [
+    255,
+    106,
+    26
+   ],
+   "role": "flicker",
+   "glow": true
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    50,
+    12.5
+   ],
+   "size": [
+    15,
+    16.5
+   ],
+   "fill": [
+    255,
+    170,
+    40
+   ],
+   "role": "flicker",
+   "glow": true
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    50,
+    5.5
+   ],
+   "size": [
+    8,
+    9
+   ],
+   "fill": [
+    255,
+    226,
+    110
+   ],
+   "role": "flicker",
+   "glow": true
+  },
+  {
+   "shape": "capsule",
+   "ends": [
+    [
+     19.2,
+     66.8
+    ],
+    [
+     17.5,
+     82
+    ]
+   ],
+   "width": 6.5,
+   "fill": [
+    255,
+    138,
+    42
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 1.1
+  },
+  {
+   "shape": "capsule",
+   "ends": [
+    [
+     80.8,
+     66.8
+    ],
+    [
+     82.5,
+     82
+    ]
+   ],
+   "width": 6.5,
+   "fill": [
+    255,
+    138,
+    42
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 1.1,
+   "role": "swing",
+   "pivot": [
+    80.8,
+    66.8
+   ]
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    37.2,
+    55.2
+   ],
+   "size": [
+    15,
+    20
+   ],
+   "fill": [
+    252,
+    252,
+    255
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 0.75,
+   "role": "eye"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    62.8,
+    55.2
+   ],
+   "size": [
+    15,
+    20
+   ],
+   "fill": [
+    252,
+    252,
+    255
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 0.75,
+   "role": "eye"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    37.2,
+    55.8
+   ],
+   "size": [
+    6,
+    6
+   ],
+   "fill": [
+    30,
+    20,
+    14
+   ],
+   "role": "eye"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    62.8,
+    55.8
+   ],
+   "size": [
+    6,
+    6
+   ],
+   "fill": [
+    30,
+    20,
+    14
+   ],
+   "role": "eye"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    38.2,
+    54.2
+   ],
+   "size": [
+    2.2,
+    1.9
+   ],
+   "fill": [
+    255,
+    255,
+    255
+   ],
+   "role": "eye"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    63.8,
+    54.2
+   ],
+   "size": [
+    2.2,
+    1.9
+   ],
+   "fill": [
+    255,
+    255,
+    255
+   ],
+   "role": "eye"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    26.8,
+    64.5
+   ],
+   "size": [
+    8,
+    5
+   ],
+   "fill": [
+    255,
+    96,
+    64,
+    110
+   ]
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    73.2,
+    64.5
+   ],
+   "size": [
+    8,
+    5
+   ],
+   "fill": [
+    255,
+    96,
+    64,
+    110
+   ]
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    50,
+    73.4
+   ],
+   "size": [
+    12,
+    8
+   ],
+   "fill": [
+    94,
+    34,
+    20
+   ],
+   "outline": [
+    92,
+    42,
+    12
+   ],
+   "outlineWidth": 0.75,
+   "role": "mouth"
+  },
+  {
+   "shape": "ellipse",
+   "at": [
+    50,
+    74.8
+   ],
+   "size": [
+    7,
+    4
+   ],
+   "fill": [
+    255,
+    120,
+    120
+   ],
+   "role": "mouth"
+  }
+ ]
+}

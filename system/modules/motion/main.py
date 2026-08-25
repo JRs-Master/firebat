@@ -39,11 +39,6 @@ OUT_DIR = os.path.join("data", "motion")
 # ── palette ──────────────────────────────────────────────────────────────────
 INK, DIM = (236, 240, 248), (148, 163, 184)
 CYAN, BLUE, AMBER = (34, 211, 238), (59, 130, 246), (255, 190, 70)
-CHAR_PALETTE = {
-    "body": (255, 138, 42), "bodyDark": (196, 90, 18), "outline": (92, 42, 12),
-    "belly": (255, 208, 128), "wing": (150, 74, 30),
-    "flame1": (255, 106, 26), "flame2": (255, 170, 40), "flame3": (255, 226, 110),
-}
 NAMED = {"ink": INK, "dim": DIM, "cyan": CYAN, "blue": BLUE, "amber": AMBER}
 
 # ── easing ───────────────────────────────────────────────────────────────────
@@ -118,82 +113,6 @@ def _capsule(d, p0, p1, w, fill):
     for p in (p0, p1):
         d.ellipse([p[0] - r, p[1] - r, p[0] + r, p[1] + r], fill=fill)
 
-def draw_firebat(d, g, cx, cy, s, t, pal=None, mouth=0.0, wave=0.0, walk=0.0,
-                 sy=1.0, look=(0.0, 0.0), blink_t=None, glow=True):
-    """cy = sole of the feet. s = pixels per unit. sy = vertical squash
-    (width is volume-compensated). All shapes, no bitmaps."""
-    P = dict(CHAR_PALETTE)
-    if pal:
-        P.update({k: tuple(v) for k, v in pal.items() if k in P})
-    BODY, BODY_DK, OUTL = P["body"], P["bodyDark"], P["outline"]
-    sx = 1.0 / math.sqrt(max(0.3, sy))
-    bw, bh = 150 * s * sx, 140 * s * sy
-    bcy = cy - bh - walk * 10 * s * abs(math.sin(t * 11))
-    wf = math.sin(t * 9) * (0.5 + 0.5 * walk)
-    for side in (-1, 1):  # wings, behind
-        wx, wy = cx + side * bw * 0.92, bcy - bh * 0.15
-        tip = (wx + side * 56 * s, wy - 34 * s - wf * 22 * s)
-        d.polygon([(wx, wy - 26 * s), tip, (wx + side * 40 * s, wy + 20 * s),
-                   (wx, wy + 12 * s)], fill=P["wing"], outline=OUTL, width=int(4 * s))
-    step = math.sin(t * 11) * walk
-    for side, ph in ((-1, step), (1, -step)):  # feet
-        fx = cx + side * bw * 0.42 + ph * 14 * s
-        fy = cy - max(0.0, ph * side) * 10 * s
-        d.ellipse([fx - 26 * s, fy - 18 * s, fx + 26 * s, fy + 10 * s],
-                  fill=BODY_DK, outline=OUTL, width=int(4 * s))
-    d.ellipse([cx - bw, bcy - bh, cx + bw, bcy + bh],  # body
-              fill=BODY, outline=OUTL, width=int(6 * s))
-    d.ellipse([cx - bw * 0.62, bcy - bh * 0.05, cx + bw * 0.62, bcy + bh * 0.88],
-              fill=P["belly"])
-    fl = math.sin(t * 13) * 6 * s + math.sin(t * 23 + 1) * 3 * s  # flame tuft
-    fx0, fy0 = cx + fl * 0.4, bcy - bh
-    for rr, key, dy in ((44, "flame1", 0), (30, "flame2", 26), (16, "flame3", 46)):
-        r = rr * s
-        yy = fy0 - dy * s - r * 0.6
-        xx = fx0 + fl * (dy / 46)
-        d.ellipse([xx - r, yy - r * 1.35, xx + r, yy + r * 0.85], fill=P[key])
-        if glow and g is not None:
-            g.ellipse([xx - r * 1.5, yy - r * 1.8, xx + r * 1.5, yy + r * 1.3],
-                      fill=(*P["flame2"], 90))
-    for side in (-1, 1):  # arms — outline underlay so they read against the body
-        shx, shy = cx + side * bw * 0.82, bcy + bh * 0.05
-        ang = math.pi / 2.2
-        if side == 1 and wave:
-            ang = -0.9 + 0.5 * math.sin(t * 9)
-        hand = (shx + side * 66 * s * math.cos(ang) * (1 if side == 1 else 0.6),
-                shy + 66 * s * math.sin(ang))
-        _capsule(d, (shx, shy), hand, 35 * s, OUTL)
-        _capsule(d, (shx, shy), hand, 26 * s, BODY)
-    eh = 1.0
-    if blink_t is not None:
-        eh = 1 - 0.92 * math.sin(math.pi * clamp01(blink_t))
-    for side in (-1, 1):  # eyes
-        ex, ey = cx + side * bw * 0.34, bcy - bh * 0.28
-        ew, ehh = 30 * s, 40 * s * eh
-        d.ellipse([ex - ew, ey - ehh, ex + ew, ey + ehh], fill=(252, 252, 255),
-                  outline=OUTL, width=int(3 * s))
-        if eh > 0.35:
-            px = ex + look[0] * 10 * s
-            py = ey + look[1] * 12 * s
-            pr = 12 * s * min(1.0, eh)
-            d.ellipse([px - pr, py - pr, px + pr, py + pr], fill=(30, 20, 14))
-            d.ellipse([px - pr * .35 + pr * .3, py - pr * .75,
-                       px + pr * .35 + pr * .3, py - pr * .15], fill=(255, 255, 255))
-    for side in (-1, 1):  # cheeks
-        bx, by = cx + side * bw * 0.62, bcy - bh * 0.02
-        d.ellipse([bx - 16 * s, by - 10 * s, bx + 16 * s, by + 10 * s],
-                  fill=(255, 96, 64, 110))
-    mx, my = cx, bcy + bh * 0.24  # mouth
-    mo = 8 * s + clamp01(mouth) * 30 * s
-    if mouth > 0.08:
-        d.ellipse([mx - 24 * s, my - mo * 0.5, mx + 24 * s, my + mo],
-                  fill=(94, 34, 20), outline=OUTL, width=int(3 * s))
-        d.ellipse([mx - 14 * s, my + mo * 0.35, mx + 14 * s, my + mo],
-                  fill=(255, 120, 120))
-    else:
-        d.arc([mx - 22 * s, my - 14 * s, mx + 22 * s, my + 16 * s],
-              20, 160, fill=OUTL, width=int(5 * s))
-
 def blink_phase(t, offs=0.0, period=2.6, dur=0.14):
     ph = (t + offs) % period
     return ph / dur if ph < dur else None
@@ -242,7 +161,12 @@ ASSET_DIR = os.path.join("data", "motion", "assets")
 ASSET_PARTS_MAX = 60
 import re as _re
 _ASSET_NAME_RE = _re.compile(r"^[0-9A-Za-z가-힣_-]{1,24}$")
-_CUSTOM_SHAPES = ("ellipse", "rect", "polygon", "capsule", "heart", "star")
+_CUSTOM_SHAPES = ("ellipse", "rect", "roundedrect", "polygon", "capsule", "heart",
+                  "star", "text")
+# Seed assets ship WITH the module (assets/*.json) — the same declaration grammar the
+# save_asset action stores, deployed by git like any declaration. The five former
+# built-ins live here now; the module keeps only the interpreter (원본 하나).
+_SEED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 class SceneError(ValueError):
     pass
@@ -251,20 +175,24 @@ def _asset_path(name):
     return os.path.join(ASSET_DIR, f"{name}.json")
 
 def load_custom_asset(name):
-    p = _asset_path(name)
-    if not os.path.isfile(p):
-        return None
-    with open(p, encoding="utf-8") as fh:
-        return json.load(fh)
+    """Saved declarations first, then the module's seeds — a user save may not take a
+    seed's name (validate refuses), so this order never shadows silently."""
+    for base in (_asset_path(name), os.path.join(_SEED_DIR, f"{name}.json")):
+        if os.path.isfile(base):
+            with open(base, encoding="utf-8") as fh:
+                return json.load(fh)
+    return None
+
+def _names_in(dirpath):
+    if not os.path.isdir(dirpath):
+        return []
+    return sorted(f[:-5] for f in os.listdir(dirpath) if f.endswith(".json"))
 
 def list_custom_assets():
-    if not os.path.isdir(ASSET_DIR):
-        return []
-    out = []
-    for f in sorted(os.listdir(ASSET_DIR)):
-        if f.endswith(".json"):
-            out.append(f[:-5])
-    return out
+    return _names_in(ASSET_DIR)
+
+def list_seed_assets():
+    return _names_in(_SEED_DIR)
 
 def _rgb(v, name, alpha_ok=True):
     if not (isinstance(v, (list, tuple)) and len(v) in ((3, 4) if alpha_ok else (3,))
@@ -281,8 +209,12 @@ def _pt(v, name):
 def validate_asset_decl(name, parts):
     if not _ASSET_NAME_RE.match(name or ""):
         raise SceneError("name must be 1-24 chars of letters, digits, 한글, - or _")
-    if name in STICKER_ASSETS:
-        raise SceneError(f"{name!r} is a built-in asset — pick another name")
+    if name in list_seed_assets():
+        raise SceneError(f"{name!r} is a seed asset shipped with the module — pick "
+                         "another name")
+    return validate_parts(parts)
+
+def validate_parts(parts):
     if not isinstance(parts, list) or not (1 <= len(parts) <= ASSET_PARTS_MAX):
         raise SceneError(f"parts must be a list of 1..{ASSET_PARTS_MAX}")
     norm = []
@@ -298,9 +230,35 @@ def validate_asset_decl(name, parts):
             q["outlineWidth"] = float(p.get("outlineWidth", 1.2))
         role = p.get("role")
         if role is not None:
-            if role not in ("swing", "mouth", "eye"):
-                raise SceneError(f"parts[{i}].role must be swing | mouth | eye")
+            if role not in ("swing", "mouth", "eye", "flicker", "foot", "flap"):
+                raise SceneError(
+                    f"parts[{i}].role must be swing | mouth | eye | flicker | foot | flap")
             q["role"] = role
+        if p.get("glow"):
+            q["glow"] = True
+        if shape == "text":
+            q["at"] = _pt(p.get("at", [50, 50]), f"parts[{i}].at")
+            q["height"] = float(p.get("height", 16))
+            if not (4 <= q["height"] <= 40):
+                raise SceneError(f"parts[{i}].height must be 4..40 units")
+            if p.get("bind") is not None and p["bind"] != "text":
+                raise SceneError(f"parts[{i}].bind may only be \"text\"")
+            if p.get("bind"):
+                q["bind"] = "text"
+            else:
+                q["value"] = str(p.get("value") or "")[:TEXT_MAX]
+            norm.append(q)
+            continue
+        if shape == "roundedrect":
+            q["at"] = _pt(p.get("at", [50, 50]), f"parts[{i}].at")
+            size = p.get("size", [20, 20])
+            if not (isinstance(size, (list, tuple)) and len(size) == 2
+                    and all(isinstance(c, (int, float)) and 0.5 <= c <= 120 for c in size)):
+                raise SceneError(f"parts[{i}].size must be [w,h] in 0.5..120 units")
+            q["size"] = [float(size[0]), float(size[1])]
+            q["radius"] = float(p.get("radius", min(q["size"]) * 0.25))
+            norm.append(q)
+            continue
         if shape == "polygon":
             pts = p.get("points")
             if not (isinstance(pts, list) and 3 <= len(pts) <= 72):
@@ -321,7 +279,7 @@ def validate_asset_decl(name, parts):
                     and all(isinstance(c, (int, float)) and 0.5 <= c <= 120 for c in size)):
                 raise SceneError(f"parts[{i}].size must be [w,h] in 0.5..120 units")
             q["size"] = [float(size[0]), float(size[1])]
-        if role == "swing":
+        if role in ("swing", "flap"):
             q["pivot"] = _pt(p.get("pivot", q.get("at", [50, 50])), f"parts[{i}].pivot")
         norm.append(q)
     return norm
@@ -338,6 +296,16 @@ def _shape_points(q):
     w, h = q["size"][0] / 2, q["size"][1] / 2
     if shape == "rect":
         return [[cx - w, cy - h], [cx + w, cy - h], [cx + w, cy + h], [cx - w, cy + h]]
+    if shape == "roundedrect":
+        r = min(q["radius"], w, h)
+        pts = []
+        for kx, ky, a0 in ((1, -1, -math.pi / 2), (1, 1, 0.0),
+                           (-1, 1, math.pi / 2), (-1, -1, math.pi)):
+            ccx, ccy = cx + kx * (w - r), cy + ky * (h - r)
+            for j in range(7):
+                a = a0 + j * (math.pi / 2) / 6
+                pts.append([ccx + r * math.cos(a), ccy + r * math.sin(a)])
+        return pts
     if shape == "ellipse":
         return [[cx + w * math.cos(a), cy + h * math.sin(a)]
                 for a in (i * math.pi / 12 for i in range(24))]
@@ -356,8 +324,9 @@ def _shape_points(q):
     raise SceneError(f"unhandled shape {shape}")
 
 def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
-                sy=1.0, blink_t=None):
-    """cx, cy = feet (unit point (50,100)). One unit = 4*s px."""
+                sy=1.0, blink_t=None, g=None, text="", fonts=None):
+    """cx, cy = feet (unit point (50,100)). One unit = 4*s px. `g` is the scene's
+    glow layer — parts flagged `glow` mirror an enlarged translucent copy there."""
     u = 4.0 * s
     sxw = 1.0 / math.sqrt(max(0.3, sy))
     cy = cy - walk * 10 * s * abs(math.sin(t * 11))
@@ -369,8 +338,24 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
         return (cx + (x - 50) * u * sxw, cy - (100 - y) * u * sy)
 
     swing_ang = wave * (-0.55 + 0.45 * math.sin(t * 9))
+    flap_ang = 0.16 * math.sin(t * 9) * (0.5 + 0.5 * walk)
+    flick = math.sin(t * 13) * 1.4 + math.sin(t * 23 + 1) * 0.7
+    step = math.sin(t * 11) * walk
     for q in parts:
         role = q.get("role")
+        if q["shape"] == "text":
+            txt = text if q.get("bind") == "text" else q.get("value", "")
+            if txt and fonts is not None:
+                f = ImageFont.truetype(fonts.bold, int(q["height"] * u))
+                tw = d.textlength(txt, font=f)
+                maxw = 92 * u
+                if tw > maxw:
+                    f = ImageFont.truetype(fonts.bold, max(8, int(q["height"] * u * maxw / tw)))
+                    tw = d.textlength(txt, font=f)
+                px_, py_ = to_px(*q["at"])
+                col = tuple(q["fill"]) if len(q["fill"]) == 4 else tuple(q["fill"]) + (255,)
+                d.text((px_ - tw / 2, py_ - f.size * 0.62), txt, font=f, fill=col)
+            continue
         pts = _shape_points(q)
 
         def xform(p):
@@ -380,6 +365,19 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
                 dx, dy = x - px_, y - py_
                 ca, sa = math.cos(swing_ang), math.sin(swing_ang)
                 x, y = px_ + dx * ca - dy * sa, py_ + dx * sa + dy * ca
+            elif role == "flap":
+                px_, py_ = q["pivot"]
+                sign = 1.0 if px_ >= 50 else -1.0
+                ang = flap_ang * sign
+                dx, dy = x - px_, y - py_
+                ca, sa = math.cos(ang), math.sin(ang)
+                x, y = px_ + dx * ca - dy * sa, py_ + dx * sa + dy * ca
+            elif role == "flicker":
+                x = x + flick
+            elif role == "foot":
+                sign = 1.0 if (q.get("at", [50])[0]) >= 50 else -1.0
+                x = x + sign * step * 3.5
+                y = y - max(0.0, sign * step) * 2.5
             if role == "mouth":
                 mcy = q["at"][1] if "at" in q else sum(pp[1] for pp in pts) / len(pts)
                 y = mcy + (y - mcy) * (0.4 + 1.3 * clamp01(mouth))
@@ -398,6 +396,11 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
             _capsule(d, p0, p1, w_px, fill)
         else:
             poly = [xform(p) for p in pts]
+            if q.get("glow") and g is not None:
+                gcx = sum(p[0] for p in poly) / len(poly)
+                gcy = sum(p[1] for p in poly) / len(poly)
+                g.polygon([(gcx + (p[0] - gcx) * 1.5, gcy + (p[1] - gcy) * 1.5)
+                           for p in poly], fill=fill[:3] + (90,))
             if q.get("outline"):
                 d.polygon(poly, fill=fill, outline=tuple(q["outline"]), width=ow)
             else:
@@ -613,14 +616,12 @@ class Scene:
 
     def _draw_sprite(self, d, g, t, a, L):
         name = str(L.get("name", "firebat"))
-        custom = None
-        if name != "firebat":
-            saved = load_custom_asset(name)
-            if saved is None:
-                raise SceneError(
-                    f"unknown sprite {name!r} — assets lists built-ins and saved clip art; "
-                    "save one first with save_asset")
-            custom = saved["parts"]
+        saved = load_custom_asset(name)
+        if saved is None:
+            raise SceneError(
+                f"unknown sprite {name!r} — assets lists seed and saved clip art; "
+                "save one first with save_asset")
+        custom = saved["parts"]
         SW, SH, ss = self.SW, self.SH, self.ss
         x, y = self._at(L, [0.5, 0.9])
         s = ss * 1.2 * float(L.get("scale", 1.0))
@@ -662,13 +663,9 @@ class Scene:
                 sy *= sq
             else:
                 raise SceneError(f"sprite act {kind!r} — one of wave, talk, jump")
-        if custom is not None:
-            draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
-                        walk=walk, sy=sy, blink_t=blink_phase(t))
-        else:
-            draw_firebat(d, g, x, y - jump_h, s, t, pal=L.get("palette"), mouth=mouth,
-                         wave=wave, walk=walk, sy=sy,
-                         look=tuple(L.get("look") or (0, 0)), blink_t=blink_phase(t))
+        draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
+                    walk=walk, sy=sy, blink_t=blink_phase(t), g=g,
+                    fonts=self.fonts)
 
     def _draw_bubble(self, d, g, t, a, L):
         ss = self.ss
@@ -995,113 +992,47 @@ def action_render(inp):
                      "_mediaImport": {"path": _out(out), "contentType": "video/mp4",
                                       "filenameHint": f"motion-{tag}"}}}
 
-STICKER_ASSETS = ("firebat", "heart", "star", "moon", "balloon")
-
 def _color_of(pose, default):
     c = pose.get("color")
     if isinstance(c, (list, tuple)) and len(c) == 3:
         return tuple(int(v) for v in c)
     return default
 
-def _custom_sticker_png(parts, size, pose):
-    Wc = Hc = size
+def _custom_sticker_png(decl, size, pose):
+    parts = decl["parts"] if isinstance(decl, dict) else decl
+    aspect = float(decl.get("aspect", 1.0)) if isinstance(decl, dict) else 1.0
+    aspect = min(2.0, max(0.3, aspect))
+    Wc, Hc = size, int(size * aspect)
     img = Image.new("RGBA", (Wc, Hc), (0, 0, 0, 0))
     d = ImageDraw.Draw(img, "RGBA")
+    txt = str(pose.get("text") or "")
+    fonts = None
+    if any(p.get("shape") == "text" for p in parts):
+        fonts = Fonts(1.0)
+        if has_hangul(txt) and not fonts.korean:
+            raise SceneError("pose.text is Korean but no Korean-capable font was found "
+                             "— install fonts-nanum or set fontPath")
     draw_custom(d, Wc / 2, Hc - Hc * 0.02, Wc / 400.0 * 0.96, 1.3, parts,
                 mouth=float(pose.get("mouth", 0.0)), wave=float(pose.get("wave", 0.0)),
                 sy=float(pose.get("squash", 1.0)),
-                blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None)
+                blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None,
+                text=txt, fonts=fonts)
     return img
 
 def action_sticker(inp):
     name = str(inp.get("name") or "firebat")
-    custom = None
-    if name not in STICKER_ASSETS:
-        saved = load_custom_asset(name)
-        if saved is None:
-            return {"success": False,
-                    "error": f"unknown asset {name!r} — built-ins {list(STICKER_ASSETS)} "
-                             "or a saved clip-art name (assets lists both)"}
-        custom = saved["parts"]
+    decl = load_custom_asset(name)
+    if decl is None:
+        return {"success": False,
+                "error": f"unknown asset {name!r} — seed assets {list_seed_assets()} "
+                         "or a saved clip-art name (assets lists both)"}
     try:
         size = int(_num(inp.get("stickerSize", 900), "stickerSize",
                         STICKER_MIN, STICKER_MAX))
+        img = _custom_sticker_png(decl, size, inp.get("pose") or {})
     except SceneError as e:
         return {"success": False, "error": str(e)}
-    pose = inp.get("pose") or {}
-    if custom is not None:
-        img = _custom_sticker_png(custom, size, pose)
-        Wc, Hc = img.size
-        d = None
-    else:
-        Wc = size
-        Hc = int(size * 1.1) if name == "firebat" else size
-        if name == "balloon":
-            Hc = int(size * 0.62)
-        img = Image.new("RGBA", (Wc, Hc), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img, "RGBA")
-    # No glow layer on purpose: additive glow on a transparent ground bakes a
-    # dark ring around the flame. The crisp shapes read fine alone.
-    if name == "firebat":
-        s = Wc / 480.0
-        draw_firebat(d, None, Wc / 2, Hc - 30 * s, s, 1.3, pal=inp.get("palette"),
-                     mouth=float(pose.get("mouth", 0.0)),
-                     wave=float(pose.get("wave", 0.0)),
-                     sy=float(pose.get("squash", 1.0)),
-                     look=tuple(pose.get("look") or (0, 0)),
-                     blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None,
-                     glow=False)
-    elif name == "heart":
-        draw_heart(d, Wc / 2, Hc / 2 - Wc * 0.04, Wc * 0.42,
-                   _color_of(pose, (235, 60, 90)))
-    elif name == "star":
-        cx, cy, R = Wc / 2, Hc / 2, Wc * 0.46
-        pts = []
-        for i in range(10):
-            r = R if i % 2 == 0 else R * 0.42
-            a = -math.pi / 2 + i * math.pi / 5
-            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-        d.polygon(pts, fill=_color_of(pose, AMBER),
-                  outline=(120, 84, 20), width=max(2, Wc // 90))
-    elif name == "moon":
-        cx, cy, R = Wc / 2, Hc / 2, Wc * 0.44
-        col = _color_of(pose, (226, 234, 252))
-        d.ellipse([cx - R, cy - R, cx + R, cy + R], fill=col)
-        dk = tuple(max(0, v - 20) for v in col)
-        d.ellipse([cx - R * .45, cy - R * .35, cx - R * .05, cy + R * .02], fill=dk)
-        d.ellipse([cx + R * .10, cy + R * .22, cx + R * .42, cy + R * .52], fill=dk)
-    elif name == "balloon":
-        txt = str(pose.get("text") or "")
-        if len(txt) > TEXT_MAX:
-            return {"success": False, "error": f"pose.text exceeds {TEXT_MAX} chars"}
-        if has_hangul(txt):
-            try:
-                fonts = Fonts(1.0)
-            except ValueError as e:
-                return {"success": False, "error": str(e)}
-            if not fonts.korean:
-                return {"success": False,
-                        "error": "pose.text is Korean but no Korean-capable font was "
-                                 "found — install fonts-nanum or set fontPath"}
-        pad = Wc * 0.04
-        x0, y0 = pad, pad
-        x1, y1 = Wc - pad, Hc - Hc * 0.22
-        d.rounded_rectangle([x0, y0, x1, y1], radius=Hc * 0.18,
-                            fill=(252, 252, 255),
-                            outline=(205, 210, 220), width=max(2, Wc // 120))
-        d.polygon([(Wc * 0.40, y1 - 2), (Wc * 0.52, y1 - 2), (Wc * 0.44, Hc - pad)],
-                  fill=(252, 252, 255))
-        if txt:
-            bold = Fonts(1.0).bold
-            fs = int((y1 - y0) * 0.34)
-            f = ImageFont.truetype(bold, fs)
-            tw = d.textlength(txt, font=f)
-            if tw > (x1 - x0) * 0.9:
-                fs = max(10, int(fs * (x1 - x0) * 0.9 / tw))
-                f = ImageFont.truetype(bold, fs)
-                tw = d.textlength(txt, font=f)
-            d.text(((Wc - tw) / 2, (y0 + y1) / 2 - fs * 0.62), txt, font=f,
-                   fill=(24, 30, 46))
+    Wc, Hc = img.size
     os.makedirs(OUT_DIR, exist_ok=True)
     tag = _scene_hash(inp)
     path = os.path.join(OUT_DIR, f"sticker-{tag}.png")
@@ -1126,7 +1057,7 @@ def action_save_asset(inp):
     # The browsable face: a thumbnail lands in the media store as clip art. The
     # declaration stays the original — consumers re-render from it, never from this PNG.
     os.makedirs(OUT_DIR, exist_ok=True)
-    thumb = _custom_sticker_png(parts, 480, {})
+    thumb = _custom_sticker_png({"parts": parts}, 480, {})
     tp = os.path.join(OUT_DIR, f"asset-thumb-{name}.png")
     thumb.save(tp)
     return {"success": True,
@@ -1165,16 +1096,15 @@ def action_assets(_inp):
             "image": "{kind:'image', media:'/user/media/<file>'} cover-cropped; "
                      "generate one with image_gen first for photoreal scenes",
         },
-        "sprites": {"firebat": {
-            "what": "the mascot — round flame-headed character, all vector",
+        "sprites": {
+            "what": "any clip-art declaration by name — seeds ship with the module, "
+                    "saved ones come from save_asset; both are the same grammar and "
+                    "both animate (enter, acts, roles)",
             "fields": {"at": "[x,y] of the feet (default [0.5,0.9])",
                        "scale": "1.0 default", "enter": "walk | peek | pop | none",
-                       "look": "[x,y] pupil offset, -1..1",
-                       "palette": "override {body,bodyDark,outline,belly,wing,"
-                                  "flame1,flame2,flame3} as [r,g,b]",
                        "lipsync": "true = talk acts follow audio.voice envelope",
                        "acts": "[{at, do:'wave'|'talk'|'jump', for}]"},
-        }},
+        },
         "layers": {
             "bubble": "{text, at?, heart?, typing?} speech balloon, types itself out",
             "title": "{lines:[{text, size:'xl'|'lg'|'md'|'sm', color:'ink'|'amber'|"
@@ -1194,25 +1124,26 @@ def action_assets(_inp):
                            "and drives lipsync",
                   "bgmGainDb": "default -8"},
         "saved": {
-            "what": "clip art saved with save_asset — the declaration (parts JSON) is "
-                    "the original, the media-store PNG is only its thumbnail; scenes and "
-                    "stickers reference the name and redraw the vector at any size",
+            "what": "clip art declarations — the parts JSON is the original, the "
+                    "media-store PNG is only a thumbnail; scenes and stickers reference "
+                    "the name and redraw the vector at any size",
+            "seeds": list_seed_assets(),
             "names": list_custom_assets(),
             "grammar": "save_asset {name, parts:[{shape: ellipse|rect|polygon|capsule|"
                        "heart|star, at:[x,y], size:[w,h] | points:[[x,y]..] | "
                        "ends:[[x,y],[x,y]]+width, fill:[r,g,b], outline:[r,g,b]?, "
-                       "outlineWidth?, role: swing|mouth|eye?, pivot:[x,y]?}]} in a "
-                       "100x100 viewBox, feet at (50,100), y down. role swing waves, "
-                       "mouth opens with talk/lipsync, eye blinks",
+                       "outlineWidth?, role?, pivot:[x,y]?, glow?}]} in a 100x100 "
+                       "viewBox, feet at (50,100), y down. Roles: swing waves, mouth "
+                       "opens with talk/lipsync, eye blinks, flicker jitters (flames), "
+                       "foot steps while walking, flap idly sways around its pivot. "
+                       "glow:true mirrors the part onto the scene glow layer. Extra "
+                       "shapes: roundedrect {radius}, text {height, bind:'text'|value}. "
+                       "Top level may set aspect (canvas h/w for stickers, 0.3..2)",
         },
         "stickers": {
-            "what": "the sticker action exports any of these as a transparent PNG for "
-                    "pages, documents and slide decks",
-            "firebat": "pose {wave, mouth, blink, squash, look:[x,y]}, palette override",
-            "heart": "pose {color:[r,g,b]} (default warm pink)",
-            "star": "pose {color:[r,g,b]} (default amber), five points",
-            "moon": "pose {color:[r,g,b]} (default pale), with craters",
-            "balloon": "pose {text} — an empty or captioned speech balloon",
+            "what": "the sticker action exports any declaration (seed or saved) as a "
+                    "transparent PNG — pose {wave, mouth, blink, squash} moves the "
+                    "tagged parts, pose.text fills a text part (balloon)",
         },
         "iteration": "pass stills:[t1,t2,...] to get PNG frames in seconds instead of "
                      "a minutes-long video render — inspect, adjust, then render for real",
@@ -1260,6 +1191,17 @@ def action_selftest():
         os.remove(p)
     ck("sticker is RGBA with transparent corners and an opaque body",
        True, alpha_ok, ok_st and alpha_ok)
+
+    seeds = list_seed_assets()
+    seed_ok = True
+    for nm in seeds:
+        try:
+            validate_parts(load_custom_asset(nm)["parts"])
+        except Exception:  # noqa: BLE001 — the check reports
+            seed_ok = False
+    ck("all seed declarations exist and validate against the grammar",
+       "5 seeds valid", f"{len(seeds)} seeds, valid={seed_ok}",
+       len(seeds) == 5 and seed_ok)
 
     hs = action_sticker({"action": "sticker", "name": "heart", "stickerSize": 220})
     h_ok = False

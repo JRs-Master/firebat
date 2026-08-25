@@ -113,7 +113,7 @@
       },
       "name": {
         "type": "string",
-        "description": "[sticker|save_asset|delete_asset] Asset name. sticker exports built-ins (firebat, heart, star, moon, balloon) or any saved clip art; save_asset names the new declaration (1-24 chars, letters/digits/한글/-/_)."
+        "description": "[sticker|save_asset|delete_asset] Asset name. sticker exports any clip-art declaration — the seeds shipped with the module (firebat, heart, star, moon, balloon) or one saved with save_asset; save_asset names the new declaration (1-24 chars, letters/digits/한글/-/_)."
       },
       "parts": {
         "type": "array",
