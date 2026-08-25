@@ -27,7 +27,7 @@
         "name": "영상 렌더",
         "description": "씬 선언을 mp4 로 굽는다 — 캐릭터·텍스트·불꽃·이미지 층을 타임라인에 얹고, BGM·음성을 먹싱한다. stills 를 주면 영상 대신 지정 시각의 정지 PNG 만 뽑는다(수정 반복용 싼 검수 경로). 씬 문법·에셋 목록은 assets 액션이 전부 말한다.",
         "domain": "제작",
-        "params": ["duration", "size", "fps", "background", "layers", "audio", "stills", "quality"],
+        "params": ["duration", "size", "fps", "background", "layers", "audio", "stills", "quality", "async"],
         "tags": ["영상", "쇼츠", "렌더", "동영상 제작"],
         "aliases": ["make-video"],
         "needs": ["motion:assets"]
@@ -62,6 +62,14 @@
         "domain": "제작",
         "params": ["media"],
         "tags": ["오디오 길이", "대사 싱크", "타임라인"]
+      },
+      {
+        "id": "job",
+        "name": "렌더 잡 상태",
+        "description": "async:true 로 접수한 렌더의 진행률을 조회한다 — 돌고 있으면 진행률·남은 시간, 끝났으면 그 응답으로 영상을 미디어 창고에 반입한다.",
+        "domain": "제작",
+        "params": ["id", "redeliver"],
+        "tags": ["렌더 진행률", "비동기 렌더", "잡 조회"]
       },
       {
         "id": "assets",
@@ -101,7 +109,7 @@
       },
       "background": {
         "type": "object",
-        "description": "[render] Background layer. {kind:'night'} = built-in starry night with moon and hills (default). {kind:'gradient', top:[r,g,b], bottom:[r,g,b]}. {kind:'image', media:'/user/media/....png'} = a generated or stored image, cover-cropped — pair with image_gen for photoreal backdrops."
+        "description": "[render] Background layer. {kind:'night'} = built-in starry night with moon and hills (default). {kind:'studio'} = bright presenter stage with spotlight and floor — made for caster/info videos. {kind:'gradient', top:[r,g,b], bottom:[r,g,b]}. {kind:'image', media:'/user/media/....png'} = a generated or stored image, cover-cropped — pair with image_gen for photoreal backdrops. All take vignette: 0..0.6 edge darkening (0 disables)."
       },
       "layers": {
         "type": "array",
@@ -127,9 +135,21 @@
         "type": "string",
         "description": "[duration] Media-store path of an audio file (/user/media/...)."
       },
+      "async": {
+        "type": "boolean",
+        "description": "[render] true = validate, return a jobId immediately, and render in the background — REQUIRED for renders longer than ~20s (they outlive the tool roundtrip). Poll with the job action; the poll that sees it finished imports the video."
+      },
+      "id": {
+        "type": "string",
+        "description": "[job] jobId returned by render with async:true."
+      },
+      "redeliver": {
+        "type": "boolean",
+        "description": "[job] Re-import a finished video that was already delivered once (default false)."
+      },
       "parts": {
         "type": "array",
-        "description": "[save_asset] The clip art's shape parts — the ORIGINAL that scenes and stickers redraw from. 100x100 viewBox, feet at (50,100), y down. Each part: {shape: ellipse|rect|polygon|capsule|heart|star, at/size or points or ends+width, fill:[r,g,b], outline?, role: swing (waves) | mouth (opens on talk) | eye (blinks)}. Full grammar: the assets action."
+        "description": "[save_asset] The clip art's shape parts — the ORIGINAL that scenes and stickers redraw from. 100x100 viewBox, feet at (50,100), y down. Each part: {shape: ellipse|rect|polygon|capsule|heart|star, at/size or points or ends+width, fill:[r,g,b], outline?, role: swing (waves) | mouth (opens on talk) | eye (blinks)}. shape 'image' = cutout rigging: {media, crop polygon in 0..1 image coords, at, width, pivot?, role?} turns a piece of an attached picture into a joint. Full grammar: the assets action."
       },
       "pose": {
         "type": "object",

@@ -21,11 +21,14 @@ import json
 import math
 import os
 import random
+import re
+import subprocess
 import sys
+import time
 import hashlib
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 # ── limits ───────────────────────────────────────────────────────────────────
 SIZES = {"1080x1920": (1080, 1920), "1920x1080": (1920, 1080), "1080x1080": (1080, 1080)}
@@ -35,6 +38,7 @@ LAYERS_MAX = 40
 TEXT_MAX = 200
 STICKER_MIN, STICKER_MAX = 200, 2048
 OUT_DIR = os.path.join("data", "motion")
+JOB_DIR = os.path.join("data", "motion", "jobs")
 
 # ── palette ──────────────────────────────────────────────────────────────────
 INK, DIM = (236, 240, 248), (148, 163, 184)
@@ -162,7 +166,7 @@ ASSET_PARTS_MAX = 60
 import re as _re
 _ASSET_NAME_RE = _re.compile(r"^[0-9A-Za-z가-힣_-]{1,24}$")
 _CUSTOM_SHAPES = ("ellipse", "rect", "roundedrect", "polygon", "capsule", "heart",
-                  "star", "text")
+                  "star", "text", "image")
 # Seed assets ship WITH the module (assets/*.json) — the same declaration grammar the
 # save_asset action stores, deployed by git like any declaration. The five former
 # built-ins live here now; the module keeps only the interpreter (원본 하나).
@@ -249,6 +253,36 @@ def validate_parts(parts):
                 q["value"] = str(p.get("value") or "")[:TEXT_MAX]
             norm.append(q)
             continue
+        if shape == "image":
+            # cutout rigging: a polygon-cropped piece of a real picture becomes a
+            # joint — same roles as vector parts, so an attached photo animates
+            media = p.get("media")
+            if not isinstance(media, str) or not media.strip():
+                raise SceneError(f"parts[{i}].media must be a media-store path")
+            q["media"] = media.strip()
+            crop = p.get("crop")
+            if not (isinstance(crop, list) and 3 <= len(crop) <= 60):
+                raise SceneError(
+                    f"parts[{i}].crop must be 3..60 [x,y] pairs in 0..1 image coords")
+            cc = []
+            for j, v in enumerate(crop):
+                if not (isinstance(v, (list, tuple)) and len(v) == 2
+                        and all(isinstance(c, (int, float)) and 0.0 <= c <= 1.0
+                                for c in v)):
+                    raise SceneError(
+                        f"parts[{i}].crop[{j}] must be [x,y] in 0..1 image coords")
+                cc.append([float(v[0]), float(v[1])])
+            q["crop"] = cc
+            q["at"] = _pt(p.get("at", [50, 50]), f"parts[{i}].at")
+            q["width"] = float(p.get("width", 30))
+            if not (2 <= q["width"] <= 110):
+                raise SceneError(f"parts[{i}].width must be 2..110 units")
+            if p.get("flip"):
+                q["flip"] = True
+            if role in ("swing", "flap", "mouth"):
+                q["pivot"] = _pt(p.get("pivot", q["at"]), f"parts[{i}].pivot")
+            norm.append(q)
+            continue
         if shape == "roundedrect":
             q["at"] = _pt(p.get("at", [50, 50]), f"parts[{i}].at")
             size = p.get("size", [20, 20])
@@ -323,8 +357,37 @@ def _shape_points(q):
         return pts
     raise SceneError(f"unhandled shape {shape}")
 
+_CUTOUT_CACHE = {}
+
+
+def _cutout_piece(q):
+    """Load, polygon-crop and alpha-mask one image part; cached per (media, crop)."""
+    key = (q["media"], json.dumps(q["crop"]), bool(q.get("flip")))
+    got = _CUTOUT_CACHE.get(key)
+    if got is not None:
+        return got
+    src = Image.open(media_path(q["media"])).convert("RGBA")
+    w0, h0 = src.size
+    poly = [(p[0] * w0, p[1] * h0) for p in q["crop"]]
+    xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+    x0 = max(0, int(min(xs))); y0 = max(0, int(min(ys)))
+    x1 = min(w0, int(max(xs)) + 1); y1 = min(h0, int(max(ys)) + 1)
+    if x1 - x0 < 2 or y1 - y0 < 2:
+        raise SceneError(f"image part crop of {q['media']!r} is degenerate")
+    piece = src.crop((x0, y0, x1, y1))
+    mask = Image.new("L", piece.size, 0)
+    ImageDraw.Draw(mask).polygon([(px - x0, py - y0) for px, py in poly], fill=255)
+    piece.putalpha(ImageChops.multiply(piece.getchannel("A"), mask))
+    if q.get("flip"):
+        piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
+    if len(_CUTOUT_CACHE) > 32:
+        _CUTOUT_CACHE.clear()
+    _CUTOUT_CACHE[key] = piece
+    return piece
+
+
 def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
-                sy=1.0, blink_t=None, g=None, text="", fonts=None):
+                sy=1.0, blink_t=None, g=None, text="", fonts=None, canvas=None):
     """cx, cy = feet (unit point (50,100)). One unit = 4*s px. `g` is the scene's
     glow layer — parts flagged `glow` mirror an enlarged translucent copy there."""
     u = 4.0 * s
@@ -343,6 +406,39 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
     step = math.sin(t * 11) * walk
     for q in parts:
         role = q.get("role")
+        if q["shape"] == "image":
+            if canvas is None:
+                continue
+            piece = _cutout_piece(q)
+            wpx = max(2, int(q["width"] * u * sxw))
+            hpx = max(2, int(wpx * piece.height / max(1, piece.width) * sy))
+            if role == "eye":
+                hpx = max(2, int(hpx * eh))
+            im = piece.resize((wpx, hpx), Image.LANCZOS)
+            ang, dx_u, dy_u = 0.0, 0.0, 0.0
+            if role == "swing":
+                ang = swing_ang
+            elif role == "flap":
+                ang = flap_ang * (1.0 if q.get("pivot", q["at"])[0] >= 50 else -1.0)
+            elif role == "flicker":
+                dx_u = flick
+            elif role == "foot":
+                sign = 1.0 if q["at"][0] >= 50 else -1.0
+                dx_u = sign * step * 3.5
+                dy_u = -max(0.0, sign * step) * 2.5
+            elif role == "mouth":
+                m = clamp01(mouth)
+                dy_u = 4.5 * m
+                ang = 0.10 * m * (1.0 if q.get("pivot", q["at"])[0] >= 50 else -1.0)
+            px_c, py_c = to_px(q["at"][0] + dx_u, q["at"][1] + dy_u)
+            if abs(ang) > 1e-4:
+                pvx, pvy = to_px(*q.get("pivot", q["at"]))
+                ca, sa = math.cos(ang), math.sin(ang)
+                rx, ry = px_c - pvx, py_c - pvy
+                px_c, py_c = pvx + rx * ca - ry * sa, pvy + rx * sa + ry * ca
+                im = im.rotate(-math.degrees(ang), resample=Image.BICUBIC, expand=True)
+            canvas.paste(im, (int(px_c - im.width / 2), int(py_c - im.height / 2)), im)
+            continue
         if q["shape"] == "text":
             txt = text if q.get("bind") == "text" else q.get("value", "")
             if txt and fonts is not None:
@@ -482,11 +578,16 @@ class Scene:
                 L["_launches"] = self._launches(i, L)
             self.layers.append(L)
         bg = inp.get("background") or {"kind": "night"}
-        if not isinstance(bg, dict) or bg.get("kind") not in ("night", "gradient", "image"):
-            raise SceneError("background.kind must be night | gradient | image")
+        if not isinstance(bg, dict) or bg.get("kind") not in ("night", "gradient",
+                                                              "image", "studio"):
+            raise SceneError("background.kind must be night | gradient | image | studio")
         self.bg_decl = bg
         if bg["kind"] == "image":
             bg["_path"] = media_path(bg.get("media"))
+        vdef = {"night": 0.22, "studio": 0.16, "gradient": 0.15, "image": 0.25}
+        self.vignette = _num(bg.get("vignette", vdef[bg["kind"]]),
+                             "background.vignette", 0, 0.6)
+        self._vign_map = None
         audio = inp.get("audio") or {}
         self.bgm = media_path(audio["bgm"]) if audio.get("bgm") else None
         # One `voice` starts at 0; `voices` places each line on the timeline —
@@ -552,8 +653,10 @@ class Scene:
             y0 = (photo.height - SH) // 2
             arr = np.asarray(photo.crop((x0, y0, x0 + SW, y0 + SH))).copy()
         else:
-            top = tuple(self.bg_decl.get("top", (9, 13, 30)))
-            bot = tuple(self.bg_decl.get("bottom", (24, 32, 58)))
+            dt, db = ((244, 246, 251), (212, 219, 233)) if kind == "studio" \
+                else ((9, 13, 30), (24, 32, 58))
+            top = tuple(self.bg_decl.get("top", dt))
+            bot = tuple(self.bg_decl.get("bottom", db))
             gy = np.linspace(0, 1, SH)[:, None, None]
             base = np.array(top)[None, None, :] * (1 - gy) + np.array(bot)[None, None, :] * gy
             # (SH,1,3) → full width. Skipping this once clipped every crisp draw
@@ -579,6 +682,21 @@ class Scene:
                     r = rng.uniform(1.0, 2.6) * ss
                     a = int(rng.uniform(60, 160))
                     bd.ellipse([x - r, y - r, x + r, y + r], fill=(170, 200, 255, a))
+                arr = np.asarray(img).copy()
+            elif kind == "studio":
+                # a bright presenter stage: soft spotlight pool, floor line,
+                # gentle contact shading — made for caster / info videos
+                img = Image.fromarray(arr)
+                bd = ImageDraw.Draw(img, "RGBA")
+                fy = SH * 0.845
+                for rr, aa in ((1.5, 26), (1.15, 30), (0.85, 34)):
+                    bd.ellipse([SW * 0.5 - SW * 0.62 * rr, SH * 0.06 - SH * 0.30 * rr,
+                                SW * 0.5 + SW * 0.62 * rr, SH * 0.06 + SH * 0.62 * rr],
+                               fill=(255, 255, 255, aa))
+                bd.rectangle([0, fy, SW, SH], fill=(198, 205, 221))
+                bd.line([0, fy, SW, fy], fill=(172, 180, 200), width=max(2, int(3 * ss)))
+                bd.ellipse([SW * 0.08, fy - 26 * ss, SW * 0.92, fy + 60 * ss],
+                           fill=(255, 255, 255, 42))
                 arr = np.asarray(img).copy()
         if arr.shape != (SH, SW, 3):
             raise SceneError(f"background geometry drifted: {arr.shape} != {(SH, SW, 3)}")
@@ -613,8 +731,17 @@ class Scene:
             getattr(self, "_draw_" + L["kind"])(d, g, t, a, L)
         if img.size != (SW, SH) or glow.size != (SW, SH):
             raise SceneError("frame geometry drifted mid-render")
-        out = np.asarray(img).astype(np.uint16) + \
-            np.asarray(glow.filter(ImageFilter.GaussianBlur(6 * ss))).astype(np.uint16)
+        out = np.asarray(img).astype(np.float32) + \
+            np.asarray(glow.filter(ImageFilter.GaussianBlur(6 * ss))).astype(np.float32)
+        if self.vignette > 0:
+            if self._vign_map is None:
+                yy = (np.linspace(-1, 1, SH) * (SH / max(SW, SH)))[:, None]
+                xx = (np.linspace(-1, 1, SW) * (SW / max(SW, SH)))[None, :]
+                r = np.sqrt(xx * xx + yy * yy)
+                r /= max(r[0, 0], r[-1, -1], 1e-6)
+                self._vign_map = (1.0 - self.vignette
+                                  * np.clip(r, 0, 1) ** 2.4).astype(np.float32)[..., None]
+            out *= self._vign_map
         frame = Image.fromarray(out.clip(0, 255).astype(np.uint8))
         if self.ss != 1.0:
             frame = frame.resize((self.W, self.H), Image.LANCZOS)
@@ -689,7 +816,7 @@ class Scene:
                     f"sprite act {kind!r} — one of wave, talk, jump, point")
         draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
                     walk=walk, sy=sy, blink_t=blink_phase(t), g=g,
-                    fonts=self.fonts)
+                    fonts=self.fonts, canvas=self._frame_img)
         if point_s > 0 and point_to is not None:
             # weather-caster pointer stick: from the hand toward the target,
             # tip tapping at ~2.2 Hz, pulse ring on the tapped spot
@@ -775,6 +902,9 @@ class Scene:
         txt = str(L.get("text") or "")
         cx, y = self._at(L, [0.5, 0.855])
         tw = d.textlength(txt, font=f)
+        d.rounded_rectangle([cx - tw / 2 - 26 * ss + 3 * ss, y - 14 * ss + 8 * ss,
+                             cx + tw / 2 + 26 * ss + 3 * ss, y + f.size + 14 * ss + 8 * ss],
+                            radius=26 * ss, fill=(4, 6, 14, int(55 * a)))
         d.rounded_rectangle([cx - tw / 2 - 26 * ss, y - 14 * ss,
                              cx + tw / 2 + 26 * ss, y + f.size + 14 * ss],
                             radius=26 * ss, fill=(8, 10, 20, int(150 * a)))
@@ -790,6 +920,9 @@ class Scene:
         chh = 50 * ss + rh * len(rows)
         x0 = cx - cw / 2 + slide
         accent = self._color(L.get("accent"), AMBER)
+        d.rounded_rectangle([x0 + 4 * ss, y0 + 12 * ss,
+                             x0 + cw + 4 * ss, y0 + chh + 12 * ss],
+                            radius=36 * ss, fill=(4, 6, 14, int(70 * a)))
         d.rounded_rectangle([x0, y0, x0 + cw, y0 + chh], radius=36 * ss,
                             fill=(9, 12, 24, int(196 * a)),
                             outline=(*accent, int(160 * a)), width=int(2.5 * ss))
@@ -822,6 +955,9 @@ class Scene:
             rh = 150 * ss if hot else 128 * ss
             x0 = cx - cw / 2 + slide
             y0 = y_base + k * 158 * ss
+            d.rounded_rectangle(
+                [x0 + 3 * ss, y0 + 9 * ss, x0 + cw + 3 * ss, y0 + rh + 9 * ss],
+                radius=30 * ss, fill=(4, 6, 14, int(50 * ar)))
             d.rounded_rectangle(
                 [x0, y0, x0 + cw, y0 + rh], radius=30 * ss,
                 fill=(26, 18, 8, int(212 * ar)) if hot else (9, 12, 24, int(190 * ar)),
@@ -1034,6 +1170,18 @@ def action_render(inp):
                          "the declared package likely failed to install on first run; "
                          "check `journalctl -u firebat | grep -iE 'pip|motion'` or "
                          "install it manually, then retry"}
+    if inp.get("async"):
+        return _job_submit(inp, scene)
+    data = _encode_video(scene, tag)
+    out = data.pop("_out_path")
+    data["_mediaImport"] = {"path": _out(out), "contentType": "video/mp4",
+                            "filenameHint": f"motion-{tag}"}
+    return {"success": True, "data": data}
+
+
+def _encode_video(scene, tag, on_frame=None):
+    """Render scene to mp4; returns the data dict. on_frame(i, n) reports progress."""
+    import imageio_ffmpeg
     audio = scene.prepare_audio(OUT_DIR)
     out = os.path.join(OUT_DIR, f"video-{tag}.mp4")
     kwargs = dict(fps=scene.fps, quality=8, macro_block_size=8,
@@ -1045,18 +1193,153 @@ def action_render(inp):
     n = int(scene.dur * scene.fps)
     for i in range(n):
         writer.send(scene.draw_frame(i / scene.fps).tobytes())
+        if on_frame is not None and (i % 24 == 0 or i == n - 1):
+            on_frame(i + 1, n)
     writer.close()
     if audio:
         try:
             os.remove(audio)
         except OSError:
             pass
+    return {"duration": scene.dur, "fps": scene.fps,
+            "size": f"{scene.W}x{scene.H}", "frames": n,
+            "bytes": os.path.getsize(out),
+            "_out_path": out}
+
+
+JOB_ID_RE = re.compile(r"^[0-9a-f]{6,20}-[0-9]{1,10}$")
+
+
+def _job_progress_path(jobdir):
+    return os.path.join(jobdir, "progress.json")
+
+
+def _job_write(jobdir, obj):
+    tmp = os.path.join(jobdir, "progress.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f)
+    os.replace(tmp, _job_progress_path(jobdir))
+
+
+def _job_read(jobdir):
+    try:
+        with open(_job_progress_path(jobdir), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _job_submit(inp, scene):
+    """Accept a long render: validate now, hand the frame loop to a detached
+    child, answer immediately with a job id the `job` action polls."""
+    os.makedirs(JOB_DIR, exist_ok=True)
+    now = time.time()
+    # sweep job dirs older than a day so the folder cannot grow unbounded
+    for name in os.listdir(JOB_DIR):
+        p = os.path.join(JOB_DIR, name)
+        try:
+            if now - os.path.getmtime(p) > 86400:
+                for f in os.listdir(p):
+                    os.remove(os.path.join(p, f))
+                os.rmdir(p)
+        except OSError:
+            pass
+    spec = {k: v for k, v in inp.items() if k not in ("async", "stills")}
+    job_id = f"{_scene_hash(spec)}-{int(now) % 10 ** 9}"
+    jobdir = os.path.join(JOB_DIR, job_id)
+    os.makedirs(jobdir, exist_ok=True)
+    with open(os.path.join(jobdir, "scene.json"), "w", encoding="utf-8") as f:
+        json.dump(spec, f, ensure_ascii=False)
+    n = int(scene.dur * scene.fps)
+    _job_write(jobdir, {"state": "running", "done": 0, "total": n, "t0": now})
+    log = open(os.path.join(jobdir, "log.txt"), "w", encoding="utf-8")
+    kw = {"stdin": subprocess.DEVNULL, "stdout": log, "stderr": log,
+          "cwd": os.getcwd()}
+    if os.name == "nt":
+        kw["creationflags"] = 0x00000008 | 0x00000200  # DETACHED | NEW_PROCESS_GROUP
+    else:
+        kw["start_new_session"] = True
+    subprocess.Popen([sys.executable, os.path.abspath(__file__), "--job", jobdir], **kw)
+    log.close()
     return {"success": True,
-            "data": {"duration": scene.dur, "fps": scene.fps,
-                     "size": f"{scene.W}x{scene.H}", "frames": n,
-                     "bytes": os.path.getsize(out),
-                     "_mediaImport": {"path": _out(out), "contentType": "video/mp4",
-                                      "filenameHint": f"motion-{tag}"}}}
+            "data": {"jobId": job_id, "state": "accepted", "frames": n,
+                     "note": "rendering in the background — poll with "
+                             f"{{\"action\": \"job\", \"id\": \"{job_id}\"}}; "
+                             "the call that sees it finished imports the video"}}
+
+
+def run_job(jobdir):
+    """Child process: render the scene spec left in the job dir."""
+    try:
+        with open(os.path.join(jobdir, "scene.json"), encoding="utf-8") as f:
+            spec = json.load(f)
+        scene = Scene(spec)
+        prog = _job_read(jobdir) or {}
+        t0 = prog.get("t0", time.time())
+
+        def tick(done, total):
+            _job_write(jobdir, {"state": "running", "done": done, "total": total,
+                                "t0": t0})
+        data = _encode_video(scene, _scene_hash(spec), on_frame=tick)
+        _job_write(jobdir, {"state": "done", "t0": t0, "finished": time.time(),
+                            "path": data.pop("_out_path"), "result": data})
+    except Exception as e:  # noqa: BLE001 — the child's only reporting channel
+        _job_write(jobdir, {"state": "error", "error": f"{type(e).__name__}: {e}"})
+
+
+def action_job(inp):
+    job_id = str(inp.get("id") or "").strip()
+    if not JOB_ID_RE.match(job_id):
+        return {"success": False,
+                "error": "id must be a jobId returned by render with async:true"}
+    jobdir = os.path.join(JOB_DIR, job_id)
+    prog = _job_read(jobdir)
+    if prog is None:
+        return {"success": False,
+                "error": f"unknown job {job_id!r} — job records are kept for a day"}
+    state = prog.get("state")
+    if state == "error":
+        tail = ""
+        try:
+            with open(os.path.join(jobdir, "log.txt"), encoding="utf-8",
+                      errors="replace") as f:
+                tail = f.read()[-500:]
+        except OSError:
+            pass
+        return {"success": False, "error": f"render failed: {prog.get('error')}"
+                                           + (f" | log tail: {tail}" if tail.strip() else "")}
+    if state == "running":
+        done, total = int(prog.get("done", 0)), max(1, int(prog.get("total", 1)))
+        elapsed = time.time() - float(prog.get("t0", time.time()))
+        age = time.time() - os.path.getmtime(_job_progress_path(jobdir))
+        if age > 180:
+            return {"success": True,
+                    "data": {"jobId": job_id, "state": "stalled",
+                             "note": f"no progress for {int(age)}s — the worker "
+                                     "likely died; submit the render again"}}
+        eta = int(elapsed / max(done, 1) * (total - done)) if done else None
+        return {"success": True,
+                "data": {"jobId": job_id, "state": "running",
+                         "framesDone": done, "framesTotal": total,
+                         "progress": round(done / total, 3),
+                         **({"etaSec": eta} if eta is not None else {})}}
+    # done
+    path = prog.get("path")
+    if not path or not os.path.exists(path):
+        return {"success": False, "error": "job finished but the file is gone"}
+    if prog.get("delivered") and not inp.get("redeliver"):
+        return {"success": True,
+                "data": {"jobId": job_id, "state": "done",
+                         "note": "already delivered to the media store — pass "
+                                 "redeliver:true to import it again"}}
+    prog["delivered"] = True
+    _job_write(os.path.join(JOB_DIR, job_id), prog)
+    result = dict(prog.get("result") or {})
+    result.update({"jobId": job_id, "state": "done",
+                   "renderSec": int(prog.get("finished", 0) - prog.get("t0", 0)),
+                   "_mediaImport": {"path": _out(path), "contentType": "video/mp4",
+                                    "filenameHint": f"motion-{job_id.split('-')[0]}"}})
+    return {"success": True, "data": result}
 
 def _color_of(pose, default):
     c = pose.get("color")
@@ -1082,7 +1365,7 @@ def _custom_sticker_png(decl, size, pose):
                 mouth=float(pose.get("mouth", 0.0)), wave=float(pose.get("wave", 0.0)),
                 sy=float(pose.get("squash", 1.0)),
                 blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None,
-                text=txt, fonts=fonts)
+                text=txt, fonts=fonts, canvas=img)
     return img
 
 def action_sticker(inp):
@@ -1116,6 +1399,12 @@ def action_save_asset(inp):
     except SceneError as e:
         return {"success": False,
                 "error": f"{e} — the assets action documents the part grammar"}
+    try:
+        for q in parts:
+            if q["shape"] == "image":
+                media_path(q["media"])  # fail at save time, not first draw
+    except SceneError as e:
+        return {"success": False, "error": str(e)}
     os.makedirs(ASSET_DIR, exist_ok=True)
     replaced = os.path.isfile(_asset_path(name))
     with open(_asset_path(name), "w", encoding="utf-8") as fh:
@@ -1169,17 +1458,24 @@ def action_duration(inp):
 def action_assets(_inp):
     return {"success": True, "data": {
         "envelope": {"render": "{action:'render', duration, size?, fps?, background?, "
-                               "layers:[...], audio?, stills?, quality?}",
-                     "sticker": "{action:'sticker', name, pose?, stickerSize?}"},
+                               "layers:[...], audio?, stills?, quality?, async?}",
+                     "sticker": "{action:'sticker', name, pose?, stickerSize?}",
+                     "job": "{action:'job', id, redeliver?}"},
         "coordinates": "positions are normalized [x, y], 0..1, y grows downward; "
                        "times are seconds; every layer has from/to (fade windows "
                        "fadeIn/fadeOut, default 0.4s)",
         "sizes": sorted(SIZES), "durationMax": DUR_MAX, "fpsRange": [FPS_MIN, FPS_MAX],
         "backgrounds": {
             "night": "built-in starry night — moon, hills, stars (default)",
+            "studio": "{kind:'studio'} bright presenter stage — spotlight pool and "
+                      "floor line, made for caster / info videos (top/bottom "
+                      "colors overridable)",
             "gradient": "{kind:'gradient', top:[r,g,b], bottom:[r,g,b]}",
             "image": "{kind:'image', media:'/user/media/<file>'} cover-cropped; "
                      "generate one with image_gen first for photoreal scenes",
+            "vignette": "any background takes vignette: 0..0.6 edge darkening "
+                        "(defaults: night .22, studio .16, gradient .15, image .25; "
+                        "0 disables)",
         },
         "sprites": {
             "what": "any clip-art declaration by name — seeds ship with the module, "
@@ -1234,7 +1530,13 @@ def action_assets(_inp):
                        "opens with talk/lipsync, eye blinks, flicker jitters (flames), "
                        "foot steps while walking, flap idly sways around its pivot. "
                        "glow:true mirrors the part onto the scene glow layer. Extra "
-                       "shapes: roundedrect {radius}, text {height, bind:'text'|value}. "
+                       "shapes: roundedrect {radius}, text {height, bind:'text'|value}, "
+                       "and image {media, crop:[[x,y]..] 3..60 pairs in 0..1 IMAGE "
+                       "coords, at:[vx,vy], width in viewBox units, pivot?, flip?} — "
+                       "cutout rigging: a polygon-cropped piece of a real picture "
+                       "becomes a joint and animates with the same roles (crop a limb, "
+                       "put pivot at its shoulder, give it swing or flap; mouth drops "
+                       "the jaw piece with the voice). "
                        "Top level may set aspect (canvas h/w for stickers, 0.3..2)",
         },
         "stickers": {
@@ -1244,6 +1546,10 @@ def action_assets(_inp):
         },
         "iteration": "pass stills:[t1,t2,...] to get PNG frames in seconds instead of "
                      "a minutes-long video render — inspect, adjust, then render for real",
+        "longRenders": "renders longer than ~20s can outlive the tool roundtrip — "
+                       "pass async:true to get a jobId immediately, then poll "
+                       "{action:'job', id} (running: progress + etaSec); the poll "
+                       "that sees state 'done' imports the finished video",
     }}
 
 # ── selftest ─────────────────────────────────────────────────────────────────
@@ -1370,6 +1676,79 @@ def action_selftest():
         enc_note = repr(e)
     ck("a tiny scene encodes to a real mp4", ">2000 bytes", enc_note, enc_ok)
 
+    cut_note, cut_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        tpimg = os.path.join(OUT_DIR, "selftest-cut.png")
+        src = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(src)
+        dd.ellipse([40, 60, 160, 190], fill=(90, 140, 220, 255))
+        dd.rectangle([120, 20, 190, 70], fill=(230, 120, 60, 255))
+        src.save(tpimg)
+        parts = [
+            {"shape": "image", "media": tpimg, "crop": [[0.1, 0.25], [0.9, 0.25],
+                                                        [0.9, 1.0], [0.1, 1.0]],
+             "at": [50, 70], "width": 60},
+            {"shape": "image", "media": tpimg, "crop": [[0.55, 0.05], [1.0, 0.05],
+                                                        [1.0, 0.4], [0.55, 0.4]],
+             "at": [78, 30], "width": 30, "role": "swing", "pivot": [64, 42]},
+        ]
+        sv = action_save_asset({"action": "save_asset", "name": "selftest-cut",
+                                "parts": parts})
+        assert sv.get("success"), sv
+        os.remove(sv["data"]["_mediaImport"]["path"])
+        sc3 = Scene({"action": "render", "duration": 1.2, "quality": "draft",
+                     "layers": [{"kind": "sprite", "name": "selftest-cut", "from": 0,
+                                 "to": 1.2, "enter": "none",
+                                 "acts": [{"at": 0, "do": "wave", "for": 1.2}]}]})
+        fr3 = sc3.draw_frame(0.6)
+        blue = ((fr3[:, :, 2].astype(int) - fr3[:, :, 0].astype(int)) > 40).sum()
+        st3 = action_sticker({"action": "sticker", "name": "selftest-cut",
+                              "stickerSize": 200})
+        st_ok = st3.get("success", False)
+        if st_ok:
+            os.remove(st3["data"]["_mediaImport"]["path"])
+        action_delete_asset({"name": "selftest-cut"})
+        os.remove(tpimg)
+        cut_ok = blue > 2000 and st_ok
+        cut_note = f"blue px={blue}, sticker={st_ok}"
+    except Exception as e:  # noqa: BLE001
+        cut_note = f"{type(e).__name__}: {e}"
+    ck("an image-cutout part crops, rigs and draws in scene and sticker",
+       "blue body visible + sticker ok", cut_note, cut_ok)
+
+    job_note, job_ok = "", False
+    try:
+        sub = action_render({"action": "render", "duration": 1.0, "fps": 10,
+                             "quality": "draft", "async": True,
+                             "background": {"kind": "studio"},
+                             "layers": [{"kind": "confetti", "from": 0.1, "to": 0.9}]})
+        jid = sub["data"]["jobId"]
+        st = {}
+        for _ in range(60):
+            st = action_job({"action": "job", "id": jid})
+            if not st.get("success") or st["data"].get("state") in ("done", "stalled"):
+                break
+            time.sleep(0.5)
+        mi = (st.get("data") or {}).get("_mediaImport") or {}
+        job_ok = (st.get("success") and st["data"].get("state") == "done"
+                  and os.path.getsize(mi.get("path", "")) > 2000)
+        again = action_job({"action": "job", "id": jid})
+        job_ok = job_ok and again.get("success") \
+            and "_mediaImport" not in (again.get("data") or {})
+        job_note = f"state={st.get('data', st).get('state', st.get('error'))}, " \
+                   f"redelivery guarded={'_mediaImport' not in (again.get('data') or {})}"
+        if mi.get("path"):
+            os.remove(mi["path"])
+        jd = os.path.join(JOB_DIR, jid)
+        for fn in os.listdir(jd):
+            os.remove(os.path.join(jd, fn))
+        os.rmdir(jd)
+    except Exception as e:  # noqa: BLE001
+        job_note = f"{type(e).__name__}: {e}"
+    ck("an async render is accepted, polls to done, delivers once",
+       "done + single delivery", job_note, job_ok)
+
     try:
         f = Fonts(1.0)
         ck("a font resolves (korean-capable flagged honestly)",
@@ -1408,6 +1787,8 @@ def main():
             out = action_assets(inp)
         elif action == "duration":
             out = action_duration(inp)
+        elif action == "job":
+            out = action_job(inp)
         elif action == "save_asset":
             out = action_save_asset(inp)
         elif action == "delete_asset":
@@ -1417,11 +1798,14 @@ def main():
         else:
             out = {"success": False,
                    "error": f"unknown action {action!r} — one of: render, sticker, "
-                            "assets, save_asset, delete_asset, duration, selftest"}
+                            "assets, save_asset, delete_asset, duration, job, selftest"}
     except SceneError as e:
         out = {"success": False,
                "error": f"{e} — call {{\"action\": \"assets\"}} for the scene grammar"}
     sys.stdout.buffer.write(json.dumps(out, ensure_ascii=False).encode("utf-8"))
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) >= 3 and sys.argv[1] == "--job":
+        run_job(sys.argv[2])
+    else:
+        main()
