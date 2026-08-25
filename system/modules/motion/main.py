@@ -227,9 +227,181 @@ def draw_heart(d, x, y, r, col, a=255):
             _HEART_PTS.append((hx / 16.0, -hy / 16.0))
     d.polygon([(x + px * r, y + py * r) for px, py in _HEART_PTS], fill=(*col, a))
 
-# ── scene ────────────────────────────────────────────────────────────────────
+# ── custom clip-art assets ───────────────────────────────────────────────────
+# The ORIGINAL of a saved clip art is its declaration (a JSON parts list) under
+# data/motion/assets/; the PNG in the media store is a derived thumbnail. Scenes
+# and stickers reference the name, and the interpreter below redraws the vector
+# at whatever size and pose the moment asks for — reuse never touches the PNG.
+#
+# Part grammar (viewBox 100x100 units, feet anchored at (50,100)):
+#   {shape: ellipse|rect|polygon|capsule|heart|star, at:[x,y], size:[w,h] |
+#    points:[[x,y]..] | ends:[[x,y],[x,y]]+width, fill:[r,g,b(,a)],
+#    outline:[r,g,b]?, outlineWidth?, role: "swing"|"mouth"|"eye"|null,
+#    pivot:[x,y]? (swing rotation centre)}
+ASSET_DIR = os.path.join("data", "motion", "assets")
+ASSET_PARTS_MAX = 60
+import re as _re
+_ASSET_NAME_RE = _re.compile(r"^[0-9A-Za-z가-힣_-]{1,24}$")
+_CUSTOM_SHAPES = ("ellipse", "rect", "polygon", "capsule", "heart", "star")
+
 class SceneError(ValueError):
     pass
+
+def _asset_path(name):
+    return os.path.join(ASSET_DIR, f"{name}.json")
+
+def load_custom_asset(name):
+    p = _asset_path(name)
+    if not os.path.isfile(p):
+        return None
+    with open(p, encoding="utf-8") as fh:
+        return json.load(fh)
+
+def list_custom_assets():
+    if not os.path.isdir(ASSET_DIR):
+        return []
+    out = []
+    for f in sorted(os.listdir(ASSET_DIR)):
+        if f.endswith(".json"):
+            out.append(f[:-5])
+    return out
+
+def _rgb(v, name, alpha_ok=True):
+    if not (isinstance(v, (list, tuple)) and len(v) in ((3, 4) if alpha_ok else (3,))
+            and all(isinstance(c, (int, float)) and 0 <= c <= 255 for c in v)):
+        raise SceneError(f"{name} must be [r,g,b] (0..255)")
+    return [int(c) for c in v]
+
+def _pt(v, name):
+    if not (isinstance(v, (list, tuple)) and len(v) == 2
+            and all(isinstance(c, (int, float)) and -50 <= c <= 150 for c in v)):
+        raise SceneError(f"{name} must be [x,y] in the 100x100 viewBox")
+    return [float(v[0]), float(v[1])]
+
+def validate_asset_decl(name, parts):
+    if not _ASSET_NAME_RE.match(name or ""):
+        raise SceneError("name must be 1-24 chars of letters, digits, 한글, - or _")
+    if name in STICKER_ASSETS:
+        raise SceneError(f"{name!r} is a built-in asset — pick another name")
+    if not isinstance(parts, list) or not (1 <= len(parts) <= ASSET_PARTS_MAX):
+        raise SceneError(f"parts must be a list of 1..{ASSET_PARTS_MAX}")
+    norm = []
+    for i, p in enumerate(parts):
+        if not isinstance(p, dict):
+            raise SceneError(f"parts[{i}] must be an object")
+        shape = p.get("shape")
+        if shape not in _CUSTOM_SHAPES:
+            raise SceneError(f"parts[{i}].shape must be one of {list(_CUSTOM_SHAPES)}")
+        q = {"shape": shape, "fill": _rgb(p.get("fill", [200, 200, 200]), f"parts[{i}].fill")}
+        if p.get("outline") is not None:
+            q["outline"] = _rgb(p["outline"], f"parts[{i}].outline", alpha_ok=False)
+            q["outlineWidth"] = float(p.get("outlineWidth", 1.2))
+        role = p.get("role")
+        if role is not None:
+            if role not in ("swing", "mouth", "eye"):
+                raise SceneError(f"parts[{i}].role must be swing | mouth | eye")
+            q["role"] = role
+        if shape == "polygon":
+            pts = p.get("points")
+            if not (isinstance(pts, list) and 3 <= len(pts) <= 72):
+                raise SceneError(f"parts[{i}].points must be 3..72 [x,y] pairs")
+            q["points"] = [_pt(v, f"parts[{i}].points[{j}]") for j, v in enumerate(pts)]
+        elif shape == "capsule":
+            ends = p.get("ends")
+            if not (isinstance(ends, list) and len(ends) == 2):
+                raise SceneError(f"parts[{i}].ends must be two [x,y] points")
+            q["ends"] = [_pt(ends[0], f"parts[{i}].ends[0]"), _pt(ends[1], f"parts[{i}].ends[1]")]
+            q["width"] = float(p.get("width", 6))
+            if not (0.5 <= q["width"] <= 40):
+                raise SceneError(f"parts[{i}].width must be 0.5..40 units")
+        else:
+            q["at"] = _pt(p.get("at", [50, 50]), f"parts[{i}].at")
+            size = p.get("size", [20, 20])
+            if not (isinstance(size, (list, tuple)) and len(size) == 2
+                    and all(isinstance(c, (int, float)) and 0.5 <= c <= 120 for c in size)):
+                raise SceneError(f"parts[{i}].size must be [w,h] in 0.5..120 units")
+            q["size"] = [float(size[0]), float(size[1])]
+        if role == "swing":
+            q["pivot"] = _pt(p.get("pivot", q.get("at", [50, 50])), f"parts[{i}].pivot")
+        norm.append(q)
+    return norm
+
+def _shape_points(q):
+    """Every shape becomes a point loop so rotation/squash is one code path.
+    Capsules keep their two ends and width instead."""
+    shape = q["shape"]
+    if shape == "polygon":
+        return list(q["points"])
+    if shape == "capsule":
+        return None
+    cx, cy = q["at"]
+    w, h = q["size"][0] / 2, q["size"][1] / 2
+    if shape == "rect":
+        return [[cx - w, cy - h], [cx + w, cy - h], [cx + w, cy + h], [cx - w, cy + h]]
+    if shape == "ellipse":
+        return [[cx + w * math.cos(a), cy + h * math.sin(a)]
+                for a in (i * math.pi / 12 for i in range(24))]
+    if shape == "heart":
+        if _HEART_PTS is None:  # populate the shared parametric curve
+            tmp = Image.new("RGB", (4, 4))
+            draw_heart(ImageDraw.Draw(tmp, "RGBA"), 2, 2, 1, (0, 0, 0), 0)
+        return [[cx + px * w, cy + py * h] for px, py in _HEART_PTS]
+    if shape == "star":
+        pts = []
+        for i in range(10):
+            r = 1.0 if i % 2 == 0 else 0.42
+            a = -math.pi / 2 + i * math.pi / 5
+            pts.append([cx + w * r * math.cos(a), cy + h * r * math.sin(a)])
+        return pts
+    raise SceneError(f"unhandled shape {shape}")
+
+def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
+                sy=1.0, blink_t=None):
+    """cx, cy = feet (unit point (50,100)). One unit = 4*s px."""
+    u = 4.0 * s
+    sxw = 1.0 / math.sqrt(max(0.3, sy))
+    cy = cy - walk * 10 * s * abs(math.sin(t * 11))
+    eh = 1.0
+    if blink_t is not None:
+        eh = 1 - 0.92 * math.sin(math.pi * clamp01(blink_t))
+
+    def to_px(x, y):
+        return (cx + (x - 50) * u * sxw, cy - (100 - y) * u * sy)
+
+    swing_ang = wave * (-0.55 + 0.45 * math.sin(t * 9))
+    for q in parts:
+        role = q.get("role")
+        pts = _shape_points(q)
+
+        def xform(p):
+            x, y = p
+            if role == "swing" and swing_ang:
+                px_, py_ = q["pivot"]
+                dx, dy = x - px_, y - py_
+                ca, sa = math.cos(swing_ang), math.sin(swing_ang)
+                x, y = px_ + dx * ca - dy * sa, py_ + dx * sa + dy * ca
+            if role == "mouth":
+                mcy = q["at"][1] if "at" in q else sum(pp[1] for pp in pts) / len(pts)
+                y = mcy + (y - mcy) * (0.4 + 1.3 * clamp01(mouth))
+            if role == "eye":
+                ecy = q["at"][1] if "at" in q else sum(pp[1] for pp in pts) / len(pts)
+                y = ecy + (y - ecy) * eh
+            return to_px(x, y)
+
+        fill = tuple(q["fill"]) if len(q["fill"]) == 4 else tuple(q["fill"]) + (255,)
+        ow = int(max(1, q.get("outlineWidth", 0) * u)) if q.get("outline") else 0
+        if q["shape"] == "capsule":
+            p0, p1 = xform(q["ends"][0]), xform(q["ends"][1])
+            w_px = q["width"] * u
+            if ow:
+                _capsule(d, p0, p1, w_px + 2 * ow, tuple(q["outline"]))
+            _capsule(d, p0, p1, w_px, fill)
+        else:
+            poly = [xform(p) for p in pts]
+            if q.get("outline"):
+                d.polygon(poly, fill=fill, outline=tuple(q["outline"]), width=ow)
+            else:
+                d.polygon(poly, fill=fill)
 
 def _num(v, name, lo, hi):
     try:
@@ -440,8 +612,15 @@ class Scene:
         return at[0] * self.SW, at[1] * self.SH
 
     def _draw_sprite(self, d, g, t, a, L):
-        if str(L.get("name", "firebat")) != "firebat":
-            raise SceneError(f"unknown sprite {L.get('name')!r} — assets lists the sprites")
+        name = str(L.get("name", "firebat"))
+        custom = None
+        if name != "firebat":
+            saved = load_custom_asset(name)
+            if saved is None:
+                raise SceneError(
+                    f"unknown sprite {name!r} — assets lists built-ins and saved clip art; "
+                    "save one first with save_asset")
+            custom = saved["parts"]
         SW, SH, ss = self.SW, self.SH, self.ss
         x, y = self._at(L, [0.5, 0.9])
         s = ss * 1.2 * float(L.get("scale", 1.0))
@@ -483,9 +662,13 @@ class Scene:
                 sy *= sq
             else:
                 raise SceneError(f"sprite act {kind!r} — one of wave, talk, jump")
-        draw_firebat(d, g, x, y - jump_h, s, t, pal=L.get("palette"), mouth=mouth,
-                     wave=wave, walk=walk, sy=sy,
-                     look=tuple(L.get("look") or (0, 0)), blink_t=blink_phase(t))
+        if custom is not None:
+            draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
+                        walk=walk, sy=sy, blink_t=blink_phase(t))
+        else:
+            draw_firebat(d, g, x, y - jump_h, s, t, pal=L.get("palette"), mouth=mouth,
+                         wave=wave, walk=walk, sy=sy,
+                         look=tuple(L.get("look") or (0, 0)), blink_t=blink_phase(t))
 
     def _draw_bubble(self, d, g, t, a, L):
         ss = self.ss
@@ -820,24 +1003,43 @@ def _color_of(pose, default):
         return tuple(int(v) for v in c)
     return default
 
+def _custom_sticker_png(parts, size, pose):
+    Wc = Hc = size
+    img = Image.new("RGBA", (Wc, Hc), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img, "RGBA")
+    draw_custom(d, Wc / 2, Hc - Hc * 0.02, Wc / 400.0 * 0.96, 1.3, parts,
+                mouth=float(pose.get("mouth", 0.0)), wave=float(pose.get("wave", 0.0)),
+                sy=float(pose.get("squash", 1.0)),
+                blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None)
+    return img
+
 def action_sticker(inp):
     name = str(inp.get("name") or "firebat")
+    custom = None
     if name not in STICKER_ASSETS:
-        return {"success": False,
-                "error": f"unknown asset {name!r} — one of {list(STICKER_ASSETS)}; "
-                         "the assets action documents each"}
+        saved = load_custom_asset(name)
+        if saved is None:
+            return {"success": False,
+                    "error": f"unknown asset {name!r} — built-ins {list(STICKER_ASSETS)} "
+                             "or a saved clip-art name (assets lists both)"}
+        custom = saved["parts"]
     try:
         size = int(_num(inp.get("stickerSize", 900), "stickerSize",
                         STICKER_MIN, STICKER_MAX))
     except SceneError as e:
         return {"success": False, "error": str(e)}
     pose = inp.get("pose") or {}
-    Wc = size
-    Hc = int(size * 1.1) if name == "firebat" else size
-    if name == "balloon":
-        Hc = int(size * 0.62)
-    img = Image.new("RGBA", (Wc, Hc), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img, "RGBA")
+    if custom is not None:
+        img = _custom_sticker_png(custom, size, pose)
+        Wc, Hc = img.size
+        d = None
+    else:
+        Wc = size
+        Hc = int(size * 1.1) if name == "firebat" else size
+        if name == "balloon":
+            Hc = int(size * 0.62)
+        img = Image.new("RGBA", (Wc, Hc), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img, "RGBA")
     # No glow layer on purpose: additive glow on a transparent ground bakes a
     # dark ring around the flame. The crisp shapes read fine alone.
     if name == "firebat":
@@ -910,6 +1112,44 @@ def action_sticker(inp):
                                       "filenameHint": f"clip-{name}",
                                       "source": "clipart"}}}
 
+def action_save_asset(inp):
+    name = str(inp.get("name") or "").strip()
+    try:
+        parts = validate_asset_decl(name, inp.get("parts"))
+    except SceneError as e:
+        return {"success": False,
+                "error": f"{e} — the assets action documents the part grammar"}
+    os.makedirs(ASSET_DIR, exist_ok=True)
+    replaced = os.path.isfile(_asset_path(name))
+    with open(_asset_path(name), "w", encoding="utf-8") as fh:
+        json.dump({"parts": parts}, fh, ensure_ascii=False, indent=1)
+    # The browsable face: a thumbnail lands in the media store as clip art. The
+    # declaration stays the original — consumers re-render from it, never from this PNG.
+    os.makedirs(OUT_DIR, exist_ok=True)
+    thumb = _custom_sticker_png(parts, 480, {})
+    tp = os.path.join(OUT_DIR, f"asset-thumb-{name}.png")
+    thumb.save(tp)
+    return {"success": True,
+            "data": {"asset": name, "parts": len(parts), "replaced": replaced,
+                     "next": "reference it as a sprite layer {kind:'sprite', name: '"
+                             + name + "'} or export sizes with the sticker action",
+                     "_mediaImport": {"path": _out(tp), "contentType": "image/png",
+                                      "filenameHint": f"clip-{name}",
+                                      "source": "clipart"}}}
+
+def action_delete_asset(inp):
+    name = str(inp.get("name") or "").strip()
+    if not _ASSET_NAME_RE.match(name):
+        return {"success": False, "error": "name must be a saved clip-art name"}
+    p = _asset_path(name)
+    if not os.path.isfile(p):
+        return {"success": False,
+                "error": f"no saved clip art named {name!r} — assets lists what exists"}
+    os.remove(p)
+    return {"success": True, "data": {"deleted": name,
+            "note": "the declaration is gone; thumbnails already in the media store stay "
+                    "until removed there"}}
+
 def action_assets(_inp):
     return {"success": True, "data": {
         "envelope": {"render": "{action:'render', duration, size?, fps?, background?, "
@@ -953,6 +1193,18 @@ def action_assets(_inp):
                   "voice": "media path — make one with the tts tool; ducks the bgm "
                            "and drives lipsync",
                   "bgmGainDb": "default -8"},
+        "saved": {
+            "what": "clip art saved with save_asset — the declaration (parts JSON) is "
+                    "the original, the media-store PNG is only its thumbnail; scenes and "
+                    "stickers reference the name and redraw the vector at any size",
+            "names": list_custom_assets(),
+            "grammar": "save_asset {name, parts:[{shape: ellipse|rect|polygon|capsule|"
+                       "heart|star, at:[x,y], size:[w,h] | points:[[x,y]..] | "
+                       "ends:[[x,y],[x,y]]+width, fill:[r,g,b], outline:[r,g,b]?, "
+                       "outlineWidth?, role: swing|mouth|eye?, pivot:[x,y]?}]} in a "
+                       "100x100 viewBox, feet at (50,100), y down. role swing waves, "
+                       "mouth opens with talk/lipsync, eye blinks",
+        },
         "stickers": {
             "what": "the sticker action exports any of these as a transparent PNG for "
                     "pages, documents and slide decks",
@@ -1019,6 +1271,37 @@ def action_selftest():
     ck("a non-character clip-art asset (heart) exports the same way",
        True, h_ok, bool(hs.get("success")) and h_ok)
 
+    demo_parts = [
+        {"shape": "ellipse", "at": [50, 60], "size": [40, 50], "fill": [120, 160, 90],
+         "outline": [40, 60, 30], "outlineWidth": 1.5},
+        {"shape": "capsule", "ends": [[68, 50], [86, 34]], "width": 6,
+         "fill": [120, 160, 90], "role": "swing", "pivot": [68, 50]},
+        {"shape": "ellipse", "at": [50, 52], "size": [10, 6], "fill": [60, 30, 30],
+         "role": "mouth"},
+    ]
+    sv = action_save_asset({"name": "selftest-blob", "parts": demo_parts})
+    rt_ok = False
+    if sv.get("success"):
+        tp = sv["data"]["_mediaImport"]["path"]
+        if os.path.isfile(tp):
+            os.remove(tp)
+        sc2 = Scene({"action": "render", "duration": 1.5, "quality": "draft",
+                     "layers": [{"kind": "sprite", "name": "selftest-blob", "from": 0,
+                                 "to": 1.5, "enter": "none",
+                                 "acts": [{"at": 0, "do": "wave", "for": 1.5},
+                                          {"at": 0, "do": "talk", "for": 1.5}]}]})
+        fr2 = sc2.draw_frame(0.8)
+        green = ((fr2[:, :, 1].astype(int) - fr2[:, :, 2].astype(int)) > 30).sum()
+        st2 = action_sticker({"action": "sticker", "name": "selftest-blob",
+                              "stickerSize": 220})
+        if st2.get("success"):
+            os.remove(st2["data"]["_mediaImport"]["path"])
+        dl = action_delete_asset({"name": "selftest-blob"})
+        rt_ok = green > 5000 and st2.get("success") and dl.get("success") \
+            and load_custom_asset("selftest-blob") is None
+    ck("a saved declaration round-trips: save → scene sprite → sticker → delete",
+       True, rt_ok, bool(sv.get("success")) and rt_ok)
+
     try:
         Scene({"action": "render", "duration": 2,
                "layers": [{"kind": "warp", "from": 0, "to": 1}]})
@@ -1082,12 +1365,16 @@ def main():
             out = action_sticker(inp)
         elif action == "assets":
             out = action_assets(inp)
+        elif action == "save_asset":
+            out = action_save_asset(inp)
+        elif action == "delete_asset":
+            out = action_delete_asset(inp)
         elif action == "selftest":
             out = action_selftest()
         else:
             out = {"success": False,
                    "error": f"unknown action {action!r} — one of: render, sticker, "
-                            "assets, selftest"}
+                            "assets, save_asset, delete_asset, selftest"}
     except SceneError as e:
         out = {"success": False,
                "error": f"{e} — call {{\"action\": \"assets\"}} for the scene grammar"}

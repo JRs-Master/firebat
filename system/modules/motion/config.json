@@ -41,6 +41,21 @@
         "tags": ["스티커", "클립아트", "투명 PNG", "캐릭터 이미지"]
       },
       {
+        "id": "save_asset",
+        "name": "클립아트 저장",
+        "description": "캐릭터·소품을 재사용하게 저장한다 — 도형 파츠 선언(JSON)이 원본으로 남고 썸네일 PNG 가 미디어 창고(클립아트 칩)에 뜬다. 저장 후엔 씬 sprite 와 sticker 가 이름으로 참조한다. 파츠 문법은 assets 액션이 말한다.",
+        "domain": "제작",
+        "params": ["name", "parts"],
+        "tags": ["클립아트 저장", "캐릭터 저장", "재사용", "에셋 등록"]
+      },
+      {
+        "id": "delete_asset",
+        "name": "클립아트 삭제",
+        "description": "저장된 클립아트 선언을 지운다. 미디어 창고의 썸네일은 창고에서 따로 지운다.",
+        "domain": "제작",
+        "params": ["name"]
+      },
+      {
         "id": "assets",
         "name": "에셋·씬 문법 사전",
         "description": "이 모듈이 그릴 수 있는 것 전부 — 레이어 종류별 필드, 캐릭터 포즈 파라미터, 배경 종류, 캡·기본값. render 를 부르기 전에 여기부터 읽는다.",
@@ -98,7 +113,11 @@
       },
       "name": {
         "type": "string",
-        "description": "[sticker] Asset to export: firebat (mascot), heart, star, moon, balloon (speech bubble, pose.text optional)."
+        "description": "[sticker|save_asset|delete_asset] Asset name. sticker exports built-ins (firebat, heart, star, moon, balloon) or any saved clip art; save_asset names the new declaration (1-24 chars, letters/digits/한글/-/_)."
+      },
+      "parts": {
+        "type": "array",
+        "description": "[save_asset] The clip art's shape parts — the ORIGINAL that scenes and stickers redraw from. 100x100 viewBox, feet at (50,100), y down. Each part: {shape: ellipse|rect|polygon|capsule|heart|star, at/size or points or ends+width, fill:[r,g,b], outline?, role: swing (waves) | mouth (opens on talk) | eye (blinks)}. Full grammar: the assets action."
       },
       "pose": {
         "type": "object",
