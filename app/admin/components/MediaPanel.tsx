@@ -536,6 +536,16 @@ export function MediaPanel({
                       <Loader2 size={20} className="animate-spin" />
                       <span className="text-[9px] font-bold">{t('media.generating_badge')}</span>
                     </div>
+                  ) : itemKind === 'video' ? (
+                    /* 영상은 픽셀이 있다 — preload=metadata 로 첫 프레임이 곧 썸네일.
+                       재생 컨트롤은 상세 화면 몫이고 여기선 그림만. */
+                    <video
+                      src={thumbSrc}
+                      preload="metadata"
+                      muted
+                      playsInline
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
                   ) : itemKind !== 'image' ? (
                     /* non-image — no pixels to show, so the card says what the file IS:
                        a format-colored badge + the FILENAME (ext alone told nobody which
