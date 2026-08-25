@@ -218,6 +218,67 @@ def validate_asset_decl(name, parts):
                          "another name")
     return validate_parts(parts)
 
+def validate_bones(bones, parts):
+    """Bone chains for FK: {name: {pivot:[x,y], parent?}} — parents first at draw."""
+    if bones is None:
+        return {}
+    if not isinstance(bones, dict) or len(bones) > 40:
+        raise SceneError("bones must be an object of at most 40 named bones")
+    norm = {}
+    for name, b in bones.items():
+        if not re.match(r"^[A-Za-z0-9_]{1,20}$", str(name)):
+            raise SceneError(f"bone name {name!r} must be 1-20 letters/digits/_")
+        if not isinstance(b, dict):
+            raise SceneError(f"bones.{name} must be an object")
+        norm[name] = {"pivot": _pt(b.get("pivot", [50, 50]), f"bones.{name}.pivot")}
+        if b.get("parent") is not None:
+            norm[name]["parent"] = str(b["parent"])
+    for name, b in norm.items():
+        seen, cur = {name}, b.get("parent")
+        while cur is not None:
+            if cur not in norm:
+                raise SceneError(f"bones.{name}: parent {cur!r} is not a declared bone")
+            if cur in seen:
+                raise SceneError(f"bones: cycle through {cur!r}")
+            seen.add(cur)
+            cur = norm[cur].get("parent")
+    declared = set(norm)
+    for i, p in enumerate(parts or []):
+        if isinstance(p, dict) and p.get("bone") is not None \
+                and str(p["bone"]) not in declared:
+            raise SceneError(f"parts[{i}].bone {p['bone']!r} is not declared in bones")
+    return norm
+
+
+def _affine_apply(m, x, y):
+    return (m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5])
+
+
+def _bone_affines(bones, angles):
+    """Per-bone 2x3 affine in declaration space — a bone rotates about its pivot
+    as already moved by its ancestors, so children follow their parents."""
+    done = {}
+
+    def m_of(name):
+        if name in done:
+            return done[name]
+        b = bones[name]
+        parent = b.get("parent")
+        mp = m_of(parent) if parent else (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+        px, py = _affine_apply(mp, *b["pivot"])
+        ang = float(angles.get(name, 0.0))
+        ca, sa = math.cos(ang), math.sin(ang)
+        r = (ca, -sa, px - ca * px + sa * py, sa, ca, py - sa * px - ca * py)
+        m = (r[0] * mp[0] + r[1] * mp[3], r[0] * mp[1] + r[1] * mp[4],
+             r[0] * mp[2] + r[1] * mp[5] + r[2],
+             r[3] * mp[0] + r[4] * mp[3], r[3] * mp[1] + r[4] * mp[4],
+             r[3] * mp[2] + r[4] * mp[5] + r[5])
+        done[name] = m
+        return m
+
+    return {name: m_of(name) for name in bones}
+
+
 def validate_parts(parts):
     if not isinstance(parts, list) or not (1 <= len(parts) <= ASSET_PARTS_MAX):
         raise SceneError(f"parts must be a list of 1..{ASSET_PARTS_MAX}")
@@ -240,6 +301,8 @@ def validate_parts(parts):
             q["role"] = role
         if p.get("glow"):
             q["glow"] = True
+        if p.get("bone") is not None:
+            q["bone"] = str(p["bone"])
         if shape == "text":
             q["at"] = _pt(p.get("at", [50, 50]), f"parts[{i}].at")
             q["height"] = float(p.get("height", 16))
@@ -357,6 +420,195 @@ def _shape_points(q):
         return pts
     raise SceneError(f"unhandled shape {shape}")
 
+# ── motion clips (BVH) ───────────────────────────────────────────────────────
+# Free skeletal mocap drives declared bones: CMU clips ship with the module,
+# any BVH from the media store plugs in the same way (paid mocap included).
+
+_CLIP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "assets", "motions")
+_CLIP_MAP_DEFAULT = {
+    "upperArmR": ("RightArm", "RightForeArm"),
+    "foreArmR": ("RightForeArm", "RightHand"),
+    "upperArmL": ("LeftArm", "LeftForeArm"),
+    "foreArmL": ("LeftForeArm", "LeftHand"),
+    "thighR": ("RightUpLeg", "RightLeg"),
+    "shinR": ("RightLeg", "RightFoot"),
+    "thighL": ("LeftUpLeg", "LeftLeg"),
+    "shinL": ("LeftLeg", "LeftFoot"),
+    "footR": ("RightFoot", "RightToeBase"),
+    "footL": ("LeftFoot", "LeftToeBase"),
+    "spine": ("Hips", "Neck"),
+    "neck": ("Neck", "Head"),
+}
+_CLIP_CACHE = {}
+
+
+def _parse_bvh(path):
+    if os.path.getsize(path) > 8_000_000:
+        raise SceneError("BVH file too large (8MB cap)")
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if "MOTION" not in text:
+        raise SceneError("not a BVH file — no MOTION section")
+    hier, motion = text.split("MOTION", 1)
+    tokens = hier.replace("{", " { ").replace("}", " } ").split()
+    joints, stack, col = [], [], 0
+    i = 0
+    while i < len(tokens):
+        tk = tokens[i]
+        if tk in ("ROOT", "JOINT"):
+            name = tokens[i + 1].split(":")[-1]  # strip mixamorig: style prefixes
+            joints.append({"name": name, "parent": stack[-1] if stack else -1,
+                           "offset": np.zeros(3), "chans": []})
+            i += 2
+        elif tk == "{":
+            stack.append(len(joints) - 1)
+            i += 1
+        elif tk == "}":
+            stack.pop()
+            i += 1
+        elif tk == "End":
+            depth = 0
+            i += 2
+            while i < len(tokens):
+                if tokens[i] == "{":
+                    depth += 1
+                elif tokens[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        i += 1
+                        break
+                i += 1
+        elif tk == "OFFSET":
+            joints[stack[-1]]["offset"] = np.array(
+                [float(tokens[i + 1]), float(tokens[i + 2]), float(tokens[i + 3])])
+            i += 4
+        elif tk == "CHANNELS":
+            n = int(tokens[i + 1])
+            for c in range(n):
+                joints[stack[-1]]["chans"].append((col + c, tokens[i + 2 + c]))
+            col += n
+            i += 2 + n
+        else:
+            i += 1
+    lines = [ln for ln in motion.strip().splitlines() if ln.strip()]
+    dt = 1.0 / 30
+    rows = []
+    for ln in lines:
+        low = ln.strip()
+        if low.startswith("Frames"):
+            continue
+        if low.startswith("Frame Time"):
+            dt = float(low.split(":")[1])
+            continue
+        rows.append(low)
+    if len(rows) > 12000:
+        rows = rows[:12000]
+    frames = np.array([r.split() for r in rows], dtype=np.float64)
+    if frames.ndim != 2 or frames.shape[1] != col:
+        raise SceneError(f"BVH motion is {frames.shape} but hierarchy declares "
+                         f"{col} channels")
+    return joints, frames, dt
+
+
+def _euler_rots(frames, chans):
+    """(N,3,3) local rotation from this joint's rotation channels, applied in
+    the order the file lists them."""
+    n = frames.shape[0]
+    R = np.tile(np.eye(3), (n, 1, 1))
+    for cidx, cname in chans:
+        if not cname.endswith("rotation"):
+            continue
+        th = np.radians(frames[:, cidx])
+        ca, sa = np.cos(th), np.sin(th)
+        M = np.tile(np.eye(3), (n, 1, 1))
+        if cname[0] == "X":
+            M[:, 1, 1], M[:, 1, 2] = ca, -sa
+            M[:, 2, 1], M[:, 2, 2] = sa, ca
+        elif cname[0] == "Y":
+            M[:, 0, 0], M[:, 0, 2] = ca, sa
+            M[:, 2, 0], M[:, 2, 2] = -sa, ca
+        else:
+            M[:, 0, 0], M[:, 0, 1] = ca, -sa
+            M[:, 1, 0], M[:, 1, 1] = sa, ca
+        R = np.einsum("nij,njk->nik", R, M)
+    return R
+
+
+def _clip_curves(path, mirror=False, bone_map=None):
+    """BVH → per-declared-bone screen-angle deltas vs frame 0 (side view)."""
+    key = (path, os.path.getmtime(path), bool(mirror),
+           json.dumps(bone_map, sort_keys=True) if bone_map else "")
+    got = _CLIP_CACHE.get(key)
+    if got is not None:
+        return got
+    joints, frames, dt = _parse_bvh(path)
+    world_R, world_P = {}, {}
+    for idx, j in enumerate(joints):
+        Rl = _euler_rots(frames, j["chans"])
+        pos_cols = {c[1][0]: c[0] for c in j["chans"] if c[1].endswith("position")}
+        if j["parent"] < 0:
+            P = np.stack([frames[:, pos_cols[a]] if a in pos_cols
+                          else np.zeros(frames.shape[0]) for a in "XYZ"], axis=1)
+            world_R[idx], world_P[idx] = Rl, P
+        else:
+            Rp, Pp = world_R[j["parent"]], world_P[j["parent"]]
+            world_P[idx] = Pp + np.einsum("nij,j->ni", Rp, j["offset"])
+            world_R[idx] = np.einsum("nij,njk->nik", Rp, Rl)
+    by_name = {}
+    for idx, j in enumerate(joints):
+        by_name.setdefault(j["name"], idx)
+    # facing = horizontal normal of the average shoulder line (works standing
+    # in place or travelling); side view projects onto (facing, up)
+    la, ra = by_name.get("LeftArm"), by_name.get("RightArm")
+    if la is None or ra is None:
+        la, ra = by_name.get("LeftUpLeg"), by_name.get("RightUpLeg")
+    if la is None or ra is None:
+        raise SceneError("BVH skeleton has no recognizable arm or leg joints")
+    sh = (world_P[la] - world_P[ra]).mean(axis=0)
+    f = np.array([sh[2], 0.0, -sh[0]])
+    norm = np.linalg.norm(f)
+    f = np.array([1.0, 0.0, 0.0]) if norm < 1e-6 else f / norm
+    amap = dict(bone_map or _CLIP_MAP_DEFAULT)
+    curves = {}
+    for our, pair in amap.items():
+        pj, cj = by_name.get(str(pair[0])), by_name.get(str(pair[1]))
+        if pj is None or cj is None:
+            continue
+        v = world_P[cj] - world_P[pj]
+        ang = np.unwrap(np.arctan2(v @ f, -v[:, 1]))
+        delta = ang - ang[0]
+        curves[our] = -delta if mirror else delta
+    if not curves:
+        raise SceneError("clip boneMap matched no joints in this BVH")
+    got = {"curves": curves, "dt": dt, "n": frames.shape[0],
+           "dur": frames.shape[0] * dt}
+    if len(_CLIP_CACHE) > 8:
+        _CLIP_CACHE.clear()
+    _CLIP_CACHE[key] = got
+    return got
+
+
+def list_builtin_clips():
+    try:
+        return sorted(fn[:-4] for fn in os.listdir(_CLIP_DIR) if fn.endswith(".bvh"))
+    except OSError:
+        return []
+
+
+def _clip_path(decl):
+    name = str(decl.get("name") or "").strip()
+    if name:
+        if not re.match(r"^[A-Za-z0-9_-]{1,32}$", name) \
+                or name not in list_builtin_clips():
+            raise SceneError(f"unknown clip {name!r} — built-ins: "
+                             f"{list_builtin_clips()}; or pass media: a BVH path")
+        return os.path.join(_CLIP_DIR, name + ".bvh")
+    if decl.get("media"):
+        return media_path(decl["media"])
+    raise SceneError("clip needs name (built-in) or media (a BVH in the store)")
+
+
 _CUTOUT_CACHE = {}
 
 
@@ -387,7 +639,8 @@ def _cutout_piece(q):
 
 
 def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
-                sy=1.0, blink_t=None, g=None, text="", fonts=None, canvas=None):
+                sy=1.0, blink_t=None, g=None, text="", fonts=None, canvas=None,
+                bones=None, bone_angles=None):
     """cx, cy = feet (unit point (50,100)). One unit = 4*s px. `g` is the scene's
     glow layer — parts flagged `glow` mirror an enlarged translucent copy there."""
     u = 4.0 * s
@@ -404,6 +657,7 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
     flap_ang = 0.16 * math.sin(t * 9) * (0.5 + 0.5 * walk)
     flick = math.sin(t * 13) * 1.4 + math.sin(t * 23 + 1) * 0.7
     step = math.sin(t * 11) * walk
+    bone_ms = _bone_affines(bones, bone_angles or {}) if bones else {}
     for q in parts:
         role = q.get("role")
         if q["shape"] == "image":
@@ -430,13 +684,24 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
                 m = clamp01(mouth)
                 dy_u = 4.5 * m
                 ang = 0.10 * m * (1.0 if q.get("pivot", q["at"])[0] >= 50 else -1.0)
-            px_c, py_c = to_px(q["at"][0] + dx_u, q["at"][1] + dy_u)
-            if abs(ang) > 1e-4:
-                pvx, pvy = to_px(*q.get("pivot", q["at"]))
-                ca, sa = math.cos(ang), math.sin(ang)
-                rx, ry = px_c - pvx, py_c - pvy
-                px_c, py_c = pvx + rx * ca - ry * sa, pvy + rx * sa + ry * ca
-                im = im.rotate(-math.degrees(ang), resample=Image.BICUBIC, expand=True)
+            bm = bone_ms.get(q.get("bone"))
+            ax, ay = q["at"][0] + dx_u, q["at"][1] + dy_u
+            pvx_u, pvy_u = q.get("pivot", q["at"])
+            bang = 0.0
+            if bm is not None:
+                ax, ay = _affine_apply(bm, ax, ay)
+                pvx_u, pvy_u = _affine_apply(bm, pvx_u, pvy_u)
+                bang = math.atan2(bm[3], bm[0])
+            px_c, py_c = to_px(ax, ay)
+            total_ang = ang + bang
+            if abs(total_ang) > 1e-4:
+                if abs(ang) > 1e-4:
+                    pvx, pvy = to_px(pvx_u, pvy_u)
+                    ca, sa = math.cos(ang), math.sin(ang)
+                    rx, ry = px_c - pvx, py_c - pvy
+                    px_c, py_c = pvx + rx * ca - ry * sa, pvy + rx * sa + ry * ca
+                im = im.rotate(-math.degrees(total_ang), resample=Image.BICUBIC,
+                               expand=True)
             canvas.paste(im, (int(px_c - im.width / 2), int(py_c - im.height / 2)), im)
             continue
         if q["shape"] == "text":
@@ -480,6 +745,9 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
             if role == "eye":
                 ecy = q["at"][1] if "at" in q else sum(pp[1] for pp in pts) / len(pts)
                 y = ecy + (y - ecy) * eh
+            bm = bone_ms.get(q.get("bone"))
+            if bm is not None:
+                x, y = _affine_apply(bm, x, y)
             return to_px(x, y)
 
         fill = tuple(q["fill"]) if len(q["fill"]) == 4 else tuple(q["fill"]) + (255,)
@@ -559,7 +827,8 @@ class Scene:
                 raise SceneError(f"layers[{i}] needs a 'kind'")
             kind = L["kind"]
             if kind not in ("sprite", "bubble", "title", "caption", "card", "list",
-                            "image", "fireworks", "hearts", "confetti"):
+                            "image", "fireworks", "hearts", "confetti",
+                            "spark", "shake", "speedlines", "hpbar"):
                 raise SceneError(
                     f"layers[{i}].kind {kind!r} is unknown — the assets action lists "
                     "every kind and its fields")
@@ -576,6 +845,27 @@ class Scene:
                 L["_path"] = media_path(L.get("media"))
             if kind == "fireworks":
                 L["_launches"] = self._launches(i, L)
+            if kind == "sprite" and L.get("clip"):
+                cd = L["clip"]
+                if not isinstance(cd, dict):
+                    raise SceneError(f"layers[{i}].clip must be an object — "
+                                     "{name|media, speed?, loop?, mirror?, boneMap?}")
+                cur = _clip_curves(_clip_path(cd), mirror=bool(cd.get("mirror")),
+                                   bone_map=cd.get("boneMap"))
+                L["_clip"] = {"curves": cur["curves"], "dur": cur["dur"],
+                              "dt": cur["dt"], "n": cur["n"],
+                              "speed": max(0.1, min(4.0, float(cd.get("speed", 1.0)))),
+                              "loop": bool(cd.get("loop", True)),
+                              "start": max(0.0, float(cd.get("start", 0.0)))}
+            if kind == "spark":
+                rng = random.Random(101 + i)
+                L["_rays"] = [(rng.uniform(0, 2 * math.pi), rng.uniform(0.7, 1.3))
+                              for _ in range(12)]
+            if kind == "speedlines":
+                rng = random.Random(202 + i)
+                L["_lines"] = [(rng.random(), rng.uniform(0.14, 0.42),
+                                rng.uniform(2.0, 5.0), rng.random())
+                               for _ in range(14)]
             self.layers.append(L)
         bg = inp.get("background") or {"kind": "night"}
         if not isinstance(bg, dict) or bg.get("kind") not in ("night", "gradient",
@@ -617,7 +907,7 @@ class Scene:
 
     @staticmethod
     def _texts_of(L):
-        out = [str(L.get("text") or "")]
+        out = [str(L.get("text") or ""), str(L.get("label") or "")]
         for row in L.get("lines") or []:
             out.append(str((row or {}).get("text") or ""))
         for row in L.get("rows") or []:
@@ -749,6 +1039,20 @@ class Scene:
         if fade < 1:
             frame = Image.fromarray((np.asarray(frame) * fade).astype(np.uint8))
         arr = np.asarray(frame)
+        sdx = sdy = 0.0
+        for L in self.layers:
+            if L["kind"] != "shake":
+                continue
+            aw = win(t, L["from"], L["to"], 0.03, max(0.2, (L["to"] - L["from"]) * 0.7))
+            if aw <= 0:
+                continue
+            amp = min(60.0, max(0.0, float(L.get("amp", 14)))) * (self.W / 1080.0)
+            sdx += amp * aw * math.sin((t - L["from"]) * 61)
+            sdy += amp * aw * 0.6 * math.sin((t - L["from"]) * 47 + 1.3)
+        if abs(sdx) >= 1 or abs(sdy) >= 1:
+            iy = np.clip(np.arange(self.H) + int(round(sdy)), 0, self.H - 1)
+            ix = np.clip(np.arange(self.W) + int(round(sdx)), 0, self.W - 1)
+            arr = np.ascontiguousarray(arr[iy][:, ix])
         if arr.shape != (self.H, self.W, 3):
             raise SceneError(f"frame shape drifted: {arr.shape}")
         return arr
@@ -788,6 +1092,41 @@ class Scene:
         mouth, wave, sy = 0.0, 0.0, 1.0
         jump_h = 0.0
         point_s, point_to = 0.0, None
+        bones_decl = saved.get("bones") or {}
+        bone_angles = {}
+        pose_acts = sorted((act for act in L.get("acts") or []
+                            if str(act.get("do")) == "pose"),
+                           key=lambda act: float(act.get("at", L["from"])))
+        for act in pose_acts:
+            at = float(act.get("at", L["from"]))
+            if t < at:
+                break
+            dur = max(0.05, float(act.get("for", 0.4)))
+            f = eo3(clamp01((t - at) / dur))
+            tgt = act.get("bones")
+            if not isinstance(tgt, dict) or not tgt:
+                raise SceneError("pose act needs bones:{name: degrees}")
+            for bn, deg in tgt.items():
+                if bn not in bones_decl:
+                    raise SceneError(
+                        f"pose act bone {bn!r} is not declared — this asset has "
+                        f"{sorted(bones_decl) if bones_decl else 'no bones'}")
+                cur = bone_angles.get(bn, 0.0)
+                bone_angles[bn] = cur + (math.radians(float(deg)) - cur) * f
+        clip = L.get("_clip")
+        if clip:
+            if not bones_decl:
+                raise SceneError(
+                    f"sprite {name!r} has a clip but the asset declares no bones — "
+                    "declare bones and tag parts with bone:'...' first")
+            tc = (t - L["from"]) * clip["speed"] + clip["start"]
+            tc = tc % clip["dur"] if clip["loop"] else min(tc, clip["dur"] - 1e-6)
+            fi = max(0, min(clip["n"] - 1, int(tc / clip["dt"])))
+            cw = win(t, L["from"], L["to"], 0.3, 0.3)
+            for bn, arr in clip["curves"].items():
+                if bn in bones_decl:
+                    base = bone_angles.get(bn, 0.0)
+                    bone_angles[bn] = base + (float(arr[fi]) - base) * cw
         for act in L.get("acts") or []:
             kind = str(act.get("do") or "")
             at = float(act.get("at", L["from"]))
@@ -811,12 +1150,15 @@ class Scene:
                     to = act.get("to") or [0.7, 0.4]
                     point_s = pw
                     point_to = (clamp01(float(to[0])), clamp01(float(to[1])))
+            elif kind == "pose":
+                pass  # blended above, in timeline order
             else:
                 raise SceneError(
-                    f"sprite act {kind!r} — one of wave, talk, jump, point")
+                    f"sprite act {kind!r} — one of wave, talk, jump, point, pose")
         draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
                     walk=walk, sy=sy, blink_t=blink_phase(t), g=g,
-                    fonts=self.fonts, canvas=self._frame_img)
+                    fonts=self.fonts, canvas=self._frame_img,
+                    bones=bones_decl or None, bone_angles=bone_angles)
         if point_s > 0 and point_to is not None:
             # weather-caster pointer stick: from the hand toward the target,
             # tip tapping at ~2.2 Hz, pulse ring on the tapped spot
@@ -1011,6 +1353,83 @@ class Scene:
         else:
             mask = Image.new("L", im.size, int(255 * a))
         self._frame_img.paste(im, (int(cx - wz / 2 + panx), int(cy - hz / 2)), mask)
+
+    def _draw_shake(self, d, g, t, a, L):
+        pass  # applied as a whole-frame offset in draw_frame
+
+    def _draw_spark(self, d, g, t, a, L):
+        ss = self.ss
+        cx, cy = self._at(L, [0.5, 0.45])
+        life = max(0.12, L["to"] - L["from"])
+        p = clamp01((t - L["from"]) / life)
+        col = self._color(L.get("color"), (255, 120, 60))
+        size = float(L.get("size", 1.0))
+        R = (55 + 150 * eob(p)) * ss * size
+        # a spark's life IS its window — the default 0.4s layer fade would keep a
+        # 0.3s flash from ever reaching full brightness, so it fades by p alone
+        al = (1 - p) ** 1.5
+        wpx = max(2, int(5 * ss * size))
+        for angj, lj in L["_rays"]:
+            ca, sa = math.cos(angj), math.sin(angj)
+            x0, y0 = cx + ca * R * 0.25, cy + sa * R * 0.25
+            x1, y1 = cx + ca * R * lj, cy + sa * R * lj
+            d.line([x0, y0, x1, y1], fill=(*col, int(235 * al)), width=wpx)
+            g.line([x0, y0, x1, y1], fill=(*col, int(120 * al)), width=wpx * 2)
+        rr = R * 0.72
+        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr],
+                  outline=(255, 235, 200, int(140 * al)), width=max(2, int(3 * ss)))
+        core = (26 * (1 - p) + 8) * ss * size
+        d.ellipse([cx - core, cy - core, cx + core, cy + core],
+                  fill=(255, 250, 235, int(255 * al)))
+        g.ellipse([cx - core * 2, cy - core * 2, cx + core * 2, cy + core * 2],
+                  fill=(*col, int(110 * al)))
+
+    def _draw_speedlines(self, d, g, t, a, L):
+        SW, SH, ss = self.SW, self.SH, self.ss
+        sgn = -1.0 if str(L.get("dir", "left")) == "left" else 1.0
+        for fy, flen, fw, ph in L["_lines"]:
+            y = fy * SH
+            span = flen * SW
+            x = (ph * (SW + span) + t * 2.4 * SW * sgn) % (SW + span) - span
+            d.line([x, y, x + span, y],
+                   fill=(255, 255, 255, int(64 * a)), width=max(2, int(fw * ss)))
+
+    def _draw_hpbar(self, d, g, t, a, L):
+        ss, SW = self.ss, self.SW
+        side = str(L.get("side", "left"))
+        v0 = clamp01(float(L.get("value", 1.0)))
+        v1 = clamp01(float(L.get("valueTo", v0)))
+        p = eo3(clamp01((t - L["from"]) / max(0.2, min(0.6, L["to"] - L["from"]))))
+        v = v0 + (v1 - v0) * p
+        y = self._at(L, [0.5, 0.045])[1]
+        w, h = SW * 0.42, 34 * ss
+        if side == "left":
+            x0 = SW * 0.045
+        else:
+            x0 = SW * 0.955 - w
+        x1 = x0 + w
+        d.rounded_rectangle([x0 + 2 * ss, y + 6 * ss, x1 + 2 * ss, y + h + 6 * ss],
+                            radius=10 * ss, fill=(4, 6, 14, int(60 * a)))
+        d.rounded_rectangle([x0, y, x1, y + h], radius=10 * ss,
+                            fill=(18, 20, 30, int(205 * a)),
+                            outline=(235, 238, 246, int(220 * a)),
+                            width=max(2, int(2.5 * ss)))
+        fw = max(0.0, (w - 6 * ss) * v)
+        col = self._color(L.get("color"), (96, 220, 90))
+        if fw > 1:
+            if side == "left":
+                fx0, fx1 = x0 + 3 * ss, x0 + 3 * ss + fw
+            else:
+                fx0, fx1 = x1 - 3 * ss - fw, x1 - 3 * ss
+            d.rounded_rectangle([fx0, y + 3 * ss, fx1, y + h - 3 * ss],
+                                radius=7 * ss, fill=(*col, int(235 * a)))
+        label = str(L.get("label") or "")
+        if label:
+            f = self.fonts.get(26)
+            lx = x0 + 6 * ss if side == "left" else x1 - 6 * ss \
+                - d.textlength(label, font=f)
+            self._shadow_text(d, (lx, y + h + 8 * ss), label, f,
+                              (240, 243, 250), a)
 
     def _draw_fireworks(self, d, g, t, a, L):
         SW, SH, ss = self.SW, self.SH, self.ss
@@ -1361,11 +1780,15 @@ def _custom_sticker_png(decl, size, pose):
         if has_hangul(txt) and not fonts.korean:
             raise SceneError("pose.text is Korean but no Korean-capable font was found "
                              "— install fonts-nanum or set fontPath")
+    bangles = {str(k): math.radians(float(v))
+               for k, v in (pose.get("bones") or {}).items()}
     draw_custom(d, Wc / 2, Hc - Hc * 0.02, Wc / 400.0 * 0.96, 1.3, parts,
                 mouth=float(pose.get("mouth", 0.0)), wave=float(pose.get("wave", 0.0)),
                 sy=float(pose.get("squash", 1.0)),
                 blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None,
-                text=txt, fonts=fonts, canvas=img)
+                text=txt, fonts=fonts, canvas=img,
+                bones=(decl.get("bones") if isinstance(decl, dict) else None) or None,
+                bone_angles=bangles)
     return img
 
 def action_sticker(inp):
@@ -1400,6 +1823,7 @@ def action_save_asset(inp):
         return {"success": False,
                 "error": f"{e} — the assets action documents the part grammar"}
     try:
+        bones = validate_bones(inp.get("bones"), parts)
         for q in parts:
             if q["shape"] == "image":
                 media_path(q["media"])  # fail at save time, not first draw
@@ -1408,11 +1832,14 @@ def action_save_asset(inp):
     os.makedirs(ASSET_DIR, exist_ok=True)
     replaced = os.path.isfile(_asset_path(name))
     with open(_asset_path(name), "w", encoding="utf-8") as fh:
-        json.dump({"parts": parts}, fh, ensure_ascii=False, indent=1)
+        decl = {"parts": parts}
+        if bones:
+            decl["bones"] = bones
+        json.dump(decl, fh, ensure_ascii=False, indent=1)
     # The browsable face: a thumbnail lands in the media store as clip art. The
     # declaration stays the original — consumers re-render from it, never from this PNG.
     os.makedirs(OUT_DIR, exist_ok=True)
-    thumb = _custom_sticker_png({"parts": parts}, 480, {})
+    thumb = _custom_sticker_png({"parts": parts, "bones": bones or None}, 480, {})
     tp = os.path.join(OUT_DIR, f"asset-thumb-{name}.png")
     thumb.save(tp)
     return {"success": True,
@@ -1477,6 +1904,17 @@ def action_assets(_inp):
                         "(defaults: night .22, studio .16, gradient .15, image .25; "
                         "0 disables)",
         },
+        "motionClips": {
+            "builtin": list_builtin_clips(),
+            "what": "real mocap (CMU, free license) driving declared bones — add "
+                    "clip:{name:'walk'|'punch'|'boxing'|'dance' | media:'<bvh in the "
+                    "media store>', speed?, loop?, mirror?, start?, boneMap?} to a "
+                    "sprite layer. Canonical bone names the default map drives: "
+                    "upperArmR/foreArmR/upperArmL/foreArmL/thighR/shinR/thighL/shinL/"
+                    "footR/footL/spine/neck. Angles are deltas vs the clip's first "
+                    "frame, so any rig proportions work; paid mocap or your own BVH "
+                    "plugs into media the same way",
+        },
         "sprites": {
             "what": "any clip-art declaration by name — seeds ship with the module, "
                     "saved ones come from save_asset; both are the same grammar and "
@@ -1484,11 +1922,13 @@ def action_assets(_inp):
             "fields": {"at": "[x,y] of the feet (default [0.5,0.9])",
                        "scale": "1.0 default", "enter": "walk | peek | pop | none",
                        "lipsync": "true = talk acts follow audio.voice envelope",
-                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point', for, "
-                               "to:[x,y]}] — point aims a presenter stick at the "
-                               "normalized target and taps it (weather-caster "
-                               "style); pair each point with the narration that "
-                               "mentions that item"},
+                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose', for, "
+                               "to:[x,y], bones:{name:deg}}] — point aims a presenter "
+                               "stick at the normalized target and taps it "
+                               "(weather-caster style). pose eases declared bones to "
+                               "the given angles (degrees, + = clockwise) and holds — "
+                               "chain pose acts for keyframe choreography (punch, "
+                               "bow, kick)"},
         },
         "layers": {
             "bubble": "{text, at?, heart?, typing?} speech balloon, types itself out",
@@ -1503,6 +1943,14 @@ def action_assets(_inp):
             "fireworks": "{density?} launching rockets and radial bursts",
             "hearts": "{at?} floating hearts",
             "confetti": "{at?} one confetti burst at `from`",
+            "spark": "{at, color?, size?} radial impact flash — give it a short "
+                     "window (0.2~0.35s) right on the hit frame",
+            "shake": "{amp?} camera shake for the layer window — pair with spark "
+                     "on hits (amp in px at 1080 base, default 14)",
+            "speedlines": "{dir:'left'|'right'} streaking anime speed lines",
+            "hpbar": "{side:'left'|'right', value:0..1, valueTo?, color?, label?} "
+                     "fighting-game health bar; valueTo animates a hit drain over "
+                     "the layer window",
         },
         "audio": {"bgm": "media path (flac/wav/mp3) — render one with the sing module",
                   "voice": "one media path starting at t=0 (tts output); ducks the bgm "
@@ -1537,7 +1985,11 @@ def action_assets(_inp):
                        "becomes a joint and animates with the same roles (crop a limb, "
                        "put pivot at its shoulder, give it swing or flap; mouth drops "
                        "the jaw piece with the voice). "
-                       "Top level may set aspect (canvas h/w for stickers, 0.3..2)",
+                       "Top level may set aspect (canvas h/w for stickers, 0.3..2) and "
+                       "bones: {name: {pivot:[x,y], parent?}} (max 40) — FK chains: a "
+                       "part tagged bone:'name' follows its bone, children follow "
+                       "parents (shoulder→elbow→fist). Drive angles with the pose act "
+                       "or sticker pose.bones {name: degrees}",
         },
         "stickers": {
             "what": "the sticker action exports any declaration (seed or saved) as a "
@@ -1675,6 +2127,53 @@ def action_selftest():
     except Exception as e:  # noqa: BLE001 — the check reports, not crashes
         enc_note = repr(e)
     ck("a tiny scene encodes to a real mp4", ">2000 bytes", enc_note, enc_ok)
+
+    bone_note, bone_ok = "", False
+    try:
+        bones = validate_bones({"up": {"pivot": [50, 50]},
+                                "fore": {"pivot": [70, 50], "parent": "up"}},
+                               [{"shape": "rect", "bone": "fore"}])
+        ms = _bone_affines(bones, {"up": math.radians(90),
+                                   "fore": math.radians(-90)})
+        px, py = _affine_apply(ms["fore"], 80, 50)
+        bone_ok = abs(px - 60) < 0.01 and abs(py - 70) < 0.01
+        bone_note = f"fore end -> ({px:.2f},{py:.2f})"
+    except Exception as e:  # noqa: BLE001
+        bone_note = f"{type(e).__name__}: {e}"
+    ck("a two-bone FK chain composes child-after-parent", "(60.00,70.00)",
+       bone_note, bone_ok)
+
+    clip_note, clip_ok = "", False
+    try:
+        cur = _clip_curves(os.path.join(_CLIP_DIR, "walk.bvh"))
+        spread = {k: float(np.ptp(v)) for k, v in cur["curves"].items()}
+        moving = sum(1 for v in spread.values() if v > 0.3)
+        clip_ok = len(cur["curves"]) >= 10 and moving >= 6 and cur["dur"] > 2.0
+        clip_note = f"bones={len(cur['curves'])}, moving>0.3rad={moving}, " \
+                    f"dur={cur['dur']:.1f}s"
+    except Exception as e:  # noqa: BLE001
+        clip_note = f"{type(e).__name__}: {e}"
+    ck("the built-in walk mocap parses and animates most bones",
+       ">=10 bones, >=6 moving", clip_note, clip_ok)
+
+    fx_note, fx_ok = "", False
+    try:
+        scf = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                     "size": "1080x1080",
+                     "layers": [{"kind": "spark", "from": 0.5, "to": 0.8,
+                                 "at": [0.5, 0.5]},
+                                {"kind": "shake", "from": 0.5, "to": 0.9, "amp": 20},
+                                {"kind": "speedlines", "from": 0, "to": 2.0},
+                                {"kind": "hpbar", "from": 0, "to": 2.0,
+                                 "side": "left", "value": 1.0, "valueTo": 0.55}]})
+        frf = scf.draw_frame(0.58)
+        red = ((frf[:, :, 0].astype(int) - frf[:, :, 2].astype(int)) > 60).sum()
+        fx_ok = red > 200 and frf.shape[0] == 1080
+        fx_note = f"spark px={red}"
+    except Exception as e:  # noqa: BLE001
+        fx_note = f"{type(e).__name__}: {e}"
+    ck("fight fx layers (spark+shake+speedlines+hpbar) draw", "spark px > 200",
+       fx_note, fx_ok)
 
     cut_note, cut_ok = "", False
     try:

@@ -45,7 +45,7 @@
         "name": "클립아트 저장",
         "description": "캐릭터·소품을 재사용하게 저장한다 — 도형 파츠 선언(JSON)이 원본으로 남고 썸네일 PNG 가 미디어 창고(클립아트 칩)에 뜬다. 저장 후엔 씬 sprite 와 sticker 가 이름으로 참조한다. 파츠 문법은 assets 액션이 말한다.",
         "domain": "제작",
-        "params": ["name", "parts"],
+        "params": ["name", "parts", "bones"],
         "tags": ["클립아트 저장", "캐릭터 저장", "재사용", "에셋 등록"]
       },
       {
@@ -113,7 +113,7 @@
       },
       "layers": {
         "type": "array",
-        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (character with enter walk/peek/pop and acts wave/talk/jump/point — point taps a normalized [x,y] target with a presenter stick), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), fireworks, hearts, confetti. Field-level contract comes from the assets action."
+        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (character with enter walk/peek/pop, acts wave/talk/jump/point/pose — point taps a normalized [x,y] target with a presenter stick, pose keyframes declared bones — and clip: built-in CMU mocap walk/punch/boxing/dance or any BVH from the media store driving the bones), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), fireworks, hearts, confetti, spark (impact flash), shake (camera shake), speedlines, hpbar (fighting-game health bar). Field-level contract comes from the assets action."
       },
       "audio": {
         "type": "object",
@@ -146,6 +146,10 @@
       "redeliver": {
         "type": "boolean",
         "description": "[job] Re-import a finished video that was already delivered once (default false)."
+      },
+      "bones": {
+        "type": "object",
+        "description": "[save_asset] Optional FK bone chains {name: {pivot:[x,y], parent?}} (max 40). Parts tagged bone:'name' follow their bone; children follow parents (shoulder->elbow->fist). Drive with the pose act {do:'pose', bones:{name:degrees}} or sticker pose.bones."
       },
       "parts": {
         "type": "array",
