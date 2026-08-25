@@ -50,9 +50,8 @@
       },
       {
         "id": "selftest",
-        "hidden": true,
-        "name": "selftest",
-        "description": "Internal regression checks — frame geometry, sprite pixel floor, sticker alpha, DSL math, tiny encode, font resolution.",
+        "name": "셀프테스트",
+        "description": "Offline regression checks — frame geometry, sprite pixel floor, sticker alpha, scene math, tiny encode, font resolution. 자체 검사",
         "params": []
       }
     ]
