@@ -565,10 +565,25 @@ def _clip_curves(path, mirror=False, bone_map=None):
         la, ra = by_name.get("LeftUpLeg"), by_name.get("RightUpLeg")
     if la is None or ra is None:
         raise SceneError("BVH skeleton has no recognizable arm or leg joints")
-    sh = (world_P[la] - world_P[ra]).mean(axis=0)
-    f = np.array([sh[2], 0.0, -sh[0]])
-    norm = np.linalg.norm(f)
-    f = np.array([1.0, 0.0, 0.0]) if norm < 1e-6 else f / norm
+    # facing = per-frame horizontal normal of the shoulder line, so a subject
+    # who TURNS during the capture keeps presenting the same profile (a fixed
+    # plane would flip left/right whenever the body rotates — measured on the
+    # CMU boxing clip). Sign continuity frame-to-frame, then toes-point-forward
+    # sets the global sign: un-mirrored clips ALWAYS face screen-right.
+    sh = world_P[la] - world_P[ra]
+    F = np.stack([sh[:, 2], np.zeros(sh.shape[0]), -sh[:, 0]], axis=1)
+    ln = np.linalg.norm(F, axis=1, keepdims=True)
+    F = np.where(ln > 1e-6, F / np.maximum(ln, 1e-9), np.array([[1.0, 0.0, 0.0]]))
+    for k in range(1, F.shape[0]):
+        if float(F[k] @ F[k - 1]) < 0:
+            F[k] = -F[k]
+    for fj, tj in (("RightFoot", "RightToeBase"), ("LeftFoot", "LeftToeBase")):
+        fi, ti = by_name.get(fj), by_name.get(tj)
+        if fi is not None and ti is not None:
+            toe = world_P[ti] - world_P[fi]
+            if float(np.einsum("ni,ni->n", toe, F).mean()) < 0:
+                F = -F
+            break
     amap = dict(bone_map or _CLIP_MAP_DEFAULT)
     curves = {}
     for our, pair in amap.items():
@@ -576,7 +591,7 @@ def _clip_curves(path, mirror=False, bone_map=None):
         if pj is None or cj is None:
             continue
         v = world_P[cj] - world_P[pj]
-        ang = np.unwrap(np.arctan2(v @ f, -v[:, 1]))
+        ang = np.unwrap(np.arctan2(np.einsum("ni,ni->n", v, F), -v[:, 1]))
         delta = ang - ang[0]
         curves[our] = -delta if mirror else delta
     if not curves:
