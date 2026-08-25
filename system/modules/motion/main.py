@@ -604,6 +604,25 @@ def _clip_curves(path, mirror=False, bone_map=None):
     return got
 
 
+def _clip_gain(g, i):
+    """gain scales mocap amplitude per bone: a number, or {bone: k, '*': default}.
+    The 2D projection turns a boxer's duck into a 90-degree fold — spine 0.3~0.4
+    keeps punches while taming the weave."""
+    if g is None:
+        return {"*": 1.0}
+    if isinstance(g, (int, float)):
+        return {"*": max(0.0, min(2.0, float(g)))}
+    if isinstance(g, dict):
+        out = {}
+        for k, v in g.items():
+            if not isinstance(v, (int, float)):
+                raise SceneError(f"layers[{i}].clip.gain.{k} must be a number")
+            out[str(k)] = max(0.0, min(2.0, float(v)))
+        out.setdefault("*", 1.0)
+        return out
+    raise SceneError(f"layers[{i}].clip.gain must be a number or {{bone: k}}")
+
+
 def list_builtin_clips():
     try:
         return sorted(fn[:-4] for fn in os.listdir(_CLIP_DIR) if fn.endswith(".bvh"))
@@ -871,7 +890,8 @@ class Scene:
                               "dt": cur["dt"], "n": cur["n"],
                               "speed": max(0.1, min(4.0, float(cd.get("speed", 1.0)))),
                               "loop": bool(cd.get("loop", True)),
-                              "start": max(0.0, float(cd.get("start", 0.0)))}
+                              "start": max(0.0, float(cd.get("start", 0.0))),
+                              "gain": _clip_gain(cd.get("gain"), i)}
             if kind == "spark":
                 rng = random.Random(101 + i)
                 L["_rays"] = [(rng.uniform(0, 2 * math.pi), rng.uniform(0.7, 1.3))
@@ -1138,10 +1158,12 @@ class Scene:
             tc = tc % clip["dur"] if clip["loop"] else min(tc, clip["dur"] - 1e-6)
             fi = max(0, min(clip["n"] - 1, int(tc / clip["dt"])))
             cw = win(t, L["from"], L["to"], 0.3, 0.3)
+            gain = clip.get("gain") or {"*": 1.0}
             for bn, arr in clip["curves"].items():
                 if bn in bones_decl:
+                    gv = gain.get(bn, gain["*"])
                     base = bone_angles.get(bn, 0.0)
-                    bone_angles[bn] = base + (float(arr[fi]) - base) * cw
+                    bone_angles[bn] = base + (float(arr[fi]) * gv - base) * cw
         for act in L.get("acts") or []:
             kind = str(act.get("do") or "")
             at = float(act.get("at", L["from"]))
