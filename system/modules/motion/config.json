@@ -89,7 +89,7 @@
       },
       "duration": {
         "type": "number",
-        "description": "[render] Video length in seconds, 0.5 to 20. Longer stories should ship as several clips."
+        "description": "[render] Video length in seconds, 0.5 to 90. Over ~30s prefer draft quality; a long story can also ship as several clips."
       },
       "size": {
         "type": "string",
@@ -105,7 +105,7 @@
       },
       "layers": {
         "type": "array",
-        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (character with enter walk/peek/pop and acts wave/talk/jump), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), fireworks, hearts, confetti. Field-level contract comes from the assets action."
+        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (character with enter walk/peek/pop and acts wave/talk/jump/point — point taps a normalized [x,y] target with a presenter stick), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), fireworks, hearts, confetti. Field-level contract comes from the assets action."
       },
       "audio": {
         "type": "object",

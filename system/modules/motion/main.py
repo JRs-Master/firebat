@@ -29,7 +29,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 # ── limits ───────────────────────────────────────────────────────────────────
 SIZES = {"1080x1920": (1080, 1920), "1920x1080": (1920, 1080), "1080x1080": (1080, 1080)}
-DUR_MAX = 20.0
+DUR_MAX = 90.0
 FPS_MIN, FPS_MAX = 10, 30
 LAYERS_MAX = 40
 TEXT_MAX = 200
@@ -660,6 +660,7 @@ class Scene:
             s *= scale_mul
         mouth, wave, sy = 0.0, 0.0, 1.0
         jump_h = 0.0
+        point_s, point_to = 0.0, None
         for act in L.get("acts") or []:
             kind = str(act.get("do") or "")
             at = float(act.get("at", L["from"]))
@@ -677,11 +678,54 @@ class Scene:
                 h, sq = jump_arc(t, at)
                 jump_h += h * self.SH
                 sy *= sq
+            elif kind == "point":
+                pw = win(t, at, at + dur, 0.25, 0.3)
+                if pw > point_s:
+                    to = act.get("to") or [0.7, 0.4]
+                    point_s = pw
+                    point_to = (clamp01(float(to[0])), clamp01(float(to[1])))
             else:
-                raise SceneError(f"sprite act {kind!r} — one of wave, talk, jump")
+                raise SceneError(
+                    f"sprite act {kind!r} — one of wave, talk, jump, point")
         draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
                     walk=walk, sy=sy, blink_t=blink_phase(t), g=g,
                     fonts=self.fonts)
+        if point_s > 0 and point_to is not None:
+            # weather-caster pointer stick: from the hand toward the target,
+            # tip tapping at ~2.2 Hz, pulse ring on the tapped spot
+            ss_ = self.ss
+            u = 4.0 * s
+            txp, typ = point_to[0] * SW, point_to[1] * SH
+            hand_v = (86, 70) if txp >= x else (14, 70)
+            hx = x + (hand_v[0] - 50) * u
+            hy = (y - jump_h) - (100 - hand_v[1]) * u
+            dx, dy = txp - hx, typ - hy
+            dist = math.hypot(dx, dy) or 1.0
+            ux, uy = dx / dist, dy / dist
+            # cap the stick so a far-away caster gets a floating pointer near
+            # the target instead of a screen-long pole (start = hand when near);
+            # a faint tail keeps a far stick visually attached to the hand
+            length = min(dist, 0.5 * min(SW, SH))
+            sx_, sy_ = txp - ux * length, typ - uy * length
+            tap = abs(math.sin(t * 2 * math.pi * 2.2))
+            reach = point_s * max(0.0, length - (26 + 16 * (1 - tap)) * ss_)
+            x1, y1 = sx_ + ux * reach, sy_ + uy * reach
+            al = point_s * a
+            if dist > length + 1:
+                d.line([hx, hy, sx_, sy_], fill=(226, 230, 240, int(70 * al)),
+                       width=max(1, int(3 * ss_)))
+            d.line([sx_, sy_, x1, y1], fill=(226, 230, 240, int(235 * al)),
+                   width=max(2, int(7 * ss_)))
+            d.ellipse([x1 - 10 * ss_, y1 - 10 * ss_, x1 + 10 * ss_, y1 + 10 * ss_],
+                      fill=(255, 196, 80, int(255 * al)))
+            rr = (26 + 12 * tap) * ss_
+            d.ellipse([txp - rr, typ - rr, txp + rr, typ + rr],
+                      outline=(255, 214, 120, int(210 * al)),
+                      width=max(2, int(5 * ss_)))
+            r2 = rr * 1.55
+            d.ellipse([txp - r2, typ - r2, txp + r2, typ + r2],
+                      outline=(255, 214, 120, int(80 * al)),
+                      width=max(2, int(3 * ss_)))
 
     def _draw_bubble(self, d, g, t, a, L):
         ss = self.ss
@@ -1144,7 +1188,11 @@ def action_assets(_inp):
             "fields": {"at": "[x,y] of the feet (default [0.5,0.9])",
                        "scale": "1.0 default", "enter": "walk | peek | pop | none",
                        "lipsync": "true = talk acts follow audio.voice envelope",
-                       "acts": "[{at, do:'wave'|'talk'|'jump', for}]"},
+                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point', for, "
+                               "to:[x,y]}] — point aims a presenter stick at the "
+                               "normalized target and taps it (weather-caster "
+                               "style); pair each point with the narration that "
+                               "mentions that item"},
         },
         "layers": {
             "bubble": "{text, at?, heart?, typing?} speech balloon, types itself out",
@@ -1280,7 +1328,9 @@ def action_selftest():
                      "layers": [{"kind": "sprite", "name": "selftest-blob", "from": 0,
                                  "to": 1.5, "enter": "none",
                                  "acts": [{"at": 0, "do": "wave", "for": 1.5},
-                                          {"at": 0, "do": "talk", "for": 1.5}]}]})
+                                          {"at": 0, "do": "talk", "for": 1.5},
+                                          {"at": 0, "do": "point", "for": 1.5,
+                                           "to": [0.75, 0.25]}]}]})
         fr2 = sc2.draw_frame(0.8)
         green = ((fr2[:, :, 1].astype(int) - fr2[:, :, 2].astype(int)) > 30).sum()
         st2 = action_sticker({"action": "sticker", "name": "selftest-blob",
