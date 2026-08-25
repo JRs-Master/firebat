@@ -1155,38 +1155,61 @@ class Scene:
             else:
                 raise SceneError(
                     f"sprite act {kind!r} — one of wave, talk, jump, point, pose")
+        point_arm = None
+        if point_s > 0 and point_to is not None and bones_decl:
+            # a rig with an arm chain aims the arm itself at the target
+            txp0, typ0 = point_to[0] * SW, point_to[1] * SH
+            side = "R" if txp0 >= x else "L"
+            for sd in (side, "L" if side == "R" else "R"):
+                up, fore = f"upperArm{sd}", f"foreArm{sd}"
+                if up in bones_decl and fore in bones_decl:
+                    u = 4.0 * s
+                    sh = bones_decl[up]["pivot"]
+                    el = bones_decl[fore]["pivot"]
+                    xd = 50 + (txp0 - x) / u
+                    yd = 100 - ((y - jump_h) - typ0) / u
+                    rest = math.atan2(el[1] - sh[1], el[0] - sh[0])
+                    want = math.atan2(yd - sh[1], xd - sh[0])
+                    ang = (want - rest + math.pi) % (2 * math.pi) - math.pi
+                    wig = 0.05 * math.sin(t * 2 * math.pi * 2.2)
+                    bone_angles[up] = (ang + wig) * point_s
+                    bone_angles.setdefault(fore, 0.0)
+                    point_arm = (up, fore)
+                    break
         draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
                     walk=walk, sy=sy, blink_t=blink_phase(t), g=g,
                     fonts=self.fonts, canvas=self._frame_img,
                     bones=bones_decl or None, bone_angles=bone_angles)
         if point_s > 0 and point_to is not None:
-            # weather-caster pointer stick: from the hand toward the target,
-            # tip tapping at ~2.2 Hz, pulse ring on the tapped spot
+            # weather-caster pointer v2: a rigid hand-held stick AIMED at the
+            # target (never a screen-long pole, never a floating rod), the arm
+            # itself aiming when the rig has bones; pulse ring marks the spot
             ss_ = self.ss
             u = 4.0 * s
             txp, typ = point_to[0] * SW, point_to[1] * SH
-            hand_v = (86, 70) if txp >= x else (14, 70)
-            hx = x + (hand_v[0] - 50) * u
-            hy = (y - jump_h) - (100 - hand_v[1]) * u
+            if point_arm is not None:
+                up, fore = point_arm
+                ms = _bone_affines(bones_decl, bone_angles)
+                ex, ey = _affine_apply(ms[fore], *bones_decl[fore]["pivot"])
+                hx = x + (ex - 50) * u
+                hy = (y - jump_h) - (100 - ey) * u
+            else:
+                hand_v = (86, 70) if txp >= x else (14, 70)
+                hx = x + (hand_v[0] - 50) * u
+                hy = (y - jump_h) - (100 - hand_v[1]) * u
             dx, dy = txp - hx, typ - hy
             dist = math.hypot(dx, dy) or 1.0
-            ux, uy = dx / dist, dy / dist
-            # cap the stick so a far-away caster gets a floating pointer near
-            # the target instead of a screen-long pole (start = hand when near);
-            # a faint tail keeps a far stick visually attached to the hand
-            length = min(dist, 0.5 * min(SW, SH))
-            sx_, sy_ = txp - ux * length, typ - uy * length
-            tap = abs(math.sin(t * 2 * math.pi * 2.2))
-            reach = point_s * max(0.0, length - (26 + 16 * (1 - tap)) * ss_)
-            x1, y1 = sx_ + ux * reach, sy_ + uy * reach
+            wig = 0.05 * math.sin(t * 2 * math.pi * 2.2) * point_s
+            base = math.atan2(dy, dx) + wig
+            length = min(44 * u, dist * 0.88) * point_s
+            x1 = hx + math.cos(base) * length
+            y1 = hy + math.sin(base) * length
             al = point_s * a
-            if dist > length + 1:
-                d.line([hx, hy, sx_, sy_], fill=(226, 230, 240, int(70 * al)),
-                       width=max(1, int(3 * ss_)))
-            d.line([sx_, sy_, x1, y1], fill=(226, 230, 240, int(235 * al)),
+            d.line([hx, hy, x1, y1], fill=(226, 230, 240, int(235 * al)),
                    width=max(2, int(7 * ss_)))
             d.ellipse([x1 - 10 * ss_, y1 - 10 * ss_, x1 + 10 * ss_, y1 + 10 * ss_],
                       fill=(255, 196, 80, int(255 * al)))
+            tap = abs(math.sin(t * 2 * math.pi * 2.2))
             rr = (26 + 12 * tap) * ss_
             d.ellipse([txp - rr, typ - rr, txp + rr, typ + rr],
                       outline=(255, 214, 120, int(210 * al)),
@@ -1925,7 +1948,7 @@ def action_assets(_inp):
                        "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose', for, "
                                "to:[x,y], bones:{name:deg}}] — point aims a presenter "
                                "stick at the normalized target and taps it "
-                               "(weather-caster style). pose eases declared bones to "
+                               "(weather-caster style); a rig with upperArmR/foreArmR (or L) bones raises that arm to aim along the stick. pose eases declared bones to "
                                "the given angles (degrees, + = clockwise) and holds — "
                                "chain pose acts for keyframe choreography (punch, "
                                "bow, kick)"},
