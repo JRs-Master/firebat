@@ -537,10 +537,11 @@ export function MediaPanel({
                       <span className="text-[9px] font-bold">{t('media.generating_badge')}</span>
                     </div>
                   ) : itemKind === 'video' ? (
-                    /* 영상은 픽셀이 있다 — preload=metadata 로 첫 프레임이 곧 썸네일.
+                    /* 영상은 픽셀이 있다 — 미디어 프래그먼트(#t=1.5)로 1.5초 지점이
+                       썸네일. 첫 프레임(#t=0)은 페이드인 연출 탓에 검정막이었다(8/25 실측).
                        재생 컨트롤은 상세 화면 몫이고 여기선 그림만. */
                     <video
-                      src={thumbSrc}
+                      src={`${thumbSrc}#t=1.5`}
                       preload="metadata"
                       muted
                       playsInline
