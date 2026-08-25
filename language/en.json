@@ -159,6 +159,7 @@
       "image_gen_missing": "image_gen not configured — cannot generate image.",
       "image_processor_missing_postprocess": "image_processor not configured — cannot post-process.",
       "audio_magic_mismatch": "Declared as audio ({{type}}) but the bytes are not a known audio format (mp3, wav, ogg, m4a, flac, webm, mid). The file is damaged or the declared type is wrong.",
+      "video_magic_mismatch": "Declared as video ({{type}}) but the bytes are not a known video container (mp4, webm). The file is damaged or the declared type is wrong.",
       "document_magic_mismatch": "Declared as a document ({{type}}) but the bytes do not match: a PDF must start with %PDF, and docx/xlsx/pptx/hwpx must be ZIP containers."
     },
     "auth": {
@@ -977,6 +978,7 @@
     "delete": "Delete",
     "kind_all": "All",
     "kind_image": "Images",
+    "kind_video": "Video",
     "kind_audio": "Audio",
     "kind_document": "Documents",
     "kind_other": "Other",

@@ -142,6 +142,8 @@ impl LocalMediaAdapter {
             "image"
         } else if ct.starts_with("audio/") || ct == "application/ogg" {
             "audio"
+        } else if ct.starts_with("video/") {
+            "video"
         } else if matches!(
             ct.as_str(),
             "application/pdf"

@@ -305,6 +305,7 @@ fn ext_from_hint_for_opaque(hint: Option<&str>, binary: &[u8]) -> Option<&'stati
         "musicxml" if binary.iter().take(16).any(|b| *b == b'<') => Some("musicxml"),
         "xml" if binary.iter().take(16).any(|b| *b == b'<') => Some("xml"),
         "mid" | "midi" if binary.starts_with(b"MThd") => Some("mid"),
+        "mp4" | "m4v" if binary.len() > 8 && &binary[4..8] == b"ftyp" => Some("mp4"),
         // LRC is plain text whose only signature is its timestamp/metadata tags — the same
         // take-16 leniency the XML rows get (BOM or a blank line may precede the first tag).
         "lrc" if binary.iter().take(16).any(|b| *b == b'[') => Some("lrc"),
@@ -357,6 +358,35 @@ fn detect_audio_ext(binary: &[u8]) -> Option<&'static str> {
 fn is_audio_content_type(content_type: &str) -> bool {
     let ct = content_type.to_ascii_lowercase();
     ct.starts_with("audio/") || ct == "application/ogg"
+}
+
+/// Video magic bytes — same gate, video shape. Measured 2026-08-25: the first real
+/// video/mp4 through the door (the motion module's render) fell past every family and
+/// was stored as `.bin` — served as octet-stream, browsers download instead of playing.
+///
+/// The `ftyp` box covers both MP4 video and M4A audio; the major brand separates them
+/// (M4A /M4B  = the audio family's business, everything else = video container). WebM's
+/// EBML header is likewise shared with audio WebM — a declared video/* claim picking this
+/// branch is what disambiguates, exactly as the audio gate trusts audio/* + EBML.
+fn detect_video_ext(binary: &[u8]) -> Option<&'static str> {
+    if binary.len() < 12 {
+        return None;
+    }
+    if &binary[4..8] == b"ftyp" {
+        if &binary[8..12] == b"M4A " || &binary[8..12] == b"M4B " {
+            return None; // audio-branded — the audio family owns it
+        }
+        return Some("mp4");
+    }
+    if binary.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        return Some("webm");
+    }
+    None
+}
+
+/// Is this declared content type in the video family?
+fn is_video_content_type(content_type: &str) -> bool {
+    content_type.to_ascii_lowercase().starts_with("video/")
 }
 
 /// Document family the media door accepts — declared content type → canonical extension.
@@ -702,6 +732,22 @@ impl MediaManager {
                 None => {
                     return Err(crate::i18n::t(
                         "core.error.media.audio_magic_mismatch",
+                        None,
+                        &[("type", content_type)],
+                    ));
+                }
+            }
+        } else if is_video_content_type(content_type) {
+            // Same gate, video shape: a declared video must BE a video container.
+            match detect_video_ext(binary) {
+                Some(ext) => {
+                    if opts.ext.as_deref().unwrap_or("").is_empty() {
+                        opts.ext = Some(ext.to_string());
+                    }
+                }
+                None => {
+                    return Err(crate::i18n::t(
+                        "core.error.media.video_magic_mismatch",
                         None,
                         &[("type", content_type)],
                     ));
@@ -1694,6 +1740,31 @@ mod tests {
         assert!(super::is_audio_content_type("audio/mpeg"));
         assert!(super::is_audio_content_type("application/ogg"));
         assert!(!super::is_audio_content_type("image/png"));
+    }
+
+    /// The video gate: ftyp brand separates MP4 video from M4A audio, EBML is WebM,
+    /// and a PNG declared as video is refused rather than renamed.
+    #[test]
+    fn video_magic_bytes_decide_the_extension() {
+        assert_eq!(super::detect_video_ext(b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00"), Some("mp4"));
+        assert_eq!(super::detect_video_ext(b"\x00\x00\x00\x20ftypavc1\x00\x00\x00\x00"), Some("mp4"));
+        // Audio-branded ftyp stays out of the video family.
+        assert_eq!(super::detect_video_ext(b"\x00\x00\x00\x20ftypM4A \x00\x00\x00\x00"), None);
+        assert_eq!(
+            super::detect_video_ext(&[0x1A, 0x45, 0xDF, 0xA3, 0, 0, 0, 0, 0, 0, 0, 0]),
+            Some("webm")
+        );
+        assert_eq!(super::detect_video_ext(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0d"), None);
+        assert!(super::is_video_content_type("video/mp4"));
+        assert!(!super::is_video_content_type("audio/mp4"));
+        // The opaque-upload door recognises a hinted .mp4 whose bytes agree.
+        assert_eq!(
+            super::ext_from_hint_for_opaque(
+                Some("clip.mp4"),
+                b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00"
+            ),
+            Some("mp4")
+        );
     }
 
     // The document gate: PDF must open with %PDF, the ZIP-container family must be a ZIP —
