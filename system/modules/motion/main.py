@@ -687,7 +687,13 @@ class Scene:
         voice envelope for lipsync. Returns a wav path or None."""
         if not self.bgm and not self.voice:
             return None
-        import soundfile as sf
+        try:
+            import soundfile as sf
+        except ImportError as e:
+            raise SceneError(
+                f"soundfile is not importable in this runtime ({e}) — the declared "
+                "package likely failed to install; render without audio works, or "
+                "install it manually and retry")
         RATE = 44100
         n = int(self.dur * RATE)
 
@@ -762,7 +768,17 @@ def action_render(inp):
                 "data": {"stills": len(imports), "duration": scene.dur,
                          "note": "stills only — drop the stills field for the full video",
                          "_mediaImport": imports if len(imports) > 1 else imports[0]}}
-    import imageio_ffmpeg
+    try:
+        import imageio_ffmpeg
+    except ImportError as e:
+        # Measured 2026-08-25: assets/stills/sticker ran while the video path died
+        # bare — numpy/pillow had installed and this lazy import had not. Name the
+        # package and the next step instead of a naked traceback.
+        return {"success": False,
+                "error": f"imageio-ffmpeg is not importable in this runtime ({e}) — "
+                         "the declared package likely failed to install on first run; "
+                         "check `journalctl -u firebat | grep -iE 'pip|motion'` or "
+                         "install it manually, then retry"}
     audio = scene.prepare_audio(OUT_DIR)
     out = os.path.join(OUT_DIR, f"video-{tag}.mp4")
     kwargs = dict(fps=scene.fps, quality=8, macro_block_size=8,
@@ -948,8 +964,14 @@ def action_selftest():
            str(e)[:60], False)
 
     failed = sum(1 for c in checks if not c["ok"])
-    return {"success": failed == 0,
-            "data": {"total": len(checks), "failed": failed, "checks": checks}}
+    out = {"success": failed == 0,
+           "data": {"total": len(checks), "failed": failed, "checks": checks}}
+    if failed:
+        # Envelope form 2 needs an `error` — success:false with only data came back
+        # from the framework as a bare "module failed", hiding every detail.
+        out["error"] = f"{failed} of {len(checks)} checks failed: " + "; ".join(
+            f"{c['name']} (got {c['got']})" for c in checks if not c["ok"])[:600]
+    return out
 
 # ── protocol ─────────────────────────────────────────────────────────────────
 def main():
