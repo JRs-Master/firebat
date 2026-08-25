@@ -212,11 +212,20 @@ def jump_arc(t, t0):
         return 0.0, 1 - 0.22 * math.sin(math.pi * pp)
     return 0.0, 1.0
 
+_HEART_PTS = None
+
 def draw_heart(d, x, y, r, col, a=255):
-    d.ellipse([x - r, y - r, x + r * 0.04, y + r * 0.04], fill=(*col, a))
-    d.ellipse([x - r * 0.04, y - r, x + r, y + r * 0.04], fill=(*col, a))
-    d.polygon([(x - r * 0.92, y - r * 0.10), (x + r * 0.92, y - r * 0.10),
-               (x, y + r * 1.05)], fill=(*col, a))
+    """One smooth polygon from the classic parametric heart — the circles+triangle
+    assembly showed its seams the moment a heart became 300px clip art."""
+    global _HEART_PTS
+    if _HEART_PTS is None:
+        _HEART_PTS = []
+        for i in range(72):
+            t = i * 2 * math.pi / 72
+            hx = 16 * math.sin(t) ** 3
+            hy = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+            _HEART_PTS.append((hx / 16.0, -hy / 16.0))
+    d.polygon([(x + px * r, y + py * r) for px, py in _HEART_PTS], fill=(*col, a))
 
 # ── scene ────────────────────────────────────────────────────────────────────
 class SceneError(ValueError):
@@ -803,12 +812,20 @@ def action_render(inp):
                      "_mediaImport": {"path": _out(out), "contentType": "video/mp4",
                                       "filenameHint": f"motion-{tag}"}}}
 
+STICKER_ASSETS = ("firebat", "heart", "star", "moon", "balloon")
+
+def _color_of(pose, default):
+    c = pose.get("color")
+    if isinstance(c, (list, tuple)) and len(c) == 3:
+        return tuple(int(v) for v in c)
+    return default
+
 def action_sticker(inp):
     name = str(inp.get("name") or "firebat")
-    if name != "firebat":
+    if name not in STICKER_ASSETS:
         return {"success": False,
-                "error": f"unknown asset {name!r} — call {{\"action\": \"assets\"}} "
-                         "for the sprite list"}
+                "error": f"unknown asset {name!r} — one of {list(STICKER_ASSETS)}; "
+                         "the assets action documents each"}
     try:
         size = int(_num(inp.get("stickerSize", 900), "stickerSize",
                         STICKER_MIN, STICKER_MAX))
@@ -816,19 +833,73 @@ def action_sticker(inp):
         return {"success": False, "error": str(e)}
     pose = inp.get("pose") or {}
     Wc = size
-    Hc = int(size * 1.1)
+    Hc = int(size * 1.1) if name == "firebat" else size
+    if name == "balloon":
+        Hc = int(size * 0.62)
     img = Image.new("RGBA", (Wc, Hc), (0, 0, 0, 0))
     d = ImageDraw.Draw(img, "RGBA")
-    s = Wc / 480.0
     # No glow layer on purpose: additive glow on a transparent ground bakes a
-    # dark ring around the flame. The crisp flame reads fine alone.
-    draw_firebat(d, None, Wc / 2, Hc - 30 * s, s, 1.3, pal=inp.get("palette"),
-                 mouth=float(pose.get("mouth", 0.0)),
-                 wave=float(pose.get("wave", 0.0)),
-                 sy=float(pose.get("squash", 1.0)),
-                 look=tuple(pose.get("look") or (0, 0)),
-                 blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None,
-                 glow=False)
+    # dark ring around the flame. The crisp shapes read fine alone.
+    if name == "firebat":
+        s = Wc / 480.0
+        draw_firebat(d, None, Wc / 2, Hc - 30 * s, s, 1.3, pal=inp.get("palette"),
+                     mouth=float(pose.get("mouth", 0.0)),
+                     wave=float(pose.get("wave", 0.0)),
+                     sy=float(pose.get("squash", 1.0)),
+                     look=tuple(pose.get("look") or (0, 0)),
+                     blink_t=0.5 * float(pose["blink"]) if pose.get("blink") else None,
+                     glow=False)
+    elif name == "heart":
+        draw_heart(d, Wc / 2, Hc / 2 - Wc * 0.04, Wc * 0.42,
+                   _color_of(pose, (235, 60, 90)))
+    elif name == "star":
+        cx, cy, R = Wc / 2, Hc / 2, Wc * 0.46
+        pts = []
+        for i in range(10):
+            r = R if i % 2 == 0 else R * 0.42
+            a = -math.pi / 2 + i * math.pi / 5
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+        d.polygon(pts, fill=_color_of(pose, AMBER),
+                  outline=(120, 84, 20), width=max(2, Wc // 90))
+    elif name == "moon":
+        cx, cy, R = Wc / 2, Hc / 2, Wc * 0.44
+        col = _color_of(pose, (226, 234, 252))
+        d.ellipse([cx - R, cy - R, cx + R, cy + R], fill=col)
+        dk = tuple(max(0, v - 20) for v in col)
+        d.ellipse([cx - R * .45, cy - R * .35, cx - R * .05, cy + R * .02], fill=dk)
+        d.ellipse([cx + R * .10, cy + R * .22, cx + R * .42, cy + R * .52], fill=dk)
+    elif name == "balloon":
+        txt = str(pose.get("text") or "")
+        if len(txt) > TEXT_MAX:
+            return {"success": False, "error": f"pose.text exceeds {TEXT_MAX} chars"}
+        if has_hangul(txt):
+            try:
+                fonts = Fonts(1.0)
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
+            if not fonts.korean:
+                return {"success": False,
+                        "error": "pose.text is Korean but no Korean-capable font was "
+                                 "found — install fonts-nanum or set fontPath"}
+        pad = Wc * 0.04
+        x0, y0 = pad, pad
+        x1, y1 = Wc - pad, Hc - Hc * 0.22
+        d.rounded_rectangle([x0, y0, x1, y1], radius=Hc * 0.18,
+                            fill=(252, 252, 255),
+                            outline=(205, 210, 220), width=max(2, Wc // 120))
+        d.polygon([(Wc * 0.40, y1 - 2), (Wc * 0.52, y1 - 2), (Wc * 0.44, Hc - pad)],
+                  fill=(252, 252, 255))
+        if txt:
+            bold = Fonts(1.0).bold
+            fs = int((y1 - y0) * 0.34)
+            f = ImageFont.truetype(bold, fs)
+            tw = d.textlength(txt, font=f)
+            if tw > (x1 - x0) * 0.9:
+                fs = max(10, int(fs * (x1 - x0) * 0.9 / tw))
+                f = ImageFont.truetype(bold, fs)
+                tw = d.textlength(txt, font=f)
+            d.text(((Wc - tw) / 2, (y0 + y1) / 2 - fs * 0.62), txt, font=f,
+                   fill=(24, 30, 46))
     os.makedirs(OUT_DIR, exist_ok=True)
     tag = _scene_hash(inp)
     path = os.path.join(OUT_DIR, f"sticker-{tag}.png")
@@ -881,6 +952,15 @@ def action_assets(_inp):
                   "voice": "media path — make one with the tts tool; ducks the bgm "
                            "and drives lipsync",
                   "bgmGainDb": "default -8"},
+        "stickers": {
+            "what": "the sticker action exports any of these as a transparent PNG for "
+                    "pages, documents and slide decks",
+            "firebat": "pose {wave, mouth, blink, squash, look:[x,y]}, palette override",
+            "heart": "pose {color:[r,g,b]} (default warm pink)",
+            "star": "pose {color:[r,g,b]} (default amber), five points",
+            "moon": "pose {color:[r,g,b]} (default pale), with craters",
+            "balloon": "pose {text} — an empty or captioned speech balloon",
+        },
         "iteration": "pass stills:[t1,t2,...] to get PNG frames in seconds instead of "
                      "a minutes-long video render — inspect, adjust, then render for real",
     }}
@@ -927,6 +1007,16 @@ def action_selftest():
         os.remove(p)
     ck("sticker is RGBA with transparent corners and an opaque body",
        True, alpha_ok, ok_st and alpha_ok)
+
+    hs = action_sticker({"action": "sticker", "name": "heart", "stickerSize": 220})
+    h_ok = False
+    if hs.get("success"):
+        p = hs["data"]["_mediaImport"]["path"]
+        arr = np.asarray(Image.open(p))
+        h_ok = arr[2, 2, 3] == 0 and arr[arr.shape[0] // 2, arr.shape[1] // 2, 3] == 255
+        os.remove(p)
+    ck("a non-character clip-art asset (heart) exports the same way",
+       True, h_ok, bool(hs.get("success")) and h_ok)
 
     try:
         Scene({"action": "render", "duration": 2,

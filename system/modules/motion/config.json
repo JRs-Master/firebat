@@ -35,7 +35,7 @@
       {
         "id": "sticker",
         "name": "클립아트 스티커",
-        "description": "에셋 하나를 투명 배경 PNG 로 내보낸다 — 캐릭터 포즈(손인사·말하기·점프 등)를 파라미터로 굳혀 페이지·문서·PPT 에서 재사용한다.",
+        "description": "클립아트를 투명 배경 PNG 로 내보낸다 — 캐릭터(포즈 지정)·하트·별·달·말풍선(문구 옵션)을 페이지·문서·PPT 에서 재사용한다.",
         "domain": "제작",
         "params": ["name", "pose", "stickerSize"],
         "tags": ["스티커", "클립아트", "투명 PNG", "캐릭터 이미지"]
@@ -98,11 +98,11 @@
       },
       "name": {
         "type": "string",
-        "description": "[sticker] Asset to export. Currently 'firebat' (the mascot character)."
+        "description": "[sticker] Asset to export: firebat (mascot), heart, star, moon, balloon (speech bubble, pose.text optional)."
       },
       "pose": {
         "type": "object",
-        "description": "[sticker] Pose parameters: {wave:0..1, mouth:0..1, blink:0..1, squash:0.7..1.3, look:[x,y] each -1..1}. Omit for the neutral pose."
+        "description": "[sticker] Asset parameters. firebat: {wave:0..1, mouth:0..1, blink:0..1, squash:0.7..1.3, look:[x,y]}. heart/star/moon: {color:[r,g,b]}. balloon: {text}. Omit for defaults."
       },
       "stickerSize": {
         "type": "integer",
