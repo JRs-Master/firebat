@@ -907,7 +907,8 @@ def action_sticker(inp):
     return {"success": True,
             "data": {"asset": name, "size": [Wc, Hc],
                      "_mediaImport": {"path": _out(path), "contentType": "image/png",
-                                      "filenameHint": f"clip-{name}"}}}
+                                      "filenameHint": f"clip-{name}",
+                                      "source": "clipart"}}}
 
 def action_assets(_inp):
     return {"success": True, "data": {

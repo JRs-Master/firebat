@@ -147,7 +147,7 @@ just a key with an underscore in it and the model reads it like any other — th
 
 | declare in `data` | the framework then |
 |---|---|
-| `_mediaImport: {path, contentType, filenameHint?}` | carries the file into the media store and leaves `data.media` (url, slug, bytes). An ARRAY imports several in order, and `data.media` comes back in that order |
+| `_mediaImport: {path, contentType, filenameHint?, source?}` | carries the file into the media store and leaves `data.media` (url, slug, bytes). An ARRAY imports several in order, and `data.media` comes back in that order. `source` names the product kind for the media panel's sub-groups (`"clipart"` splits the image tab); leave it out for ordinary output |
 | `_render: {component, props}` | draws that component in the answer — see below |
 | `_prepare: {service, …, into}` | performs the service (e.g. `tts`), fills that input field and re-runs your action once |
 
