@@ -3,7 +3,7 @@
 import { useId, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Modal } from './Modal';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw, Upload, Music, FileText, File as FileIcon, FolderOpen, Download } from 'lucide-react';
+import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw, Upload, Music, FileText, File as FileIcon, Film, FolderOpen, Download } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
 import { AudioTransport } from '../../../lib/audio-transport';
@@ -44,7 +44,7 @@ const PAGE_SIZE = 48;
 /** Content type + extension → panel kind. Same vocabulary as the Rust list filter
  *  (`media_kind_of` in infra/src/adapters/media.rs) — **두 벌이니 한쪽만 고치지 말 것.**
  *  `music` 은 종류가 아니라 묶음(음원 ∪ 악보 ∪ 가사)이라 아이콘 표에는 없다. */
-type MediaKind = 'image' | 'audio' | 'score' | 'lyrics' | 'document' | 'other';
+type MediaKind = 'image' | 'video' | 'audio' | 'score' | 'lyrics' | 'document' | 'other';
 type KindChip = MediaKind | 'music' | 'all';
 const DOC_CONTENT_TYPES = new Set([
   'application/pdf',
@@ -64,6 +64,7 @@ function kindOf(contentType: string, ext?: string): MediaKind {
   if (e === 'lrc') return 'lyrics';
   const ct = (contentType || '').toLowerCase();
   if (ct.startsWith('image/')) return 'image';
+  if (ct.startsWith('video/') || e === 'mp4' || e === 'm4v' || e === 'mov') return 'video';
   if (ct.startsWith('audio/') || ct === 'application/ogg') return 'audio';
   if (DOC_CONTENT_TYPES.has(ct)) return 'document';
   return 'other';
@@ -113,7 +114,7 @@ function ScorePreview({ path, t }: { path: string; t: (k: string) => string }) {
   );
 }
 const KIND_ICON: Record<MediaKind, typeof ImageIcon> = {
-  image: ImageIcon, audio: Music, score: Music, lyrics: FileText,
+  image: ImageIcon, video: Film, audio: Music, score: Music, lyrics: FileText,
   document: FileText, other: FileIcon,
 };
 
@@ -172,13 +173,14 @@ const EXT_MIME: Record<string, string> = {
   hwpx: 'application/vnd.hancom.hwpx',
   hwp: 'application/x-hwp',
   mid: 'audio/midi', midi: 'audio/midi',
+  mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime',
 };
-const UPLOAD_ACCEPT = 'image/*,audio/*,.mid,.midi,.pdf,.docx,.xlsx,.pptx,.hwpx,.hwp';
+const UPLOAD_ACCEPT = 'image/*,audio/*,video/mp4,video/webm,.mp4,.mov,.mid,.midi,.pdf,.docx,.xlsx,.pptx,.hwpx,.hwp';
 const UPLOAD_MAX_MB = 25;
 
 // 윗줄은 큰 갈래, 음악을 고르면 아랫줄에 그 안의 셋이 선다 — 한 곡을 찾을 때 소리·악보·가사가
 // 서로 옆에 있어야 한다(전엔 .mid 는 오디오, .mxl 은 기타로 같은 곡이 두 탭에 흩어졌다).
-const KINDS: KindChip[] = ['all', 'image', 'music', 'document', 'other'];
+const KINDS: KindChip[] = ['all', 'image', 'video', 'music', 'document', 'other'];
 const MUSIC_SUB: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
 const SORTS = ['newest', 'oldest', 'name', 'size'] as const;
 type SortKey = typeof SORTS[number];
@@ -726,6 +728,14 @@ function MediaDetailModal({
                 <Music size={32} strokeWidth={1.5} />
                 <ScorePreview path={`${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`} t={t} />
               </div>
+            ) : itemKind === 'video' ? (
+              <video
+                controls
+                preload="metadata"
+                playsInline
+                className="max-w-full max-h-full rounded-lg bg-black"
+                src={`${url}?v=${item.bytes || item.createdAt}`}
+              />
             ) : itemKind === 'audio' ? (
               <div className="flex flex-col items-center gap-3 w-full px-4 py-6 text-slate-600">
                 <Music size={32} strokeWidth={1.5} />

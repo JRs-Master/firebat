@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from 'react';
 import React from 'react';
-import { Download, FileText, Music } from 'lucide-react';
+import { Download, FileText, Film, Music } from 'lucide-react';
 import { AudioTransport } from './audio-transport';
 
 // ── The file card, shared by every surface that can be handed a document ──────────────────────
@@ -32,6 +32,26 @@ export const FILE_CARD_EXTS: Record<string, string> = {
 const FILE_CARD_NEUTRAL = 'text-slate-600 bg-slate-100 border-slate-200';
 
 export const AUDIO_PLAYER_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'flac']);
+
+/** .webm 은 오디오 재생기 소유로 남긴다 — 창고의 webm 은 실측상 전부 소리였고, 영상 webm 이
+ *  들어오는 날 그때 확장자가 아니라 트랙을 보고 갈라야 한다. */
+export const VIDEO_PLAYER_EXTS = new Set(['mp4', 'm4v', 'mov']);
+
+/** 볼 수 있는 파일의 카드 — 오디오 카드와 같은 가족, 재생기만 <video> 다. 마크다운 문단 안에
+ *  들어가는 자리라 오디오 카드처럼 span 골격을 유지하되, 영상은 위아래로 쌓는 게 자연스러워
+ *  타일·이름 줄 아래에 화면이 온다. */
+export function VideoFileCard({ href, name, ext }: { href: string; name: string; ext: string }) {
+  return (
+    <span className="not-prose my-1.5 block max-w-md px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm">
+      <span className="flex items-center gap-2.5">
+        <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500"><Film size={16} /></span>
+        <span className="min-w-0 flex-1 text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
+        <a className="shrink-0 text-slate-400 hover:text-slate-600" href={href} download title="저장"><Download size={14} /></a>
+      </span>
+      <video controls preload="metadata" playsInline className="mt-2 w-full rounded-lg bg-black" src={href} />
+    </span>
+  );
+}
 
 /** 들을 수 있는 파일의 카드 — 아이콘 타일 + 이름 + 공통 재생기. 채팅과 공유 페이지가 **같은
  *  카드**를 쓴다(전엔 같은 마크업이 두 벌이라 한쪽만 고쳐질 자리였다).
@@ -237,12 +257,13 @@ export function MediaLink({ href, children, fallbackClassName = 'text-blue-600 h
   const recorded = useProducedName(typeof href === 'string' ? href : '');
   const m = typeof href === 'string' ? href.match(MEDIA_LINK_RE) : null;
   const ext = m?.[2]?.toLowerCase() ?? '';
-  if (m && (FILE_CARD_EXTS[ext] || AUDIO_PLAYER_EXTS.has(ext))) {
+  if (m && (FILE_CARD_EXTS[ext] || AUDIO_PLAYER_EXTS.has(ext) || VIDEO_PLAYER_EXTS.has(ext))) {
     const text = (Array.isArray(children) ? children : [children])
       .filter((c): c is string => typeof c === 'string').join('').trim();
     const slug = (() => { try { return decodeURIComponent(m[1]); } catch { return m[1]; } })();
     const name = (recorded || text || slug).replace(new RegExp(`\.${ext}$`, 'i'), '');
     if (AUDIO_PLAYER_EXTS.has(ext)) return <AudioFileCard href={href!} name={name} ext={ext} />;
+    if (VIDEO_PLAYER_EXTS.has(ext)) return <VideoFileCard href={href!} name={name} ext={ext} />;
     return <FileCard href={href!} name={name} ext={ext} />;
   }
   return (
