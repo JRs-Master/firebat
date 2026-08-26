@@ -27,7 +27,7 @@
         "name": "영상 렌더",
         "description": "씬 선언을 mp4 로 굽는다 — 캐릭터·텍스트·불꽃·이미지 층을 타임라인에 얹고, BGM·음성을 먹싱한다. stills 를 주면 영상 대신 지정 시각의 정지 PNG 만 뽑는다(수정 반복용 싼 검수 경로). 씬 문법·에셋 목록은 assets 액션이 전부 말한다.",
         "domain": "제작",
-        "params": ["duration", "size", "fps", "background", "layers", "audio", "stills", "quality", "async"],
+        "params": ["duration", "size", "fps", "background", "layers", "audio", "camera", "stills", "quality", "async"],
         "tags": ["영상", "쇼츠", "렌더", "동영상 제작"],
         "aliases": ["make-video"],
         "needs": ["motion:assets"]
@@ -54,6 +54,12 @@
         "description": "저장된 클립아트 선언을 지운다. 미디어 창고의 썸네일은 창고에서 따로 지운다.",
         "domain": "제작",
         "params": ["name"]
+      },
+      {
+        "id": "trim",
+        "name": "영상 자르기",
+        "desc": "Cut or split an existing mp4 by seconds with ffmpeg stream copy — no re-render. {media, from?, to} or {media, segments:[{from,to}..6]}.",
+        "params": ["media", "from", "to", "segments"]
       },
       {
         "id": "model_info",
@@ -139,7 +145,23 @@
       },
       "media": {
         "type": "string",
-        "description": "[duration] Media-store path of an audio file (/user/media/...)."
+        "description": "[duration|trim] Media-store path (/user/media/...) — duration: an audio file, trim: an mp4."
+      },
+      "from": {
+        "type": "number",
+        "description": "[trim] Cut start in seconds (default 0)."
+      },
+      "to": {
+        "type": "number",
+        "description": "[trim] Cut end in seconds."
+      },
+      "segments": {
+        "type": "array",
+        "description": "[trim] Up to 6 {from,to} spans — each becomes its own file."
+      },
+      "camera": {
+        "type": "array",
+        "description": "[render] Scene zoom/pan keyframes [{at, zoom:1..4, center:[x,y], in?}] — eases from the previous state and holds; the way to zoom into a spot while it is being talked about (never swap background images per segment)."
       },
       "async": {
         "type": "boolean",

@@ -1085,6 +1085,26 @@ class Scene:
         self.vignette = _num(bg.get("vignette", vdef[bg["kind"]]),
                              "background.vignette", 0, 0.6)
         self._vign_map = None
+        # camera — scene-wide zoom/pan keyframes ("zoom into the city while its
+        # line is spoken"). Missing primitive measured 2026-08-26: per-city
+        # close-ups were faked by swapping whole map images per segment.
+        cam = inp.get("camera") or []
+        if not isinstance(cam, list) or len(cam) > 12:
+            raise SceneError("camera must be a list of at most 12 keyframes")
+        self.camera = []
+        for i, k in enumerate(cam):
+            if not isinstance(k, dict):
+                raise SceneError(f"camera[{i}] must be {{at, zoom?, center?, in?}}")
+            at = _num(k.get("at", 0), f"camera[{i}].at", 0, self.dur)
+            zoom = _num(k.get("zoom", 1.0), f"camera[{i}].zoom", 1.0, 4.0)
+            ctr = k.get("center", [0.5, 0.5])
+            if not (isinstance(ctr, (list, tuple)) and len(ctr) == 2):
+                raise SceneError(f"camera[{i}].center must be [x,y] (0..1)")
+            cx = _num(ctr[0], f"camera[{i}].center[0]", 0, 1)
+            cy = _num(ctr[1], f"camera[{i}].center[1]", 0, 1)
+            ease_in = _num(k.get("in", 0.8), f"camera[{i}].in", 0.05, 10)
+            self.camera.append((at, zoom, cx, cy, ease_in))
+        self.camera.sort(key=lambda k: k[0])
         audio = inp.get("audio") or {}
         self.bgm = media_path(audio["bgm"]) if audio.get("bgm") else None
         # One `voice` starts at 0; `voices` places each line on the timeline —
@@ -1245,6 +1265,14 @@ class Scene:
         fade = min(clamp01(t / 0.5), clamp01((self.dur - 0.1 - t) / 0.55))
         if fade < 1:
             frame = Image.fromarray((np.asarray(frame) * fade).astype(np.uint8))
+        if self.camera:
+            z, ccx, ccy = self._camera_state(t)
+            if z > 1.001:
+                cw, ch = self.W / z, self.H / z
+                x0 = min(max(ccx * self.W - cw / 2, 0), self.W - cw)
+                y0 = min(max(ccy * self.H - ch / 2, 0), self.H - ch)
+                frame = frame.crop((int(x0), int(y0),
+                                    int(x0 + cw), int(y0 + ch)))                     .resize((self.W, self.H), Image.LANCZOS)
         arr = np.asarray(frame)
         sdx = sdy = 0.0
         for L in self.layers:
@@ -1263,6 +1291,19 @@ class Scene:
         if arr.shape != (self.H, self.W, 3):
             raise SceneError(f"frame shape drifted: {arr.shape}")
         return arr
+
+    def _camera_state(self, t):
+        """(zoom, cx, cy) at time t — each keyframe eases in from the previous
+        state over its own `in` seconds, then holds."""
+        state = (1.0, 0.5, 0.5)
+        for (at, z, cx, cy, ease_in) in self.camera:
+            if t < at:
+                break
+            f = eo3(clamp01((t - at) / ease_in))
+            state = (state[0] + (z - state[0]) * f,
+                     state[1] + (cx - state[1]) * f,
+                     state[2] + (cy - state[2]) * f)
+        return state
 
     def _at(self, L, default):
         at = L.get("at") or default
@@ -1869,6 +1910,7 @@ def _scene_hash(inp):
         json.dumps(inp, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:10]
 
 def action_render(inp):
+    _sweep_outputs()
     try:
         scene = Scene(inp)
     except SceneError as e:
@@ -1916,8 +1958,9 @@ def _encode_video(scene, tag, on_frame=None):
     import imageio_ffmpeg
     audio = scene.prepare_audio(OUT_DIR)
     out = os.path.join(OUT_DIR, f"video-{tag}.mp4")
-    kwargs = dict(fps=scene.fps, quality=8, macro_block_size=8,
-                  output_params=["-movflags", "+faststart"])
+    kwargs = dict(fps=scene.fps, quality=None, macro_block_size=8,
+                  output_params=["-crf", "23", "-preset", "medium",
+                                 "-movflags", "+faststart"])
     if audio:
         kwargs.update(audio_path=audio, audio_codec="aac")
     writer = imageio_ffmpeg.write_frames(out, (scene.W, scene.H), **kwargs)
@@ -1961,11 +2004,30 @@ def _job_read(jobdir):
         return None
 
 
+def _sweep_outputs(now=None):
+    """Drop day-old render leftovers. Media import COPIES the file into the
+    store, so every delivered video/still would otherwise live here forever
+    (measured 2026-08-26: 256MB of weather-video copies). A day keeps the
+    `job` redeliver window honest — job dirs expire on the same clock."""
+    now = time.time() if now is None else now
+    if not os.path.isdir(OUT_DIR):
+        return
+    for name in os.listdir(OUT_DIR):
+        if not name.startswith(("video-", "still-", "trim-")):
+            continue
+        p = os.path.join(OUT_DIR, name)
+        try:
+            if os.path.isfile(p) and now - os.path.getmtime(p) > 86400:
+                os.remove(p)
+        except OSError:
+            pass
+
 def _job_submit(inp, scene):
     """Accept a long render: validate now, hand the frame loop to a detached
     child, answer immediately with a job id the `job` action polls."""
     os.makedirs(JOB_DIR, exist_ok=True)
     now = time.time()
+    _sweep_outputs(now)
     # sweep job dirs older than a day so the folder cannot grow unbounded
     for name in os.listdir(JOB_DIR):
         p = os.path.join(JOB_DIR, name)
@@ -2334,6 +2396,19 @@ def action_assets(_inp):
                     "transparent PNG — pose {wave, mouth, blink, squash} moves the "
                     "tagged parts, pose.text fills a text part (balloon)",
         },
+        "camera": "scene-level zoom/pan keyframes: camera:[{at, zoom:1..4, "
+                  "center:[x,y] 0..1, in? seconds}] — each keyframe eases from "
+                  "the previous state and holds. This is THE way to zoom into a "
+                  "region while its line is spoken (never swap whole background "
+                  "images per segment). zoom:1 returns to full frame",
+        "trim": "trim {media:'<mp4 in the media store or data/motion>', from?, to} "
+                "or {media, segments:[{from,to}..up to 6]} — ffmpeg stream copy, "
+                "no re-render: splitting a finished video is seconds, not minutes. "
+                "Cuts snap to keyframes (edges may start up to ~1s early)",
+        "textGlyphs": "server fonts carry Korean + basic latin only — emoji in "
+                      "title/caption/card text render as tofu boxes. Weather/state "
+                      "marks: write words (맑음, 비, 눈) or use colored dots, "
+                      "never emoji",
         "iteration": "pass stills:[t1,t2,...] to get PNG frames in seconds instead of "
                      "a minutes-long video render — inspect, adjust, then render for real",
         "longRenders": "renders longer than ~20s can outlive the tool roundtrip — "
@@ -2341,6 +2416,60 @@ def action_assets(_inp):
                        "{action:'job', id} (running: progress + etaSec); the poll "
                        "that sees state 'done' imports the finished video",
     }}
+
+def action_trim(inp):
+    """Cut segments out of an existing mp4 with ffmpeg stream copy — no
+    re-render, no re-encode. Splitting a finished video used to mean drawing
+    every frame again (measured 2026-08-26: a 45s weather short was fully
+    re-rendered twice to become two files). Cuts snap to keyframes, so edges
+    can land up to ~1s early — documented, not a bug."""
+    import imageio_ffmpeg
+    try:
+        src_path = media_path(inp.get("media"))
+    except SceneError as e:
+        return {"success": False, "error": str(e)}
+    segs = inp.get("segments")
+    if segs is None:
+        if inp.get("to") is None:
+            return {"success": False,
+                    "error": "trim needs {media, from?, to} or "
+                             "{media, segments:[{from,to}..]} (seconds)"}
+        segs = [{"from": inp.get("from", 0), "to": inp.get("to")}]
+    if not isinstance(segs, list) or not 1 <= len(segs) <= 6:
+        return {"success": False, "error": "segments: 1 to 6 {from,to} spans"}
+    norm = []
+    for i, s in enumerate(segs):
+        try:
+            f0 = float((s or {}).get("from", 0))
+            t0 = float((s or {}).get("to"))
+        except (TypeError, ValueError):
+            return {"success": False, "error": f"segments[{i}] needs numeric from/to"}
+        if not (0 <= f0 < t0 <= 6000):
+            return {"success": False, "error": f"segments[{i}]: need 0 <= from < to"}
+        norm.append((f0, t0))
+    ff = imageio_ffmpeg.get_ffmpeg_exe()
+    os.makedirs(OUT_DIR, exist_ok=True)
+    tag = hashlib.sha1(f"{src_path}:{norm}".encode()).hexdigest()[:10]
+    imports, spans = [], []
+    for i, (f0, t0) in enumerate(norm):
+        out = os.path.join(OUT_DIR, f"trim-{tag}-{i}.mp4")
+        r = subprocess.run(
+            [ff, "-y", "-ss", str(f0), "-to", str(t0), "-i", src_path,
+             "-c", "copy", "-movflags", "+faststart", out],
+            capture_output=True, timeout=120)
+        if r.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) < 1000:
+            tail = r.stderr.decode("utf-8", "replace")[-300:]
+            return {"success": False,
+                    "error": f"segments[{i}] cut failed: {tail}"}
+        spans.append({"from": f0, "to": t0, "bytes": os.path.getsize(out)})
+        imports.append({"path": _out(out), "contentType": "video/mp4",
+                        "filenameHint": f"motion-trim-{tag}-{i}"})
+    return {"success": True,
+            "data": {"segments": spans,
+                     "note": "stream copy — cuts snap to the nearest keyframe, "
+                             "so a boundary can start up to ~1s before the "
+                             "requested second",
+                     "_mediaImport": imports if len(imports) > 1 else imports[0]}}
 
 def action_model_info(inp):
     ref = str(inp.get("media") or "robot")
@@ -2408,8 +2537,8 @@ def action_selftest():
         except Exception:  # noqa: BLE001 — the check reports
             seed_ok = False
     ck("all seed declarations exist and validate against the grammar",
-       "5 seeds valid", f"{len(seeds)} seeds, valid={seed_ok}",
-       len(seeds) == 5 and seed_ok)
+       "6 seeds valid", f"{len(seeds)} seeds, valid={seed_ok}",
+       len(seeds) == 6 and seed_ok)
 
     hs = action_sticker({"action": "sticker", "name": "heart", "stickerSize": 220})
     h_ok = False
@@ -2469,6 +2598,7 @@ def action_selftest():
         ck("path traversal is refused", "refused", "refused", True)
 
     enc_ok, enc_note = False, ""
+    trim_ok, trim_note = False, ""
     try:
         out = action_render({"action": "render", "duration": 0.6, "fps": 10,
                              "quality": "draft", "size": "1080x1080",
@@ -2476,10 +2606,41 @@ def action_selftest():
         enc_ok = out.get("success") and out["data"]["bytes"] > 2000
         enc_note = out["data"]["bytes"] if enc_ok else out.get("error", "")
         if enc_ok:
-            os.remove(out["data"]["_mediaImport"]["path"])
+            vp = out["data"]["_mediaImport"]["path"]
+            tr = action_trim({"media": vp, "from": 0.1, "to": 0.4})
+            # a 0.6s clip is a single GOP, so a stream-copied cut can equal the
+            # original byte-for-byte — the check is that the cut EXISTS and never
+            # exceeds the source, not that keyframe granularity shrinks it
+            trim_ok = tr.get("success") and                 1000 < tr["data"]["segments"][0]["bytes"] <= out["data"]["bytes"]
+            trim_note = (tr["data"]["segments"][0]["bytes"] if trim_ok
+                         else tr.get("error", ""))
+            if trim_ok:
+                os.remove(tr["data"]["_mediaImport"]["path"])
+            os.remove(vp)
     except Exception as e:  # noqa: BLE001 — the check reports, not crashes
-        enc_note = repr(e)
+        enc_note = enc_note or repr(e)
+        trim_note = trim_note or repr(e)
     ck("a tiny scene encodes to a real mp4", ">2000 bytes", enc_note, enc_ok)
+    ck("trim stream-copies a cut without re-rendering",
+       "cut exists, <= original", trim_note, trim_ok)
+
+    cam_ok, cam_note = False, ""
+    try:
+        base = {"action": "render", "duration": 2.0, "quality": "draft",
+                "size": "1080x1080",
+                "layers": [{"kind": "sprite", "name": "한반도", "from": 0, "to": 2,
+                            "enter": "none", "at": [0.5, 0.62], "scale": 2.2}]}
+        f_plain = Scene(base).draw_frame(1.5)
+        zoomed = dict(base, camera=[{"at": 0.5, "zoom": 2.0,
+                                     "center": [0.7, 0.4], "in": 0.5}])
+        f_zoom = Scene(zoomed).draw_frame(1.5)
+        delta = int(np.abs(f_plain.astype(int) - f_zoom.astype(int)).sum())
+        cam_ok = f_zoom.shape == f_plain.shape and delta > 500000
+        cam_note = f"delta={delta}, shape={f_zoom.shape}"
+    except Exception as e:  # noqa: BLE001
+        cam_note = f"{type(e).__name__}: {e}"
+    ck("camera keyframes zoom the composed frame (shape preserved)",
+       "zoomed frame differs", cam_note, cam_ok)
 
     bone_note, bone_ok = "", False
     try:
@@ -2720,6 +2881,8 @@ def main():
             out = action_duration(inp)
         elif action == "model_info":
             out = action_model_info(inp)
+        elif action == "trim":
+            out = action_trim(inp)
         elif action == "job":
             out = action_job(inp)
         elif action == "save_asset":
@@ -2732,7 +2895,7 @@ def main():
             out = {"success": False,
                    "error": f"unknown action {action!r} — one of: render, sticker, "
                             "assets, save_asset, delete_asset, duration, job, "
-                            "model_info, selftest"}
+                            "model_info, trim, selftest"}
     except SceneError as e:
         out = {"success": False,
                "error": f"{e} — call {{\"action\": \"assets\"}} for the scene grammar"}
