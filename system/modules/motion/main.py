@@ -61,7 +61,7 @@ def eob(x):  # easeOutBack — the springy overshoot
     c1 = 1.70158
     return 1 + (c1 + 1) * (x - 1) ** 3 + c1 * (x - 1) ** 2
 
-_EASE_NAMES = {"smooth", "snap", "overshoot", "anticipate"}
+_EASE_NAMES = {"smooth", "snap", "overshoot", "anticipate", "linear"}
 
 def ease2d(name, x):
     """Cartoon easing. snap arrives by 60% of the window and holds (pose-to-pose
@@ -69,6 +69,8 @@ def ease2d(name, x):
     launching. May leave [0,1] on purpose — blenders that must stay bounded
     clamp on their side."""
     x = clamp01(x)
+    if name == "linear":
+        return x
     if name == "snap":
         return 1 - (1 - min(1.0, x / 0.6)) ** 5
     if name == "overshoot":
@@ -1337,6 +1339,22 @@ class Scene:
         elif enter == "pop":
             scale_mul = max(0.05, eob(p))
             s *= scale_mul
+        for act in sorted((a for a in L.get("acts") or []
+                           if str(a.get("do")) == "move"),
+                          key=lambda a: float(a.get("at", L["from"]))):
+            at = float(act.get("at", L["from"]))
+            if t < at:
+                break
+            to = act.get("to")
+            if not (isinstance(to, (list, tuple)) and len(to) == 2):
+                raise SceneError("move act needs to:[x,y] (0..1 screen coords)")
+            mdur = max(0.05, float(act.get("for", 0.6)))
+            ease_m = str(act.get("ease", "smooth"))
+            if ease_m not in _EASE_NAMES:
+                raise SceneError(f"move ease must be one of {sorted(_EASE_NAMES)}")
+            f = ease2d(ease_m, (t - at) / mdur)
+            tx, ty = clamp01(float(to[0])) * SW, clamp01(float(to[1])) * SH
+            x, y = x + (tx - x) * f, y + (ty - y) * f
         mouth, wave, sy = 0.0, 0.0, 1.0
         jump_h = 0.0
         point_s, point_to = 0.0, None
@@ -1448,12 +1466,12 @@ class Scene:
                     to = act.get("to") or [0.7, 0.4]
                     point_s = pw
                     point_to = (clamp01(float(to[0])), clamp01(float(to[1])))
-            elif kind in ("pose", "anim"):
+            elif kind in ("pose", "anim", "move"):
                 pass  # blended above, in timeline order
             else:
                 raise SceneError(
                     f"sprite act {kind!r} — one of wave, talk, jump, point, "
-                    "pose, anim")
+                    "pose, anim, move")
         sy *= pose_sy * anim_sy
         jump_h += -anim_dy * 4.0 * s
         point_arm = None
@@ -2320,7 +2338,7 @@ def action_assets(_inp):
             "fields": {"at": "[x,y] of the feet (default [0.5,0.9])",
                        "scale": "1.0 default", "enter": "walk | peek | pop | none",
                        "lipsync": "true = talk acts follow audio.voice envelope",
-                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose'|'anim', "
+                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose'|'anim'|'move', "
                                "for, to:[x,y], bones:{name:deg}, ease?, squash?, "
                                "name?}] — anim plays a built-in 2D keypose cycle "
                                "(see anims2d); point aims a presenter "
@@ -2396,6 +2414,10 @@ def action_assets(_inp):
                     "transparent PNG — pose {wave, mouth, blink, squash} moves the "
                     "tagged parts, pose.text fills a text part (balloon)",
         },
+        "moveAct": "sprite act {do:'move', at, for, to:[x,y], ease?} — eases the "
+                   "sprite's position to a new screen point and holds; chain move "
+                   "acts to travel a path (ease 'linear' for constant-speed "
+                   "segments like a rolling ball, 'smooth' to settle at the end)",
         "camera": "scene-level zoom/pan keyframes: camera:[{at, zoom:1..4, "
                   "center:[x,y] 0..1, in? seconds}] — each keyframe eases from "
                   "the previous state and holds. This is THE way to zoom into a "
@@ -2778,6 +2800,29 @@ def action_selftest():
         cut_note = f"{type(e).__name__}: {e}"
     ck("an image-cutout part crops, rigs and draws in scene and sticker",
        "blue body visible + sticker ok", cut_note, cut_ok)
+
+    mv_note, mv_ok = "", False
+    try:
+        scm = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                     "size": "1080x1080",
+                     "layers": [{"kind": "sprite", "name": "heart", "from": 0,
+                                 "to": 2, "enter": "none", "at": [0.2, 0.5],
+                                 "acts": [{"at": 0.9, "do": "move", "for": 0.6,
+                                           "to": [0.8, 0.5], "ease": "linear"}]}]})
+        def wx(fr):
+            warm = (fr[:, :, 0].astype(int) - fr[:, :, 2].astype(int)) > 60
+            xs = np.nonzero(warm.any(axis=0))[0]
+            return int(xs.mean()) if len(xs) else -1
+        # sample after the scene's own 0.5s fade-in — a dim frame has no
+        # pixels past the warm threshold and reads as "sprite missing"
+        # ...and before the 0.55s tail fade-out, same reason
+        x0, x1 = wx(scm.draw_frame(0.6)), wx(scm.draw_frame(1.35))
+        mv_ok = 0 <= x0 < 500 and x1 > x0 + 400
+        mv_note = f"centroid {x0} -> {x1}"
+    except Exception as e:  # noqa: BLE001
+        mv_note = f"{type(e).__name__}: {e}"
+    ck("a move act carries a sprite across the screen and holds",
+       "centroid shifts right", mv_note, mv_ok)
 
     m3_note, m3_ok = "", False
     try:
