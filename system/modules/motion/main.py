@@ -1004,7 +1004,7 @@ class Scene:
             kind = L["kind"]
             if kind not in ("sprite", "bubble", "title", "caption", "card", "list",
                             "image", "fireworks", "hearts", "confetti", "model3d",
-                            "spark", "shake", "speedlines", "hpbar"):
+                            "spark", "shake", "speedlines", "hpbar", "spritesheet"):
                 raise SceneError(
                     f"layers[{i}].kind {kind!r} is unknown — the assets action lists "
                     "every kind and its fields")
@@ -1019,6 +1019,20 @@ class Scene:
             texts += self._texts_of(L)
             if kind == "image":
                 L["_path"] = media_path(L.get("media"))
+            if kind == "spritesheet":
+                L["_path"] = media_path(L.get("media"))
+                # grid = [cols, rows] in ONE field — "rows" alone would collide
+                # with card/list rows (a list of text rows) and one field must
+                # keep one meaning across the layer vocabulary
+                grid = L.get("grid")
+                if not (isinstance(grid, (list, tuple)) and len(grid) == 2):
+                    raise SceneError(f"layers[{i}].grid must be [cols, rows]")
+                L["_cols"] = int(_num(grid[0], f"layers[{i}].grid[0]", 1, 32))
+                L["_rows"] = int(_num(grid[1], f"layers[{i}].grid[1]", 1, 32))
+                ncell = L["_cols"] * L["_rows"]
+                L["_count"] = int(_num(L.get("count", ncell),
+                                       f"layers[{i}].count", 1, ncell))
+                L["_fps"] = _num(L.get("fps", 12), f"layers[{i}].fps", 1, 60)
             if kind == "fireworks":
                 L["_launches"] = self._launches(i, L)
             if kind == "sprite" and L.get("clip"):
@@ -1726,6 +1740,35 @@ class Scene:
             mask = Image.new("L", im.size, int(255 * a))
         self._frame_img.paste(im, (int(cx - wz / 2 + panx), int(cy - hz / 2)), mask)
 
+    def _draw_spritesheet(self, d, g, t, a, L):
+        # Free game sprite sheets (and future canvas-baked sequences) as an
+        # animated layer — one media file carries every frame in a grid, so a
+        # long effect travels as a single image import instead of N files.
+        key = ("sheet", L["_path"])
+        cache = getattr(self, "_img_cache", None)
+        if cache is None:
+            cache = self._img_cache = {}
+        if key not in cache:
+            cache[key] = Image.open(L["_path"]).convert("RGBA")
+        src = cache[key]
+        cols, rows, count = L["_cols"], L["_rows"], L["_count"]
+        cw, ch = src.width // cols, src.height // rows
+        if cw < 2 or ch < 2:
+            raise SceneError("spritesheet grid leaves cells under 2px — check cols/rows")
+        el = max(0.0, t - L["from"])
+        idx = int(el * L["_fps"])
+        idx = (idx % count) if L.get("loop", True) else min(idx, count - 1)
+        cell = src.crop(((idx % cols) * cw, (idx // cols) * ch,
+                         (idx % cols + 1) * cw, (idx // cols + 1) * ch))
+        w = self.SW * float(L.get("w", 0.4))
+        h = w * ch / cw
+        im = cell.resize((max(2, int(w)), max(2, int(h))), Image.LANCZOS)
+        if a < 1:
+            im.putalpha(im.getchannel("A").point(lambda v: int(v * a)))
+        cx, cy = self._at(L, [0.5, 0.5])
+        self._frame_img.paste(im, (int(cx - im.width / 2),
+                                   int(cy - im.height / 2)), im)
+
     def _draw_shake(self, d, g, t, a, L):
         pass  # applied as a whole-frame offset in draw_frame
 
@@ -2358,6 +2401,11 @@ def action_assets(_inp):
                     "staggered time-table rows; highlight = amber emphasis + tag badge",
             "image": "{media, at?, w?, rounded?, kenburns?:{zoom, panx}} a picture from "
                      "the media store with optional Ken Burns drift",
+            "spritesheet": "{media, grid:[cols,rows], count?, fps?, at?, w?, loop?} "
+                           "an animated frame-grid image — cells advance "
+                           "left-to-right, top-to-bottom at fps (default 12) and "
+                           "loop. Free game sprite sheets from the media store work "
+                           "as-is; count trims unused trailing cells",
             "fireworks": "{density?} launching rockets and radial bursts",
             "hearts": "{at?} floating hearts",
             "confetti": "{at?} one confetti burst at `from`",
@@ -2823,6 +2871,36 @@ def action_selftest():
         mv_note = f"{type(e).__name__}: {e}"
     ck("a move act carries a sprite across the screen and holds",
        "centroid shifts right", mv_note, mv_ok)
+
+    sh_note, sh_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        shimg = os.path.join(OUT_DIR, "selftest-sheet.png")
+        sheet = Image.new("RGBA", (200, 200), (0, 0, 0, 255))
+        dd = ImageDraw.Draw(sheet)
+        for ci, col in enumerate([(220, 40, 40), (40, 200, 60),
+                                  (60, 80, 220), (230, 200, 40)]):
+            x, y = (ci % 2) * 100, (ci // 2) * 100
+            dd.rectangle([x, y, x + 99, y + 99], fill=(*col, 255))
+        sheet.save(shimg)
+        scs = Scene({"action": "render", "duration": 3.0, "quality": "draft",
+                     "size": "1080x1080",
+                     "layers": [{"kind": "spritesheet", "media": shimg,
+                                 "grid": [2, 2], "fps": 2, "from": 0, "to": 3}]})
+        def cpx(tq):
+            return scs.draw_frame(tq)[540, 540].astype(int)
+        p1, p2, p3 = cpx(0.6), cpx(1.6), cpx(2.2)
+        # fps 2: t=0.6 -> cell 1 (green), t=1.6 -> cell 3 (yellow),
+        # t=2.2 -> index 4 wraps to cell 0 (red) = the loop is proven
+        sh_ok = (p1[1] > p1[0] + 60 and p1[1] > p1[2] + 60
+                 and p2[0] > 150 and p2[1] > 150 and p2[2] < 120
+                 and p3[0] > p3[1] + 60 and p3[0] > p3[2] + 60)
+        sh_note = f"center px g={list(p1)} y={list(p2)} r={list(p3)}"
+        os.remove(shimg)
+    except Exception as e:  # noqa: BLE001
+        sh_note = f"{type(e).__name__}: {e}"
+    ck("a spritesheet layer advances cells at fps and loops",
+       "green -> yellow -> red at the center", sh_note, sh_ok)
 
     m3_note, m3_ok = "", False
     try:
