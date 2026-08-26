@@ -240,6 +240,21 @@ pub fn active_session_for_conv(conv_id: &str) -> Option<BuildSession> {
         .cloned()
 }
 
+/// Freshness window for orphan adoption. The legitimate orphan — a CLI one-shot build whose card
+/// must land on the very turn that ran it — was updated seconds-to-minutes before finalize
+/// (advance_build to Implement happens inside that same turn; a long implement runs ~13 min).
+/// A spent session from an earlier CLI run (page saved, but no next turn ever came to fold it)
+/// is hours old; adopting it paints a zombie 구현 card onto an unrelated conversation AND the
+/// frontend's build-card grouping swallows that message's suggestion chips (measured 2026-08-26:
+/// a 09:14 orphan rode an 11:28 weather turn — the plan's ✓실행 chip never rendered).
+const ADOPT_FRESH_MS: u64 = 30 * 60 * 1000;
+
+fn orphan_adoptable(s: &BuildSession, now: u64) -> bool {
+    s.status == BuildStatus::Active
+        && s.conv_id.is_none()
+        && now.saturating_sub(s.updated_at) < ADOPT_FRESH_MS
+}
+
 /// Bind the most-recent orphan (conv_id=None) Active session to this conversation, then return it.
 ///
 /// **Admin-only fallback — the caller MUST NOT invoke this for hub turns.** start_build on the admin CLI
@@ -255,9 +270,10 @@ pub fn adopt_orphan_for_conv(conv_id: &str) -> Option<BuildSession> {
     }
     let mut map = store_lock().lock().ok()?;
     cleanup_expired(&mut map);
+    let now = now_ms();
     let orphan_id = map
         .values()
-        .filter(|s| s.status == BuildStatus::Active && s.conv_id.is_none())
+        .filter(|s| orphan_adoptable(s, now))
         .max_by_key(|s| s.created_at)
         .map(|s| s.id.clone())?;
     let s = map.get_mut(&orphan_id)?;
@@ -466,5 +482,53 @@ BEFORE editing the HTML and keep the checklist satisfied (responsive/canvas fit,
 **save_page with the SAME slug is the final action — call it and STOP. Do NOT call advance_build after \
 save_page** (the modify completes when the user approves the page)."
             .to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sess(status: BuildStatus, conv: Option<&str>, updated_at: u64) -> BuildSession {
+        BuildSession {
+            id: "build_t".into(),
+            conv_id: conv.map(String::from),
+            request: "r".into(),
+            tier: None,
+            mode: BuildMode::Create,
+            target_slug: None,
+            step: BuildStep::Implement,
+            status,
+            step_outputs: Default::default(),
+            awaiting_user_input: false,
+            auto_advance: false,
+            created_at: updated_at,
+            updated_at,
+        }
+    }
+
+    #[test]
+    fn fresh_orphan_is_adoptable() {
+        let now = 10_000_000;
+        assert!(orphan_adoptable(&sess(BuildStatus::Active, None, now - 60_000), now));
+    }
+
+    #[test]
+    fn stale_orphan_is_not_adopted() {
+        // The measured incident: a 2h14m-old spent CLI session must not ride a new turn.
+        let now = 10_000_000_000;
+        let stale = sess(BuildStatus::Active, None, now - 2 * 60 * 60 * 1000);
+        assert!(!orphan_adoptable(&stale, now));
+        // Boundary: just inside the window still adopts (long one-shot implements run ~13 min).
+        assert!(orphan_adoptable(&sess(BuildStatus::Active, None, now - ADOPT_FRESH_MS + 1), now));
+        assert!(!orphan_adoptable(&sess(BuildStatus::Active, None, now - ADOPT_FRESH_MS), now));
+    }
+
+    #[test]
+    fn bound_or_finished_sessions_are_never_orphans() {
+        let now = 10_000_000;
+        assert!(!orphan_adoptable(&sess(BuildStatus::Active, Some("conv-x"), now), now));
+        assert!(!orphan_adoptable(&sess(BuildStatus::Completed, None, now), now));
+        assert!(!orphan_adoptable(&sess(BuildStatus::Abandoned, None, now), now));
     }
 }
