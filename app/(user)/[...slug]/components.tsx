@@ -99,6 +99,7 @@ const TYPE_ALIAS: Record<string, string> = {
   listening: 'Listening', lc: 'Listening',
   karaoke: 'Karaoke', sing_along: 'Karaoke', singalong: 'Karaoke',
   player: 'Player', audio: 'Player', audio_player: 'Player',
+  video: 'Player', video_player: 'Player',
   live_feed: 'LiveFeed', livefeed: 'LiveFeed', live_chart: 'LiveChart', livechart: 'LiveChart',
   live_stock_chart: 'LiveStockChart', livestockchart: 'LiveStockChart',
   function_plot: 'FunctionPlot', functionplot: 'FunctionPlot', fplot: 'FunctionPlot',
@@ -853,7 +854,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
     case 'Karaoke':       return <KaraokeComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url ?? p.mrUrl} guideUrl={p.guideUrl ?? p.guide} clickUrl={p.clickUrl ?? p.click} lrcUrl={p.lrcUrl ?? p.lrc_url ?? p.lyricsUrl} lrc={p.lrc ?? p.lyrics} offset={p.offset ?? p.lrcOffset} record={p.record} />;
-    case 'Player':        return <PlayerComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} guideUrl={p.guideUrl ?? p.guide} clickUrl={p.clickUrl ?? p.click} note={p.note ?? p.caption} tracks={p.tracks ?? p.playlist ?? p.items} />;
+    case 'Player':        return <PlayerComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} videoUrl={p.videoUrl ?? p.video} poster={p.poster ?? p.thumbnail} guideUrl={p.guideUrl ?? p.guide} clickUrl={p.clickUrl ?? p.click} note={p.note ?? p.caption} tracks={p.tracks ?? p.playlist ?? p.items} />;
     case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} image={p.image ?? p.photo ?? p.imageUrl} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} mode={p.mode ?? p.kind} view={p.view} />;
     // module 블록(페이지 전용) — 서버가 채운 _baked render blocks 를 그대로 재귀 렌더.
     // publish = save 시 bake / request = SSR 이 주입(page.tsx). 비어 있으면 조용히 없음.
@@ -1975,17 +1976,27 @@ function dictationDiff(script: string, typed: string) {
 
 // 소리 하나를 듣는 카드. 노래방이 아닌 렌더(연주곡)가 서는 자리다 — 그 전에는 파일 링크뿐이라
 // 스템이 둘이어도 화면이 그걸 한 곡으로 보여 줄 방법이 없었다.
-function PlayerComp({ title, audioUrl, guideUrl, clickUrl, note, tracks }: {
-  title?: string; audioUrl?: string; guideUrl?: string; clickUrl?: string; note?: string;
-  /** 재생목록 — 두 곡부터 목록 UI 가 선다. 한 곡짜리 목록은 단일 재생과 같다. */
-  tracks?: Array<{ title?: string; audioUrl?: string; url?: string; src?: string }>;
+// 확장자로 영상 판별 — videoUrl 로 명시하면 이 판별은 건너뛴다. 미디어 창고 URL 이 쿼리를
+// 달고 올 수 있어 끝만 보지 않는다.
+const PLAYER_VIDEO_RE = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i;
+
+function PlayerComp({ title, audioUrl, videoUrl, poster, guideUrl, clickUrl, note, tracks }: {
+  title?: string; audioUrl?: string; videoUrl?: string; poster?: string;
+  guideUrl?: string; clickUrl?: string; note?: string;
+  /** 재생목록 — 두 곡부터 목록 UI 가 선다. 한 곡짜리 목록은 단일 재생과 같다.
+   *  오디오·비디오 트랙이 한 목록에 섞여도 된다(같은 transport, 화면만 있고 없고). */
+  tracks?: Array<{ title?: string; audioUrl?: string; videoUrl?: string; poster?: string; url?: string; src?: string }>;
 }) {
   // ── 재생목록 상태 ─────────────────────────────────────────────────────────
   // 순서는 셔플이 정하고, 끝은 반복이 정한다. 한곡 반복은 재생기 자신의 전체반복 버튼이
   // 이미 한다(element loop 가 켜져 있으면 ended 가 안 오므로 목록도 자연히 안 넘어간다).
   const list = useMemo(() =>
     (Array.isArray(tracks) ? tracks : [])
-      .map((t, i) => ({ src: t?.audioUrl ?? t?.url ?? t?.src ?? '', title: t?.title || `트랙 ${i + 1}` }))
+      .map((t, i) => {
+        const src = t?.videoUrl ?? t?.audioUrl ?? t?.url ?? t?.src ?? '';
+        return { src, title: t?.title || `트랙 ${i + 1}`,
+                 video: !!t?.videoUrl || PLAYER_VIDEO_RE.test(src), poster: t?.poster };
+      })
       .filter((t) => t.src),
     [tracks]);
   const [idx, setIdx] = useState(0);
@@ -2061,6 +2072,7 @@ function PlayerComp({ title, audioUrl, guideUrl, clickUrl, note, tracks }: {
         )}
         <div className="px-3 pb-2 pt-1">
           <AudioTransport src={cur.src} audioRef={playerRef} onEnded={autoNext}
+            video={cur.video} poster={cur.poster}
             downloads={[{ href: cur.src, label: '저장' }]} />
           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
             <button type="button" onClick={stepPrev} className={pill(false)} title="이전 곡">◀ 이전</button>
@@ -2089,9 +2101,11 @@ function PlayerComp({ title, audioUrl, guideUrl, clickUrl, note, tracks }: {
     );
   }
 
-  const src = audioUrl ?? list[0]?.src;
+  const src = videoUrl ?? audioUrl ?? list[0]?.src;
   if (!src) return null;
-  const stems = [
+  const isVideo = !!videoUrl || list[0]?.video || PLAYER_VIDEO_RE.test(src);
+  // 스템은 오디오 전용 — 영상엔 가이드·박자를 얹을 일이 없다(sing 산출물의 어휘).
+  const stems = isVideo ? [] : [
     ...(guideUrl ? [{ src: guideUrl, label: '가이드', title: '노래 선율을 부는 악기로 얹습니다' }] : []),
     ...(clickUrl ? [{ src: clickUrl, label: '박자', title: '매 박 클릭, 강박은 벨' }] : []),
   ];
@@ -2101,7 +2115,7 @@ function PlayerComp({ title, audioUrl, guideUrl, clickUrl, note, tracks }: {
         <div className="px-3 pt-2.5 pb-1 text-[13px] font-semibold text-slate-700 break-keep">{title}</div>
       )}
       <div className="px-3 pb-2 pt-1">
-        <AudioTransport src={src} stems={stems}
+        <AudioTransport src={src} video={isVideo} poster={poster ?? list[0]?.poster} stems={stems}
           downloads={[{ href: src, label: '저장' },
                       ...(guideUrl ? [{ href: guideUrl, label: '가이드 저장' }] : []),
                       ...(clickUrl ? [{ href: clickUrl, label: '박자 저장' }] : [])]} />

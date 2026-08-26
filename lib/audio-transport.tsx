@@ -64,9 +64,16 @@ export function AudioTransport({
   src, audioRef: outerRef, onTime, onDur, onEnded, study = true, theme = 'plain', snapTo = [],
   downloads = [], stems: pStems, guideSrc, guideLabel = '가이드',
   abA: pAbA, abB: pAbB, setAbA: pSetAbA, setAbB: pSetAbB, preload = 'metadata',
+  video = false, poster,
   children,
 }: {
   src: string;
+  /** 영상 파일이면 같은 기계에 화면만 얹는다 — HTMLVideoElement 도 HTMLMediaElement 라
+   *  재생·배속·볼륨·전체반복·A-B 가 전부 그대로 동작한다. 컨트롤은 우리 막대 하나(네이티브
+   *  controls 는 브라우저마다 다르고 A-B 가 없다). 화면 탭 = 재생/일시정지. */
+  video?: boolean;
+  /** 표지 그림 — 영상이면 첫 화면, 음악이면 앨범 아트처럼 막대 위에 선다. */
+  poster?: string;
   /** 부모가 element 를 만져야 할 때만(노래방 녹음이 WebAudio 로 물린다). 없으면 자기가 든다. */
   audioRef?: React.RefObject<HTMLAudioElement | null>;
   onTime?: (t: number) => void;
@@ -342,7 +349,21 @@ export function AudioTransport({
                   padding: th.pad, borderWidth: th.border === 'transparent' ? 0 : 1,
                   borderStyle: 'solid' } as React.CSSProperties}>
       <style>{TRANSPORT_CSS}</style>
-      <audio ref={audioRef} src={src} preload={preload} className="hidden" />
+      {video ? (
+        // 세로 쇼츠가 채팅·페이지를 삼키지 않게 높이를 캡한다 — 70vh 는 폰에서 세로 영상의
+        // 자연 높이와 겹쳐 캡이 안 보였다(8/26 실측, file-card 와 같은 값).
+        <video ref={audioRef as unknown as React.RefObject<HTMLVideoElement>} src={src}
+          preload={preload} poster={poster} playsInline onClick={toggle}
+          className="block w-full cursor-pointer rounded-lg bg-black object-contain max-h-[45vh] sm:max-h-[480px] mb-1.5" />
+      ) : (
+        <>
+          {poster && (
+            // eslint-disable-next-line @next/next/no-img-element -- 미디어 창고 임의 URL 이라 최적화 대상 아님
+            <img src={poster} alt="" className="block w-full rounded-lg object-contain max-h-[45vh] sm:max-h-[300px] mb-1.5" />
+          )}
+          <audio ref={audioRef} src={src} preload={preload} className="hidden" />
+        </>
+      )}
       <span className="flex items-center gap-1" style={{ background: th.bar, borderRadius: th.barRadius, padding: th.barPad }}>
         <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'}
           className={iconBtn} style={{ color: th.accent }}>

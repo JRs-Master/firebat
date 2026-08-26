@@ -3807,8 +3807,8 @@
   {
     "name": "player",
     "componentType": "Player",
-    "description": "One audio file with a real transport — play, position, volume, speed, whole-track repeat and A-B section repeat — plus a save menu. Use it for a rendered piece that has no lyrics to follow; with lyrics use `karaoke` instead. guideUrl adds a second stem the listener can switch on and off while the first keeps playing. Give `tracks` (2+ entries) instead of audioUrl for a playlist: a track list with shuffle, whole-list repeat, prev/next and auto-advance.",
-    "semanticText": "재생기 플레이어 오디오 audio player 음원 듣기 연주 감상 배속 구간반복 AB반복 볼륨 저장 내려받기 가이드 스템 stem 보컬 가이드 minus one 반주 메트로놈 박자 클릭 metronome click beat 박치 재생목록 playlist 연속재생 여러 곡 앨범 셔플 shuffle 랜덤재생 random 전체 반복 repeat",
+    "description": "One audio OR video file with a real transport — play, position, volume, speed, whole-track repeat and A-B section repeat — plus a save menu. Video files (mp4/webm — give videoUrl, or any track URL with a video extension) show the picture above the same transport, height-capped so a portrait short never swallows the page; audio with a `poster` shows the cover art. Use it for a rendered piece that has no lyrics to follow; with lyrics use `karaoke` instead. guideUrl adds a second stem the listener can switch on and off while the first keeps playing (audio only). Give `tracks` (2+ entries) instead of audioUrl for a playlist: a track list with shuffle, whole-list repeat, prev/next and auto-advance — audio and video tracks can share one list.",
+    "semanticText": "재생기 플레이어 오디오 audio player 음원 듣기 연주 감상 배속 구간반복 AB반복 볼륨 저장 내려받기 가이드 스템 stem 보컬 가이드 minus one 반주 메트로놈 박자 클릭 metronome click beat 박치 재생목록 playlist 연속재생 여러 곡 앨범 셔플 shuffle 랜덤재생 random 전체 반복 repeat 비디오 영상 동영상 video mp4 쇼츠 shorts 영상 재생 무비 movie 썸네일 표지 poster",
     "propsSchema": {
       "type": "object",
       "synonyms": {
@@ -3820,7 +3820,9 @@
         "click": "clickUrl",
         "metronome": "clickUrl",
         "playlist": "tracks",
-        "items": "tracks"
+        "items": "tracks",
+        "video": "videoUrl",
+        "thumbnail": "poster"
       },
       "properties": {
         "title": {
@@ -3833,6 +3835,20 @@
         "audioUrl": {
           "type": "string",
           "description": "the audio URL (the file a render returned in data.media)"
+        },
+        "videoUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the video URL (mp4/webm) — the picture shows above the transport, height-capped. A video extension on audioUrl works too; videoUrl just makes it explicit."
+        },
+        "poster": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "cover image URL — first frame for a video, album art above the bar for audio"
         },
         "guideUrl": {
           "type": [
@@ -3853,7 +3869,7 @@
             "array",
             "null"
           ],
-          "description": "playlist — [{title, audioUrl}, …]. With 2+ entries the card shows the track list with shuffle, whole-list repeat, prev/next and auto-advance; audioUrl and the stem props are then ignored. Track repeat stays on the transport's own repeat button.",
+          "description": "playlist — [{title, audioUrl|videoUrl, poster?}, …]. With 2+ entries the card shows the track list with shuffle, whole-list repeat, prev/next and auto-advance; audioUrl and the stem props are then ignored. Audio and video tracks mix freely in one list. Track repeat stays on the transport's own repeat button.",
           "items": {
             "type": "object",
             "properties": {
@@ -3867,6 +3883,20 @@
               "audioUrl": {
                 "type": "string",
                 "description": "the audio URL of this track"
+              },
+              "videoUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the video URL of this track — the picture shows for this track only"
+              },
+              "poster": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "cover image for this track"
               }
             }
           }
