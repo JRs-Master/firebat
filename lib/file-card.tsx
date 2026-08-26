@@ -48,11 +48,12 @@ export function VideoFileCard({ href, name, ext }: { href: string; name: string;
         <span className="min-w-0 flex-1 text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
         <a className="shrink-0 text-slate-400 hover:text-slate-600" href={href} download title="저장"><Download size={14} /></a>
       </span>
-      {/* 세로(쇼츠) 영상이 폭 기준으로만 잡히면 448px 폭 × ~800px 높이로 채팅을 삼킨다 —
+      {/* 세로(쇼츠) 영상이 폭 기준으로만 잡히면 카드 폭 × ~2배 높이로 채팅을 삼킨다 —
           높이 상한 + object-contain 이 표준 UX (세로는 필러박스, 가로는 그대로).
-          모바일 = 뷰포트 비례(70vh), sm 이상 = 480px 캡. */}
+          모바일 캡은 45vh — 70vh 는 폰에서 세로 영상의 자연 높이와 거의 같아
+          "걸려도 안 바뀐 것처럼" 보였다(실측 2026-08-26). sm 이상 = 480px. */}
       <video controls preload="metadata" playsInline
-        className="mt-2 w-full rounded-lg bg-black object-contain max-h-[70vh] sm:max-h-[480px]"
+        className="mt-2 w-full rounded-lg bg-black object-contain max-h-[45vh] sm:max-h-[480px]"
         src={href} />
     </span>
   );
