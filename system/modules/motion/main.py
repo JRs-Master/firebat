@@ -58,6 +58,24 @@ def eob(x):  # easeOutBack — the springy overshoot
     c1 = 1.70158
     return 1 + (c1 + 1) * (x - 1) ** 3 + c1 * (x - 1) ** 2
 
+_EASE_NAMES = {"smooth", "snap", "overshoot", "anticipate"}
+
+def ease2d(name, x):
+    """Cartoon easing. snap arrives by 60% of the window and holds (pose-to-pose
+    timing), overshoot springs past and settles, anticipate pulls back before
+    launching. May leave [0,1] on purpose — blenders that must stay bounded
+    clamp on their side."""
+    x = clamp01(x)
+    if name == "snap":
+        return 1 - (1 - min(1.0, x / 0.6)) ** 5
+    if name == "overshoot":
+        return eob(x)
+    if name == "anticipate":
+        if x < 0.28:
+            return -0.18 * math.sin(math.pi * x / 0.28)
+        return eob((x - 0.28) / 0.72)
+    return eo3(x)
+
 def win(t, a, b, fi=0.4, fo=0.4):
     """Visibility alpha inside [a,b] with eased fade-in/out."""
     if t < a or t > b:
@@ -630,6 +648,106 @@ def list_builtin_clips():
         return []
 
 
+# ── 2D keypose cycles ────────────────────────────────────────────────────────
+# Hand-keyed cartoon cycles over the canonical bone names. Unlike mocap these
+# read as drawn animation: distinct key poses, snappy arrivals, holds (duplicate
+# keys), and squash. Degrees clockwise-positive, dy in viewBox units (neg = up),
+# sy = vertical squash factor. Non-loop presets must end on a phase-1.0 key.
+_ANIMS_2D = {
+    "walk": {"dur": 0.8, "loop": True, "keys": [
+        (0.0, {"ease": "snap", "dy": 0.4, "bones": {
+            "thighR": -26, "shinR": 6, "footR": -6, "thighL": 22, "shinL": 28,
+            "upperArmR": 36, "foreArmR": 22, "upperArmL": -36, "foreArmL": -24,
+            "spine": -3}}),
+        (0.25, {"ease": "smooth", "dy": -1.2, "bones": {
+            "thighR": -4, "shinR": 34, "thighL": 2, "shinL": 6,
+            "upperArmR": 6, "upperArmL": -6, "spine": -2}}),
+        (0.5, {"ease": "snap", "dy": 0.4, "bones": {
+            "thighL": -26, "shinL": 6, "footL": -6, "thighR": 22, "shinR": 28,
+            "upperArmL": 36, "foreArmL": 22, "upperArmR": -36, "foreArmR": -24,
+            "spine": -3}}),
+        (0.75, {"ease": "smooth", "dy": -1.2, "bones": {
+            "thighL": -4, "shinL": 34, "thighR": 2, "shinR": 6,
+            "upperArmL": 6, "upperArmR": -6, "spine": -2}}),
+    ]},
+    "run": {"dur": 0.55, "loop": True, "keys": [
+        (0.0, {"ease": "snap", "dy": 0.8, "sy": 0.97, "bones": {
+            "thighR": -48, "shinR": 14, "thighL": 40, "shinL": 55,
+            "upperArmR": 38, "foreArmR": 42, "upperArmL": -38, "foreArmL": -46,
+            "spine": -10, "neck": 3}}),
+        (0.25, {"ease": "smooth", "dy": -2.4, "sy": 1.04, "bones": {
+            "thighR": -8, "shinR": 50, "thighL": 4, "shinL": 20,
+            "upperArmR": 8, "foreArmR": 40, "upperArmL": -8, "foreArmL": -40,
+            "spine": -9}}),
+        (0.5, {"ease": "snap", "dy": 0.8, "sy": 0.97, "bones": {
+            "thighL": -48, "shinL": 14, "thighR": 40, "shinR": 55,
+            "upperArmL": 38, "foreArmL": 42, "upperArmR": -38, "foreArmR": -46,
+            "spine": -10, "neck": 3}}),
+        (0.75, {"ease": "smooth", "dy": -2.4, "sy": 1.04, "bones": {
+            "thighL": -8, "shinL": 50, "thighR": 4, "shinR": 20,
+            "upperArmL": 8, "foreArmL": 40, "upperArmR": -8, "foreArmR": -40,
+            "spine": -9}}),
+    ]},
+    "idle": {"dur": 3.0, "loop": True, "keys": [
+        (0.0, {"ease": "smooth", "dy": 0.0, "sy": 1.0, "bones": {
+            "spine": 0, "neck": 0, "upperArmR": 0, "upperArmL": 0}}),
+        (0.5, {"ease": "smooth", "dy": 0.7, "sy": 0.985, "bones": {
+            "spine": 1.6, "neck": -2, "upperArmR": 2.5, "upperArmL": -2.5}}),
+    ]},
+    "punch": {"dur": 0.9, "loop": False, "keys": [
+        (0.0, {"ease": "smooth", "bones": {}}),
+        (0.33, {"ease": "smooth", "dy": 0.5, "sy": 0.96, "bones": {
+            "upperArmR": 34, "foreArmR": 58, "spine": 9, "neck": 2,
+            "thighR": 6, "thighL": -4}}),
+        (0.46, {"ease": "snap", "dy": 0.2, "sy": 1.02, "bones": {
+            "upperArmR": -82, "foreArmR": -4, "upperArmL": 18, "foreArmL": 30,
+            "spine": -13, "neck": -4, "thighR": -8, "thighL": 10}}),
+        (0.62, {"ease": "smooth", "dy": 0.2, "sy": 1.0, "bones": {
+            "upperArmR": -82, "foreArmR": -4, "upperArmL": 18, "foreArmL": 30,
+            "spine": -13, "neck": -4, "thighR": -8, "thighL": 10}}),
+        (1.0, {"ease": "smooth", "bones": {}}),
+    ]},
+    "dance": {"dur": 0.9, "loop": True, "keys": [
+        (0.0, {"ease": "overshoot", "dy": 0.6, "sy": 0.96, "bones": {
+            "upperArmR": -150, "foreArmR": -18, "upperArmL": -26, "foreArmL": -38,
+            "spine": -5, "neck": -3, "thighR": -4, "thighL": 4}}),
+        (0.25, {"ease": "smooth", "dy": -1.8, "sy": 1.05, "bones": {
+            "upperArmR": -95, "foreArmR": -25, "upperArmL": -95, "foreArmL": -25,
+            "spine": 0}}),
+        (0.5, {"ease": "overshoot", "dy": 0.6, "sy": 0.96, "bones": {
+            "upperArmL": -150, "foreArmL": -18, "upperArmR": -26, "foreArmR": -38,
+            "spine": 5, "neck": 3, "thighL": -4, "thighR": 4}}),
+        (0.75, {"ease": "smooth", "dy": -1.8, "sy": 1.05, "bones": {
+            "upperArmR": -95, "foreArmR": -25, "upperArmL": -95, "foreArmL": -25,
+            "spine": 0}}),
+    ]},
+}
+
+def _sample_anim(preset, ph):
+    """Sample a keypose cycle at phase ph -> (bones deg, dy units, sy)."""
+    keys = preset["keys"]
+    if preset["loop"]:
+        ph = ph % 1.0
+        seq = keys + [(1.0 + keys[0][0], keys[0][1])]
+    else:
+        ph = clamp01(ph)
+        seq = keys
+    k0 = seq[0]
+    for k1 in seq[1:]:
+        if ph <= k1[0] or k1 is seq[-1]:
+            span = max(1e-6, k1[0] - k0[0])
+            e = ease2d(k1[1].get("ease", "smooth"), (ph - k0[0]) / span)
+            b0 = k0[1].get("bones") or {}
+            b1 = k1[1].get("bones") or {}
+            bones = {n: b0.get(n, 0.0) + (b1.get(n, 0.0) - b0.get(n, 0.0)) * e
+                     for n in set(b0) | set(b1)}
+            dy = k0[1].get("dy", 0.0) + (k1[1].get("dy", 0.0) - k0[1].get("dy", 0.0)) * e
+            sy = k0[1].get("sy", 1.0) + (k1[1].get("sy", 1.0) - k0[1].get("sy", 1.0)) * e
+            return bones, dy, sy
+        k0 = k1
+    last = seq[-1][1]
+    return dict(last.get("bones") or {}), last.get("dy", 0.0), last.get("sy", 1.0)
+
 def _clip_path(decl):
     name = str(decl.get("name") or "").strip()
     if name:
@@ -1132,14 +1250,25 @@ class Scene:
         pose_acts = sorted((act for act in L.get("acts") or []
                             if str(act.get("do")) == "pose"),
                            key=lambda act: float(act.get("at", L["from"])))
+        pose_sy = 1.0
         for act in pose_acts:
             at = float(act.get("at", L["from"]))
             if t < at:
                 break
             dur = max(0.05, float(act.get("for", 0.4)))
-            f = eo3(clamp01((t - at) / dur))
+            ease = str(act.get("ease", "smooth"))
+            if ease not in _EASE_NAMES:
+                raise SceneError(f"pose ease must be one of {sorted(_EASE_NAMES)}")
+            f = ease2d(ease, (t - at) / dur)
+            if "squash" in act:
+                sq = float(act["squash"])
+                if not 0.4 <= sq <= 1.6:
+                    raise SceneError("pose squash must be 0.4..1.6")
+                pose_sy = pose_sy + (sq - pose_sy) * clamp01(f)
             tgt = act.get("bones")
             if not isinstance(tgt, dict) or not tgt:
+                if "squash" in act:
+                    continue
                 raise SceneError("pose act needs bones:{name: degrees}")
             for bn, deg in tgt.items():
                 if bn not in bones_decl:
@@ -1148,6 +1277,43 @@ class Scene:
                         f"{sorted(bones_decl) if bones_decl else 'no bones'}")
                 cur = bone_angles.get(bn, 0.0)
                 bone_angles[bn] = cur + (math.radians(float(deg)) - cur) * f
+        anim_dy, anim_sy = 0.0, 1.0
+        anim_acts = sorted((act for act in L.get("acts") or []
+                            if str(act.get("do")) == "anim"),
+                           key=lambda act: float(act.get("at", L["from"])))
+        for act in anim_acts:
+            nm = str(act.get("name", ""))
+            preset = _ANIMS_2D.get(nm)
+            if preset is None:
+                raise SceneError(f"anim name must be one of {sorted(_ANIMS_2D)}")
+            if not bones_decl:
+                raise SceneError(
+                    f"sprite {name!r} has an anim act but the asset declares no "
+                    "bones — declare bones and tag parts with bone:'...' first")
+            speed = float(act.get("speed", 1.0))
+            if not 0.1 <= speed <= 4.0:
+                raise SceneError("anim speed must be 0.1..4")
+            at = float(act.get("at", L["from"]))
+            base_dur = preset["dur"] / speed
+            forv = float(act.get("for", 2.0 if preset["loop"] else base_dur))
+            w = win(t, at, at + forv, 0.2, 0.25)
+            if w <= 0:
+                continue
+            bones_t, dy_t, sy_t = _sample_anim(preset, (t - at) / base_dur)
+            drove = False
+            for bn, deg in bones_t.items():
+                if bn not in bones_decl:
+                    continue
+                drove = True
+                cur = bone_angles.get(bn, 0.0)
+                bone_angles[bn] = cur + (math.radians(deg) - cur) * w
+            if not drove and bones_t:
+                raise SceneError(
+                    f"anim {nm!r} drives none of this asset's bones — it keys the "
+                    "canonical names (upperArmR/L, foreArmR/L, thighR/L, shinR/L, "
+                    "footR/L, spine, neck)")
+            anim_dy += dy_t * w
+            anim_sy *= 1.0 + (sy_t - 1.0) * w
         clip = L.get("_clip")
         if clip:
             if not bones_decl:
@@ -1187,11 +1353,14 @@ class Scene:
                     to = act.get("to") or [0.7, 0.4]
                     point_s = pw
                     point_to = (clamp01(float(to[0])), clamp01(float(to[1])))
-            elif kind == "pose":
+            elif kind in ("pose", "anim"):
                 pass  # blended above, in timeline order
             else:
                 raise SceneError(
-                    f"sprite act {kind!r} — one of wave, talk, jump, point, pose")
+                    f"sprite act {kind!r} — one of wave, talk, jump, point, "
+                    "pose, anim")
+        sy *= pose_sy * anim_sy
+        jump_h += -anim_dy * 4.0 * s
         point_arm = None
         if point_s > 0 and point_to is not None and bones_decl:
             # a rig with an arm chain aims the arm itself at the target
@@ -1975,6 +2144,17 @@ def action_assets(_inp):
                     "frame, so any rig proportions work; paid mocap or your own BVH "
                     "plugs into media the same way",
         },
+        "anims2d": {
+            "builtin": sorted(_ANIMS_2D),
+            "what": "hand-keyed cartoon keypose cycles — act {do:'anim', name:"
+                    "'walk'|'run'|'idle'|'punch'|'dance', at, for?, speed?}. Loops "
+                    "run for `for` seconds (default 2), one-shots (punch) play once "
+                    "and settle. Same canonical bones as mocap clips, but distinct "
+                    "key poses with snappy timing, holds and squash — prefer this "
+                    "over clip for cutout/cartoon rigs (mocap projected to 2D reads "
+                    "limp). pose acts speak the same language via ease:'smooth'|"
+                    "'snap'|'overshoot'|'anticipate' and squash:0.4..1.6",
+        },
         "sprites": {
             "what": "any clip-art declaration by name — seeds ship with the module, "
                     "saved ones come from save_asset; both are the same grammar and "
@@ -1982,8 +2162,10 @@ def action_assets(_inp):
             "fields": {"at": "[x,y] of the feet (default [0.5,0.9])",
                        "scale": "1.0 default", "enter": "walk | peek | pop | none",
                        "lipsync": "true = talk acts follow audio.voice envelope",
-                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose', for, "
-                               "to:[x,y], bones:{name:deg}}] — point aims a presenter "
+                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose'|'anim', "
+                               "for, to:[x,y], bones:{name:deg}, ease?, squash?, "
+                               "name?}] — anim plays a built-in 2D keypose cycle "
+                               "(see anims2d); point aims a presenter "
                                "stick at the normalized target and taps it "
                                "(weather-caster style); a rig with upperArmR/foreArmR (or L) bones raises that arm to aim along the stick. pose eases declared bones to "
                                "the given angles (degrees, + = clockwise) and holds — "
@@ -2215,6 +2397,55 @@ def action_selftest():
         clip_note = f"{type(e).__name__}: {e}"
     ck("the built-in walk mocap parses and animates most bones",
        ">=10 bones, >=6 moving", clip_note, clip_ok)
+
+    an_note, an_ok = "", False
+    try:
+        b0, _, _ = _sample_anim(_ANIMS_2D["walk"], 0.0)
+        b5, _, s5 = _sample_anim(_ANIMS_2D["walk"], 0.5)
+        bp, _, _ = _sample_anim(_ANIMS_2D["punch"], 1.0)
+        snap_ok = abs(ease2d("snap", 0.6) - 1.0) < 1e-9             and ease2d("anticipate", 0.1) < 0
+        an_ok = (b0["thighR"] < 0 < b5["thighR"]
+                 and b0["thighL"] > 0 > b5["thighL"]
+                 and abs(bp.get("upperArmR", 99.0)) < 1e-9 and snap_ok)
+        an_note = f"walk thighR {b0['thighR']:.0f}/{b5['thighR']:.0f}, "                   f"punch settled={abs(bp.get('upperArmR', 99.0)) < 1e-9}, "                   f"snap@0.6={ease2d('snap', 0.6):.3f}"
+    except Exception as e:  # noqa: BLE001
+        an_note = f"{type(e).__name__}: {e}"
+    ck("2D keypose cycles: walk alternates legs, punch settles, snap eases",
+       "legs mirror at half phase", an_note, an_ok)
+
+    an2_note, an2_ok = "", False
+    try:
+        pr = [{"shape": "capsule", "ends": [[48, 40], [48, 58]], "width": 7,
+               "fill": [200, 120, 60], "bone": "thighR"},
+              {"shape": "capsule", "ends": [[52, 40], [52, 58]], "width": 7,
+               "fill": [200, 120, 60], "bone": "thighL"},
+              {"shape": "ellipse", "at": [50, 28], "size": [22, 26],
+               "fill": [200, 120, 60], "bone": "spine"}]
+        sv5 = action_save_asset({"name": "selftest-anim", "parts": pr,
+                                 "bones": {"spine": {"pivot": [50, 40]},
+                                           "thighR": {"pivot": [48, 40]},
+                                           "thighL": {"pivot": [52, 40]}}})
+        assert sv5.get("success"), sv5
+        os.remove(sv5["data"]["_mediaImport"]["path"])
+        sc5 = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                     "layers": [{"kind": "sprite", "name": "selftest-anim",
+                                 "from": 0, "to": 2, "enter": "none",
+                                 "acts": [{"at": 0, "do": "anim", "name": "walk",
+                                           "for": 2.0},
+                                          {"at": 0.2, "do": "pose", "for": 0.4,
+                                           "ease": "overshoot", "squash": 0.9,
+                                           "bones": {"spine": 6}}]}]})
+        fa = sc5.draw_frame(0.6)
+        fb = sc5.draw_frame(1.0)
+        moved = int(np.abs(fa.astype(int) - fb.astype(int)).sum())
+        warm = ((fa[:, :, 0].astype(int) - fa[:, :, 2].astype(int)) > 60).sum()
+        action_delete_asset({"name": "selftest-anim"})
+        an2_ok = warm > 3000 and moved > 100000
+        an2_note = f"warm px={int(warm)}, frame delta={moved}"
+    except Exception as e:  # noqa: BLE001
+        an2_note = f"{type(e).__name__}: {e}"
+    ck("an anim act renders and the cycle actually moves the rig between frames",
+       "visible + moving", an2_note, an2_ok)
 
     fx_note, fx_ok = "", False
     try:
