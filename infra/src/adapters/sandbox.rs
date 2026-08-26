@@ -163,6 +163,27 @@ impl PackageSpec {
         }
         &self.name
     }
+
+    /// npm 표기(`pkg@1.2.3`, `@scope/pkg@^0.1`)에서 버전을 뗀 패키지명 — 스코프 패키지는
+    /// 이름 자체가 `@` 로 시작하므로 **두 번째** `@` 부터가 버전이다.
+    fn npm_name(&self) -> &str {
+        let s = self.name.as_str();
+        let from = usize::from(s.starts_with('@'));
+        match s[from..].find('@') {
+            Some(i) => &s[..from + i],
+            None => s,
+        }
+    }
+
+    /// npm 핀(`pkg@1.2.3`)의 버전 부분 — `required_version`(pip `==`)의 npm 짝.
+    fn npm_required_version(&self) -> Option<String> {
+        let s = self.name.as_str();
+        let from = usize::from(s.starts_with('@'));
+        s[from..]
+            .find('@')
+            .map(|i| s[from + i + 1..].trim().to_string())
+            .filter(|v| !v.is_empty())
+    }
 }
 
 /// 런타임별 설치 안내 메시지 — 옛 TS INSTALL_GUIDES 1:1.
@@ -801,9 +822,6 @@ impl ProcessSandboxAdapter {
         python_modules: &Path,
         upgrade: bool,
     ) -> Option<String> {
-        let Some(status) = self.status.clone() else {
-            return None;
-        };
         let target_arg = python_modules.to_string_lossy().to_string();
         let display_name = pkg.display_name().to_string();
         let pkg_name = pkg.name.clone();
@@ -816,8 +834,47 @@ impl ProcessSandboxAdapter {
         let install_cmd = format!(
             "{pip} install --target \"{target_arg}\"{upgrade_flag} {install_target} --quiet"
         );
+        self.spawn_install_job(display_name, install_cmd, pkg.post_install.clone())
+            .await
+    }
 
-        let job_id = format!("install-{display_name}");
+    /// npm 패키지 1건 install — 모듈 폴더 자기 `node_modules` 에 앉힌다(`--prefix`).
+    /// workspace 공용 디렉토리가 아닌 이유: 서버의 `system/` 은 심링크라 node 의 상향
+    /// node_modules 탐색이 실경로 기준으로 걷고, 모듈 옆에 두면 그 변수 자체가 없다.
+    /// 업그레이드는 pip 와 같은 논리 — 핀을 떼고 최신을 요청한다.
+    async fn install_node_package(
+        &self,
+        pkg: &PackageSpec,
+        module_dir: &Path,
+        upgrade: bool,
+    ) -> Option<String> {
+        let name = pkg.npm_name().to_string();
+        let target = if upgrade { format!("{name}@latest") } else { pkg.name.clone() };
+        let dir = module_dir.to_string_lossy().to_string();
+        let install_cmd = format!(
+            "npm install --prefix \"{dir}\" --no-fund --no-audit --loglevel=error \"{target}\""
+        );
+        self.spawn_install_job(name, install_cmd, pkg.post_install.clone())
+            .await
+    }
+
+    /// 설치 job id — 스코프 npm 이름(`@napi-rs/canvas`)의 `/` 가 job id 에 들어가지 않게.
+    fn install_job_id(display: &str) -> String {
+        format!("install-{}", display.replace('/', "-"))
+    }
+
+    /// 설치 명령 1건을 background job 으로 — pip 와 npm 이 같은 몸통을 쓴다
+    /// (StatusManager 등록·중복 spawn skip·postInstall·i18n 메시지).
+    async fn spawn_install_job(
+        &self,
+        display_name: String,
+        install_cmd: String,
+        post_install: Option<String>,
+    ) -> Option<String> {
+        let Some(status) = self.status.clone() else {
+            return None;
+        };
+        let job_id = Self::install_job_id(&display_name);
 
         if let Some(existing) = status.get(&job_id) {
             use firebat_core::managers::status::JobStatusKind;
@@ -826,7 +883,6 @@ impl ProcessSandboxAdapter {
             }
         }
 
-        let post_install = pkg.post_install.clone();
         let meta = serde_json::json!({ "package": display_name });
         let start_msg = firebat_core::i18n::t(
             "core.install.in_progress",
@@ -945,6 +1001,21 @@ impl ProcessSandboxAdapter {
         if packages.is_empty() {
             return Vec::new();
         }
+        // The installer keys off the module's declared runtime — `packages` means pip
+        // for python modules and npm for node modules. Before this branch the axis was
+        // pip-only, which is why rhwp had to be vendored wholesale (7.4MB in git).
+        if Self::module_runtime(module_dir).as_deref() == Some("node") {
+            let mut job_ids = Vec::new();
+            for pkg in &packages {
+                if !upgrade && Self::node_installed_info(module_dir, pkg).0 {
+                    continue;
+                }
+                if let Some(job_id) = self.install_node_package(pkg, module_dir, upgrade).await {
+                    job_ids.push(job_id);
+                }
+            }
+            return job_ids;
+        }
         let Some(py) = get_working_python().await else {
             return Vec::new();
         };
@@ -965,6 +1036,29 @@ impl ProcessSandboxAdapter {
             }
         }
         job_ids
+    }
+
+    /// 모듈 선언 런타임 — config.json `runtime`. 못 읽으면 None(= python 취급).
+    fn module_runtime(module_dir: &Path) -> Option<String> {
+        let raw = std::fs::read_to_string(module_dir.join("config.json")).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        v.get("runtime").and_then(|r| r.as_str()).map(String::from)
+    }
+
+    /// node 패키지 설치 여부 + 버전 — 모듈 폴더 `node_modules/<name>/package.json`.
+    /// 스코프 이름(`@napi-rs/canvas`)의 `/` 는 Path::join 이 자연히 중첩 디렉토리로 푼다.
+    fn node_installed_info(module_dir: &Path, pkg: &PackageSpec) -> (bool, Option<String>) {
+        let p = module_dir
+            .join("node_modules")
+            .join(pkg.npm_name())
+            .join("package.json");
+        let Ok(raw) = std::fs::read_to_string(&p) else {
+            return (false, None);
+        };
+        let ver = serde_json::from_str::<serde_json::Value>(&raw)
+            .ok()
+            .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(String::from));
+        (true, ver)
     }
 
     /// 패키지 설치 여부 — `python_modules/{import_name}` 디렉토리 또는 `{import_name}.py` 존재 검사.
@@ -1055,13 +1149,25 @@ impl ProcessSandboxAdapter {
             return Vec::new();
         }
         let python_modules = self.workspace_root.join("python_modules");
+        let is_node = Self::module_runtime(module_dir).as_deref() == Some("node");
         let mut result = Vec::with_capacity(packages.len());
         for pkg in &packages {
-            let display = pkg.display_name().to_string();
-            let job_id = format!("install-{display}");
-            let required_version = pkg.required_version();
-            let (installed_disk, installed_version) =
-                Self::installed_info(&python_modules, pkg);
+            let display = if is_node {
+                pkg.npm_name().to_string()
+            } else {
+                pkg.display_name().to_string()
+            };
+            let job_id = Self::install_job_id(&display);
+            let required_version = if is_node {
+                pkg.npm_required_version()
+            } else {
+                pkg.required_version()
+            };
+            let (installed_disk, installed_version) = if is_node {
+                Self::node_installed_info(module_dir, pkg)
+            } else {
+                Self::installed_info(&python_modules, pkg)
+            };
             let (kind, error) = if let Some(status) = &self.status {
                 use firebat_core::managers::status::JobStatusKind;
                 if let Some(job) = status.get(&job_id) {
@@ -1095,8 +1201,9 @@ impl ProcessSandboxAdapter {
                 (PackageStatusKind::Missing, None)
             };
             // 설치된 패키지만 PyPI 체크 (미설치 = 업그레이드 의미 0). 1시간 캐시 적용으로
-            // 매 polling 시 network 호출 부담 차단.
-            let latest_version = if matches!(kind, PackageStatusKind::Installed) {
+            // 매 polling 시 network 호출 부담 차단. npm 레지스트리 최신 조회는 미구현 —
+            // node 패키지는 latest 없음(배지 대신 설치 버전만 표시).
+            let latest_version = if !is_node && matches!(kind, PackageStatusKind::Installed) {
                 fetch_latest_pypi_version(&display).await
             } else {
                 None
@@ -1152,7 +1259,9 @@ impl ProcessSandboxAdapter {
                 }
             }
         }
-        if let Ok(re) = regex::Regex::new(r#"Cannot find module '?([^'\s"]+)'?"#) {
+        // CJS says "Cannot find module", ESM says "Cannot find package" (ERR_MODULE_NOT_FOUND)
+        // — node modules here are .mjs, so the ESM wording is the one that actually appears.
+        if let Ok(re) = regex::Regex::new(r#"Cannot find (?:module|package) '?([^'\s"]+)'?"#) {
             if let Some(caps) = re.captures(err_msg) {
                 if let Some(m) = caps.get(1) {
                     let pkg = m.as_str();
@@ -2225,6 +2334,40 @@ mod tests {
     fn detect_missing_package_unrelated_message_returns_none() {
         let pkg = ProcessSandboxAdapter::detect_missing_package("ValueError: bad input");
         assert_eq!(pkg, None);
+    }
+
+    #[test]
+    fn detect_missing_package_node_esm_cannot_find_package() {
+        // ESM (.mjs) modules raise ERR_MODULE_NOT_FOUND with "package", not "module" —
+        // this is the wording that actually appears for a node module's npm dependency.
+        let pkg = ProcessSandboxAdapter::detect_missing_package(
+            "Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@napi-rs/canvas' \
+             imported from /opt/firebat/system/modules/snippets/index.mjs",
+        );
+        assert_eq!(pkg.as_deref(), Some("@napi-rs/canvas"));
+    }
+
+    #[test]
+    fn npm_name_strips_version_and_keeps_scope() {
+        let plain = PackageSpec { name: "left-pad@1.3.0".into(), post_install: None };
+        assert_eq!(plain.npm_name(), "left-pad");
+        assert_eq!(plain.npm_required_version().as_deref(), Some("1.3.0"));
+        let scoped = PackageSpec { name: "@napi-rs/canvas@0.1.80".into(), post_install: None };
+        assert_eq!(scoped.npm_name(), "@napi-rs/canvas");
+        assert_eq!(scoped.npm_required_version().as_deref(), Some("0.1.80"));
+        let unpinned = PackageSpec { name: "@napi-rs/canvas".into(), post_install: None };
+        assert_eq!(unpinned.npm_name(), "@napi-rs/canvas");
+        assert_eq!(unpinned.npm_required_version(), None);
+    }
+
+    #[test]
+    fn install_job_id_has_no_slash_for_scoped_npm_names() {
+        assert_eq!(
+            ProcessSandboxAdapter::install_job_id("@napi-rs/canvas"),
+            "install-@napi-rs-canvas"
+        );
+        // pip names never contain '/', so the python job ids are byte-identical to before
+        assert_eq!(ProcessSandboxAdapter::install_job_id("playwright"), "install-playwright");
     }
 
     #[test]
