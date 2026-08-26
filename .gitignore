@@ -58,3 +58,8 @@ __pycache__/
 # module-local runtime data (renders, saved assets, jobs) — created when a module
 # runs with cwd at its own dir (local testing); on the server data lives outside the repo
 system/modules/*/data/
+
+# npm install --prefix <module> artifacts — the declaration lives in config.json
+# `packages` (원본 하나); these are what the installer materializes, not source
+system/modules/*/package.json
+system/modules/*/package-lock.json

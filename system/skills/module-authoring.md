@@ -32,6 +32,9 @@ the declaration surface is missing something and that is a Firebat bug, not your
 - **config.json** — only `name`, `runtime` and `input` are needed. `description`, `tags`,
   `packages`, `output`, `secrets` and everything below are optional and add capability.
 - **Packages install on the module's first run**, so the first call is slow. That is normal.
+  `packages` follows the declared runtime: pip specs for python (`"numpy"`, `"requests==2.34.2"`),
+  npm specs for node (`"@napi-rs/canvas@1.0.8"` — installed into the module's own
+  `node_modules/`, so a bare `import` in index.mjs just resolves).
 
 ## Declaring actions — the ladder is free
 

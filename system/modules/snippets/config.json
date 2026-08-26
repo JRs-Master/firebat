@@ -6,9 +6,10 @@
   "providerType": "local",
   "capability": "code-snippets",
   "version": "0.1.0",
-  "description": "웹에서 얻은 시각 코드 조각을 이름 붙여 보관하는 코드 보관함 — 셰이더(GLSL)·canvas·ECharts 옵션·HTML 임베드를 작가·출처·라이선스와 함께 저장하고, 발행 페이지의 배경·이펙트·차트로 재호출한다. 실행은 보는 사람의 브라우저가 하고 이 모듈은 저장만 한다.",
-  "tags": ["셰이더", "코드 보관함", "캔버스 코드", "이펙트 배경", "shader", "snippet", "차트 코드"],
+  "description": "웹에서 얻은 시각 코드 조각을 이름 붙여 보관하고 굽는 코드 보관함 — 셰이더(GLSL)·canvas·ECharts 옵션·HTML 임베드를 작가·출처·라이선스와 함께 저장한다. canvas 조각은 서버에서 PNG 스틸·스프라이트시트로 렌더해(브라우저 없는 Skia) 문서·영상 배경 재료가 되고, glsl·echarts·html 은 발행 페이지에서 보는 브라우저가 실행한다.",
+  "tags": ["셰이더", "코드 보관함", "캔버스 코드", "이펙트 배경", "shader", "snippet", "차트 코드", "스프라이트시트"],
   "aliases": ["shaderlib", "snippet"],
+  "packages": ["@napi-rs/canvas@1.0.8"],
   "secrets": [],
   "actionCatalog": {
     "envelope": "{ \"action\": \"<id>\", <params flat at top level> }",
@@ -45,6 +46,22 @@
         "params": ["name"]
       },
       {
+        "id": "render",
+        "name": "스틸 굽기",
+        "description": "canvas 조각(draw(ctx,t,w,h) 계약)을 서버에서 PNG 한 장으로 굽는다 — 시각 t 를 주면 그 순간의 그림. 산출물은 미디어 창고로 반입돼 문서·페이지에 꽂는다. glsl 조각은 이 액션이 거부한다(페이지 전용).",
+        "domain": "제작",
+        "params": ["name", "code", "t", "size"],
+        "tags": ["캔버스 렌더", "스틸 이미지", "코드로 그림", "제너러티브 아트"]
+      },
+      {
+        "id": "sheet",
+        "name": "스프라이트시트 굽기",
+        "description": "canvas 조각을 프레임 격자 PNG 로 굽는다 — 칸마다 t 가 1/fps 씩 전진. 반입된 시트는 motion 씬의 spritesheet 레이어({grid, fps} 그대로)로 루프 재생돼 영상 배경·이펙트가 된다.",
+        "domain": "제작",
+        "params": ["name", "code", "grid", "fps", "cell"],
+        "tags": ["스프라이트시트", "영상 배경", "애니메이션 굽기", "프레임 시퀀스"]
+      },
+      {
         "id": "selftest",
         "name": "자가 진단",
         "description": "등록→검색→조회→삭제 왕복과 거부 경로(중복 이름·비정상 이름·모르는 종류)를 검사한다.",
@@ -67,7 +84,7 @@
       },
       "kind": {
         "type": "string",
-        "description": "[add|list] what the code is: glsl (a Shadertoy-style fragment shader — mainImage(out vec4, in vec2) with iTime/iResolution), canvas (a self-contained 2D piece that draws on a canvas context over time), echarts (an ECharts option object, or JS building one), html (a full self-contained embed). Kind decides which page wrapper the visual-snippets skill applies."
+        "description": "[add|list] what the code is: glsl (a Shadertoy-style fragment shader — mainImage(out vec4, in vec2) with iTime/iResolution), canvas (a 2D piece defining draw(ctx, t, w, h) — the only kind the server can also bake via render/sheet), echarts (an ECharts option object, or JS building one), html (a full self-contained embed, including canvas code that owns its own rAF loop). Kind decides which page wrapper the visual-snippets skill applies."
       },
       "code": {
         "type": "string",
@@ -100,6 +117,26 @@
       "limit": {
         "type": "number",
         "description": "[list] max rows, default 50."
+      },
+      "t": {
+        "type": "number",
+        "description": "[render] the moment in seconds handed to draw(ctx, t, w, h). Default 0."
+      },
+      "size": {
+        "type": "string",
+        "description": "[render] output size 'WxH', default 512x512, max 2048 per side."
+      },
+      "grid": {
+        "type": "array",
+        "description": "[sheet] [cols, rows] of the frame grid (max 16 per side, 64 cells) — pass the SAME pair to the motion spritesheet layer."
+      },
+      "fps": {
+        "type": "number",
+        "description": "[sheet] frames per second the cells represent (t advances 1/fps per cell), default 12."
+      },
+      "cell": {
+        "type": "string",
+        "description": "[sheet] one cell's size 'WxH', default 256x256, max 512 per side (whole sheet capped at 4096)."
       }
     }
   },
