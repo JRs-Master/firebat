@@ -1,0 +1,115 @@
+{
+  "name": "snippets",
+  "type": "module",
+  "runtime": "node",
+  "scope": "system",
+  "providerType": "local",
+  "capability": "code-snippets",
+  "version": "0.1.0",
+  "description": "웹에서 얻은 시각 코드 조각을 이름 붙여 보관하는 코드 보관함 — 셰이더(GLSL)·canvas·ECharts 옵션·HTML 임베드를 작가·출처·라이선스와 함께 저장하고, 발행 페이지의 배경·이펙트·차트로 재호출한다. 실행은 보는 사람의 브라우저가 하고 이 모듈은 저장만 한다.",
+  "tags": ["셰이더", "코드 보관함", "캔버스 코드", "이펙트 배경", "shader", "snippet", "차트 코드"],
+  "aliases": ["shaderlib", "snippet"],
+  "secrets": [],
+  "actionCatalog": {
+    "envelope": "{ \"action\": \"<id>\", <params flat at top level> }",
+    "actions": [
+      {
+        "id": "add",
+        "name": "코드 조각 등록",
+        "description": "웹에서 복사한 셰이더(GLSL)·canvas·ECharts·HTML 코드를 이름 붙여 보관한다. 작가·출처 URL·라이선스를 같이 적는다 — 페이지에 얹을 때 크레딧 자막의 원본이 된다. 같은 이름은 overwrite:true 로만 덮는다.",
+        "domain": "제작",
+        "params": ["name", "kind", "code", "author", "source", "license", "note", "overwrite"],
+        "tags": ["코드 등록", "셰이더 저장", "복붙 등록", "보관"]
+      },
+      {
+        "id": "list",
+        "name": "보관함 목록",
+        "description": "보관된 코드 조각을 검색한다 — 이름·설명·작가 부분일치, kind 필터. 코드 본문 없이 행만 돌려준다.",
+        "domain": "제작",
+        "params": ["query", "kind", "limit"],
+        "tags": ["코드 검색", "보관함 조회", "목록"]
+      },
+      {
+        "id": "get",
+        "name": "코드 꺼내기",
+        "description": "이름으로 전체 코드와 크레딧(작가·출처·라이선스)을 돌려준다 — 페이지 Html 블록에 앉히기 직전에 부른다. 래퍼 규약은 visual-snippets 스킬에 있다.",
+        "domain": "제작",
+        "params": ["name"],
+        "tags": ["코드 조회", "페이지에 넣기", "셰이더 꺼내기"]
+      },
+      {
+        "id": "remove",
+        "name": "코드 삭제",
+        "description": "보관된 코드 조각 하나를 지운다.",
+        "domain": "제작",
+        "params": ["name"]
+      },
+      {
+        "id": "selftest",
+        "name": "자가 진단",
+        "description": "등록→검색→조회→삭제 왕복과 거부 경로(중복 이름·비정상 이름·모르는 종류)를 검사한다.",
+        "domain": "제작",
+        "params": []
+      }
+    ]
+  },
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "discover via search_module_actions then get_action_schema"
+      },
+      "name": {
+        "type": "string",
+        "description": "[add|get|remove] snippet id — lowercase slug (a-z, 0-9, dashes), max 48 chars. Pick something the note can hang on ('nebula-bg', 'plasma-tunnel')."
+      },
+      "kind": {
+        "type": "string",
+        "description": "[add|list] what the code is: glsl (a Shadertoy-style fragment shader — mainImage(out vec4, in vec2) with iTime/iResolution), canvas (a self-contained 2D piece that draws on a canvas context over time), echarts (an ECharts option object, or JS building one), html (a full self-contained embed). Kind decides which page wrapper the visual-snippets skill applies."
+      },
+      "code": {
+        "type": "string",
+        "description": "[add] the code itself, verbatim as the author published it — do not minify or reformat. Max 200k chars."
+      },
+      "author": {
+        "type": "string",
+        "description": "[add] author name or handle — becomes the credit line on pages."
+      },
+      "source": {
+        "type": "string",
+        "description": "[add] source URL the code came from."
+      },
+      "license": {
+        "type": "string",
+        "description": "[add] license string (MIT, CC0, CC-BY-NC-SA-3.0, unknown). Shadertoy defaults to CC-BY-NC-SA-3.0 unless the shader header says otherwise; CodePen pens have NO default license — only store what states one, or mark unknown."
+      },
+      "note": {
+        "type": "string",
+        "description": "[add] one line on what it looks like ('purple nebula drift', 'rain on glass') — this is the search text list matches against."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "description": "[add] replace an existing snippet of the same name. Without it a duplicate name is refused."
+      },
+      "query": {
+        "type": "string",
+        "description": "[list] substring filter over name, note and author."
+      },
+      "limit": {
+        "type": "number",
+        "description": "[list] max rows, default 50."
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "saved": { "type": "object", "description": "add — the stored row (name, kind, chars, license)" },
+      "items": { "type": "array", "description": "list — rows without code bodies" },
+      "snippet": { "type": "object", "description": "get — the full record including code" },
+      "removed": { "type": "string", "description": "remove — the deleted name" }
+    }
+  }
+}
