@@ -56,6 +56,12 @@
         "params": ["name"]
       },
       {
+        "id": "model_info",
+        "name": "3D 모델 정보",
+        "desc": "Inspect a rigged .glb: clip names and durations, triangle count, height. Call before using a model3d scene layer.",
+        "params": ["media"]
+      },
+      {
         "id": "duration",
         "name": "오디오 길이",
         "description": "미디어 창고 오디오 파일의 길이(초)를 잰다 — 대사(voices)와 말풍선·talk 액트를 타임라인에 배치하기 전에 줄마다 부른다.",
@@ -113,7 +119,7 @@
       },
       "layers": {
         "type": "array",
-        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (character with enter walk/peek/pop, acts wave/talk/jump/point/pose/anim — anim plays hand-keyed 2D cartoon keypose cycles walk/run/idle/punch/dance (prefer over mocap clip for cartoon rigs), pose takes ease snap/overshoot/anticipate and squash — point taps a normalized [x,y] target with a presenter stick, pose keyframes declared bones — and clip: built-in CMU mocap walk/punch/boxing/dance or any BVH from the media store driving the bones), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), fireworks, hearts, confetti, spark (impact flash), shake (camera shake), speedlines, hpbar (fighting-game health bar). Field-level contract comes from the assets action."
+        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (character with enter walk/peek/pop, acts wave/talk/jump/point/pose/anim — anim plays hand-keyed 2D cartoon keypose cycles walk/run/idle/punch/dance (prefer over mocap clip for cartoon rigs), pose takes ease snap/overshoot/anticipate and squash — point taps a normalized [x,y] target with a presenter stick, pose keyframes declared bones — and clip: built-in CMU mocap walk/punch/boxing/dance or any BVH from the media store driving the bones), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), fireworks, hearts, confetti, spark (impact flash), shake (camera shake), speedlines, hpbar (fighting-game health bar), model3d (a rigged 3D character .glb toon-rendered server-side — built-in robot with 13 clips or any media-store glb; clip/plays picks animations, model_info lists them). Field-level contract comes from the assets action."
       },
       "audio": {
         "type": "object",

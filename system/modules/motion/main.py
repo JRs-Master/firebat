@@ -30,6 +30,9 @@ import hashlib
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gltf3d  # noqa: E402 — module-local pure-python GLB reader + toon rasterizer
+
 # ── limits ───────────────────────────────────────────────────────────────────
 SIZES = {"1080x1920": (1080, 1920), "1920x1080": (1920, 1080), "1080x1080": (1080, 1080)}
 DUR_MAX = 90.0
@@ -641,6 +644,25 @@ def _clip_gain(g, i):
     raise SceneError(f"layers[{i}].clip.gain must be a number or {{bone: k}}")
 
 
+_MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "assets", "models")
+
+def list_builtin_models():
+    if not os.path.isdir(_MODEL_DIR):
+        return []
+    return sorted(fn[:-4] for fn in os.listdir(_MODEL_DIR) if fn.endswith(".glb"))
+
+def _model_path(ref):
+    r = str(ref or "").strip()
+    if re.fullmatch(r"[a-z0-9_-]{1,40}", r):
+        p = os.path.join(_MODEL_DIR, r + ".glb")
+        if os.path.isfile(p):
+            return p
+        raise SceneError(
+            f"unknown built-in model {r!r} — bundled: {list_builtin_models()}; "
+            "or pass a media-store .glb path")
+    return media_path(r)
+
 def list_builtin_clips():
     try:
         return sorted(fn[:-4] for fn in os.listdir(_CLIP_DIR) if fn.endswith(".bvh"))
@@ -979,7 +1001,7 @@ class Scene:
                 raise SceneError(f"layers[{i}] needs a 'kind'")
             kind = L["kind"]
             if kind not in ("sprite", "bubble", "title", "caption", "card", "list",
-                            "image", "fireworks", "hearts", "confetti",
+                            "image", "fireworks", "hearts", "confetti", "model3d",
                             "spark", "shake", "speedlines", "hpbar"):
                 raise SceneError(
                     f"layers[{i}].kind {kind!r} is unknown — the assets action lists "
@@ -1010,6 +1032,38 @@ class Scene:
                               "loop": bool(cd.get("loop", True)),
                               "start": max(0.0, float(cd.get("start", 0.0))),
                               "gain": _clip_gain(cd.get("gain"), i)}
+            if kind == "model3d":
+                try:
+                    L["_model"] = gltf3d.load(_model_path(L.get("media", "robot")))
+                except gltf3d.GlbError as e:
+                    raise SceneError(f"layers[{i}].media: {e}")
+                names = set(L["_model"].clips)
+                plays = L.get("plays")
+                if plays is None:
+                    plays = [{"clip": L["clip"], "at": L["from"]}] if L.get("clip") else []
+                if not isinstance(plays, list) or len(plays) > 20:
+                    raise SceneError(f"layers[{i}].plays must be a list of at most 20")
+                norm = []
+                for j, p in enumerate(plays):
+                    if not isinstance(p, dict) or not p.get("clip"):
+                        raise SceneError(f"layers[{i}].plays[{j}] must be {{clip, at?}}")
+                    cn = str(p["clip"])
+                    if cn not in names:
+                        raise SceneError(
+                            f"layers[{i}]: clip {cn!r} is not in this model — the "
+                            f"model_info action lists them ({sorted(names)[:16]})")
+                    norm.append({"clip": cn,
+                                 "at": _num(p.get("at", L["from"]),
+                                            f"layers[{i}].plays[{j}].at", 0, self.dur)})
+                norm.sort(key=lambda p: p["at"])
+                L["_plays"] = norm
+                L["_speed"] = _num(L.get("speed", 1.0), f"layers[{i}].speed", 0.1, 4.0)
+                L["_height"] = _num(L.get("height", 0.55), f"layers[{i}].height", 0.1, 1.2)
+                L["_yaw"] = _num(L.get("yaw", 22), f"layers[{i}].yaw", -180, 180)
+                tint = L.get("tint")
+                if tint is not None:
+                    L["_tint"] = [c / 255.0 for c in _rgb(tint, f"layers[{i}].tint",
+                                                          alpha_ok=False)]
             if kind == "spark":
                 rng = random.Random(101 + i)
                 L["_rays"] = [(rng.uniform(0, 2 * math.pi), rng.uniform(0.7, 1.3))
@@ -1424,6 +1478,36 @@ class Scene:
             d.ellipse([txp - r2, typ - r2, txp + r2, typ + r2],
                       outline=(255, 214, 120, int(80 * al)),
                       width=max(2, int(3 * ss_)))
+
+    def _draw_model3d(self, d, g, t, a, L):
+        m = L["_model"]
+        x, y = self._at(L, [0.5, 0.88])
+        px_h = L["_height"] * self.SH
+        speed, plays = L["_speed"], L["_plays"]
+        prev = cur = None
+        for p in plays:
+            if t >= p["at"]:
+                prev, cur = cur, p
+            else:
+                break
+        if cur is None:
+            verts = m.posed_verts(None, 0.0)
+        else:
+            tcur = (t - cur["at"]) * speed
+            xfade = 0.35
+            if prev is not None and (t - cur["at"]) < xfade:
+                w = (t - cur["at"]) / xfade
+                verts = m.posed_verts(prev["clip"], (t - prev["at"]) * speed,
+                                      blend=(cur["clip"], tcur, w))
+            else:
+                verts = m.posed_verts(cur["clip"], tcur)
+        lo, hi = m.rest_bounds
+        scale = px_h / max(1e-6, float(hi[1] - lo[1]))
+        rw = max(20 * self.ss, float(hi[0] - lo[0]) * scale * 0.62)
+        d.ellipse([x - rw, y - rw * 0.17, x + rw, y + rw * 0.17],
+                  fill=(10, 14, 24, int(70 * a)))
+        gltf3d.draw_model(d, m, verts, x, y, px_h, L["_yaw"], a,
+                          tint=L.get("_tint"))
 
     def _draw_bubble(self, d, g, t, a, L):
         ss = self.ss
@@ -2155,6 +2239,18 @@ def action_assets(_inp):
                     "limp). pose acts speak the same language via ease:'smooth'|"
                     "'snap'|'overshoot'|'anticipate' and squash:0.4..1.6",
         },
+        "models3d": {
+            "builtin": list_builtin_models(),
+            "what": "real 3D characters rendered server-side (pure-python toon "
+                    "rasterizer — no browser): layer {kind:'model3d', media?, "
+                    "clip:'<name>' | plays:[{clip, at}..], at?, height? (fraction of "
+                    "screen height, default 0.55), yaw? (deg, default 22), speed?, "
+                    "tint?:[r,g,b]}. media = a built-in name or a media-store .glb "
+                    "(rigged glTF binary). Call model_info first — it lists the "
+                    "model's clip names. plays switches clips on the timeline with "
+                    "a 0.35s crossfade; without clip/plays the model stands in rest "
+                    "pose. Flat-shaded cartoon look on purpose",
+        },
         "sprites": {
             "what": "any clip-art declaration by name — seeds ship with the module, "
                     "saved ones come from save_asset; both are the same grammar and "
@@ -2245,6 +2341,21 @@ def action_assets(_inp):
                        "{action:'job', id} (running: progress + etaSec); the poll "
                        "that sees state 'done' imports the finished video",
     }}
+
+def action_model_info(inp):
+    ref = str(inp.get("media") or "robot")
+    try:
+        m = gltf3d.load(_model_path(ref))
+    except SceneError as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:  # noqa: BLE001 — a broken GLB reports, not crashes
+        return {"success": False, "error": f"{type(e).__name__}: {e}"}
+    d = m.info()
+    d["builtin"] = list_builtin_models()
+    d["next"] = ("scene layer {kind:'model3d', media?, clip | plays:[{clip,at}..], "
+                 "at?, height?, yaw?, speed?, tint?} — a clip loops for the layer "
+                 "window; plays switches clips on the timeline with a crossfade")
+    return {"success": True, "data": d}
 
 # ── selftest ─────────────────────────────────────────────────────────────────
 def action_selftest():
@@ -2507,6 +2618,36 @@ def action_selftest():
     ck("an image-cutout part crops, rigs and draws in scene and sticker",
        "blue body visible + sticker ok", cut_note, cut_ok)
 
+    m3_note, m3_ok = "", False
+    try:
+        inf = action_model_info({"media": "robot"})
+        di = inf.get("data") or {}
+        clips = {c["name"] for c in di.get("clips") or []}
+        sc6 = Scene({"action": "render", "duration": 3.0, "quality": "draft",
+                     "size": "1080x1080", "background": {"kind": "studio"},
+                     "layers": [{"kind": "model3d", "from": 0, "to": 3,
+                                 "at": [0.5, 0.8], "height": 0.55,
+                                 "plays": [{"clip": "Walking", "at": 0},
+                                           {"clip": "Punch", "at": 1.5}]}]})
+        fw = sc6.draw_frame(1.0)     # mid-walk
+        fx2 = sc6.draw_frame(1.65)   # inside the crossfade window
+        warm = ((fw[:, :, 0].astype(int) - fw[:, :, 2].astype(int)) > 40).sum()
+        moved = int(np.abs(fw.astype(int) - fx2.astype(int)).sum())
+        try:
+            Scene({"action": "render", "duration": 2, "layers": [
+                {"kind": "model3d", "from": 0, "to": 2, "clip": "Moonwalk"}]})
+            bad_ok = False
+        except SceneError as e:
+            bad_ok = "model_info" in str(e)
+        m3_ok = (inf.get("success") and di.get("triangles", 0) > 1000
+                 and len(clips) >= 10 and {"Walking", "Punch", "Dance"} <= clips
+                 and warm > 5000 and moved > 100000 and bad_ok)
+        m3_note = f"clips={len(clips)}, tris={di.get('triangles')}, "                   f"warm px={int(warm)}, xfade delta={moved}, badclip->hint={bad_ok}"
+    except Exception as e:  # noqa: BLE001
+        m3_note = f"{type(e).__name__}: {e}"
+    ck("the bundled 3D robot parses, toon-renders in scene, and crossfades clips",
+       ">=10 clips, visible, moving", m3_note, m3_ok)
+
     job_note, job_ok = "", False
     try:
         sub = action_render({"action": "render", "duration": 1.0, "fps": 10,
@@ -2577,6 +2718,8 @@ def main():
             out = action_assets(inp)
         elif action == "duration":
             out = action_duration(inp)
+        elif action == "model_info":
+            out = action_model_info(inp)
         elif action == "job":
             out = action_job(inp)
         elif action == "save_asset":
@@ -2588,7 +2731,8 @@ def main():
         else:
             out = {"success": False,
                    "error": f"unknown action {action!r} — one of: render, sticker, "
-                            "assets, save_asset, delete_asset, duration, job, selftest"}
+                            "assets, save_asset, delete_asset, duration, job, "
+                            "model_info, selftest"}
     except SceneError as e:
         out = {"success": False,
                "error": f"{e} — call {{\"action\": \"assets\"}} for the scene grammar"}
