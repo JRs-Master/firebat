@@ -2224,11 +2224,14 @@ def main():
                     "horizons 각 값은 1 이상 200 이하의 정수여야 합니다"}, ensure_ascii=False))
                 return
             atrpct = series.get("atrPct") or []
-            # 지평을 여럿 재고 "하나라도 통과" 로 읽으면 위양성이 지평 수만큼 곱해진다 —
-            # 5% 기준 세 지평이면 실제로는 14%다. 카나리아에서 순수 잡음이 h=3 하나로
-            # 통과해 버린 자리라, 도구가 스스로 보정한다(Bonferroni). 재는 김에 지평을
-            # 늘리는 것이 공짜가 아니게 만드는 것이 요점.
-            alpha = 0.05 / len(hs)
+            # 검정 횟수 = 규칙 수 × 지평 수. **둘 다** 나눠야 한다.
+            #
+            # 처음엔 지평으로만 나눴는데, 봉 패턴 14개를 한 번에 재 보니 28번 검정에 3개가
+            # 통과했다 — 우연으로 기대되는 개수 그대로였다. 한 호출에 규칙을 더 싣는 것도
+            # 지평을 더하는 것과 똑같이 위양성을 늘리므로, 같은 값으로 갚게 한다. 재는
+            # 김에 후보를 늘리는 것이 공짜가 아니어야 이 도구가 그물 노릇을 한다.
+            n_rules = sum(1 for r in rules if r.get("when"))
+            alpha = 0.05 / max(1, len(hs) * n_rules)
             out = []
             for r in rules:
                 when = r.get("when") or []
@@ -2255,8 +2258,11 @@ def main():
                     "sizeControl": "atrPct 로 나눈 lift — 변동성 국면 탐지와 방향 예측을 가른다",
                     "placebo": "같은 발화 패턴의 순환 시프트(뭉침 보존, 정렬만 파괴). 난수 없음",
                     "sample": "independentFires = forward 창이 겹치지 않는 발화 수",
-                    "multiplicity": "지평 %d개라 기준을 0.05/%d = %.4f 로 낮췄다(Bonferroni) — "
-                                    "지평을 늘리면 통과가 더 어려워진다" % (len(hs), len(hs), alpha),
+                    "multiplicity": "규칙 %d개 × 지평 %d개 = 검정 %d회라 기준을 "
+                                    "0.05/%d = %.5f 로 낮췄다(Bonferroni) — 한 호출에 "
+                                    "후보를 더 싣는 것도 통과를 더 어렵게 만든다"
+                                    % (n_rules, len(hs), n_rules * len(hs),
+                                       n_rules * len(hs), alpha),
                     "verdict": "위 열에서 계산된다 — 손으로 쓰지 않으므로 언제나 검산 가능",
                 },
                 "next": "verdict 가 '통과' 인 조건만 rules 에 남길 값이 있다. "
