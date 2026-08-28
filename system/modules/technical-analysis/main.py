@@ -1890,6 +1890,164 @@ def _last_session(bars, bar_range):
     return kept, {"count": len(kept), "from": kept[0]["date"], "to": kept[-1]["date"]}
 
 
+# ── signal lift ──────────────────────────────────────────────────────────────
+# "이 신호가 값이 있나" 를 재는 자리. 어려운 것은 평균이 아니라 **대조군**이라, 아래 다섯은
+# 옵션이 아니라 응답의 고정 칸이다: 진입 시차 · 크기 통제 · 반쪽 재현 · 위약 · 유효표본수.
+# 하나라도 빼면 그럴듯한 숫자가 그대로 근거가 된다(물리 유비 6종이 그렇게 기각됐다).
+
+def _mean(xs):
+    xs = [x for x in xs if x is not None]
+    return (sum(xs) / len(xs)) if xs else None
+
+
+def _fwd_returns(bars, h):
+    """신호 봉 **다음** 봉 시가에 들어가 h 봉 뒤 종가에 나오는 수익률(%).
+
+    신호 봉 종가부터 재면 실행할 수 없었던 움직임을 신호의 공으로 돌리게 된다 — 루프는 닫힌
+    봉만 보고, 체결은 빨라야 다음 봉이다. 이 한 칸이 lift 를 통째로 뒤집는 자리다.
+    """
+    out = [None] * len(bars)
+    for i in range(len(bars)):
+        j, k = i + 1, i + h
+        if k >= len(bars) or j > k:
+            continue
+        b = bars[j]
+        entry = b.get("open") or b.get("close")
+        exit_ = bars[k].get("close")
+        if not entry or exit_ is None:
+            continue
+        out[i] = (exit_ / entry - 1.0) * 100.0
+    return out
+
+
+def _lift_of(fwd, fires, n):
+    """신호가 난 봉의 평균 − 나머지 봉의 평균. 둘 다 같은 forward 계열에서 나온다."""
+    fset = set(fires)
+    sig = [fwd[i] for i in fires if 0 <= i < n and fwd[i] is not None]
+    base = [fwd[i] for i in range(n) if i not in fset and fwd[i] is not None]
+    ms, mb = _mean(sig), _mean(base)
+    if ms is None or mb is None:
+        return None
+    return {"n": len(sig), "signalMean": ms, "baseMean": mb, "lift": ms - mb}
+
+
+def _placebo_lifts(fwd, fires, n, max_runs=200):
+    """같은 발화 패턴을 계열 위로 미끄러뜨린 것 = 위약.
+
+    무작위 추출이 아니라 **순환 시프트**인 이유: 신호는 뭉쳐서 난다(교차는 몇 봉 연속으로
+    터진다). 무작위로 뽑으면 그 뭉침이 사라져 위약이 실제보다 순해지고, 그러면 아무 신호나
+    유의해 보인다. 시프트는 모양을 그대로 둔 채 **정렬만** 깨므로 남는 것이 정렬뿐이다.
+    난수를 안 쓰니 같은 입력이면 같은 결과다.
+    """
+    if not fires or n < 8:
+        return []
+    lo = max(2, n // 50)
+    offs = [s for s in range(lo, n - lo + 1)]
+    if len(offs) > max_runs:
+        stride = len(offs) // max_runs + 1
+        offs = offs[::stride]
+    out = []
+    for s in offs:
+        st = _lift_of(fwd, [(i + s) % n for i in fires], n)
+        if st:
+            out.append(st["lift"])
+    return out
+
+
+def _independent_fires(fires, h):
+    """forward 창이 겹치지 않는 발화만 센다.
+
+    한 주에 몰린 스무 번은 스무 개의 관측이 아니다. 겹친 것을 독립으로 세면 표본이 부풀고,
+    그게 잡음이 유의해 보이는 가장 흔한 통로다.
+    """
+    keep, last = 0, None
+    for i in sorted(fires):
+        if last is None or i - last > h:
+            keep += 1
+            last = i
+    return keep
+
+
+def _norm_by(fwd, scale):
+    """수익률을 그 봉의 변동성으로 나눈다 — 크기 통제.
+
+    변동성 큰 국면에서만 켜지는 신호는 원수익률이 크게 나온다. 나눈 뒤에도 남으면 방향을
+    맞춘 것이고, 사라지면 변동성 탐지기였을 뿐이다.
+    """
+    out = [None] * len(fwd)
+    for i, v in enumerate(fwd):
+        a = scale[i] if i < len(scale) else None
+        if v is None or a is None or a <= 0:
+            continue
+        out[i] = v / a
+    return out
+
+
+def _lift_row(bars, fires, h, atrpct, alpha=0.05):
+    """한 (규칙, 지평) 칸 — 다섯 대조군을 전부 실어서 돌려준다."""
+    n = len(bars)
+    fwd = _fwd_returns(bars, h)
+    raw = _lift_of(fwd, fires, n)
+    if raw is None:
+        return {"horizon": h, "verdict": "측정 불가 — forward 창이 남지 않음"}
+    ind = _independent_fires(fires, h)
+    pl = _placebo_lifts(fwd, fires, n)
+    beat = sum(1 for x in pl if x >= raw["lift"])
+    p = ((beat + 1) / (len(pl) + 1)) if pl else None
+    nrm = _lift_of(_norm_by(fwd, atrpct), fires, n)
+    # 반쪽 재현 — 앞뒤를 따로 재고 부호가 같은지 본다. 한쪽에서만 나오는 lift 는
+    # 그 구간의 사정이지 규칙의 성질이 아니다.
+    #
+    # forward 는 **반쪽마다 다시 계산한다.** 전체 fwd 를 잘라 쓰면 앞절반 끝의 신호가
+    # 뒤절반 봉을 내다보게 되고, 뒤에만 있는 엣지를 앞절반이 훔쳐 와 두 반쪽이 사이좋게
+    # 양수가 된다 — 카나리아 ③(뒷절반에만 엣지)이 그 경로로 통과해 버렸다.
+    half = n // 2
+    a = _lift_of(_fwd_returns(bars[:half], h), [i for i in fires if i < half], half)
+    b2 = _lift_of(_fwd_returns(bars[half:], h),
+                  [i - half for i in fires if i >= half], n - half)
+    agree = (a is not None and b2 is not None and a["lift"] * b2["lift"] > 0)
+
+    row = {
+        "horizon": h,
+        "fires": len(fires),
+        "independentFires": ind,
+        "signalMean": round(raw["signalMean"], 4),
+        "baseMean": round(raw["baseMean"], 4),
+        "lift": round(raw["lift"], 4),
+        "liftPerAtr": None if nrm is None else round(nrm["lift"], 4),
+        "placeboRuns": len(pl),
+        "placeboP": None if p is None else round(p, 4),
+        "alpha": round(alpha, 5),
+        "splitHalf": {
+            "first": None if a is None else round(a["lift"], 4),
+            "second": None if b2 is None else round(b2["lift"], 4),
+            "agree": agree,
+        },
+    }
+    row["verdict"] = _lift_verdict(row, alpha)
+    row["passed"] = row["verdict"].startswith("통과")
+    return row
+
+
+def _lift_verdict(row, alpha=0.05):
+    """판정은 **계산**한다 — 손으로 쓰면 좋은 쪽으로 쓰게 된다.
+
+    근거 칸(위 열들)이 응답에 그대로 실려 있으므로 이 한 줄은 언제나 검산 가능하다.
+    `alpha` 는 지평 개수로 나눈 값(Bonferroni) — 아래 주석 참조.
+    """
+    if row["independentFires"] < 20:
+        return "표본 부족 — 독립 발화 %d회(20 미만)" % row["independentFires"]
+    if row["placeboP"] is None or row["placeboP"] >= alpha:
+        return "위약과 구분 안 됨 — p=%s (기준 %.4f)" % (row["placeboP"], alpha)
+    if not row["splitHalf"]["agree"]:
+        return "반쪽에서 안 재현됨 — %s / %s" % (row["splitHalf"]["first"],
+                                                 row["splitHalf"]["second"])
+    if row["liftPerAtr"] is None or abs(row["liftPerAtr"]) < 0.05:
+        return "크기 통제하면 남지 않음 — ATR당 %s" % row["liftPerAtr"]
+    return "통과 — lift %+.3f%% (ATR당 %+.3f), p=%s < %.4f, 독립 %d회" % (
+        row["lift"], row["liftPerAtr"], row["placeboP"], alpha, row["independentFires"])
+
+
 def main():
     inp = _read_input()
     action = inp.get("action")
@@ -1914,7 +2072,9 @@ def main():
         }}, ensure_ascii=False))
         return
 
-    if action in ("signals", "backtest"):
+    # signal_lift 가 같은 브랜치에 서는 이유: 지표 경로·상위 주기·lag·에러 문구를 한 벌만
+    # 둔다. 재는 규칙과 도는 규칙이 다른 어휘를 쓰면 그 측정은 무엇에 대한 것도 아니게 된다.
+    if action in ("signals", "backtest", "signal_lift"):
         # 데이 트레이딩 뷰 — 마지막 거래일 봉만. 시계·타임존에 의존하지 않고 **데이터의 최신
         # 날짜**로 자른다(장 시작 전엔 전일이 마지막 세션이라 그대로 맞다). 지표는 잘린 구간만
         # 보고 계산하므로 warmup 이 부족할 수 있다 — 그 사실을 응답에 밝힌다.
@@ -2048,6 +2208,61 @@ def main():
                 # 교차 = 직전엔 반대쪽, 지금은 이쪽. 같은 값 유지는 교차가 아니다.
                 return (pa <= pb and a > b) if op == "crossUp" else (pa >= pb and a < b)
             return {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b}.get(op, False)
+
+        if action == "signal_lift":
+            hs = inp.get("horizons") or [1, 4, 12]
+            if not isinstance(hs, list) or not hs or len(hs) > 6:
+                print(json.dumps({"success": False, "error":
+                    "horizons 는 1~6개의 앞선 봉 수입니다 — 예: [1,4,12]"}, ensure_ascii=False))
+                return
+            try:
+                hs = sorted({int(h) for h in hs})
+            except (TypeError, ValueError):
+                hs = []
+            if not hs or hs[0] < 1 or hs[-1] > 200:
+                print(json.dumps({"success": False, "error":
+                    "horizons 각 값은 1 이상 200 이하의 정수여야 합니다"}, ensure_ascii=False))
+                return
+            atrpct = series.get("atrPct") or []
+            # 지평을 여럿 재고 "하나라도 통과" 로 읽으면 위양성이 지평 수만큼 곱해진다 —
+            # 5% 기준 세 지평이면 실제로는 14%다. 카나리아에서 순수 잡음이 h=3 하나로
+            # 통과해 버린 자리라, 도구가 스스로 보정한다(Bonferroni). 재는 김에 지평을
+            # 늘리는 것이 공짜가 아니게 만드는 것이 요점.
+            alpha = 0.05 / len(hs)
+            out = []
+            for r in rules:
+                when = r.get("when") or []
+                if not when:
+                    continue
+                fires = [i for i in range(len(bars)) if all(holds(c, i) for c in when)]
+                rows = [_lift_row(bars, fires, h, atrpct, alpha) for h in hs]
+                kept = [x for x in rows if x.get("passed")]
+                out.append({
+                    "label": str(r.get("label") or "규칙"),
+                    "side": str(r.get("side", "buy")).lower(),
+                    "when": when,
+                    "horizons": rows,
+                    "verdict": ("통과 — 지평 %s"
+                                % ", ".join(str(x["horizon"]) for x in kept)) if kept
+                               else "탈락 — 어느 지평도 대조군을 못 넘었다",
+                })
+            print(json.dumps({"success": True, "data": {
+                "rules": out,
+                "barRange": bar_range,
+                "method": {
+                    "entry": "신호 봉 다음 봉 시가 → h 봉 뒤 종가 (닫힌 봉만 보는 실행 경로와 같은 시차)",
+                    "baseline": "같은 forward 계열의 나머지 봉 전부",
+                    "sizeControl": "atrPct 로 나눈 lift — 변동성 국면 탐지와 방향 예측을 가른다",
+                    "placebo": "같은 발화 패턴의 순환 시프트(뭉침 보존, 정렬만 파괴). 난수 없음",
+                    "sample": "independentFires = forward 창이 겹치지 않는 발화 수",
+                    "multiplicity": "지평 %d개라 기준을 0.05/%d = %.4f 로 낮췄다(Bonferroni) — "
+                                    "지평을 늘리면 통과가 더 어려워진다" % (len(hs), len(hs), alpha),
+                    "verdict": "위 열에서 계산된다 — 손으로 쓰지 않으므로 언제나 검산 가능",
+                },
+                "next": "verdict 가 '통과' 인 조건만 rules 에 남길 값이 있다. "
+                        "떨어진 조건을 AND 로 더 얹으면 표본만 반토막 난다.",
+            }}, ensure_ascii=False))
+            return
 
         buy, sell = [], []
         for r in rules:

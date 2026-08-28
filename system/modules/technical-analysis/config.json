@@ -96,6 +96,7 @@
           "fib_targets",
           "indicators",
           "signals",
+          "signal_lift",
           "backtest"
         ],
         "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 stock_chart annotations 배열로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선) — `blocks[0].props`(annotations + futureSlots) + `summary` / `indicators` = 고전 지표 값(이동평균·MACD·RSI·볼린저·스토캐스틱·일목균형표) — `latest`(문장용) + `series`(차트 오버레이용) / `signals` = `rules` 로 선언한 조건이 참인 봉을 찾아 `buyPoints`/`sellPoints` 와 백테스트(체결 기록·승률·누적수익·최대낙폭을 수수료·세금·슬리피지·손절·익절까지 반영)를 반환. 이동평균 교차(골든크로스·데드크로스)·지표 조건 매매의 성과 검증. 전략은 코드가 아니라 `rules` 인자라 모듈이 투자 의견을 갖지 않습니다 / backtest = signals 와 같은 계산에서 성적만 — 차트 좌표 없이 수익률·승률·낙폭(규칙·비용 파라미터는 signals 와 동일) / reach_levels = 현재가에서 ATR 배수만큼 떨어진 각 가격에 그 봉들 자신의 과거로 잰 도달 확률을 붙인 표·차트 주석. 분할청산 칸 산정용 / reach_cone = 같은 질문을 점이 아니라 곡선으로 — 봉 t 까지의 이동 폭을 t 전 구간에 대해 재어 오늘 시가(장중) 또는 마지막 종가에서 열리는 원뿔. 폭은 넘긴 봉에서 구한 c 로 c·ATR·√t, 요약이 √t 적합도를 함께 말합니다. 각 칸의 첫 도달까지 걸린 중앙 봉 수도 냅니다"
@@ -157,7 +158,7 @@
       },
       "rules": {
         "type": "array",
-        "description": "[signals] **필수 — 전략 선언**. [{side:\"buy\"|\"sell\", label?, note?, when:[{a,op,b},…]}] — 한 rule 의 when 은 전부 참일 때(AND) 신호, OR 는 rule 을 여러 개. a/b = 지표 경로 또는 숫자. op = > < >= <= crossUp crossDown. 경로 = close/open/high/low/volume, ma<기간>·ema<기간>(기간은 아무 값 — ma50/ma200 골든크로스, ma5/ma20/ma60/ma120 국내 관례), rsi, macd.macd|signal|hist, bollinger.mid|upper|lower|percentB|bandwidth, stochastic.k|d, ichimoku.tenkan|kijun|senkouA|senkouB. 틀린 경로는 사용 가능 목록과 함께 거부됩니다."
+        "description": "[signals|signal_lift] **필수 — 전략 선언**. [{side:\"buy\"|\"sell\", label?, note?, when:[{a,op,b},…]}] — 한 rule 의 when 은 전부 참일 때(AND) 신호, OR 는 rule 을 여러 개. a/b = 지표 경로 또는 숫자. op = > < >= <= crossUp crossDown. 경로 = close/open/high/low/volume, ma<기간>·ema<기간>(기간은 아무 값 — ma50/ma200 골든크로스, ma5/ma20/ma60/ma120 국내 관례), rsi, macd.macd|signal|hist, bollinger.mid|upper|lower|percentB|bandwidth, stochastic.k|d, ichimoku.tenkan|kijun|senkouA|senkouB. 틀린 경로는 사용 가능 목록과 함께 거부됩니다."
       },
       "feeRate": {
         "type": "number",
@@ -332,6 +333,13 @@
       "futureBars": {
         "type": "integer",
         "description": "reach_cone — how many bars to project the cone past the last one (default max(10, horizonBars/4) intraday, the whole horizon otherwise). A display choice: horizonBars is how far the width was measured, this is how far it is drawn."
+      },
+      "horizons": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        },
+        "description": "[signal_lift] How many bars ahead to measure, 1~6 values (default [1,4,12]). Each is tested separately and the pass threshold is divided by how many you ask for (Bonferroni) — measuring more horizons makes passing harder, not easier."
       }
     }
   },
