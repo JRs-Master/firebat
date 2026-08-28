@@ -355,6 +355,12 @@ async function main() {
   } catch {
     return out(false, undefined, 'stdin must be one JSON object');
   }
+  // The sandbox wraps stdin as {correlationId, data: <input>} — the input
+  // lives in `data`. Bare objects are accepted too (local harness, CLI).
+  if (inp && typeof inp === 'object' && inp.data !== undefined &&
+      typeof inp.data === 'object') {
+    inp = inp.data;
+  }
   const action = String(inp.action || (Object.keys(HANDLERS).length === 1 ? 'add' : '')).trim();
   const h = HANDLERS[action];
   if (!h) {
