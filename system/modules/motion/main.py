@@ -946,6 +946,30 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
             else:
                 d.polygon(poly, fill=fill)
 
+def _tile_seamless(mono, n, rate, xfade_sec=0.25):
+    """Repeat `mono` until it covers n samples, overlapping each join with an
+    equal-power crossfade so the loop point is not an audible click. The first
+    repetition keeps its natural attack; every later one fades in under the
+    previous one's fade-out (sin/cos hold the sum's power constant).
+    """
+    xf = int(min(xfade_sec * rate, len(mono) // 4))
+    period = max(1, len(mono) - xf)
+    buf = np.zeros(n + len(mono))
+    if xf > 0:
+        ramp = np.linspace(0, np.pi / 2, xf, endpoint=False)
+        fade_in, fade_out = np.sin(ramp), np.cos(ramp)
+    pos, first = 0, True
+    while pos < n:
+        seg = mono.copy()
+        if xf > 0:
+            if not first:
+                seg[:xf] *= fade_in
+            seg[-xf:] *= fade_out
+        buf[pos:pos + len(seg)] += seg
+        pos += period
+        first = False
+    return buf
+
 def _num(v, name, lo, hi):
     try:
         f = float(v)
@@ -1139,6 +1163,9 @@ class Scene:
         if len(self.voices) > 12:
             raise SceneError("audio.voices: at most 12 lines")
         self.bgm_gain_db = _num(audio.get("bgmGainDb", -8), "audio.bgmGainDb", -40, 6)
+        # A track shorter than the scene used to leave the tail silent with nothing
+        # said about it — the duration cap going 20s -> 90s made that the common case.
+        self.bgm_loop = bool(audio.get("bgmLoop", True))
         self.voice_env = None  # filled by prepare_audio
         korean = any(has_hangul(s) for s in texts)
         if korean and not self.fonts.korean:
@@ -1903,7 +1930,10 @@ class Scene:
     # ── audio ───────────────────────────────────────────────────────────
     def prepare_audio(self, tmp_dir):
         """Mix bgm+voice into one wav (voice ducks the bgm) and build the
-        voice envelope for lipsync. Returns a wav path or None."""
+        voice envelope for lipsync. Returns a wav path or None.
+
+        A bgm shorter than the scene is repeated (see _tile_seamless) — before
+        that the tail was silence and nothing said so."""
         if not self.bgm and not self.voices:
             return None
         try:
@@ -1916,13 +1946,15 @@ class Scene:
         RATE = 44100
         n = int(self.dur * RATE)
 
-        def load(path):
+        def load(path, loop=False):
             data, rate = sf.read(path, always_2d=True)
             mono = data.mean(axis=1)
             if rate != RATE:
                 mono = np.interp(np.linspace(0, len(mono), int(len(mono) * RATE / rate),
                                              endpoint=False),
                                  np.arange(len(mono)), mono)
+            if loop and 0 < len(mono) < n:
+                mono = _tile_seamless(mono, n, RATE)
             out = np.zeros(n)
             m = min(n, len(mono))
             out[:m] = mono[:m]
@@ -1948,7 +1980,7 @@ class Scene:
             self.voice_env = lambda t: float(np.interp(t, times, env_n))
             mix += v
         if self.bgm:
-            b = load(self.bgm) * (10 ** (self.bgm_gain_db / 20))
+            b = load(self.bgm, loop=self.bgm_loop) * (10 ** (self.bgm_gain_db / 20))
             if env_n is not None:  # duck under the voice
                 duck_t = (np.arange(n) / RATE)
                 duck = 1 - 0.65 * np.interp(duck_t, (np.arange(len(env_n)) + 0.5)
@@ -2418,14 +2450,18 @@ def action_assets(_inp):
                      "fighting-game health bar; valueTo animates a hit drain over "
                      "the layer window",
         },
-        "audio": {"bgm": "media path (flac/wav/mp3) — render one with the sing module",
+        "audio": {"bgm": "media path (flac/wav/mp3) — render one with the sing module. "
+                         "A track shorter than the scene repeats to fill it, with a "
+                         "0.25s crossfade hiding the loop point",
                   "voice": "one media path starting at t=0 (tts output); ducks the bgm "
                            "and drives lipsync",
                   "voices": "dialogue on the timeline: [{media, at}] (max 12). The mouth "
                             "follows the mixed envelope automatically; call the duration "
                             "action per line, then place each line's bubble/talk at the "
                             "same `at` for that long",
-                  "bgmGainDb": "default -8"},
+                  "bgmGainDb": "default -8",
+                  "bgmLoop": "default true — false plays the track once and leaves the "
+                             "rest of the scene silent"},
         "dialogueSync": "the recipe: tts each line → duration each file → for line i "
                         "at time T: voices += {media, at:T}, bubble from T to T+len, "
                         "sprite act {at:T, do:'talk', for:len, lipsync}. The mouth needs "
@@ -2963,6 +2999,19 @@ def action_selftest():
         job_note = f"{type(e).__name__}: {e}"
     ck("an async render is accepted, polls to done, delivers once",
        "done + single delivery", job_note, job_ok)
+
+    # A bgm shorter than the scene must fill it, not trail off into silence.
+    # Measured on the tail second, which used to be exactly zero.
+    rate = 44100
+    one_sec = np.sin(2 * np.pi * 220 * np.arange(rate) / rate) * 0.5
+    tiled = _tile_seamless(one_sec, rate * 5, rate)
+    tail_rms = float(np.sqrt(np.mean(tiled[rate * 4:rate * 5] ** 2)))
+    head_rms = float(np.sqrt(np.mean(tiled[:rate] ** 2)))
+    seam_ok = bool(np.max(np.abs(np.diff(tiled[:rate * 5]))) < 0.2)
+    ck("a short bgm tiles across the scene instead of going silent",
+       "tail loud as head, no seam click",
+       f"head={head_rms:.3f} tail={tail_rms:.3f} seam_ok={seam_ok}",
+       tail_rms > head_rms * 0.7 and seam_ok)
 
     try:
         f = Fonts(1.0)
