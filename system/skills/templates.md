@@ -15,6 +15,12 @@ A template is a saved **block layout** — the same component array a page body 
   `firebat-render` fence in your reply**. Nothing is published; the reply just takes that shape.
   (`spec.head` is page metadata — ignore it on the chat surface.)
 
+  On the **page** surface `spec.head` is worth keeping: it carries the page's declaration, not just
+  its SEO. A template whose head sets `kind`, `layout`, `contentMaxWidth` or an app's `needs` moves
+  the shell along with the body, so "publish it in the ○○ format" means the same chrome and the same
+  capabilities every time — not the same blocks in a different frame. Placeholders are substituted
+  in `head` too, so a title can carry `{date}`.
+
 For pages published repeatedly in the same format (daily reports, market briefs, etc.), use
 templates.
 
