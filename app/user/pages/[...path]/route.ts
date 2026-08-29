@@ -91,6 +91,25 @@ export async function GET(
   const file = read.ok ? (read.data as BinaryRead) : null;
   if (!file?.base64) return notFound();
 
+  // The entry document is meant to be embedded, not navigated to. Framed, the page around it is the
+  // app's transport: it relays storage writes and module calls, because an app on an opaque origin
+  // cannot prove which page it is. Reached directly there is no relay — `localStorage` resolves to
+  // the browser's own instead of the page's, and every `firebat.call` hangs until it times out. The
+  // app still draws, which is the worst shape of broken (measured 2026-08-30: `/user/pages/carom`
+  // painted its canvas and its buttons did nothing).
+  //
+  // `Sec-Fetch-Dest` tells the two apart — `document` is someone navigating, `iframe` is the page
+  // framing it — so a person is sent to the app's real address and the frame is served. A request
+  // without the header (curl, an old browser) is served as before rather than bounced.
+  if ((req.headers.get('sec-fetch-dest') || '') === 'document' && (file.mimeType || '').startsWith('text/html')) {
+    const canonical = `/${name.split('/').map(encodeURIComponent).join('/')}`;
+    return NextResponse.redirect(new URL(canonical, req.url), {
+      status: 307,
+      // Conditional on a request header, so it must not be remembered for the frame's own request.
+      headers: { 'Cache-Control': 'no-store', Vary: 'Sec-Fetch-Dest' },
+    });
+  }
+
   let buf = Buffer.from(file.base64, 'base64');
   // The entry document gets the bootstrap for whatever this page declared — the storage shim seeded
   // with what it already holds (so the app's first synchronous read finds its data), and the module
@@ -120,6 +139,8 @@ export async function GET(
     'Cache-Control': visibility === 'public' ? 'public, max-age=300' : 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',
+    // The entry document answers differently to a navigation than to the frame (above).
+    Vary: 'Sec-Fetch-Dest',
     // The app frames on an opaque origin, so every request it makes for its own files is
     // cross-origin. A classic `<script src>` does not care; a `<script type="module">` is fetched
     // with CORS and is BLOCKED without this header — measured 2026-08-30 on carom, where the
