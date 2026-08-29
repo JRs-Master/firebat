@@ -178,11 +178,19 @@ CSP 도 iframe 도 없으니 파일을 쪼개도 되고 워커도 돈다. 대신
 
 즉 페이지를 그룹에 넣는 유일한 방법은 **`pages.project` 에 값이 들어가는 것**이다.
 
-⚠️ **승인 카드 경로는 그 값을 버린다** (2026-08-29 실측, 미수정):
-`SavePageArgs`(`core/src/utils/pending_tools.rs:83`)가 `slug`·`spec`·`allowOverwrite` 셋뿐이라
-`from_call` 의 `serde_json::from_value` 에서 **`project`·`visibility`·`status`·`password` 가
-조용히 사라진다**. 핸들러도 `page.save` 도 project 를 제대로 받으므로 구멍은 카드 한 층뿐인데,
-그 층이 admin 발행의 정규 경로다 — **카드로 발행한 페이지는 절대 그룹에 안 붙는다.**
+**승인 카드는 그 값을 옮긴다** — 넷을 다 실은 건 `b71490c0` 부터다. 그전엔
+`SavePageArgs` 가 `slug`·`spec`·`allowOverwrite` 셋뿐이라 `from_call` 의 `serde_json::from_value`
+에서 **`project`·`visibility`·`status`·`password` 가 조용히 사라졌고**, 카드로 발행한 페이지는
+그룹에 붙지 못했다(2026-08-29 실측). 스키마·핸들러·`page.save` 는 처음부터 넷을 다 받았으니
+구멍은 **카드 한 층**뿐이었는데 그게 admin 발행의 정규 경로였다.
+
+> **카드를 거치는 인자는 카드가 이름을 불러야 산다.** 중간 typed 구조체가 안 적은 필드는 serde
+> 기본값이 말없이 버리므로 로그도 에러도 남지 않는다 — 도구 스키마에 필드를 더할 때는 그 도구가
+> 승인 게이트를 타는지 보고, 탄다면 `PendingActionArgs` 의 해당 variant 도 같이 연다.
+
+⚠️ **파이프라인 `SAVE_PAGE` 스텝은 아직 넷을 선언하지 않는다**(`core/src/managers/task.rs`
+`SavePage` variant = slug·spec·inputData·inputMap·allowOverwrite). 조용한 유실이 아니라 **없는
+능력** — 파이프라인으로 발행하면 프로젝트를 지정할 방법 자체가 없다.
 
 ### 카드·요약 (v0.1, 2026-04-19 추가)
 | Component | 역할 | 주요 Props |
