@@ -5,6 +5,7 @@ import { getPage, verifyPassword as verifyPagePasswordRpc } from '../../../../li
 import { verifyPassword as verifyProjectPasswordRpc } from '../../../../lib/api-gen/project';
 import { parsePageRecord } from '../../../../lib/util/page-pb-convert';
 import { resolvePageVisibility } from '../../../../lib/page-visibility';
+import { readDeclaration, appCsp } from '../../../../lib/page-app';
 import { SESSION_COOKIE_NAME } from '../../../../lib/config';
 
 /**
@@ -40,17 +41,32 @@ interface BinaryRead {
 
 const notFound = () => new NextResponse('Not found', { status: 404 });
 
-/** public / password / private for the project this directory belongs to.
+/** The app page this URL addresses, if it addresses one.
  *
- *  The directory name is the first path segment, which is also the page slug of a single-page
- *  project and the project name of a multi-page one — `PageManager::rename` already derives a
- *  project from a slug's first segment, so the two agree by construction. A directory with no page
- *  row behind it has nothing to inherit from and stays public. */
-async function visibilityOf(name: string) {
-  const res = await getPage({ slug: name });
-  if (!res.ok || !res.data) return { visibility: 'public' as const, spec: null };
-  const spec = parsePageRecord(res.data);
-  return { visibility: await resolvePageVisibility(spec), spec };
+ *  The URL is keyed by slug and the disk path comes from that page's declaration — `head.source`.
+ *  Nothing is served because a directory happens to exist: a page must say `kind: "app"` and name
+ *  its own source, so a folder someone drops under `user/` is not reachable by guessing its name.
+ *
+ *  A slug may nest (`docs/manual`), so the longest prefix that resolves to an app page wins. Two
+ *  segments is as deep as this looks — an app is addressed by its own name, and each extra step is
+ *  another lookup on every asset request. */
+async function resolveApp(path: string[]) {
+  for (let take = Math.min(2, path.length); take >= 1; take--) {
+    const slug = path.slice(0, take).join('/');
+    const res = await getPage({ slug });
+    if (!res.ok || !res.data) continue;
+    const spec = parsePageRecord(res.data);
+    const decl = readDeclaration(spec.head);
+    if (decl.kind !== 'app' || !decl.source) continue;
+    return {
+      slug,
+      spec,
+      decl,
+      rest: path.slice(take),
+      visibility: await resolvePageVisibility(spec),
+    };
+  }
+  return null;
 }
 
 export async function GET(
@@ -60,8 +76,9 @@ export async function GET(
   const { path } = await params;
   if (!path?.length || path.some(seg => !SAFE_SEGMENT.test(seg))) return notFound();
 
-  const name = path[0];
-  const { visibility, spec } = await visibilityOf(name);
+  const app = await resolveApp(path);
+  if (!app) return notFound();
+  const { slug: name, spec, decl, rest, visibility } = app;
 
   if (visibility === 'private') {
     // Admin preview only — same allowance the page itself makes.
@@ -88,15 +105,16 @@ export async function GET(
     if (!verified) return notFound();
   }
 
-  // The URL space maps into `web/` only. That is the boundary: a project's `modules/` and `data/`
-  // sit beside it in the same directory and have no URL at all — not a blocked one, an absent one.
-  // A deny list would have to keep pace with whatever a project puts there; this cannot fall behind
-  // ([[feedback_boundary_not_blocklist]]).
+  // The URL space maps into the declared source directory and nowhere else. That is the boundary:
+  // whatever else the page's folder holds — module code, its store — has no URL at all, not a
+  // blocked one, an absent one. A deny list would have to keep pace with whatever gets added there;
+  // this cannot fall behind ([[feedback_boundary_not_blocklist]]).
   //
   // A directory URL means its index, the way a file server resolves it. Asked for only after the
   // direct read misses, so the common path stays one call.
-  const rest = path.slice(1).join('/');
-  const base = `user/pages/${name}/web${rest ? `/${rest}` : ''}`;
+  const dir = decl.source!.replace(/\/+$/, '');
+  const tail = rest.join('/');
+  const base = `${dir}${tail ? `/${tail}` : ''}`;
   let read = await readFileBinary({ path: base });
   if (!read.ok || !(read.data as BinaryRead)?.base64) {
     read = await readFileBinary({ path: `${base}/index.html` });
@@ -108,6 +126,9 @@ export async function GET(
   const total = buf.length;
   const headers: Record<string, string> = {
     'Content-Type': file.mimeType || 'application/octet-stream',
+    // The app's own policy, translated from what it declared. Same source of truth as the sandbox
+    // tokens the page frames it with — split them and the looser half decides.
+    'Content-Security-Policy': appCsp(decl.needs),
     // A gated project must not sit in a shared cache, and an app under active editing should not
     // be pinned for long anywhere. Public assets keep the five minutes Caddy was giving them.
     'Cache-Control': visibility === 'public' ? 'public, max-age=300' : 'private, no-store',

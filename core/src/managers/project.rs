@@ -24,10 +24,6 @@ pub struct ProjectEntry {
     #[serde(rename = "pageSlugs")]
     pub page_slugs: Vec<String>,
     pub visibility: ProjectVisibility,
-    /// The project ships a browser app of its own — `user/pages/<name>/web/index.html` exists.
-    /// Its root URL renders that app instead of a list of its pages.
-    #[serde(rename = "hasApp", default)]
-    pub has_app: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,37 +60,9 @@ impl ProjectManager {
         Self { storage, db, vault }
     }
 
-    /// Scan for projects — user/pages directories + user/modules declarations + DB pages.
-    ///
-    /// A project is a name that something claims. Three things can claim one, and the third was
-    /// added 2026-08-29: a directory under `user/pages/`. Before that a file-based app could not be
-    /// a project at all — its only membership came from a DB page row carrying `project`, so
-    /// deleting the duplicate row deleted the project with it, and `/<name>` fell through to 404.
-    /// The directory IS the declaration; nothing has to be written down twice.
+    /// 프로젝트 목록 스캔 — user/modules + DB pages + app/(user) manifest 통합.
     pub async fn scan(&self) -> Vec<ProjectEntry> {
         let mut map: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
-        let mut apps: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        // user/pages/<name>/ — a page project's own files. `web/` is the served part; a directory
-        // without it is not an app yet (a project being assembled, or one that is only documents).
-        if let Ok(entries) = self.storage.list_dir("user/pages").await {
-            for entry in entries {
-                if !entry.is_directory || !is_safe_name(&entry.name) {
-                    continue;
-                }
-                map.entry(entry.name.clone())
-                    .or_insert_with(|| (Vec::new(), Vec::new()))
-                    .0
-                    .push(format!("user/pages/{}", entry.name));
-                if self
-                    .storage
-                    .exists(&format!("user/pages/{}/web/index.html", entry.name))
-                    .await
-                {
-                    apps.insert(entry.name);
-                }
-            }
-        }
 
         // user/modules/*/config.json
         if let Ok(entries) = self.storage.list_dir("user/modules").await {
@@ -134,13 +102,11 @@ impl ProjectManager {
             .into_iter()
             .map(|(name, (paths, page_slugs))| {
                 let visibility = self.get_visibility(&name);
-                let has_app = apps.contains(&name);
                 ProjectEntry {
                     name,
                     paths,
                     page_slugs,
                     visibility,
-                    has_app,
                 }
             })
             .collect();
@@ -197,8 +163,7 @@ impl ProjectManager {
             .into_iter()
             .map(|(name, (paths, page_slugs))| {
                 let visibility = self.get_visibility(&name);
-                // A hub workspace owns no app directory — a visitor's files live under `user/hub/`.
-                ProjectEntry { name, paths, page_slugs, visibility, has_app: false }
+                ProjectEntry { name, paths, page_slugs, visibility }
             })
             .collect();
         result.sort_by(|a, b| a.name.cmp(&b.name));

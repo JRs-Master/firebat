@@ -39,7 +39,7 @@ async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
 }
 import { PasswordGate } from './password-gate';
 import { ProjectRootView } from './project-root';
-import { ProjectAppView } from './project-app';
+import { AppFrame } from './app-frame';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -56,6 +56,7 @@ function safeDecodeSlug(slugArr: string[] | string): string {
 
 /** 페이지 visibility 해석 — /api/page-stream 게이트와 공유하는 단일 정책 (lib/page-visibility). */
 import { resolvePageVisibility as resolveVisibility } from '../../../lib/page-visibility';
+import { readDeclaration } from '../../../lib/page-app';
 
 type Props = { params: Promise<{ slug: string[] }>; searchParams?: Promise<{ page?: string }> };
 
@@ -196,31 +197,6 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       const projectsRes = await scanProjects({});
       const projects = projectsRes.ok ? (projectsRes.data ?? []) : [];
       const matched = projects.find((p) => p.name === slug);
-      if (matched?.hasApp) {
-        // The project ships its own app (`user/pages/<name>/web/`), so its root is that app rather
-        // than a list of its documents. No DB page row is involved — the directory is what claims
-        // the name, which is why deleting the duplicate row does not take the URL down with it.
-        // Visibility is the project's own (vault), and scan already resolved it.
-        const vis = matched.visibility || 'public';
-        if (vis === 'private') {
-          const jar = await cookies();
-          const adminToken = jar.get(SESSION_COOKIE_NAME)?.value || jar.get('firebat_admin_token')?.value;
-          if (!adminToken) redirect('/404');
-        } else if (vis === 'password') {
-          const jar = await cookies();
-          const saved = jar.get(`fp_${slug}`)?.value;
-          let verified = false;
-          if (saved) {
-            const r = await verifyProjectPasswordRpc({ project: slug, password: decodeURIComponent(saved) });
-            verified = r.ok && r.data === true;
-          }
-          // The asset route 404s an unverified request; the form is here, where a person can see it.
-          if (!verified) {
-            return <PasswordGate slug={slug} title={slug} isProjectPassword projectName={slug} />;
-          }
-        }
-        return <ProjectAppView projectName={slug} />;
-      }
       if (matched) {
         const sp = searchParams ? await searchParams : {};
         const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
@@ -310,6 +286,14 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         />
       );
     }
+  }
+
+  // `kind: "app"` — the page IS the app, delivered from its own files. Declared, not inferred:
+  // the old rule (one Html block that happens to carry a script) meant an app with two blocks
+  // could not be made full-bleed without restructuring the page to fool the guess.
+  const declared = readDeclaration(spec.head);
+  if (declared.kind === 'app' && declared.source) {
+    return <AppFrame slug={slug} needs={declared.needs} title={spec.head?.title} />;
   }
 
   const head = spec.head ?? {};
