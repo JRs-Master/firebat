@@ -50,7 +50,11 @@ export function AppFrame({
   needs: PageNeeds;
   title?: string;
 }) {
-  const src = `/user/pages/${slug.split('/').map(encodeURIComponent).join('/')}/`;
+  // The entry file, named — not the directory. A directory URL is 308-redirected to the
+  // slash-less form, and every relative `src="app.js"` in the document would then resolve one level
+  // too high (measured 2026-08-30: `/user/pages/carom` + `carom-app.js` → `/user/pages/carom-app.js`,
+  // a 404 with nothing on screen to say why).
+  const src = `/user/pages/${slug.split('/').map(encodeURIComponent).join('/')}/index.html`;
   const allow = frameAllow(needs);
   const frameRef = useRef<HTMLIFrameElement>(null);
 
