@@ -39,6 +39,24 @@ Only pages **operated by user input / clicks** (games, calculators, forms/wizard
 `100dvh` viewport layout, multi-panel sizing, delta-time animation). This applies to the build flow
 AND to any interactive HTML page saved directly without a build session.
 
+**Where an app's code goes: files, not a PageSpec string.** Write the app with `write_file` into
+`user/pages/<slug>/web/` — `index.html` plus whatever `.js` / `.css` / assets it needs — and do NOT
+call `save_page` for it. The directory is the project: it appears in the workspace, joins the
+project group, takes the project's visibility, and is reachable at **`/<slug>`**. Split it into as
+many files as the app deserves.
+
+Why this and not an `Html` block: a block carrying a script is forced into an iframe whose CSP has
+no `'self'`, so the page's own `<script src>` is blocked with **no error and a blank screen**, and
+Blob workers and nested iframes die with it. Files under `web/` are served as real documents with
+none of that. It is also how an app stays editable — changing one file is one `write_file`, where
+an inlined app means re-sending the whole PageSpec every time.
+
+`user/pages/<slug>/web/` is the served part, and the only part with a URL. Anything else the
+project owns (module code, its database) belongs beside `web/`, not inside it.
+
+`save_page` is still right for a **document** page — report, analysis, dashboard of render
+components. App at the root, documents at `/<slug>/<page>` with `project: "<slug>"`.
+
 ## The build session (`start_build`)
 
 A request to **actually build** an app / tool / dashboard / game / calculator the user can use →

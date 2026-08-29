@@ -446,12 +446,20 @@ use a **multi-select toggle so several can be picked**, plus a free-text **input
 **Do NOT call advance_build before the user responds.** When the user picks additions or skips, call advance_build(output=chosen additions or 'none') to start the build."
             .to_string(),
         BuildStep::Implement => "S4 Implementation (LAST step): build it exactly per the chosen features·design·additions. \
-T1/T2 = create·publish the page via save_page. T3 = generate the user module code, then the page. \
+**An interactive app/game is written as FILES, not as a PageSpec string**: `write_file` into \
+`user/pages/<slug>/web/` (index.html + its own .js/.css), and do NOT call save_page for it. \
+That directory is the project — it joins the workspace and the project group, takes the project's \
+visibility, and is reachable at `/<slug>`. An `Html` block carrying a script goes into an iframe whose \
+CSP has no `'self'`, where the app's own `<script src>` is blocked with no error and a blank screen; \
+files under `web/` are served as real documents with none of that, and editing one file later is one \
+write_file instead of re-sending the whole spec. Split the app into as many files as it deserves. \
+A DOCUMENT page (report·analysis·dashboard of render components) goes through save_page as before. \
+T3 = generate the user module code as well. \
 **If the artifact is an interactive HTML app/game, call `get_skill(\"html-app-quality\")` BEFORE writing the HTML** \
 and satisfy every checklist item (accessibility, responsive/canvas fit, 100dvh viewport, multi-panel sizing, delta-time) — \
 these are the recurring causes of clipped/overflowing/too-fast apps. \
-**save_page is the final action — call it and STOP. Do NOT call advance_build after save_page** \
-(the build completes when the user approves the page; there is no further stage). If the build's data changes periodically \
+**The last write (the app's files, or save_page for a document) ends the build — do it and STOP. \
+Do NOT call advance_build after it** (there is no further stage). If the build's data changes periodically \
 (quotes·weather·news etc.), you may propose a recurring-refresh cron (schedule_task) alongside."
             .to_string(),
         BuildStep::Done => "The build is complete.".to_string(),
@@ -475,12 +483,16 @@ When the user responds, call advance_build(output=selected changes). Set auto=tr
         BuildStep::Done => "The modify build is complete.".to_string(),
         // Implement (+ 방어: Design/Refine 은 Modify 흐름에서 skip 되어 정상 경로론 안 옴)
         _ =>
-            "M2 Apply (LAST step): apply ONLY the selected changes to the loaded existing spec — do NOT \
-rebuild from scratch. Keep every untouched block/prop verbatim; keep title/slug/project unless a selected \
-change says otherwise. If the artifact is an interactive HTML app/game, call `get_skill(\"html-app-quality\")` \
+            "M2 Apply (LAST step): apply ONLY the selected changes — do NOT rebuild from scratch. \
+**If the artifact is a file app (`user/pages/<slug>/web/` exists), edit THOSE FILES**: read the one that \
+holds the part being changed, write it back, leave the others untouched. That is the point of the layout — \
+one file changes, nothing else moves, and no spec is re-sent. \
+Otherwise (a document page) apply the changes to the loaded spec, keeping every untouched block/prop \
+verbatim and keeping title/slug/project unless a selected change says otherwise. \
+If the artifact is an interactive HTML app/game, call `get_skill(\"html-app-quality\")` \
 BEFORE editing the HTML and keep the checklist satisfied (responsive/canvas fit, 100dvh, delta-time). \
-**save_page with the SAME slug is the final action — call it and STOP. Do NOT call advance_build after \
-save_page** (the modify completes when the user approves the page)."
+**The last write (the changed files, or save_page with the SAME slug) ends the modify — do it and STOP. \
+Do NOT call advance_build after it.**"
             .to_string(),
     }
 }
