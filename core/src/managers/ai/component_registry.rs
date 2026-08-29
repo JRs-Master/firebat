@@ -344,22 +344,43 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
 pub fn sanitize_to_schema_traced(
     value: &mut serde_json::Value,
     schema: &serde_json::Value,
-) -> Vec<&'static str> {
+) -> Vec<String> {
     let mut applied = Vec::new();
     sanitize_collect(value, schema, &mut applied);
     applied
 }
 
-fn note(applied: &mut Vec<&'static str>, kind: &'static str) {
-    if !applied.contains(&kind) {
-        applied.push(kind);
+fn note(applied: &mut Vec<String>, kind: &str) {
+    if !applied.iter().any(|a| a == kind) {
+        applied.push(kind.to_string());
     }
+}
+
+/// Names in the ledger, not just a count of them.
+///
+/// `unknown_prop` on its own says a dialect was absorbed and nothing about which one, so the entry
+/// cannot be acted on — measured 2026-08-30, fourteen days of the ledger held sixteen entries, all
+/// of them `stock_chart / unknown_prop`, and none of them said what to fix. A judgement without its
+/// evidence is one nobody can check (the same lesson the MusicXML coverage table was rebuilt on).
+///
+/// Capped: a model that sends thirty stray keys is one dialect, not thirty, and a journal line is
+/// not a place to paste an object.
+fn note_props(applied: &mut Vec<String>, kind: &str, names: &[String]) {
+    const SHOWN: usize = 6;
+    let mut shown: Vec<&str> = names.iter().take(SHOWN).map(String::as_str).collect();
+    let extra = names.len().saturating_sub(SHOWN);
+    let more;
+    if extra > 0 {
+        more = format!("+{extra} more");
+        shown.push(&more);
+    }
+    note(applied, &format!("{kind}:{}", shown.join(",")));
 }
 
 fn sanitize_collect(
     value: &mut serde_json::Value,
     schema: &serde_json::Value,
-    applied: &mut Vec<&'static str>,
+    applied: &mut Vec<String>,
 ) {
     if schema_allows_type(schema, "object") {
         let Some(obj) = value.as_object_mut() else {
@@ -521,7 +542,7 @@ fn sanitize_collect(
                     .cloned()
                     .collect();
                 if !extras.is_empty() {
-                    note(applied, "unknown_prop");
+                    note_props(applied, "unknown_prop", &extras);
                 }
                 for k in extras {
                     obj.remove(&k);
@@ -693,7 +714,7 @@ fn is_child_block_schema(items_schema: &serde_json::Value) -> bool {
 /// It is a per-component dialect, so it moved where those live — the fifteen title-bearing
 /// components each declare `"synonyms": {"name": "title"}` in `system/components.json`, on the
 /// channel a declaration fix belongs to (표준 v1 S2, 2026-08-17).
-fn sanitize_child_block(item: &mut serde_json::Value, applied: &mut Vec<&'static str>) {
+fn sanitize_child_block(item: &mut serde_json::Value, applied: &mut Vec<String>) {
     // 문자열 → text 블록.
     if let Some(s) = item.as_str() {
         note(applied, "child_text_wrap");
@@ -985,5 +1006,47 @@ mod tests {
         sanitize_to_schema(&mut props, schema);
         assert_eq!(props["text"], json!("문의하기"), "`label` 이 `text` 로 정규화되어야");
         assert!(validate_value(&props, schema).is_ok(), "sanitize 후 button 검증 통과해야 함");
+    }
+
+    /// The ledger has to name what it absorbed.
+    ///
+    /// Measured 2026-08-30: fourteen days of `render_dialect` held sixteen entries, every one of
+    /// them `component=stock_chart coercions=["unknown_prop"]`. That says a dialect was absorbed
+    /// and nothing about which one, so nobody could fix the declaration it points at — a judgement
+    /// without its evidence.
+    #[test]
+    fn the_dialect_ledger_names_the_props_it_dropped() {
+        let schema = &serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "title": {"type": "string"} }
+        });
+        let mut props = serde_json::json!({ "title": "x", "showLegend": true, "yAxisMax": 10 });
+        let applied = sanitize_to_schema_traced(&mut props, schema);
+        let line = applied.join(" ");
+        assert!(line.contains("unknown_prop:"), "{line}");
+        assert!(line.contains("showLegend"), "the dropped key must be readable: {line}");
+        assert!(line.contains("yAxisMax"), "{line}");
+        // …and the drop itself still happened.
+        assert!(props.get("showLegend").is_none());
+    }
+
+    #[test]
+    fn a_flood_of_stray_keys_is_one_entry_not_thirty() {
+        // A journal line is not a place to paste an object, and thirty stray keys are one dialect.
+        let schema = &serde_json::json!({
+            "type": "object", "additionalProperties": false,
+            "properties": { "title": {"type": "string"} }
+        });
+        let mut obj = serde_json::Map::new();
+        obj.insert("title".into(), serde_json::json!("x"));
+        for i in 0..30 {
+            obj.insert(format!("k{i}"), serde_json::json!(i));
+        }
+        let mut props = serde_json::Value::Object(obj);
+        let applied = sanitize_to_schema_traced(&mut props, schema);
+        assert_eq!(applied.len(), 1, "{applied:?}");
+        assert!(applied[0].contains("more"), "the count of the rest must survive: {applied:?}");
+        assert!(applied[0].len() < 160, "one line, not an object: {applied:?}");
     }
 }
