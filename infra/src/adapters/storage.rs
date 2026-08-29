@@ -326,6 +326,14 @@ impl IStoragePort for LocalStorageAdapter {
 }
 
 /// 확장자 → MIME type 매핑 — 옛 TS readBinary 의 mimeType 추론 1:1.
+/// The content type a file is served as.
+///
+/// The web types below are not decoration. A browser refuses a `<script type="module">` served as
+/// `application/octet-stream` — it is fetched with a 200 and then never runs, with no error on the
+/// page. The same map answers for the page-asset route, so a missing extension here is an app that
+/// serves and does not execute (2026-08-29 — the failure mode that cost an afternoon once already).
+/// Text types carry `charset=utf-8`: without it a browser falls back to a locale guess and Korean
+/// content arrives as mojibake.
 fn guess_mime_type(path: &str) -> String {
     let ext = path
         .rsplit('.')
@@ -339,11 +347,29 @@ fn guess_mime_type(path: &str) -> String {
         "webp" => "image/webp",
         "avif" => "image/avif",
         "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
         "pdf" => "application/pdf",
         "mp4" => "video/mp4",
         "webm" => "video/webm",
         "mp3" => "audio/mpeg",
         "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "flac" => "audio/flac",
+        // Browser-executable and browser-parsed text.
+        "html" | "htm" => "text/html; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" | "map" => "application/json; charset=utf-8",
+        "webmanifest" => "application/manifest+json; charset=utf-8",
+        "xml" => "application/xml; charset=utf-8",
+        "txt" | "md" | "csv" | "lrc" => "text/plain; charset=utf-8",
+        "wasm" => "application/wasm",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "glb" => "model/gltf-binary",
+        "gltf" => "model/gltf+json",
         _ => "application/octet-stream",
     }
     .to_string()
@@ -459,6 +485,23 @@ mod tests {
         assert_eq!(result.mime_type, "image/png");
         // base64 encoded "iVBORw0KGgo="
         assert_eq!(result.base64, "iVBORw0KGgo=");
+    }
+
+    /// A page app is a handful of files, and every one of them has to arrive as something the
+    /// browser will run. `application/octet-stream` on a module script is a 200 that never
+    /// executes and says nothing — so this asserts the executable types by name rather than
+    /// trusting the map to have kept them.
+    #[test]
+    fn browser_executable_files_get_types_a_browser_will_run() {
+        assert_eq!(guess_mime_type("app.js"), "text/javascript; charset=utf-8");
+        assert_eq!(guess_mime_type("app.mjs"), "text/javascript; charset=utf-8");
+        assert_eq!(guess_mime_type("index.html"), "text/html; charset=utf-8");
+        assert_eq!(guess_mime_type("style.css"), "text/css; charset=utf-8");
+        assert_eq!(guess_mime_type("engine.wasm"), "application/wasm");
+        // Unchanged for the media the map already served.
+        assert_eq!(guess_mime_type("a.png"), "image/png");
+        // And the fallback still exists for what we do not name.
+        assert_eq!(guess_mime_type("a.zzz"), "application/octet-stream");
     }
 
     #[tokio::test]
