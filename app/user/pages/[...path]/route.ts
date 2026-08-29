@@ -121,6 +121,7 @@ export async function GET(
   // with what it already holds (so the app's first synchronous read finds its data), and the module
   // client for the modules it named. Only the HTML: a .js file is the app's own.
   const wantsBootstrap = decl.needs.storage || (decl.needs.modules?.length ?? 0) > 0;
+  let seeded = false;
   if (wantsBootstrap && (file.mimeType || '').startsWith('text/html')) {
     let seed: Record<string, string> = {};
     if (decl.needs.storage) {
@@ -132,7 +133,7 @@ export async function GET(
       storage: !!decl.needs.storage,
       modules: decl.needs.modules ?? [],
     });
-    if (boot) buf = Buffer.from(injectBootstrap(buf.toString('utf8'), boot), 'utf8');
+    if (boot) { buf = Buffer.from(injectBootstrap(buf.toString('utf8'), boot), 'utf8'); seeded = true; }
   }
   const total = buf.length;
   const headers: Record<string, string> = {
@@ -142,7 +143,13 @@ export async function GET(
     'Content-Security-Policy': appCsp(decl.needs),
     // A gated project must not sit in a shared cache, and an app under active editing should not
     // be pinned for long anywhere. Public assets keep the five minutes Caddy was giving them.
-    'Cache-Control': visibility === 'public' ? 'public, max-age=300' : 'private, no-store',
+    //
+    // A seeded document is never one of them. The bootstrap carries the page's stored state inline,
+    // so a cached copy hands the app a snapshot of whoever loaded it last: measured 2026-08-30 on
+    // carom — write, reload, `fromCache=true`, old seed, and the record the app had just saved was
+    // simply not there. The bytes were on the server the whole time. Reading an app's own state as
+    // "gone" is the failure this had to not have.
+    'Cache-Control': seeded || visibility !== 'public' ? 'private, no-store' : 'public, max-age=300',
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',
     // This answers differently to a navigation than to the frame's own request (above).
