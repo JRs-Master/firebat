@@ -85,7 +85,7 @@ kakao-map 정적 지도 이미지를 영상에 이어 붙이면 화질·용량·
 
 - **"해당 도시 확대" = camera 키프레임** — 배경 이미지를 갈아 끼우는 게 아니라
   `camera:[{at:<그 도시 멘트 시작>, zoom:1.9, center:<그 도시 at>, in:0.8}, …, {at:<마무리>, zoom:1}]`.
-  멘트 타이밍은 dialogueSync 절차(TTS 한 줄 → duration → voices/bubble/camera 를 같은 at 에).
+  멘트 타이밍은 voiceSync 절차(TTS 한 줄 → duration → voices/bubble/camera 를 같은 at 에).
 - **길면 async** — 30초 이상은 `quality:'draft'` + `async:true` 권장. **나눠 달라면 trim** —
   완성된 mp4 를 `{action:'trim', media, segments:[{from,to}..]}` 로 초 단위 분할(재렌더 0).
 

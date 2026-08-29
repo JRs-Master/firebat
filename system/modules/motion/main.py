@@ -1021,6 +1021,9 @@ class Scene:
         if not isinstance(layers, list) or len(layers) > LAYERS_MAX:
             raise SceneError(f"layers must be a list of at most {LAYERS_MAX}")
         self.layers = []
+        # What had to be moved to stay on the canvas — reported with the render so an
+        # author sees it instead of finding a cropped row in the finished mp4.
+        self.layout_fixes = []
         texts = []
         for i, L in enumerate(layers):
             if not isinstance(L, dict) or "kind" not in L:
@@ -1113,6 +1116,8 @@ class Scene:
                 L["_lines"] = [(rng.random(), rng.uniform(0.14, 0.42),
                                 rng.uniform(2.0, 5.0), rng.random())
                                for _ in range(14)]
+            if kind in ("list", "card"):
+                self._fit_rows(i, L)
             self.layers.append(L)
         bg = inp.get("background") or {"kind": "night"}
         if not isinstance(bg, dict) or bg.get("kind") not in ("night", "gradient",
@@ -1347,6 +1352,46 @@ class Scene:
                      state[1] + (cx - state[1]) * f,
                      state[2] + (cy - state[2]) * f)
         return state
+
+    # Row heights the two growing kinds draw with — kept beside the fitter so the
+    # arithmetic here and in _draw_list/_draw_card cannot drift apart.
+    LIST_ROW, LIST_TALL, LIST_PLAIN = 158, 150, 128
+    CARD_PAD, CARD_ROW, CARD_SHADOW = 50, 130, 12
+
+    def _fit_rows(self, i, L):
+        """Keep a list/card inside the canvas.
+
+        `at` is the TOP of these two kinds and they grow downward one row at a time, so a
+        y that looks like the middle of the frame puts the last row past the bottom edge.
+        Measured 2026-08-29: at [0.36, 0.59] with three rows ended at 1081px of a 1080px
+        canvas and row `03` was gone from the finished video with nothing said about it.
+
+        Cropping in silence is the one outcome worth spending code to avoid — a render is
+        minutes long and the author sees the loss only after it finishes. Refusing would
+        cost that same round, so the box is moved up to fit and the move is reported.
+        """
+        rows = L.get("rows") or []
+        if not rows:
+            return
+        if L["kind"] == "list":
+            last_tall = bool((rows[-1] or {}).get("highlight"))
+            h = (len(rows) - 1) * self.LIST_ROW + (self.LIST_TALL if last_tall
+                                                   else self.LIST_PLAIN)
+        else:
+            h = self.CARD_PAD + self.CARD_ROW * len(rows) + self.CARD_SHADOW
+        # ss cancels: the draw code scales both the offsets and the canvas by it.
+        hn = h / float(self.H)
+        top = (L.get("at") or [0.5, 0.30 if L["kind"] == "list" else 0.10])[1]
+        if top + hn <= 1.0:
+            return
+        fitted = max(0.0, 1.0 - hn)
+        at = list(L.get("at") or [0.5, top])
+        at[1] = fitted
+        L["at"] = at
+        self.layout_fixes.append(
+            f"layers[{i}] ({L['kind']}, {len(rows)} rows) reached y={top + hn:.2f} — "
+            f"`at` is this kind's TOP, so it was moved up to {fitted:.2f} to stay on "
+            f"the canvas. Place it yourself at or above that to control the spacing.")
 
     def _at(self, L, default):
         at = L.get("at") or default
@@ -2025,6 +2070,8 @@ def action_render(inp):
         return {"success": True,
                 "data": {"stills": len(imports), "duration": scene.dur,
                          "note": "stills only — drop the stills field for the full video",
+                         **({"layoutFixes": scene.layout_fixes} if scene.layout_fixes
+                            else {}),
                          "_mediaImport": imports if len(imports) > 1 else imports[0]}}
     try:
         import imageio_ffmpeg
@@ -2043,6 +2090,8 @@ def action_render(inp):
     out = data.pop("_out_path")
     data["_mediaImport"] = {"path": _out(out), "contentType": "video/mp4",
                             "filenameHint": f"motion-{tag}"}
+    if scene.layout_fixes:
+        data["layoutFixes"] = scene.layout_fixes
     return {"success": True, "data": data}
 
 
@@ -2358,7 +2407,16 @@ def action_assets(_inp):
                      "job": "{action:'job', id, redeliver?}"},
         "coordinates": "positions are normalized [x, y], 0..1, y grows downward; "
                        "times are seconds; every layer has from/to (fade windows "
-                       "fadeIn/fadeOut, default 0.4s)",
+                       "fadeIn/fadeOut, default 0.4s). WHAT `at` PINS DIFFERS BY "
+                       "KIND: for card and list it is the TOP-CENTRE and the box "
+                       "grows DOWNWARD one row at a time (list 158px/row at 1080 "
+                       "base, card 130px + 50 padding), so a y that reads like the "
+                       "middle of the frame puts the last row off the bottom — a "
+                       "3-row list wants y <= 0.55, a 4-row card y <= 0.42. For "
+                       "every other kind it is the centre. A box that would fall "
+                       "off is moved up to fit and the render reports it in "
+                       "layoutFixes, but placing it yourself is what controls the "
+                       "spacing",
         "sizes": sorted(SIZES), "durationMax": DUR_MAX, "fpsRange": [FPS_MIN, FPS_MAX],
         "backgrounds": {
             "night": "built-in starry night — moon, hills, stars (default)",
@@ -2427,7 +2485,12 @@ def action_assets(_inp):
             "bubble": "{text, at?, heart?, typing?} speech balloon, types itself out",
             "title": "{lines:[{text, size:'xl'|'lg'|'md'|'sm', color:'ink'|'amber'|"
                      "'cyan'|[r,g,b]}], at?} stacked display text with shadow",
-            "caption": "{text, at?} subtitle pill (default near the bottom)",
+            "caption": "{text, at?} subtitle pill, centred on `at` (default y 0.855, "
+                       "near the bottom). Captions are a choice, not a transcript — "
+                       "one short line per beat reads; a running transcript of the "
+                       "narration does not. Whatever sits above one has to end "
+                       "before it: default caption + a 3-row list is y 0.80 of room, "
+                       "and content generally wants to stay inside y 0.08..0.92",
             "card": "{rows:[{label, value}], at?, w?, accent?} info card, slides in",
             "list": "{rows:[{lead, text, dots?:[[r,g,b]..], highlight?, tag?}], at?, w?} "
                     "staggered time-table rows; highlight = amber emphasis + tag badge",
@@ -2454,15 +2517,24 @@ def action_assets(_inp):
                          "A track shorter than the scene repeats to fill it, with a "
                          "0.25s crossfade hiding the loop point",
                   "voice": "one media path starting at t=0 (tts output); ducks the bgm "
-                           "and drives lipsync",
-                  "voices": "dialogue on the timeline: [{media, at}] (max 12). The mouth "
-                            "follows the mixed envelope automatically; call the duration "
-                            "action per line, then place each line's bubble/talk at the "
-                            "same `at` for that long",
+                           "and drives lipsync. THE COST: one file has one start "
+                           "time, so every layer after it is timed by guessing where "
+                           "the narration got to — the visuals and the voice drift "
+                           "apart over a minute. Right for a scene whose visuals do "
+                           "not have to land on particular words; for anything "
+                           "narrated point-by-point use voices",
+                  "voices": "lines on the timeline: [{media, at}] (max 12) — dialogue "
+                            "between characters AND single-narrator explainers, which "
+                            "is most of them. One tts call per point, the duration "
+                            "action per file, then each line starts where the previous "
+                            "one ended: now the caption, card or list for that point "
+                            "shares its `at` and its length, and the picture cannot "
+                            "drift from the words. The mouth follows the mixed "
+                            "envelope automatically",
                   "bgmGainDb": "default -8",
                   "bgmLoop": "default true — false plays the track once and leaves the "
                              "rest of the scene silent"},
-        "dialogueSync": "the recipe: tts each line → duration each file → for line i "
+        "voiceSync": "the recipe for BOTH dialogue and narration: tts each line → duration each file → for line i "
                         "at time T: voices += {media, at:T}, bubble from T to T+len, "
                         "sprite act {at:T, do:'talk', for:len, lipsync}. The mouth needs "
                         "no manual sync — it follows the sound energy",
@@ -2616,6 +2688,25 @@ def action_selftest():
     varied = bool((bg != bg[:, :1]).any())
     ck("night background carries off-column features (moon, stars, hills)",
        True, varied, bg.shape == (sc.SH, sc.SW, 3) and varied)
+
+    # The canary is two-way on purpose: a fitter that moved everything would look
+    # just as green as one that moved nothing if only the overflowing case were checked.
+    rows3 = [{"lead": "01", "text": "a"}, {"lead": "02", "text": "b"},
+             {"lead": "03", "text": "c"}]
+    over = Scene({**base, "size": "1920x1080",
+                  "layers": [{"kind": "list", "from": 0, "to": 2, "at": [0.36, 0.59],
+                              "rows": rows3}]})
+    fitted_y = over.layers[0]["at"][1]
+    ck("a 3-row list placed past the bottom is moved up, and says so",
+       "y<0.59 + one note", (round(fitted_y, 3), len(over.layout_fixes)),
+       fitted_y < 0.59 and len(over.layout_fixes) == 1
+       and fitted_y + (2 * Scene.LIST_ROW + Scene.LIST_PLAIN) / 1080.0 <= 1.0001)
+    ok_scene = Scene({**base, "size": "1920x1080",
+                      "layers": [{"kind": "list", "from": 0, "to": 2, "at": [0.36, 0.30],
+                                  "rows": rows3}]})
+    ck("a list that already fits is left exactly where it was asked for",
+       (0.30, 0), (ok_scene.layers[0]["at"][1], len(ok_scene.layout_fixes)),
+       ok_scene.layers[0]["at"][1] == 0.30 and not ok_scene.layout_fixes)
 
     ck("win() is zero outside its window and full at mid-window",
        (0.0, 1.0), (win(0.1, 1, 2), win(1.5, 1, 2)),
