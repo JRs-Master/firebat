@@ -46,6 +46,7 @@ impl From<ProjectEntry> for ProjectEntryPb {
                 ProjectVisibility::Password => "password".to_string(),
                 ProjectVisibility::Private => "private".to_string(),
             },
+            has_app: e.has_app,
         }
     }
 }

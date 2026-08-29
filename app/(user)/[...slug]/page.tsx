@@ -39,6 +39,7 @@ async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
 }
 import { PasswordGate } from './password-gate';
 import { ProjectRootView } from './project-root';
+import { ProjectAppView } from './project-app';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -195,6 +196,31 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       const projectsRes = await scanProjects({});
       const projects = projectsRes.ok ? (projectsRes.data ?? []) : [];
       const matched = projects.find((p) => p.name === slug);
+      if (matched?.hasApp) {
+        // The project ships its own app (`user/pages/<name>/web/`), so its root is that app rather
+        // than a list of its documents. No DB page row is involved — the directory is what claims
+        // the name, which is why deleting the duplicate row does not take the URL down with it.
+        // Visibility is the project's own (vault), and scan already resolved it.
+        const vis = matched.visibility || 'public';
+        if (vis === 'private') {
+          const jar = await cookies();
+          const adminToken = jar.get(SESSION_COOKIE_NAME)?.value || jar.get('firebat_admin_token')?.value;
+          if (!adminToken) redirect('/404');
+        } else if (vis === 'password') {
+          const jar = await cookies();
+          const saved = jar.get(`fp_${slug}`)?.value;
+          let verified = false;
+          if (saved) {
+            const r = await verifyProjectPasswordRpc({ project: slug, password: decodeURIComponent(saved) });
+            verified = r.ok && r.data === true;
+          }
+          // The asset route 404s an unverified request; the form is here, where a person can see it.
+          if (!verified) {
+            return <PasswordGate slug={slug} title={slug} isProjectPassword projectName={slug} />;
+          }
+        }
+        return <ProjectAppView projectName={slug} />;
+      }
       if (matched) {
         const sp = searchParams ? await searchParams : {};
         const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);

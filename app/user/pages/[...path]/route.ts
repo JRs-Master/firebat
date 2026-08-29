@@ -88,9 +88,15 @@ export async function GET(
     if (!verified) return notFound();
   }
 
+  // The URL space maps into `web/` only. That is the boundary: a project's `modules/` and `data/`
+  // sit beside it in the same directory and have no URL at all — not a blocked one, an absent one.
+  // A deny list would have to keep pace with whatever a project puts there; this cannot fall behind
+  // ([[feedback_boundary_not_blocklist]]).
+  //
   // A directory URL means its index, the way a file server resolves it. Asked for only after the
   // direct read misses, so the common path stays one call.
-  const base = `user/pages/${path.join('/')}`;
+  const rest = path.slice(1).join('/');
+  const base = `user/pages/${name}/web${rest ? `/${rest}` : ''}`;
   let read = await readFileBinary({ path: base });
   if (!read.ok || !(read.data as BinaryRead)?.base64) {
     read = await readFileBinary({ path: `${base}/index.html` });

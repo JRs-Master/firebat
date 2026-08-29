@@ -483,6 +483,9 @@ message ProjectEntryPb {
   repeated string paths = 2;
   repeated string page_slugs = 3;
   string visibility = 4;   // "public" | "password" | "private"
+  // The project ships a browser app of its own — `user/pages/<name>/web/index.html` exists.
+  // Its root URL renders that app instead of a page list.
+  bool has_app = 5;
 }
 
 message ProjectListPb {
