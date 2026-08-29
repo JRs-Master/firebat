@@ -1858,11 +1858,18 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .unwrap_or("published");
                 let visibility = args.get("visibility").and_then(|v| v.as_str());
                 let password = args.get("password").and_then(|v| v.as_str());
-                page.save(&slug, &spec_str, status, project, visibility, password)?;
+                let landed = page.save(&slug, &spec_str, status, project, visibility, password)?;
 
                 // AI 미개입 자동 hook: 사이드바 SSE 갱신 (옛 TS core/index.ts:858 notifySidebar).
                 event.notify_sidebar();
-                Ok(serde_json::json!({"slug": slug, "saved": true}))
+                // Say which project it landed in. The value used to be dropped on the way in with
+                // nothing in the answer to show it — the page saved fine and simply never joined a
+                // group, so the loss was only visible days later in a listing.
+                Ok(serde_json::json!({
+                    "slug": slug,
+                    "saved": true,
+                    "project": landed,
+                }))
             }
         }),
     );

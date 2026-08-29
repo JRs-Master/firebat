@@ -1454,7 +1454,13 @@ impl McpToolHandler for SavePageHandler {
             visibility.as_deref(),
             password.as_deref(),
         ) {
-            Ok(()) => Ok(serde_json::json!({"success": true, "slug": slug})),
+            // `project` echoes where the page actually landed — it may have been read out of the
+            // spec, and a silent drop is what this used to be.
+            Ok(landed) => Ok(serde_json::json!({
+                "success": true,
+                "slug": slug,
+                "project": landed,
+            })),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
         }
     }

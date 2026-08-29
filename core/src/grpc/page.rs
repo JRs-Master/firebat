@@ -185,7 +185,7 @@ impl PageService for PageServiceImpl {
             args.visibility.as_deref(),
             args.password.as_deref(),
         ) {
-            Ok(()) => {
+            Ok(_project) => {
                 if let Some(ev) = &self.event {
                     ev.notify_sidebar();
                 }

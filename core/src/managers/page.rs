@@ -97,8 +97,12 @@ impl PageManager {
         project: Option<&str>,
         visibility: Option<&str>,
         password: Option<&str>,
-    ) -> InfraResult<()> {
+    ) -> InfraResult<Option<String>> {
         Self::validate_spec(spec)?;
+        // The project may have arrived inside the spec — see `resolve_project`.
+        let (spec_owned, project_owned) = Self::resolve_project(spec, project);
+        let spec: &str = &spec_owned;
+        let project: Option<&str> = project_owned.as_deref();
         // hub-scoped page (project='hub:<id>') = reserved check 생략 — 내부 영역.
         // 일반 page 만 시스템 예약 slug (api / admin / user / hub / system / login / share 등) 차단.
         let is_hub_scoped = project
@@ -128,7 +132,62 @@ impl PageManager {
         let slugs = Self::extract_media_slugs(spec);
         let slugs_vec: Vec<String> = slugs.into_iter().collect();
         self.db.replace_media_usage(slug, &slugs_vec);
-        Ok(())
+        Ok(project_owned)
+    }
+
+    /// The page's project, and a spec that agrees with it.
+    ///
+    /// `project` has two homes and they were not symmetric: the renderer reads whichever is set
+    /// (`pb.project ?? spec.project`) and `rename` writes both, but `save` only ever took the
+    /// argument — so a project named inside the spec was stored in the spec and never reached the
+    /// `pages.project` column, which is the only thing `ProjectManager::scan` counts. The page
+    /// rendered correctly and simply never joined its group, which is why nothing reported it.
+    /// Measured 2026-08-29: of 34 pages, 13 named a project, 2 were grouped, and **zero** had the
+    /// column set without the spec also saying so — the argument alone had never once formed a
+    /// group.
+    ///
+    /// So the parser absorbs the dialect, and then writes the resolved value back into the spec so
+    /// the two homes cannot drift apart on the next save (a stale spec copy would otherwise revert
+    /// a project changed through any path that does not pass one).
+    ///
+    /// An explicit empty string clears the project and is NOT filled in from the spec — that is
+    /// how a caller says "no project" as opposed to "I am not naming one".
+    ///
+    /// A `hub:` scope is never absorbed. It is assigned by the framework, and taking one from a
+    /// model-authored spec would let a page claim a visitor's scope and skip the reserved-slug
+    /// check with it.
+    fn resolve_project(spec: &str, arg: Option<&str>) -> (String, Option<String>) {
+        let Ok(mut value) = serde_json::from_str::<serde_json::Value>(spec) else {
+            // validate_spec already ran; nothing to absorb from an unparsable spec.
+            return (spec.to_string(), arg.map(str::to_string));
+        };
+        let nested = value
+            .get("project")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !s.starts_with("hub:"))
+            .map(str::to_string);
+        let effective = match arg.map(str::trim) {
+            Some("") => None,
+            Some(p) => Some(p.to_string()),
+            None => nested,
+        };
+        let in_spec = value.get("project").and_then(|v| v.as_str());
+        if in_spec == effective.as_deref() {
+            return (spec.to_string(), effective);
+        }
+        match &effective {
+            Some(p) => value["project"] = serde_json::Value::String(p.clone()),
+            None => {
+                if let Some(obj) = value.as_object_mut() {
+                    obj.remove("project");
+                }
+            }
+        }
+        match serde_json::to_string(&value) {
+            Ok(rewritten) => (rewritten, effective),
+            Err(_) => (spec.to_string(), effective),
+        }
     }
 
     /// PageSpec schema 검증 — body 가 Component 배열인지 확인.
@@ -614,5 +673,58 @@ mod tests {
         // 옛 동작과 spec 일치 — dual-run 검증 가능. 정확한 slug 추출은 후속 정정 영역.
         assert!(slugs.contains("icon-bar-thumb"));
         assert!(slugs.contains("extra-baz-480w"));
+    }
+
+    // ── project 의 두 집 ────────────────────────────────────────────────
+    // Measured 2026-08-29: 13 pages named a project, 2 were grouped, and the column was never once
+    // set without the spec also saying so. The model writes it inside the spec; only the column is
+    // counted. These pin the absorber and the normalization that keeps the two from drifting.
+
+    #[test]
+    fn a_project_named_inside_the_spec_still_groups_the_page() {
+        let spec = r#"{"project":"carom","body":[]}"#;
+        let (out, project) = PageManager::resolve_project(spec, None);
+        assert_eq!(project.as_deref(), Some("carom"));
+        assert!(out.contains("\"project\":\"carom\""));
+    }
+
+    #[test]
+    fn the_argument_wins_and_the_spec_is_brought_into_line() {
+        // Otherwise a stale spec copy silently reverts the project on the next save that passes none.
+        let spec = r#"{"project":"old","body":[]}"#;
+        let (out, project) = PageManager::resolve_project(spec, Some("new"));
+        assert_eq!(project.as_deref(), Some("new"));
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["project"], "new");
+    }
+
+    #[test]
+    fn an_empty_argument_clears_the_project_instead_of_falling_back() {
+        // "no project" and "I am not naming one" are different answers; only the second absorbs.
+        let spec = r#"{"project":"games","body":[]}"#;
+        let (out, project) = PageManager::resolve_project(spec, Some(""));
+        assert_eq!(project, None);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.get("project").is_none(), "the cleared value must not stay in the spec");
+    }
+
+    #[test]
+    fn a_hub_scope_is_never_taken_from_the_spec() {
+        // A hub scope is assigned by the framework. Absorbing one from a model-authored spec would
+        // let a page claim a visitor's scope — and carry the reserved-slug exemption with it.
+        let spec = r#"{"project":"hub:abc","body":[]}"#;
+        let (_out, project) = PageManager::resolve_project(spec, None);
+        assert_eq!(project, None);
+        // The argument remains the one way in.
+        let (_o2, p2) = PageManager::resolve_project(spec, Some("hub:abc"));
+        assert_eq!(p2.as_deref(), Some("hub:abc"));
+    }
+
+    #[test]
+    fn a_spec_without_a_project_is_left_byte_identical() {
+        let spec = r#"{"head":{"title":"x"},"body":[]}"#;
+        let (out, project) = PageManager::resolve_project(spec, None);
+        assert_eq!(project, None);
+        assert_eq!(out, spec, "nothing to resolve must not reformat the stored spec");
     }
 }

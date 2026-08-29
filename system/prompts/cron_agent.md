@@ -22,7 +22,8 @@ You are performing an auto-triggered content generation job while the user is aw
    - Correct structure: `body: [{type:"Header", props:{text:"Title", level:1}}, {type:"Text", props:{content:"paragraph body..."}}, {type:"Table", props:{headers:[...], rows:[...]}}, {type:"Chart", props:{...}}, {type:"Callout", props:{type:"info", message:"..."}}, ...]`
    - Available components: Header, Text, Table, Chart, StockChart, Image, Metric, KeyValue, Compare, Timeline, List, Callout, Alert, Badge, Card, Grid, Divider, Progress, AdSlot etc. (22 kinds)
    - For map / diagram / formula / code / slideshow / Lottie / network graph, use the dedicated component (render_map / render_diagram / render_math / render_code / render_slideshow / render_lottie / render_network). The `html` component (render_iframe) is for bespoke visuals without a dedicated component — d3 / threejs 3D / p5 sketch — as a page section, not the entire page
-   - Correct invocation: `save_page(slug:"...", spec:{head:{title,description,keywords,og:{title,description}}, project:"...", status:"published", body:[Header, Text, Table, ...] })`
+   - Correct invocation: `save_page(slug:"...", project:"...", status:"published", spec:{head:{title,description,keywords,og:{title,description}}, body:[Header, Text, Table, ...] })`
+   - **`project` and `status` are save_page's own arguments, NOT spec fields** — the spec holds `head` and `body` only. (The server now reads a nested `project` too, but write it where it belongs.)
    - head field cannot be missing — title / description / og required
 
 5. **Output depth** (no shallow enumeration):
