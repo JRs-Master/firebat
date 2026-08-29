@@ -2854,10 +2854,6 @@ impl AiManager {
         let mut pending_actions: Vec<serde_json::Value> = Vec::new();
         // CLI 자체 MCP loop 가 호출한 suggest / propose_plan 결과 누적 — 함수 끝 AiResponse.suggestions 에 포함.
         let mut cli_suggestions: Vec<serde_json::Value> = Vec::new();
-        // The one plan this turn is proposing. A turn may call propose_plan more than once —
-        // measured 2026-08-29, twice across two rounds — and only one plan can ever be approved,
-        // so a second card is not a second decision, it is the same decision asked twice.
-        let mut last_plan_id: Option<String> = None;
         let mut last_text = String::new();
         let mut last_model_id = self.llm.get_model_id();
         let mut total_cost: f64 = 0.0;
@@ -3521,33 +3517,7 @@ impl AiManager {
                 pending_actions.extend(response.pending_actions.iter().cloned());
             }
             if !response.suggestions.is_empty() {
-                // The chips land first — `supersede_plan` prunes what is already collected, and a
-                // round that proposed twice carries both sets in this one batch.
                 cli_suggestions.extend(response.suggestions.iter().cloned());
-                // One decision, one card — the CLI half of the rule ai.rs applies to the tools it
-                // dispatches itself. A CLI model reports chips it minted inside its own loop, so
-                // those cards never pass through the dispatch path. Done here rather than in the
-                // three CLI adapters, which would be the same rule written three times. Its cards
-                // are already in `blocks` (merged just above), so both halves are prunable.
-                for chip in response.suggestions.iter() {
-                    if chip.get("type").and_then(|v| v.as_str()) != Some("plan-confirm") {
-                        continue;
-                    }
-                    let Some(new_id) = chip.get("planId").and_then(|v| v.as_str()) else { continue };
-                    if let Some(prev) = last_plan_id.replace(new_id.to_string()) {
-                        if prev != new_id {
-                            crate::utils::plan_store::supersede_plan(
-                                &mut blocks,
-                                &mut cli_suggestions,
-                                &prev,
-                            );
-                            self.log.info(&format!(
-                                "[AiManager] a second plan card this turn — {} superseded by {}",
-                                prev, new_id
-                            ));
-                        }
-                    }
-                }
             }
             if !response.internally_used_tools.is_empty() {
                 // CLI 가 자체 처리한 도구 → executed_actions 에 도구 이름 (string) 추가.
@@ -3684,18 +3654,21 @@ impl AiManager {
             let mut propose_plan_ok = false;
             // A CLI model runs its own tool loop and reports what it already executed, so the
             // calls WE dispatch — `response.tool_calls` — are empty for it, and every gate keyed on
-            // that loop is dead on this path. This was one: the force-end that stops a turn once a
-            // plan card exists never fired for a CLI model, so the turn ran another round with the
-            // revise instruction ("사용자가 수정 요청을 했습니다 — propose_plan 을 재호출하세요") still
-            // in its prompt, and the model obeyed it a second time. Measured 2026-08-29 in the codex
-            // rollout, where that round's own reasoning header reads "Fixing repeated proposal
-            // calls" — two cards, and neither the model nor the person had done anything wrong.
+            // that loop is dead on this path. This was one of them: the force-end that stops a turn
+            // once a plan card exists has never fired for a CLI model, so the turn ran another
+            // round with the same instruction still in its prompt — and a revise turn's instruction
+            // is "사용자가 수정 요청을 했습니다, propose_plan 을 재호출하세요", so the model proposed a
+            // second plan. Measured 2026-08-29 in the codex rollout: the instruction appears twice
+            // and that round's own reasoning header reads "Fixing repeated proposal calls". Two
+            // cards for one decision, and neither the model nor the person had done anything wrong.
             //
-            // A plan-confirm chip is the evidence a card exists, whoever ran the tool: the chip is
-            // minted with the planId, so it cannot be present without a plan behind it.
-            if response.suggestions.iter().any(|s| {
-                s.get("type").and_then(|v| v.as_str()) == Some("plan-confirm")
-            }) {
+            // A plan-confirm chip is the evidence a card exists whoever ran the tool — it is minted
+            // with the planId, so it cannot be present without a plan behind it.
+            if response
+                .suggestions
+                .iter()
+                .any(|s| s.get("type").and_then(|v| v.as_str()) == Some("plan-confirm"))
+            {
                 propose_plan_ok = true;
             }
 
@@ -4919,28 +4892,6 @@ impl AiManager {
                     continue;
                 }
                 let result = &action.result;
-                // One decision, one card. Two proposals used to leave two cards and six chips in
-                // one message while only one of them could ever be approved: the person could not
-                // tell which chip belonged to which card, and the plan they did not pick sat in
-                // the store for 30 days behind a button that had vanished. The later proposal is
-                // the model's own final word — the same last-wins rule `suggest` already follows
-                // below — so it replaces the earlier one: card, chips and stored plan together,
-                // because a plan left in the store is a live approval nobody can reach.
-                if tc.name == "propose_plan" {
-                    if let Some(new_id) = result.get("planId").and_then(|v| v.as_str()) {
-                        if let Some(prev) = last_plan_id.replace(new_id.to_string()) {
-                            crate::utils::plan_store::supersede_plan(
-                                &mut blocks,
-                                &mut cli_suggestions,
-                                &prev,
-                            );
-                            self.log.info(&format!(
-                                "[AiManager] propose_plan called again this turn — plan {} superseded by {}",
-                                prev, new_id
-                            ));
-                        }
-                    }
-                }
                 if tc.name == "render_iframe"
                     && result.get("htmlContent").is_some()
                 {

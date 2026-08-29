@@ -235,37 +235,12 @@ pub fn build_propose_plan_result(args: &serde_json::Value) -> serde_json::Value 
             "estimatedTime": est_time_json,
             "risks": risks_json,
         },
-        // The chips carry the plan's title, not only its id. A turn may propose more than
-        // one plan, and then every chip in the message reads "✓ 실행" — measured 2026-08-29:
-        // two cards, six chips, and after the click neither the screen nor the stored
-        // message could say which plan had been approved (the answer was only in the next
-        // turn's system prompt). An id is not something a person reads; the title is.
         "suggestions": [
-            { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행", "title": title.clone() },
-            { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "title": title.clone(), "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },
+            { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행" },
+            { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },
             "✕ 취소"
         ]
     })
-}
-
-/// Drop a superseded plan from a turn's message and from the store.
-///
-/// Only one plan can ever be approved, so a turn that proposes twice is asking one decision
-/// twice — measured 2026-08-29, two cards and six chips in one message, and the plan that was
-/// not picked stayed in the store for 30 days behind a button that had vanished. Deleting the
-/// stored plan is the half that matters: a card can be removed from a message, but a plan left
-/// in the store is a live approval nobody can reach.
-pub fn supersede_plan(
-    blocks: &mut Vec<serde_json::Value>,
-    chips: &mut Vec<serde_json::Value>,
-    prev_id: &str,
-) {
-    blocks.retain(|b| {
-        b.get("name").and_then(|v| v.as_str()) != Some("PlanCard")
-            || b.pointer("/props/planId").and_then(|v| v.as_str()) != Some(prev_id)
-    });
-    chips.retain(|c| c.get("planId").and_then(|v| v.as_str()) != Some(prev_id));
-    delete_plan(prev_id);
 }
 
 /// 옛 TS `getPlan` 1:1 — 메모리 → 파일 폴백.
@@ -559,65 +534,5 @@ mod tests {
         assert!(inst.contains("원래 plan"));
         assert!(inst.contains("1단계 빼주세요"));
         assert!(inst.contains("재호출"));
-    }
-
-    /// A plan chip has to name its plan. Two plans in one message make six chips that all
-    /// read "✓ 실행"/"⚙ 수정 제안", and the id is not something a person reads — this is what
-    /// the screen uses to say which plan was approved.
-    #[test]
-    fn plan_chips_carry_the_title_not_only_the_id() {
-        let out = build_propose_plan_result(&serde_json::json!({
-            "title": "60초 모션그래픽 제작",
-            "steps": ["대본", "렌더"],
-        }));
-        let sugg = out["suggestions"].as_array().expect("suggestions");
-        let confirm = &sugg[0];
-        let revise = &sugg[1];
-        assert_eq!(confirm["type"], "plan-confirm");
-        assert_eq!(confirm["title"], "60초 모션그래픽 제작");
-        assert_eq!(revise["type"], "plan-revise");
-        assert_eq!(revise["title"], "60초 모션그래픽 제작");
-        // The id still travels — the title is what a person reads, the id is what executes.
-        assert_eq!(confirm["planId"], out["planId"]);
-        assert_eq!(revise["planId"], out["planId"]);
-    }
-
-    #[test]
-    fn a_second_plan_leaves_no_trace_of_the_first() {
-        let dir = std::env::temp_dir().join(format!("fb-plan-sup-{}", std::process::id()));
-        let _g = crate::utils::shared_test_lock();
-        fresh_state(&dir);
-        let first = build_propose_plan_result(&serde_json::json!({
-            "title": "모션그래픽 안", "steps": ["대본"],
-        }));
-        let second = build_propose_plan_result(&serde_json::json!({
-            "title": "인포그래픽 안", "steps": ["대본"],
-        }));
-        let id1 = first["planId"].as_str().unwrap().to_string();
-        let id2 = second["planId"].as_str().unwrap().to_string();
-        let mut blocks = vec![
-            serde_json::json!({"type": "component", "name": "PlanCard", "props": {"planId": id1}}),
-            serde_json::json!({"type": "text", "text": "keep me"}),
-            serde_json::json!({"type": "component", "name": "PlanCard", "props": {"planId": id2}}),
-        ];
-        let mut chips: Vec<serde_json::Value> = first["suggestions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .chain(second["suggestions"].as_array().unwrap().iter())
-            .cloned()
-            .collect();
-        assert!(get_plan(&id1).is_some(), "the first plan was stored");
-
-        supersede_plan(&mut blocks, &mut chips, &id1);
-
-        // The card, its chips and the stored plan all go — and nothing else does.
-        assert_eq!(blocks.len(), 2);
-        assert!(blocks.iter().any(|b| b["text"] == "keep me"));
-        assert_eq!(blocks[1].pointer("/props/planId").unwrap(), &serde_json::json!(id2));
-        assert!(chips.iter().all(|c| c.get("planId").and_then(|v| v.as_str()) != Some(id1.as_str())));
-        assert!(chips.iter().any(|c| c.get("planId").and_then(|v| v.as_str()) == Some(id2.as_str())));
-        assert!(get_plan(&id1).is_none(), "a superseded plan must not stay approvable");
-        assert!(get_plan(&id2).is_some(), "the surviving plan is untouched");
     }
 }
