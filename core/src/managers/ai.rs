@@ -3521,7 +3521,33 @@ impl AiManager {
                 pending_actions.extend(response.pending_actions.iter().cloned());
             }
             if !response.suggestions.is_empty() {
+                // The chips land first — `supersede_plan` prunes what is already collected, and a
+                // round that proposed twice carries both sets in this one batch.
                 cli_suggestions.extend(response.suggestions.iter().cloned());
+                // One decision, one card — the CLI half of the rule ai.rs applies to the tools it
+                // dispatches itself. A CLI model reports chips it minted inside its own loop, so
+                // those cards never pass through the dispatch path. Done here rather than in the
+                // three CLI adapters, which would be the same rule written three times. Its cards
+                // are already in `blocks` (merged just above), so both halves are prunable.
+                for chip in response.suggestions.iter() {
+                    if chip.get("type").and_then(|v| v.as_str()) != Some("plan-confirm") {
+                        continue;
+                    }
+                    let Some(new_id) = chip.get("planId").and_then(|v| v.as_str()) else { continue };
+                    if let Some(prev) = last_plan_id.replace(new_id.to_string()) {
+                        if prev != new_id {
+                            crate::utils::plan_store::supersede_plan(
+                                &mut blocks,
+                                &mut cli_suggestions,
+                                &prev,
+                            );
+                            self.log.info(&format!(
+                                "[AiManager] a second plan card this turn — {} superseded by {}",
+                                prev, new_id
+                            ));
+                        }
+                    }
+                }
             }
             if !response.internally_used_tools.is_empty() {
                 // CLI 가 자체 처리한 도구 → executed_actions 에 도구 이름 (string) 추가.
@@ -3656,6 +3682,22 @@ impl AiManager {
             // envelope {"success": false})했으면 false. 턴 강제 종료·suggest 억제는 이 값 기준
             // (15차 실측: 거부된 플랜이 턴을 종료시켜 빈 응답 fallback).
             let mut propose_plan_ok = false;
+            // A CLI model runs its own tool loop and reports what it already executed, so the
+            // calls WE dispatch — `response.tool_calls` — are empty for it, and every gate keyed on
+            // that loop is dead on this path. This was one: the force-end that stops a turn once a
+            // plan card exists never fired for a CLI model, so the turn ran another round with the
+            // revise instruction ("사용자가 수정 요청을 했습니다 — propose_plan 을 재호출하세요") still
+            // in its prompt, and the model obeyed it a second time. Measured 2026-08-29 in the codex
+            // rollout, where that round's own reasoning header reads "Fixing repeated proposal
+            // calls" — two cards, and neither the model nor the person had done anything wrong.
+            //
+            // A plan-confirm chip is the evidence a card exists, whoever ran the tool: the chip is
+            // minted with the planId, so it cannot be present without a plan behind it.
+            if response.suggestions.iter().any(|s| {
+                s.get("type").and_then(|v| v.as_str()) == Some("plan-confirm")
+            }) {
+                propose_plan_ok = true;
+            }
 
             for call in response.tool_calls.iter() {
                 // Approval gate (옛 TS ai-manager.ts 1342-1385 1:1) —
