@@ -17,6 +17,7 @@ import { ShieldQuestion, Check, X, Loader2 } from 'lucide-react';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
 import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
+import { usePolling } from '../../../lib/hooks/use-polling';
 import { useEvents } from '../hooks/events-manager';
 
 interface Card {
@@ -32,7 +33,13 @@ interface Card {
  *  A card created DURING a chat turn rides that turn's own stream. A card created outside one —
  *  an external MCP client asking for something that needs approval — has no stream, and this poll
  *  used to be its only path: up to twenty seconds of nothing on screen. The store now announces
- *  every card on the bus at the moment it is created, so the poll is no longer the mechanism. */
+ *  every card on the bus at the moment it is created, so the poll is no longer the mechanism.
+ *
+ *  It ran on a bare `setInterval`, which made twenty seconds a floor rather than a ceiling: a
+ *  background tab is throttled to a minute or more, and coming back to the tab re-read nothing at
+ *  all — the card sat there until the next throttled tick. Measured 2026-08-29, the user's own
+ *  correction: "20초 아니고 60초 같은데". `usePolling` stops while hidden and fires once the moment
+ *  the tab is visible again, which is the read that was missing. */
 const POLL_MS = 20000;
 
 function when(ms?: number): string {
@@ -76,11 +83,9 @@ export function PendingApprovals() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, POLL_MS);
-    return () => clearInterval(t);
-  }, [load]);
+  // Pauses while the tab is hidden and re-reads the moment it comes back — a card that arrived
+  // during the gap is on screen on return, not one throttled tick later.
+  usePolling({ interval: POLL_MS, onTick: load });
 
   // A card created outside a chat turn has no stream to arrive on, so the store announces it.
   // The poll above stays as the backstop for a client whose SSE has dropped — the events manager
