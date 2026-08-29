@@ -91,23 +91,24 @@ export async function GET(
   const file = read.ok ? (read.data as BinaryRead) : null;
   if (!file?.base64) return notFound();
 
-  // The entry document is meant to be embedded, not navigated to. Framed, the page around it is the
+  // The app document exists inside the frame and nowhere else. Framed, the page around it is the
   // app's transport: it relays storage writes and module calls, because an app on an opaque origin
   // cannot prove which page it is. Reached directly there is no relay — `localStorage` resolves to
   // the browser's own instead of the page's, and every `firebat.call` hangs until it times out. The
   // app still draws, which is the worst shape of broken (measured 2026-08-30: `/user/pages/carom`
   // painted its canvas and its buttons did nothing).
   //
-  // `Sec-Fetch-Dest` tells the two apart — `document` is someone navigating, `iframe` is the page
-  // framing it — so a person is sent to the app's real address and the frame is served. A request
-  // without the header (curl, an old browser) is served as before rather than bounced.
+  // Serving that address properly is not on the table — it would put the app on our own origin,
+  // which is the one grant the sandbox never makes. So it is not an address: a navigation gets the
+  // same 404 as a miss, and the app is reachable at its page. `Sec-Fetch-Dest` tells the two apart
+  // (`document` = someone navigating, `iframe` = the page framing it); a request without the header
+  // is served as before, since this decides which URL an app has and not who may read it — that is
+  // `gatePage`, above, and it has already run.
+  //
+  // Only the document. The app's other files are inert in a tab, and one may legitimately be
+  // navigated to (a download an app declared), so they are left alone.
   if ((req.headers.get('sec-fetch-dest') || '') === 'document' && (file.mimeType || '').startsWith('text/html')) {
-    const canonical = `/${name.split('/').map(encodeURIComponent).join('/')}`;
-    return NextResponse.redirect(new URL(canonical, req.url), {
-      status: 307,
-      // Conditional on a request header, so it must not be remembered for the frame's own request.
-      headers: { 'Cache-Control': 'no-store', Vary: 'Sec-Fetch-Dest' },
-    });
+    return notFound();
   }
 
   let buf = Buffer.from(file.base64, 'base64');
