@@ -11,6 +11,7 @@ pub mod sandbox;
 pub mod token_provider;
 pub mod ws_api;
 pub mod ws_stream;
+pub mod page_store;
 pub mod timeseries;
 pub mod turn_archive;
 pub mod tick_agg;

@@ -637,7 +637,20 @@ async fn main() -> Result<()> {
             tracing::info!(target: "cache", dropped, "boot orphan sweep");
         }
     }
-    let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
+    // Per-page app storage — one SQLite per page under `data/pages/<slug>/store.db`. Wired into
+    // PageManager so deleting a page deletes its data, and into AppManager which is what an app
+    // actually talks to through the bridge.
+    let page_store: Arc<dyn firebat_core::ports::IPageStorePort> = Arc::new(
+        firebat_infra::adapters::page_store::PageStoreAdapter::new(
+            workspace_root.join("data/pages"),
+        ),
+    );
+    let page_manager = Arc::new(
+        PageManager::new(db.clone(), storage.clone()).with_page_store(page_store.clone()),
+    );
+    // AppManager is not constructed here yet — nothing calls it until the bridge lands, and an
+    // instance wired to no caller is a claim that something works. It takes `page_manager` and this
+    // same `page_store`.
     // Phase B-18 Step 1.5 — ConversationManager 에 embedder + log 주입 →
     // save() 시 메시지 단위 임베딩 자동 sync + search_history cosine 검색 활성.
     let conversation_manager = Arc::new(

@@ -1068,6 +1068,29 @@ pub trait ITimeseriesStorePort: Send + Sync {
     fn read_before(&self, key: &str, anchor: i64, count: usize) -> Vec<serde_json::Value>;
 }
 
+/// Per-page key/value storage for published apps — one SQLite file per page.
+///
+/// A page app runs on an opaque origin, so the browser gives it no storage of its own: an app that
+/// wants to remember anything has to ask the framework, the way a module asks for a secret. The
+/// framework answering is the point — the alternative (opening the app's origin so `localStorage`
+/// works) would also let it act as the signed-in admin.
+///
+/// One file per page rather than a shared table: deleting a page is deleting a file, backup is a
+/// folder copy, a page's size is visible on its own, and two busy apps never contend for the same
+/// lock. It is the convention modules already follow with their own stores under `data/`.
+pub trait IPageStorePort: Send + Sync {
+    fn get(&self, slug: &str, key: &str) -> Option<String>;
+    /// Rejects the write when the page would exceed its byte budget — an app that fills the disk
+    /// should learn so in its own error path, not in ours.
+    fn set(&self, slug: &str, key: &str, value: &str, max_bytes: u64) -> Result<(), String>;
+    fn delete(&self, slug: &str, key: &str) -> Result<(), String>;
+    /// Every pair, for the bootstrap the serving route injects so the app can read synchronously.
+    fn entries(&self, slug: &str) -> Vec<(String, String)>;
+    fn bytes(&self, slug: &str) -> u64;
+    /// The page is gone; so is its store.
+    fn drop_page(&self, slug: &str) -> Result<(), String>;
+}
+
 /// Sysmod 패키지 status — 설정 화면 [설치] / [업그레이드] 버튼 UI + 진행 상태 표시.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

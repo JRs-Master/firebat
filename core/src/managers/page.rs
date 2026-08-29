@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
-use crate::ports::{IDatabasePort, IStoragePort, InfraResult, MediaUsageEntry, PageListItem, PageRecord};
+use crate::ports::{IDatabasePort, IPageStorePort, IStoragePort, InfraResult, MediaUsageEntry, PageListItem, PageRecord};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,11 +39,25 @@ fn media_url_re() -> &'static Regex {
 pub struct PageManager {
     db: Arc<dyn IDatabasePort>,
     storage: Arc<dyn IStoragePort>,
+    /// A page app's own store, when one is wired. Held here for a single reason: a deleted page
+    /// must not leave its data behind, and deletion happens in this manager. Reads and writes are
+    /// the app manager's job, not this one's.
+    page_store: Option<Arc<dyn IPageStorePort>>,
 }
 
 impl PageManager {
     pub fn new(db: Arc<dyn IDatabasePort>, storage: Arc<dyn IStoragePort>) -> Self {
-        Self { db, storage }
+        Self {
+            db,
+            storage,
+            page_store: None,
+        }
+    }
+
+    /// Wire the per-page store so deleting a page also deletes what its app kept.
+    pub fn with_page_store(mut self, store: Arc<dyn IPageStorePort>) -> Self {
+        self.page_store = Some(store);
+        self
     }
 
     pub fn list(&self) -> Vec<PageListItem> {
@@ -292,6 +306,14 @@ impl PageManager {
             ));
         }
         self.db.delete_media_usage_for_page(slug);
+        // The page is gone; so is anything its app stored. Best-effort — a store that will not
+        // delete is a stale file, not a failed deletion, and reporting the page as undeleted would
+        // be the worse answer.
+        if let Some(store) = &self.page_store {
+            if let Err(e) = store.drop_page(slug) {
+                tracing::warn!(target: "page_store", slug, error = %e, "page data left behind");
+            }
+        }
         Ok(())
     }
 
