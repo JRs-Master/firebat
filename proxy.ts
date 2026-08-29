@@ -58,6 +58,12 @@ export function proxy(request: NextRequest) {
   // 발행 페이지 form 공개 콜백 (#9) — 익명 방문자 제출. admin 쿠키 X. 라우트가 자체 게이트
   // (페이지 public + bindModule ∈ 그 페이지 spec form 블록 + requiresApproval 거부 + IP rate).
   if (pathname === '/api/page-form' && request.method === 'POST') return NextResponse.next();
+  // 발행 페이지 앱의 브리지 — 익명 방문자의 앱이 부모 페이지를 통해 호출. admin 쿠키 X.
+  // 앱은 opaque origin 이라 자기 신원을 증명할 수단이 없고, 증명하는 쪽은 이 요청을 보내는
+  // 페이지다(브라우저가 이미 그 뷰어에 대해 인증한). 라우트가 자체 게이트: gatePage(그 뷰어가
+  // 이 페이지를 볼 수 있나) + AppManager(그 페이지가 선언했나 — 저장소·모듈명) +
+  // requiresApproval 클래스 전면 거부(page-form 과 같은 함수) + IP rate.
+  if (pathname === '/api/page-bridge' && request.method === 'POST') return NextResponse.next();
   // Telegram webhook — 텔레그램 Bot API 가 호출. X-Telegram-Bot-Api-Secret-Token 헤더로 자체 검증.
   if (pathname === '/api/telegram/webhook' && request.method === 'POST') return NextResponse.next();
   // 사이트 소유권 인증 파일 — Google/AdSense/Naver/Bing crawler 가 토큰 없이 접근.
