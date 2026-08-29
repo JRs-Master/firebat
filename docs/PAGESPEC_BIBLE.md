@@ -165,9 +165,30 @@ const useIframe = hasDeps || hasScript;   // dependencies[] 가 있거나 conten
 그 블록에 script 나 dependencies 가 있으면 헤더·푸터를 숨기고 페이지 스크롤을 잠근다(앱 안만 스크롤).
 블록이 둘 이상이면 안 걸린다 — **게임·앱 페이지는 Html 한 블록이어야 한다.**
 
-**대안: Caddy 직접 서빙** — `user/pages/<slug>/` 는 정적으로 서빙된다(`@pages` 매처).
-CSP 도 iframe 도 없으니 파일을 쪼개도 되고 워커도 돈다. 대신 DB 페이지가 아니라서
-워크스페이스 목록·프로젝트 그룹·visibility 에 안 잡힌다. **앱은 이쪽, 문서는 페이지 쪽.**
+**대안: 파일로 사는 앱 — `user/pages/<name>/`** (2026-08-29 A 전환 후).
+CSP 도 iframe 도 없으니 파일을 쪼개도 되고 워커도 돈다. **앱은 이쪽, 문서는 페이지 쪽.**
+
+서빙하는 주체가 8/29 에 바뀌었다: 캐디 `@pages` 직서빙 → **Next 라우트**
+`app/user/pages/[...path]/route.ts`. 캐디는 파일을 빨리 주지만 **누가 봐도 되는지를 모른다** —
+비공개·비번 프로젝트의 파일이 아무에게나 내려갔고, 그 디렉터리는 앞으로 모듈 코드와 sqlite 가
+들어올 자리다. 지금은 페이지와 **같은 게이트**(`resolvePageVisibility` · 같은 `fp_*` 쿠키 ·
+private 는 admin 미리보기)를 지나고, 에셋은 비번 폼을 못 그리므로 미인증은 **404**(폼은 페이지가 그린다).
+**실측 비용 = 한 홉 +4ms**(34KB js: 0.4ms → 4.6ms).
+
+⚠️ 그 전환에서 실측이 잡은 함정 둘 — 둘 다 "서빙은 되는데 실행이 안 되는" 종류다:
+· **`guess_mime_type`(infra/adapters/storage.rs)에 html/js/css 가 없었다.** 전부
+  `application/octet-stream` 이면 브라우저가 `<script type="module">` 을 **200 으로 받고 실행을
+  거부한다 — 콘솔에도 페이지에도 아무 말이 없다.** 지금은 웹 타입을 이름으로 싣고(텍스트엔
+  `charset=utf-8`, 없으면 한글이 깨진다) 카나리아 테스트가 지킨다.
+· **`next.config.mjs` 의 인증파일 rewrite 가 하위 경로의 `.html`·`.txt`·`.xml` 을 전부 삼켰다.**
+  Next 는 **afterFiles rewrite 를 동적 라우트보다 먼저** 평가하므로 `<app>/index.html` 이 라우트에
+  닿지도 못하고 `/404` 로 갔다. 루트 한 칸(`[^/]+`)으로 좁혔다.
+· 그리고 **빌드가 pull 보다 오래되면 rewrite 는 옛 규칙으로 돈다** — `routes-manifest.json` 에
+  빌드 시점에 굳는 값이라 pull + rsync + restart 만으로는 안 바뀐다.
+
+⬜ **다음 단계** — 이 디렉터리가 프로젝트의 집이 된다: `user/pages/<project>/{web,modules,data}`.
+`web/` 만 서빙, `modules/` 는 그 프로젝트 전용(전역 카탈로그 제외), `data/` 는 프레임워크 주입.
+폴더 이름 = slug 첫 segment(= `PageManager::rename` 이 이미 쓰는 규약).
 
 ## 프로젝트 그룹은 파생이다 (`core/src/managers/project.rs::scan`)
 
