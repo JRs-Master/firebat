@@ -2854,6 +2854,10 @@ impl AiManager {
         let mut pending_actions: Vec<serde_json::Value> = Vec::new();
         // CLI 자체 MCP loop 가 호출한 suggest / propose_plan 결과 누적 — 함수 끝 AiResponse.suggestions 에 포함.
         let mut cli_suggestions: Vec<serde_json::Value> = Vec::new();
+        // The one plan this turn is proposing. A turn may call propose_plan more than once —
+        // measured 2026-08-29, twice across two rounds — and only one plan can ever be approved,
+        // so a second card is not a second decision, it is the same decision asked twice.
+        let mut last_plan_id: Option<String> = None;
         let mut last_text = String::new();
         let mut last_model_id = self.llm.get_model_id();
         let mut total_cost: f64 = 0.0;
@@ -4873,6 +4877,28 @@ impl AiManager {
                     continue;
                 }
                 let result = &action.result;
+                // One decision, one card. Two proposals used to leave two cards and six chips in
+                // one message while only one of them could ever be approved: the person could not
+                // tell which chip belonged to which card, and the plan they did not pick sat in
+                // the store for 30 days behind a button that had vanished. The later proposal is
+                // the model's own final word — the same last-wins rule `suggest` already follows
+                // below — so it replaces the earlier one: card, chips and stored plan together,
+                // because a plan left in the store is a live approval nobody can reach.
+                if tc.name == "propose_plan" {
+                    if let Some(new_id) = result.get("planId").and_then(|v| v.as_str()) {
+                        if let Some(prev) = last_plan_id.replace(new_id.to_string()) {
+                            crate::utils::plan_store::supersede_plan(
+                                &mut blocks,
+                                &mut cli_suggestions,
+                                &prev,
+                            );
+                            self.log.info(&format!(
+                                "[AiManager] propose_plan called again this turn — plan {} superseded by {}",
+                                prev, new_id
+                            ));
+                        }
+                    }
+                }
                 if tc.name == "render_iframe"
                     && result.get("htmlContent").is_some()
                 {
