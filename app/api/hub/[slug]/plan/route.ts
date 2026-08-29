@@ -87,7 +87,16 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const slugArg = String(args.slug ?? '');
         const spec = args.spec as Record<string, unknown> | string;
         const specStr = typeof spec === 'string' ? spec : JSON.stringify(spec);
-        const r = await savePage({ slug: slugArg, spec: specStr, project });
+        // project is the visitor's scope, not theirs to name — a hub card's own `project` is
+        // deliberately ignored here. The rest of the page metadata is theirs and travels with it.
+        const r = await savePage({
+          slug: slugArg,
+          spec: specStr,
+          project,
+          ...(args.status ? { status: String(args.status) } : {}),
+          ...(args.visibility ? { visibility: String(args.visibility) } : {}),
+          ...(args.password ? { password: String(args.password) } : {}),
+        });
         result = r.ok
           ? { success: true, data: { slug: r.data?.slug ?? slugArg, url: `/${r.data?.slug ?? slugArg}` } }
           : { success: false, error: r.message };

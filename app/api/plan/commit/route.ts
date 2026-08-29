@@ -70,7 +70,17 @@ export const POST = withAuth(async (req: NextRequest) => {
         const slug = args.slug as string;
         const spec = args.spec as Record<string, unknown> | string;
         const specStr = typeof spec === 'string' ? spec : JSON.stringify(spec);
-        const r = await savePage({ slug, spec: specStr });
+        // The page's own metadata travels with the card. Leaving it here saved every approved page
+        // as an ungrouped public page — the direct (cron) path passes all four, so the card path
+        // was the one place a project could be asked for and not arrive.
+        const r = await savePage({
+          slug,
+          spec: specStr,
+          ...(args.status ? { status: String(args.status) } : {}),
+          ...(args.project ? { project: String(args.project) } : {}),
+          ...(args.visibility ? { visibility: String(args.visibility) } : {}),
+          ...(args.password ? { password: String(args.password) } : {}),
+        });
         if (!r.ok) { result = { success: false, error: r.message }; break; }
         const actualSlug = r.data?.slug ?? slug;
         const renamed = actualSlug !== slug;

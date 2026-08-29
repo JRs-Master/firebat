@@ -76,8 +76,15 @@ pub struct WriteFileArgs {
     pub content: String,
 }
 
-/// save_page 도구 인자 — slug + PageSpec + 덮어쓰기 허용.
+/// save_page 도구 인자 — slug + PageSpec + 덮어쓰기 허용 + 저장 메타 넷.
 /// spec 은 동적 PageSpec schema (24+ block 종류) — serde_json::Value 유지.
+///
+/// The four metadata fields are here because this struct is the card's memory of the call. The
+/// direct save path reads them straight off the model's arguments, but an approval card round-trips
+/// through here: whatever this struct does not name, serde drops without a word, and the page is
+/// saved as an ungrouped public page no matter what was asked for. Measured 2026-08-29 — a page
+/// published with `project` set landed with none, and the loss was invisible from every side
+/// (the tool schema declares them, the handler accepts them, `page.save` stores them).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SavePageArgs {
@@ -85,6 +92,17 @@ pub struct SavePageArgs {
     pub spec: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_overwrite: Option<bool>,
+    /// "published" | "draft" — 미지정 시 저장 측 기본값.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// 프로젝트 그룹. hub 커밋 경로는 이 값을 읽지 않고 방문자 스코프를 강제한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// "public" | "password" | "private".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 /// delete_file 도구 인자.
@@ -801,6 +819,10 @@ mod tests {
                 slug: "test".to_string(),
                 spec: serde_json::json!({}),
                 allow_overwrite: None,
+                status: None,
+                project: None,
+                visibility: None,
+                password: None,
             }),
             "save",
         );
@@ -959,6 +981,37 @@ mod tests {
             }
             _ => panic!("variant 불일치"),
         }
+    }
+
+    /// A card is the only thing that survives between the model's call and the save, so anything
+    /// the typed args do not name is gone by commit time — silently, because serde ignores unknown
+    /// keys. The four here were dropped that way until 2026-08-29: pages published through the
+    /// approval card came out ungrouped and public however they were asked for.
+    #[test]
+    fn a_save_page_card_carries_the_page_metadata() {
+        let args = serde_json::json!({
+            "slug": "carom",
+            "spec": {"body": []},
+            "status": "draft",
+            "project": "games",
+            "visibility": "password",
+            "password": "hunter2",
+        });
+        let parsed = PendingActionArgs::from_call("save_page", &args).unwrap();
+        let PendingActionArgs::SavePage(p) = parsed else { panic!("variant 불일치") };
+        assert_eq!(p.status.as_deref(), Some("draft"));
+        assert_eq!(p.project.as_deref(), Some("games"));
+        assert_eq!(p.visibility.as_deref(), Some("password"));
+        assert_eq!(p.password.as_deref(), Some("hunter2"));
+
+        // The commit route reads the card back out of JSON, so the round trip is the real contract.
+        let round: PendingActionArgs =
+            serde_json::from_value(serde_json::to_value(&p).map(|mut v| {
+                v["name"] = serde_json::Value::String("save_page".to_string());
+                v
+            }).unwrap()).unwrap();
+        let PendingActionArgs::SavePage(r) = round else { panic!("variant 불일치") };
+        assert_eq!(r.project.as_deref(), Some("games"));
     }
 
     #[test]
