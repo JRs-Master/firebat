@@ -186,8 +186,84 @@ private 는 admin 미리보기)를 지나고, 에셋은 비번 폼을 못 그리
 · 그리고 **빌드가 pull 보다 오래되면 rewrite 는 옛 규칙으로 돈다** — `routes-manifest.json` 에
   빌드 시점에 굳는 값이라 pull + rsync + restart 만으로는 안 바뀐다.
 
-⬜ 이 구조는 재설계 대기 중이다 — 설계 전문 = `~/.claude/plans/page-app-cms-template-redesign.md`.
-아래 서술은 **지금 돌아가는 것**이다.
+## 페이지는 자기가 무엇인지 선언한다 — `kind` · `source` · `needs` (2026-08-30 배포·실측)
+
+`spec.head` 가 세 칸을 더 가진다. 셋 다 **선언**이고, 프레임워크는 그걸 옮기는 번역기 하나만 돈다.
+
+```jsonc
+{ "slug": "carom",
+  "head": {
+    "kind": "app",                         // "post"(기본) | "app"
+    "title": "당구",
+    "source": "user/pages/carom/",          // 앱의 소스 디렉터리 (진입 = index.html)
+    "needs": { "storage": true, "fullscreen": true, "worker": true,
+               "scripts": ["https://cdn.jsdelivr.net"] }
+  },
+  "body": [] }                              // app 이면 비어 있다 — 본문은 파일
+```
+
+| `kind` | 크롬 | 본문 |
+|---|---|---|
+| `post`(기본) | 사이트 헤더·푸터·사이드바·광고·읽기진행 | 블록 배열(46종) |
+| `app` | 없음. 뷰포트 잠금 | 선언한 파일들 |
+
+⚠️ **`isApp` 추론은 폴백으로 강등됐다.** 옛 규칙(Html 한 블록 + script)은 `kind` 를 안 적은 페이지에만
+적용된다. 그 추론 때문에 **블록이 둘인 앱은 통짜가 될 수 없었다** — 페이지 구조를 속여야 했다.
+
+### 파일이 원본이고 DB 는 선언만 든다
+
+굽지 않는다. 발행이 파일을 읽어 spec 에 넣으면 원본은 파일인데 **DB 에 사본이 또 생긴다** —
+carom 이 41,311B(97%가 `Html.content` 문자열 하나)였던 이유가 그것이다. 지금은 **218B**.
+
+- 파일이 5MB 든 50MB 든 DB 는 안 커진다
+- 고칠 땐 그 파일만 쓰면 되고 **재발행도 필요 없다**
+- 앱 파일은 `app/user/pages/[...path]` 라우트가 **`gatePage` 를 지나** 디스크에서 준다
+- URL 은 slug 로 키가 잡히고 디스크 경로는 **선언**에서 온다. 그 디렉터리 밖은 **차단된 URL 이
+  아니라 없는 URL** 이다(모듈 코드·store 가 그 옆에 살아도 주소가 없다)
+
+### 앱은 프레임 안에서 돌고, 그게 격리다
+
+`<iframe src="/user/pages/<slug>/index.html" sandbox="allow-scripts …">`.
+**`allow-same-origin` 은 페이지가 뭘 선언하든 안 붙는다** — 세션 쿠키가 `httpOnly` 여도
+**admin API 가 쿠키 인증을 받으므로** 같은 origin 이면 앱이 `credentials:'include'` 로 admin 이 된다.
+
+**브라우저 실측(2026-08-29, puppeteer)** — 이 조합에서:
+
+| 요청 | 쿠키 | sec-fetch-site |
+|---|---|---|
+| 앱 문서(프레임 내비게이션) | **있음** | same-origin — 게이트가 판정할 수 있다 |
+| 앱이 부른 파일 | 없음 | cross-site — admin 으로 행동 못 한다 |
+| 앱의 `fetch` | 없음 · `Origin: null` | 차단 — 서버는 브리지 한 길 |
+
+`'self'` 는 **문서 URL 기준**이라 opaque origin 에서도 자기 파일은 부른다(측정됨).
+
+⚠️ **프레임은 진입 파일을 가리킨다**(`…/index.html`). 디렉터리 URL 은 308 로 슬래시가 떨어져
+상대참조가 한 단계 위로 풀린다 — `carom-app.js` 가 `/user/pages/carom-app.js` 가 되어 404.
+
+### `needs` 는 능력의 선언이고, 안 적으면 거부다
+
+| 선언 | 번역 |
+|---|---|
+| `storage` | 페이지 저장소를 연다 (앱은 `localStorage` 를 그대로 쓴다) |
+| `modules: [...]` | 브리지가 그 모듈만 허용 |
+| `scripts: [https 호스트]` | CSP `script-src` 에 추가 (https 만, 우리 origin 불가) |
+| `worker` | CSP `worker-src 'self' blob:` |
+| `fullscreen` | iframe `allow="fullscreen"` |
+| `modals`·`pointerLock`·`popups`·`downloads` | sandbox 토큰 |
+
+번역기는 **`lib/page-app.ts` 한 곳**이다 — 라우트(CSP 헤더)와 페이지(sandbox·allow)가 같은 함수를
+본다. 두 벌이면 느슨한 쪽이 판정한다.
+
+### 저장소 — 페이지마다 자기 파일
+
+`data/pages/<slug>/store.db`. 통합 테이블이 아니라 파일 하나씩이라 **페이지 삭제 = 파일 삭제**,
+백업 = 폴더 복사, 용량이 페이지별로 보이고 잠금 경합이 없다. 모듈이 `data/` 밑에 자기 store 를
+두는 관례와 같다. 한도 = 페이지당 5MB.
+
+경로: 앱 `localStorage.setItem` → 부트스트랩 shim → `postMessage` → `AppFrame`(클라이언트) →
+`/api/page-store` → `PageService.AppStore` → `AppManager`(게이트) → sqlite.
+**읽기는 동기다** — 서빙 라우트가 진입 문서에 현재 값을 심는다(저장소가 서버 것이라 가능).
+시드는 `<script>` 안에 들어가므로 `<`·`>` 를 이스케이프한다(값에 `</script>` 가 있으면 탈출).
 
 ## 프로젝트 그룹은 파생이다 (`core/src/managers/project.rs::scan`)
 

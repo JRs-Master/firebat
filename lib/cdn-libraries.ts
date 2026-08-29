@@ -31,10 +31,67 @@ export const CDN_LIBRARIES: Record<string, string> = {
   datatables: '<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css"/><script src="https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script><script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>',
 };
 
-/** dependencies 배열 → CDN 태그 문자열 합성. 미등록 키는 silently skip. */
+/** A resolved `dependencies` list: tags to inject, hosts they need, and what we could not place. */
+export interface ResolvedDeps {
+  tags: string;
+  /** Hosts to grant in this block's CSP, on top of the standing allowlist. */
+  hosts: string[];
+  /** Names that matched nothing — reported, never dropped in silence. */
+  unknown: string[];
+}
+
+const HOST_RE = /https:\/\/[a-z0-9.-]+/gi;
+
+/**
+ * `dependencies` -> the tags to put in the frame.
+ *
+ * Two forms are accepted. A **name** from the catalog above is the shortcut. An **https URL** is
+ * the escape hatch: a page needing a library the catalog never heard of should be fixable in its
+ * own declaration, not by editing this file and shipping a frontend build. `.css` becomes a
+ * stylesheet, anything else a script, and the host is granted in that block's CSP — otherwise the
+ * tag would load into a policy that refuses it, which is the silent blank frame again.
+ *
+ * Anything else comes back in `unknown`. It used to be `filter(Boolean)`: the name was accepted,
+ * dropped, and nothing anywhere said so — the exact shape of a declaration that does not work and
+ * cannot be fixed by whoever wrote it.
+ */
+export function resolveDeps(deps?: string[]): ResolvedDeps {
+  const out: ResolvedDeps = { tags: '', hosts: [], unknown: [] };
+  if (!deps?.length) return out;
+  const tags: string[] = [];
+  for (const raw of deps) {
+    const d = String(raw ?? '').trim();
+    if (!d) continue;
+    const known = CDN_LIBRARIES[d];
+    if (known) {
+      tags.push(known);
+      out.hosts.push(...(known.match(HOST_RE) ?? []));
+      continue;
+    }
+    if (/^https:\/\/[^\s"'<>]+$/.test(d)) {
+      tags.push(/\.css($|\?)/i.test(d) ? `<link rel="stylesheet" href="${d}"/>` : `<script src="${d}"></script>`);
+      out.hosts.push(...(d.match(HOST_RE) ?? []));
+      continue;
+    }
+    out.unknown.push(d);
+  }
+  out.tags = tags.join('\n');
+  out.hosts = [...new Set(out.hosts)];
+  return out;
+}
+
+/** Back-compat shim for callers that only want the tags. */
 export function buildCdnTags(deps?: string[]): string {
-  if (!deps || deps.length === 0) return '';
-  return deps.map(k => CDN_LIBRARIES[k]).filter(Boolean).join('\n');
+  return resolveDeps(deps).tags;
+}
+
+/** A console line inside the frame for names we could not place — the only surface an already-
+ *  rendered page has to say "this dependency did nothing". */
+export function unknownDepsNotice(unknown: string[]): string {
+  if (!unknown.length) return '';
+  const list = JSON.stringify(unknown);
+  const keys = JSON.stringify(Object.keys(CDN_LIBRARIES));
+  return `<script>console.error('[firebat] unknown dependencies: ' + ${list}.join(', ') + ' — use one of ' + ${keys}.join(', ') + ', or give the full https:// URL of the script.')</script>`;
 }
 
 /** AI 에 노출할 사용 가능 라이브러리 키 목록 — prompt 에서 enumerate */
@@ -69,3 +126,20 @@ export const IFRAME_CSP =
 
 /** CSP meta tag — srcdoc head 에 prepend. */
 export const IFRAME_CSP_META = `<meta http-equiv="Content-Security-Policy" content="${IFRAME_CSP}">`;
+
+/**
+ * The same policy, widened by the hosts this block's own dependencies need.
+ *
+ * The standing allowlist covers the catalog. A block that named a URL outside it would otherwise
+ * get its tag injected and then blocked — served, not executed, with nothing on the page to say so.
+ * Granting exactly what the block declared keeps the policy closed to everything else.
+ */
+export function iframeCspMeta(extraHosts: string[]): string {
+  const hosts = [...new Set(extraHosts.filter(h => /^https:\/\/[a-z0-9.-]+$/i.test(h)))];
+  if (!hosts.length) return IFRAME_CSP_META;
+  const extra = ' ' + hosts.join(' ');
+  const csp = IFRAME_CSP
+    .replace('script-src ', 'script-src' + extra + ' ')
+    .replace('style-src ', 'style-src' + extra + ' ');
+  return `<meta http-equiv="Content-Security-Policy" content="${csp}">`;
+}

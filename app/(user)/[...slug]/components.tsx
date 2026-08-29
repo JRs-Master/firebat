@@ -3728,7 +3728,7 @@ function AdSlotComp({ slotId, format = 'auto' }: { slotId?: string; format?: str
 }
 
 // ── Html (분기: dependencies 유무로 inline DOM vs iframe srcDoc) ─────────────
-import { buildCdnTags, IFRAME_CSP_META } from '../../../lib/cdn-libraries';
+import { resolveDeps, unknownDepsNotice, iframeCspMeta } from '../../../lib/cdn-libraries';
 import DOMPurify from 'isomorphic-dompurify';
 import postcss from 'postcss';
 import prefixer from 'postcss-prefix-selector';
@@ -3849,7 +3849,8 @@ function HtmlComp({ content, dependencies, standalone }: { content: string; depe
   }
 
   // CDN library 격리 필요 케이스 — iframe srcDoc 유지.
-  const cdnTags = buildCdnTags(dependencies);
+  const deps = resolveDeps(dependencies);
+  const cdnTags = deps.tags;
   // standalone 일 때만 — iframe 내용 높이를 부모로 postMessage (sandbox 라 부모가 직접 못 읽음 → 부모가 받아 iframe 높이 세팅).
   const autoScript = ''; // 높이 측정 안 함 — iframe h-full 로 콘텐츠영역 채움 (page.tsx 뷰포트 flex-lock)
   // AI 의 `<\/script>` escape 습관 → srcdoc 에서 스크립트 미닫힘 방지 (closeStrayScript, 공용).
@@ -3859,7 +3860,7 @@ function HtmlComp({ content, dependencies, standalone }: { content: string; depe
   // CSP meta — sandbox=allow-scripts 위에 defense-in-depth: script src 화이트리스트 + frame/form/base 차단.
   const srcdoc = `<!DOCTYPE html>
 <html><head>
-${IFRAME_CSP_META}
+${iframeCspMeta(deps.hosts)}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
@@ -3871,6 +3872,7 @@ ${IFRAME_CSP_META}
 ['localStorage','sessionStorage'].forEach(function(n){try{window[n]&&window[n].getItem('__fb');}catch(e){try{Object.defineProperty(window,n,{value:mk(),configurable:true});}catch(_){}}});})();
 </script>
 ${cdnTags}
+${unknownDepsNotice(deps.unknown)}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   /* 반응형 안전망 — AI 가 고정폭(px) canvas/이미지/표/코드블록을 만들어도 가로 오버플로우(우측 잘림·가로 스크롤) 방지.
