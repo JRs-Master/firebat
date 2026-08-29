@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileBinary } from '../../../../lib/api-gen/storage';
-import { readDeclaration, appCsp, storageBootstrap, injectBootstrap } from '../../../../lib/page-app';
+import { readDeclaration, appCsp, appBootstrap, injectBootstrap } from '../../../../lib/page-app';
 import { appStore } from '../../../../lib/api-gen/page';
 import { gatePage } from '../../../../lib/page-gate';
 
@@ -92,14 +92,22 @@ export async function GET(
   if (!file?.base64) return notFound();
 
   let buf = Buffer.from(file.base64, 'base64');
-  // The entry document gets the storage bootstrap, seeded with what the page already holds, so the
-  // app's first synchronous read finds its data. Only the HTML — a .js file is the app's own.
-  if (decl.needs.storage && (file.mimeType || '').startsWith('text/html')) {
-    const seedRes = await appStore({ slug: name, op: 'entries' });
-    const raw = (seedRes.ok ? (seedRes.data as { entriesJson?: string } | undefined)?.entriesJson : '') || '{}';
+  // The entry document gets the bootstrap for whatever this page declared — the storage shim seeded
+  // with what it already holds (so the app's first synchronous read finds its data), and the module
+  // client for the modules it named. Only the HTML: a .js file is the app's own.
+  const wantsBootstrap = decl.needs.storage || (decl.needs.modules?.length ?? 0) > 0;
+  if (wantsBootstrap && (file.mimeType || '').startsWith('text/html')) {
     let seed: Record<string, string> = {};
-    try { seed = JSON.parse(raw); } catch { /* an unreadable seed is an empty one, not a broken page */ }
-    buf = Buffer.from(injectBootstrap(buf.toString('utf8'), storageBootstrap(name, seed)), 'utf8');
+    if (decl.needs.storage) {
+      const seedRes = await appStore({ slug: name, op: 'entries' });
+      const raw = (seedRes.ok ? (seedRes.data as { entriesJson?: string } | undefined)?.entriesJson : '') || '{}';
+      try { seed = JSON.parse(raw); } catch { /* an unreadable seed is an empty one, not a broken page */ }
+    }
+    const boot = appBootstrap(name, seed, {
+      storage: !!decl.needs.storage,
+      modules: decl.needs.modules ?? [],
+    });
+    if (boot) buf = Buffer.from(injectBootstrap(buf.toString('utf8'), boot), 'utf8');
   }
   const total = buf.length;
   const headers: Record<string, string> = {

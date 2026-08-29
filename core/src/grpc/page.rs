@@ -11,7 +11,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::page::{PageManager, TagSummary};
 use crate::ports::{MediaUsageEntry, PageListItem, PageRecord};
 use crate::proto::{
-    page_service_server::PageService, MediaUsageEntryPb, MediaUsageListPb, PageAppStoreRequest,
+    page_service_server::PageService, MediaUsageEntryPb, MediaUsageListPb, PageAppModuleRequest, PageAppModuleResponse, PageAppStoreRequest,
     PageAppStoreResponse, PageDeleteRequest,
     PageDeleteResponse, PageFindMediaUsageRequest, PageFindRelatedRequest, PageGetRedirectRequest,
     PageGetRedirectResponse, PageGetRequest, PageListAllTagsRequest, PageListItemPb,
@@ -374,6 +374,43 @@ impl PageService for PageServiceImpl {
             }
         }
     }
+    /// A published app calling a module it declared. `AppManager` holds both the permission and
+    /// the module handle, so the check and the run cannot drift apart; everything the module path
+    /// enforces (enabled, validation, approval gate, envelope, auto-cache) still applies, because
+    /// this is that path.
+    async fn app_module(
+        &self,
+        req: Request<PageAppModuleRequest>,
+    ) -> Result<Response<PageAppModuleResponse>, TonicStatus> {
+        let a = req.into_inner();
+        let fail = |e: String| {
+            Ok(Response::new(PageAppModuleResponse {
+                ok: false,
+                error: Some(e),
+                output_json: String::new(),
+            }))
+        };
+        let Some(app) = &self.app else {
+            return fail("module calls are not wired on this instance".to_string());
+        };
+        let input: serde_json::Value = if a.input_json.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            match serde_json::from_str(&a.input_json) {
+                Ok(v) => v,
+                Err(e) => return fail(format!("input must be a JSON object: {e}")),
+            }
+        };
+        match app.run_module(&a.slug, &a.module, &input).await {
+            Ok(out) => Ok(Response::new(PageAppModuleResponse {
+                ok: true,
+                error: None,
+                output_json: out.to_string(),
+            })),
+            Err(e) => fail(e),
+        }
+    }
+
     /// Per-page app storage. Every guard lives in `AppManager`: the page must be an app, must have
     /// declared `needs.storage`, and its budget is checked on write. Errors come back in the
     /// envelope rather than as a status, because the caller is a published page relaying to an app

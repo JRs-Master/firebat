@@ -32,13 +32,18 @@ const LOCK_CSS =
   'body>main{margin:0;padding:0}' +
   '.firebat-cms-content{margin:0!important;padding:0!important;max-width:none!important}';
 
-interface StoreMessage {
+interface BridgeMessage {
   v?: number;
   fb?: string;
   slug?: string;
+  /** storage */
   op?: string;
   key?: string;
   value?: string;
+  /** module call */
+  id?: string;
+  module?: string;
+  input?: unknown;
 }
 
 export function AppFrame({
@@ -58,45 +63,56 @@ export function AppFrame({
   const allow = frameAllow(needs);
   const frameRef = useRef<HTMLIFrameElement>(null);
 
+  const post = useCallback((msg: Record<string, unknown>) => {
+    frameRef.current?.contentWindow?.postMessage(msg, '*');
+  }, []);
+
   const relay = useCallback(
-    async (msg: StoreMessage) => {
+    async (msg: BridgeMessage) => {
+      const isCall = msg.fb === 'call';
       try {
-        const res = await fetch('/api/page-store', {
+        const res = await fetch('/api/page-bridge', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ slug, op: msg.op, key: msg.key, value: msg.value }),
+          body: JSON.stringify(
+            isCall
+              ? { slug, op: 'module.run', module: msg.module, input: msg.input }
+              : { slug, op: `storage.${msg.op}`, key: msg.key, value: msg.value },
+          ),
         });
         const json = await res.json().catch(() => null);
-        if (!json?.ok) {
+        if (isCall) {
+          // A call is a promise on the other side; it has to be settled either way.
+          post({ fb: 'call:done', id: msg.id, ok: !!json?.ok, data: json?.data, error: json?.error ?? 'call failed' });
+        } else if (!json?.ok) {
           // A write refused for the page's budget has to reach the app somehow — its setItem
           // already returned, so this arrives as a message it can listen for and, failing that, as
           // a console error rather than silence.
-          frameRef.current?.contentWindow?.postMessage(
-            { fb: 'store:error', op: msg.op, key: msg.key, error: json?.error ?? 'store failed' },
-            '*',
-          );
+          post({ fb: 'store:error', op: msg.op, key: msg.key, error: json?.error ?? 'store failed' });
         }
-      } catch {
+      } catch (e) {
+        if (isCall) post({ fb: 'call:done', id: msg.id, ok: false, error: String(e) });
         /* a dropped write is not worth breaking the app over */
       }
     },
-    [slug],
+    [post, slug],
   );
 
   useEffect(() => {
-    if (!needs.storage) return;
+    const wantsBridge = needs.storage || (needs.modules?.length ?? 0) > 0;
+    if (!wantsBridge) return;
     const onMessage = (e: MessageEvent) => {
       // Only this frame, and only for this page. The frame has an opaque origin, so `e.origin` is
       // "null" and proves nothing — identity here is the window itself.
       if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
-      const d = e.data as StoreMessage | null;
-      if (!d || d.fb !== 'store' || d.slug !== slug) return;
-      if (d.op !== 'set' && d.op !== 'delete') return;
-      void relay(d);
+      const d = e.data as BridgeMessage | null;
+      if (!d || d.slug !== slug) return;
+      if (d.fb === 'store' && (d.op === 'set' || d.op === 'delete')) return void relay(d);
+      if (d.fb === 'call' && d.id && d.module) return void relay(d);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [needs.storage, relay, slug]);
+  }, [needs.storage, needs.modules, relay, slug]);
 
   return (
     <>

@@ -153,23 +153,49 @@ function embed(value: unknown): string {
  * arrives as a `store:error` message and, unhandled, as a console error. An app that cares can
  * listen for it.
  */
-export function storageBootstrap(slug: string, seed: Record<string, string>): string {
+export function appBootstrap(
+  slug: string,
+  seed: Record<string, string>,
+  opts: { storage: boolean; modules: string[] },
+): string {
+  const parts: string[] = [];
+  if (opts.storage) parts.push(STORAGE_SHIM);
+  if (opts.modules.length) parts.push(MODULE_CLIENT);
+  if (!parts.length) return '';
   return `<script>(function(){
-var S=${embed(seed)},SLUG=${embed(slug)};
-function post(op,k,v){try{parent.postMessage({v:1,fb:'store',slug:SLUG,op:op,key:k,value:v},'*')}catch(e){}}
+var SLUG=${embed(slug)},S=${embed(seed)},MODULES=${embed(opts.modules)},SEQ=0,PEND={};
+function post(m){try{m.v=1;m.slug=SLUG;parent.postMessage(m,'*')}catch(e){}}
+addEventListener('message',function(e){var d=e.data;if(!d)return;
+ if(d.fb==='store:error'){console.error('[firebat] storage: '+d.error);return}
+ if(d.fb==='call:done'&&PEND[d.id]){var p=PEND[d.id];delete PEND[d.id];d.ok?p.res(d.data):p.rej(new Error(d.error||'call failed'))}});
+${parts.join('\n')}
+})()</script>`;
+}
+
+/** The `localStorage` an opaque origin refuses to give — reads from the seed, writes through the
+ *  frame. Without it the app's first `getItem` throws and takes the app with it. */
+const STORAGE_SHIM = `
 function mk(store,persist){return{
  getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(store,k)?store[k]:null},
- setItem:function(k,v){k=String(k);v=String(v);store[k]=v;if(persist)post('set',k,v)},
- removeItem:function(k){k=String(k);delete store[k];if(persist)post('delete',k)},
- clear:function(){Object.keys(store).forEach(function(k){if(persist)post('delete',k);delete store[k]})},
+ setItem:function(k,v){k=String(k);v=String(v);store[k]=v;if(persist)post({fb:'store',op:'set',key:k,value:v})},
+ removeItem:function(k){k=String(k);delete store[k];if(persist)post({fb:'store',op:'delete',key:k})},
+ clear:function(){Object.keys(store).forEach(function(k){if(persist)post({fb:'store',op:'delete',key:k});delete store[k]})},
  key:function(i){return Object.keys(store)[i]||null},
  get length(){return Object.keys(store).length}}}
 function install(name,shim){try{window[name]&&window[name].getItem('__fb')}catch(e){try{Object.defineProperty(window,name,{value:shim,configurable:true})}catch(_){}}}
 install('localStorage',mk(S,true));
-install('sessionStorage',mk({},false));
-addEventListener('message',function(e){var d=e.data;if(d&&d.fb==='store:error'){console.error('[firebat] storage: '+d.error)}});
-})()</script>`;
-}
+install('sessionStorage',mk({},false));`;
+
+/** `firebat.call(module, input)` — the app's one way to reach the server, and only for the modules
+ *  its page declared. Refusals name the fix, so an app that needs another module is a declaration
+ *  edit rather than a mystery. */
+const MODULE_CLIENT = `
+window.firebat={modules:MODULES,call:function(module,input){
+ if(MODULES.indexOf(module)<0)return Promise.reject(new Error("this page did not declare '"+module+"' — add it to needs.modules and republish"));
+ var id=String(++SEQ);
+ return new Promise(function(res,rej){PEND[id]={res:res,rej:rej};post({fb:'call',id:id,module:module,input:input||{}});
+  setTimeout(function(){if(PEND[id]){delete PEND[id];rej(new Error('module call timed out'))}},120000)})}};`;
+
 
 /**
  * Put the bootstrap into an HTML document before anything of the app's own runs.

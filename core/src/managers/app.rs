@@ -28,11 +28,23 @@ pub const PAGE_STORE_MAX_BYTES: u64 = 5 * 1024 * 1024;
 pub struct AppManager {
     page: Arc<PageManager>,
     store: Option<Arc<dyn IPageStorePort>>,
+    /// Modules an app may reach. Held here so the permission check and the execution are the same
+    /// step — split across two calls, the page could be edited between them.
+    modules: Option<Arc<crate::managers::module::ModuleManager>>,
 }
 
 impl AppManager {
     pub fn new(page: Arc<PageManager>) -> Self {
-        Self { page, store: None }
+        Self {
+            page,
+            store: None,
+            modules: None,
+        }
+    }
+
+    pub fn with_modules(mut self, modules: Arc<crate::managers::module::ModuleManager>) -> Self {
+        self.modules = Some(modules);
+        self
     }
 
     pub fn with_store(mut self, store: Arc<dyn IPageStorePort>) -> Self {
@@ -102,6 +114,34 @@ impl AppManager {
             map.insert(k, serde_json::Value::String(v));
         }
         serde_json::Value::Object(map)
+    }
+
+    /// Run a module on behalf of a published app.
+    ///
+    /// The permission and the run are one step: `may_call_module` reads the page's declaration and
+    /// the call happens right here, so there is no window in which the page could be edited between
+    /// being checked and being obeyed. Everything the module path already enforces — enabled,
+    /// input validation, the approval gate, the envelope, auto-cache — still happens, because this
+    /// is that path and not a way around it.
+    ///
+    /// The refusal names the fix: an app that needs a module says so in its own declaration.
+    pub async fn run_module(
+        &self,
+        slug: &str,
+        module: &str,
+        input: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        if !self.may_call_module(slug, module) {
+            return Err(format!(
+                "'{slug}' may not call '{module}'. Add it to the page's declaration (`needs: {{ modules: [\"{module}\"] }}`) and republish."
+            ));
+        }
+        let modules = self
+            .modules
+            .as_ref()
+            .ok_or_else(|| "module calls are not wired on this instance".to_string())?;
+        let out = modules.run(module, input).await?;
+        serde_json::to_value(out).map_err(|e| format!("module output: {e}"))
     }
 
     pub fn store_bytes(&self, slug: &str) -> u64 {

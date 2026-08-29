@@ -653,7 +653,8 @@ async fn main() -> Result<()> {
     // + postMessage envelope, the browser-side twin of a module's stdin/stdout).
     let app_manager = Arc::new(
         firebat_core::managers::app::AppManager::new(page_manager.clone())
-            .with_store(page_store.clone()),
+            .with_store(page_store.clone())
+            .with_modules(module_manager.clone()),
     );
     // Phase B-18 Step 1.5 — ConversationManager 에 embedder + log 주입 →
     // save() 시 메시지 단위 임베딩 자동 sync + search_history cosine 검색 활성.

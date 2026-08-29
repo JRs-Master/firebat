@@ -6,6 +6,8 @@
 
 import {
   MediaUsageEntryPb,
+  PageAppModuleRequestSchema,
+  PageAppModuleResponse,
   PageAppStoreRequestSchema,
   PageAppStoreResponse,
   PageDeleteRequestSchema,
@@ -163,6 +165,15 @@ export async function resolveBinding(args: MessageInitShape<typeof PageResolveBi
 export async function appStore(args: MessageInitShape<typeof PageAppStoreRequestSchema>): Promise<RpcResult<PageAppStoreResponse>> {
   try {
       const response = await pageClient.appStore(args ?? {});
+      return { ok: true, data: unBigInt(response) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function appModule(args: MessageInitShape<typeof PageAppModuleRequestSchema>): Promise<RpcResult<PageAppModuleResponse>> {
+  try {
+      const response = await pageClient.appModule(args ?? {});
       return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);

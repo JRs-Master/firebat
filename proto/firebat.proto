@@ -388,6 +388,17 @@ message PageSaveRequest {
   optional string visibility = 5;
   optional string password = 6;
 }
+message PageAppModuleRequest {
+  string slug = 1;
+  string module = 2;
+  string input_json = 3;
+}
+message PageAppModuleResponse {
+  bool ok = 1;
+  optional string error = 2;
+  string output_json = 3;
+}
+
 message PageAppStoreRequest {
   string slug = 1;
   string op = 2;                    // "get" | "set" | "delete" | "entries"
@@ -491,6 +502,9 @@ service PageService {
   // Per-page app storage. The app has no origin of its own, so the framework holds its data;
   // `op` = get | set | delete | entries, gated by the page's own `needs.storage` declaration.
   rpc AppStore(PageAppStoreRequest) returns (PageAppStoreResponse);
+  // A published app calling a module it declared in `needs.modules`. The permission check and the
+  // run are one step in AppManager, so the page cannot be edited between them.
+  rpc AppModule(PageAppModuleRequest) returns (PageAppModuleResponse);
 }
 
 // ─── ProjectService typed messages ───────────────────────────────────────────
