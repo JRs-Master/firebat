@@ -139,7 +139,7 @@ function renderMarkdown(text: string) {
 //     PC (pointer: fine) — Enter=전송(카드 전체), Shift+Enter=해당 칸 줄바꿈, Ctrl/⌘+Enter=새 칸 추가+포커스
 //     Mobile (pointer: coarse) — Enter=해당 칸 줄바꿈, 전송/추가는 버튼 탭
 function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pickedSuggestion }: {
-  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[]; single?: boolean } | { type: 'plan-confirm'; planId: string; label: string } | { type: 'plan-revise'; planId: string; label: string; placeholder?: string })[];
+  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[]; single?: boolean } | { type: 'plan-confirm'; planId: string; label: string; title?: string } | { type: 'plan-revise'; planId: string; label: string; title?: string; placeholder?: string })[];
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   fullWidth?: boolean; // 빌드카드 옵션 단계 — 본문 폭 cap(max-w-md) 해제
@@ -160,17 +160,32 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
 
   // aggregate 항목 (toggle / input / plan-revise) 가 하나라도 있으면 카드 하단 전송 버튼 노출
   const hasAggregate = suggestions.some(it => typeof it !== 'string' && (it.type === 'toggle' || it.type === 'input' || it.type === 'plan-revise'));
+  // Two plans in one message make six chips that all read "✓ 실행" / "⚙ 수정 제안", and the
+  // cards they belong to are drawn elsewhere in the message — measured 2026-08-29, neither
+  // before the click nor after could a person tell which plan a chip was for. With more than
+  // one plan present each chip carries its plan's title; with one it stays the short label.
+  const planIds = new Set(suggestions.filter(it => typeof it !== 'string' && (it.type === 'plan-confirm' || it.type === 'plan-revise')).map(it => (it as { planId: string }).planId));
+  const manyPlans = planIds.size > 1;
+  const planChipLabel = (item: { label: string; title?: string }) =>
+    manyPlans && item.title ? `${item.label} — ${item.title}` : item.label;
   // 순수 선택지 카드(string 버튼만, 입력/토글/플랜 없음) — AI 가 "원하는 거 말하라"며 입력칸을 안 줘도
   // UI 가 항상 "직접 입력" 칸을 보장. AI 행동에 의존하지 않음.
   const pureChoiceCard = suggestions.length > 0 && suggestions.every(it => typeof it === 'string');
 
-  // plan-revise 가 카드에 있으면 전송 시 planReviseId 동봉
-  const aggregateMeta = (() => {
-    for (const it of suggestions) {
-      if (typeof it !== 'string' && it.type === 'plan-revise') return { planReviseId: it.planId };
+  // plan-revise 가 카드에 있으면 전송 시 planReviseId 동봉 — 어느 plan 이냐는 **써 넣은 칸**이 정한다.
+  // Taking the first plan-revise in the list was right while a message could only hold one plan.
+  // With two (measured 2026-08-29) it revises plan #1 whichever box you typed into, and nothing
+  // says so: the next turn simply re-proposes the wrong plan.
+  const aggregateMeta = () => {
+    let first: string | undefined;
+    for (let i = 0; i < suggestions.length; i++) {
+      const it = suggestions[i];
+      if (typeof it === 'string' || it.type !== 'plan-revise') continue;
+      if (first === undefined) first = it.planId;
+      if ((inputValues[i] ?? []).some(v => v.trim())) return { planReviseId: it.planId };
     }
-    return undefined;
-  })();
+    return first ? { planReviseId: first } : undefined;
+  };
 
   // suggestions 변경 시 기본값 세팅 — toggle defaults + input 빈 칸 1개. dep = 내용 기반(sigKey): 매 렌더
   // suggestions 가 새 ref 여도 내용 같으면 재실행 X → 탭 전환·리렌더 시 진행 중 토글 선택이 초기화되던 버그 fix.
@@ -266,7 +281,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
     });
     const text = parts.join('\n');
     if (!text) return;
-    onSuggestion?.(text, aggregateMeta);
+    onSuggestion?.(text, aggregateMeta());
   };
 
   // 순수 선택지 카드의 "직접 입력" 전송 — label 없이 사용자가 친 그대로 raw 전송.
@@ -321,6 +336,25 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
                 </div>
               </div>
             );
+          }
+          // A plan chip belonging to a plan that was NOT the one picked stays clickable. The
+          // lock is per message but a plan is its own decision: approving one used to fold
+          // every chip in the message into a single line, and the other plan — still alive in
+          // the store for 30 days — lost its only button (measured 2026-08-29).
+          if (item.type === 'plan-confirm' || item.type === 'plan-revise') {
+            const mine = !!item.title && pickedSuggestion.includes(item.title);
+            if (!mine) {
+              const label = planChipLabel(item);
+              if (item.type === 'plan-confirm') {
+                return (
+                  <button key={i} onClick={() => onSuggestion?.(label, { planExecuteId: item.planId })} disabled={loading}
+                    className="w-full px-4 py-3 text-left text-[13px] font-bold text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 transition-colors disabled:opacity-50 border-b border-blue-100/70 last:border-b-0">
+                    {label}
+                  </button>
+                );
+              }
+              return null; // revise re-opens an input; the approve button is the one worth keeping live
+            }
           }
           // input / plan-* — 옵션 없는 자유 입력/액션은 픽 텍스트 그대로(첫 항목에서 한 번만).
           if (i > 0) return null;
@@ -399,9 +433,9 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
         if (item.type === 'plan-confirm') {
           // ✓실행 — 단일 버튼, 즉시 전송 + planExecuteId 동봉
           return (
-            <button key={i} onClick={() => onSuggestion?.(item.label, { planExecuteId: item.planId })} disabled={loading}
+            <button key={i} onClick={() => onSuggestion?.(planChipLabel(item), { planExecuteId: item.planId })} disabled={loading}
               className="w-full px-4 py-3 text-left text-[13px] font-bold text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
-              {item.label}
+              {planChipLabel(item)}
             </button>
           );
         }
@@ -430,7 +464,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
           const borderCls = isRevise ? 'border-amber-300 focus:ring-amber-200' : 'border-blue-300 focus:ring-blue-200';
           return (
             <div key={i} className={`flex flex-col gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0 ${bgWrap}`}>
-              <span className={`text-[11px] font-semibold uppercase tracking-wide ${isRevise ? 'text-amber-600' : 'text-slate-400'}`}>{item.label}</span>
+              <span className={`text-[11px] font-semibold uppercase tracking-wide ${isRevise ? 'text-amber-600' : 'text-slate-400'}`}>{isRevise ? planChipLabel(item) : item.label}</span>
               {rows.map((val, subIdx) => {
                 const key = `${i}-${subIdx}`;
                 return (

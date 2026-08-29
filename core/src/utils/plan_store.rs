@@ -235,9 +235,14 @@ pub fn build_propose_plan_result(args: &serde_json::Value) -> serde_json::Value 
             "estimatedTime": est_time_json,
             "risks": risks_json,
         },
+        // The chips carry the plan's title, not only its id. A turn may propose more than
+        // one plan, and then every chip in the message reads "✓ 실행" — measured 2026-08-29:
+        // two cards, six chips, and after the click neither the screen nor the stored
+        // message could say which plan had been approved (the answer was only in the next
+        // turn's system prompt). An id is not something a person reads; the title is.
         "suggestions": [
-            { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행" },
-            { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },
+            { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행", "title": title.clone() },
+            { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "title": title.clone(), "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },
             "✕ 취소"
         ]
     })
@@ -534,5 +539,26 @@ mod tests {
         assert!(inst.contains("원래 plan"));
         assert!(inst.contains("1단계 빼주세요"));
         assert!(inst.contains("재호출"));
+    }
+
+    /// A plan chip has to name its plan. Two plans in one message make six chips that all
+    /// read "✓ 실행"/"⚙ 수정 제안", and the id is not something a person reads — this is what
+    /// the screen uses to say which plan was approved.
+    #[test]
+    fn plan_chips_carry_the_title_not_only_the_id() {
+        let out = build_propose_plan_result(&serde_json::json!({
+            "title": "60초 모션그래픽 제작",
+            "steps": ["대본", "렌더"],
+        }));
+        let sugg = out["suggestions"].as_array().expect("suggestions");
+        let confirm = &sugg[0];
+        let revise = &sugg[1];
+        assert_eq!(confirm["type"], "plan-confirm");
+        assert_eq!(confirm["title"], "60초 모션그래픽 제작");
+        assert_eq!(revise["type"], "plan-revise");
+        assert_eq!(revise["title"], "60초 모션그래픽 제작");
+        // The id still travels — the title is what a person reads, the id is what executes.
+        assert_eq!(confirm["planId"], out["planId"]);
+        assert_eq!(revise["planId"], out["planId"]);
     }
 }
