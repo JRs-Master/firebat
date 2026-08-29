@@ -70,6 +70,13 @@ export type StockChartProps = {
    * 왜곡 없이 읽힌다. 장기 구간에도 유리. pMin ≤ 0 이면 자동으로 linear 폴백.
    */
   scale?: 'linear' | 'log';
+  /**
+   * Total chart height in px (candles + volume). Omitted, the chart sizes itself from its width and
+   * the viewport, which is the right default and stays the default — this only overrides it when a
+   * page has a reason to (a fixed dashboard row, a print layout). Clamped: a chart smaller than the
+   * axis labels or taller than the viewport is not a preference, it is a broken page.
+   */
+  height?: number;
 };
 
 // Familiar periods keep their familiar colour; anything else takes the next palette slot in order,
@@ -352,7 +359,7 @@ function PointGroup({ title, points, tone }: {
   );
 }
 
-export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots: futureSlotsProp = 0, annotations, scale = 'linear', prevClose: sessionPrevClose }: StockChartProps) {
+export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots: futureSlotsProp = 0, annotations, scale = 'linear', prevClose: sessionPrevClose, height }: StockChartProps) {
   // futureSlots is a request, not a contract. A hand-written fence once reserved 240 future
   // slots on a 200-bar chart with zero annotations to fill them (2026-08-11) — half the canvas
   // was blank sky. The useful future is what the annotations actually reach: clamp to that
@@ -410,7 +417,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   );
   // 봉:거래량 = 280:80 이므로 차트 영역 = 봉 × 360/280.
   const wantAreaH = Math.round((wEff / targetRatio) * 360 / 280);
-  const chartAreaH = Math.max(140, Math.min(wantAreaH, vhBudget));
+  // The declared height wins when a page asked for one; otherwise the measured default stands.
+  const chartAreaH = height
+    ? Math.max(140, Math.min(height, 2000))
+    : Math.max(140, Math.min(wantAreaH, vhBudget));
   const priceChartHeightPx = Math.floor(chartAreaH * 280 / 360);  // 봉 영역 px (옛 280/360 비율)
   const priceChartHeight = `${priceChartHeightPx}px`;
   const volChartHeightPx = Math.floor(chartAreaH * 80 / 360);

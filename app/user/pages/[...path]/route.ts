@@ -120,6 +120,13 @@ export async function GET(
     'Cache-Control': visibility === 'public' ? 'public, max-age=300' : 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',
+    // The app frames on an opaque origin, so every request it makes for its own files is
+    // cross-origin. A classic `<script src>` does not care; a `<script type="module">` is fetched
+    // with CORS and is BLOCKED without this header — measured 2026-08-30 on carom, where the
+    // engine (classic) loaded, the app (module) did not, and the page came up with a canvas and
+    // dead buttons. Never with credentials: the frame's requests carry no cookies by design, and
+    // a gated page's files are still refused upstream by `gatePage`.
+    'Access-Control-Allow-Origin': '*',
   };
 
   // Range — media inside a page project needs seek, and the file server this replaces had it.

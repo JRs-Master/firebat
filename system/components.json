@@ -269,6 +269,10 @@
               }
             }
           }
+        },
+        "height": {
+          "type": "number",
+          "description": "total chart height in px (candles + volume). Omit for the automatic size, which follows width and viewport — set this only when the page needs a fixed one. Clamped to 140-2000."
         }
       }
     }
