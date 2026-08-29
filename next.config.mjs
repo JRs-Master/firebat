@@ -30,8 +30,12 @@ const nextConfig = {
         source: '/:project/feed.xml',
         destination: '/feed.xml?project=:project',
       },
+      // ⚠️ 루트 한 칸(`[^/]+`)으로 제한. 옛 `.+` 는 깊이 제한이 없어 **하위 경로의 모든**
+      // .html/.txt/.xml 을 삼켰고, afterFiles rewrite 는 동적 라우트보다 먼저 평가되므로
+      // `/user/pages/<app>/index.html` 이 여기로 끌려가 404 가 됐다(2026-08-29 실측).
+      // 인증 파일은 정의상 루트에만 놓이고 핸들러도 단일 세그먼트(`[file]`)라 원래 루트용이었다.
       {
-        source: '/:file(.+\\.(?:txt|html|xml))',
+        source: '/:file([^/]+\\.(?:txt|html|xml))',
         destination: '/api/verifications/:file',
       },
       // 옛 Chatbot → Hub 리네임 호환 — 외부 사이트에 설치된 옛 widget script 가 `/api/chatbot/widget.js`
