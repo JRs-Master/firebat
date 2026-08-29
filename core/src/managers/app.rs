@@ -23,6 +23,10 @@ use crate::utils::page_declaration::{parse_declaration, PageDeclaration, PageKin
 /// page filling the machine that also runs the trading loop. Five megabytes is a lot of key/value
 /// state — scoreboards, save games, drafts — and far short of anything that could hurt. A page that
 /// legitimately needs more is a declaration this can grow into, not a constant to raise blindly.
+///
+/// ⚠️ A single value is capped lower, at the bridge (1 MiB), because the gRPC hop refuses a message
+/// over 4 MiB: without that check a big write comes back as a transport error in bytes rather than
+/// something an app can show a person. This budget is what bites across several keys.
 pub const PAGE_STORE_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
 pub struct AppManager {

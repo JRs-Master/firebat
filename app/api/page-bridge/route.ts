@@ -42,6 +42,16 @@ function rateLimited(ip: string): boolean {
 
 const deny = (error: string, status = 403) => NextResponse.json({ ok: false, error }, { status });
 
+/**
+ * The largest single value a page may store.
+ *
+ * Not a taste call: the gRPC hop refuses a message over 4 MiB, so without a check here a big write
+ * comes back as "decoded message length too large" — a transport error, in bytes, with nothing an
+ * app could show a person or act on. Measured 2026-08-30 with a 6 MB write. One megabyte leaves the
+ * page's 5 MB budget reachable across several keys, which is the limit that was meant to bite.
+ */
+const VALUE_MAX_BYTES = 1024 * 1024;
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as
     | { slug?: string; op?: string; key?: string; value?: string; module?: string; input?: unknown }
@@ -80,6 +90,16 @@ export async function POST(req: NextRequest) {
   }
 
   const storeOp = op.startsWith('storage.') ? op.slice('storage.'.length) : op;
+  if (storeOp === 'set') {
+    const size = Buffer.byteLength(String(body?.value ?? ''), 'utf8');
+    if (size > VALUE_MAX_BYTES) {
+      return deny(
+        `value too large: ${size} bytes, the limit for one key is ${VALUE_MAX_BYTES}. ` +
+          'Split it across keys, or store less per key.',
+        413,
+      );
+    }
+  }
   const r = await appStore({ slug, op: storeOp, key: body?.key, value: body?.value });
   if (!r.ok) return NextResponse.json({ ok: false, error: r.message }, { status: 500 });
   const d = r.data as
