@@ -388,6 +388,20 @@ message PageSaveRequest {
   optional string visibility = 5;
   optional string password = 6;
 }
+message PageAppStoreRequest {
+  string slug = 1;
+  string op = 2;                    // "get" | "set" | "delete" | "entries"
+  optional string key = 3;
+  optional string value = 4;        // set only
+}
+message PageAppStoreResponse {
+  bool ok = 1;
+  optional string error = 2;
+  optional string value = 3;        // get
+  string entries_json = 4;          // entries — {key: value}
+  uint64 bytes = 5;                 // what the page holds after the call
+}
+
 message PageDeleteRequest {
   string slug = 1;
   // hub project scoping — 지정 시 page.project 와 일치할 때만 삭제 허용 (admin 은 omit).
@@ -474,6 +488,9 @@ service PageService {
   rpc FindRelated(PageFindRelatedRequest) returns (PageFindRelatedResponse);
   rpc ListAllTags(PageListAllTagsRequest) returns (TagListPb);
   rpc ResolveBinding(PageResolveBindingRequest) returns (PageResolveBindingResponse);
+  // Per-page app storage. The app has no origin of its own, so the framework holds its data;
+  // `op` = get | set | delete | entries, gated by the page's own `needs.storage` declaration.
+  rpc AppStore(PageAppStoreRequest) returns (PageAppStoreResponse);
 }
 
 // ─── ProjectService typed messages ───────────────────────────────────────────

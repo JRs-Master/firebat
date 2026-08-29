@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { readFileBinary } from '../../../../lib/api-gen/storage';
-import { getPage, verifyPassword as verifyPagePasswordRpc } from '../../../../lib/api-gen/page';
-import { verifyPassword as verifyProjectPasswordRpc } from '../../../../lib/api-gen/project';
-import { parsePageRecord } from '../../../../lib/util/page-pb-convert';
-import { resolvePageVisibility } from '../../../../lib/page-visibility';
-import { readDeclaration, appCsp } from '../../../../lib/page-app';
-import { SESSION_COOKIE_NAME } from '../../../../lib/config';
+import { readDeclaration, appCsp, storageBootstrap, injectBootstrap } from '../../../../lib/page-app';
+import { appStore } from '../../../../lib/api-gen/page';
+import { gatePage } from '../../../../lib/page-gate';
 
 /**
  * GET /user/pages/<name>/<...file> — a published page project's own browser assets.
@@ -53,18 +49,16 @@ const notFound = () => new NextResponse('Not found', { status: 404 });
 async function resolveApp(path: string[]) {
   for (let take = Math.min(2, path.length); take >= 1; take--) {
     const slug = path.slice(0, take).join('/');
-    const res = await getPage({ slug });
-    if (!res.ok || !res.data) continue;
-    const spec = parsePageRecord(res.data);
-    const decl = readDeclaration(spec.head);
+    const gate = await gatePage(slug);
+    if (!gate.ok) {
+      // A page that exists but refuses this viewer stops the walk: falling through to a shorter
+      // prefix would answer with a different page's files.
+      if (gate.reason === 'denied') return null;
+      continue;
+    }
+    const decl = readDeclaration(gate.spec.head);
     if (decl.kind !== 'app' || !decl.source) continue;
-    return {
-      slug,
-      spec,
-      decl,
-      rest: path.slice(take),
-      visibility: await resolvePageVisibility(spec),
-    };
+    return { slug, spec: gate.spec, decl, rest: path.slice(take), visibility: gate.visibility };
   }
   return null;
 }
@@ -79,31 +73,6 @@ export async function GET(
   const app = await resolveApp(path);
   if (!app) return notFound();
   const { slug: name, spec, decl, rest, visibility } = app;
-
-  if (visibility === 'private') {
-    // Admin preview only — same allowance the page itself makes.
-    const jar = await cookies();
-    const adminToken = jar.get(SESSION_COOKIE_NAME)?.value || jar.get('firebat_admin_token')?.value;
-    if (!adminToken) return notFound();
-  } else if (visibility === 'password') {
-    const isProjectPassword = spec?._visibility !== 'password' && !!spec?.project;
-    const jar = await cookies();
-    const cookieKey = isProjectPassword ? `fp_${spec?.project}` : `fp_${name}`;
-    const saved = jar.get(cookieKey)?.value;
-    let verified = false;
-    if (saved) {
-      const pw = decodeURIComponent(saved);
-      if (isProjectPassword && spec?.project) {
-        const r = await verifyProjectPasswordRpc({ project: spec.project, password: pw });
-        verified = r.ok && r.data === true;
-      } else {
-        const r = await verifyPagePasswordRpc({ slug: name, password: pw });
-        verified = r.ok && r.data === true;
-      }
-    }
-    // No form here — the page renders that. An unverified asset is simply not there.
-    if (!verified) return notFound();
-  }
 
   // The URL space maps into the declared source directory and nowhere else. That is the boundary:
   // whatever else the page's folder holds — module code, its store — has no URL at all, not a
@@ -122,7 +91,16 @@ export async function GET(
   const file = read.ok ? (read.data as BinaryRead) : null;
   if (!file?.base64) return notFound();
 
-  const buf = Buffer.from(file.base64, 'base64');
+  let buf = Buffer.from(file.base64, 'base64');
+  // The entry document gets the storage bootstrap, seeded with what the page already holds, so the
+  // app's first synchronous read finds its data. Only the HTML — a .js file is the app's own.
+  if (decl.needs.storage && (file.mimeType || '').startsWith('text/html')) {
+    const seedRes = await appStore({ slug: name, op: 'entries' });
+    const raw = (seedRes.ok ? (seedRes.data as { entriesJson?: string } | undefined)?.entriesJson : '') || '{}';
+    let seed: Record<string, string> = {};
+    try { seed = JSON.parse(raw); } catch { /* an unreadable seed is an empty one, not a broken page */ }
+    buf = Buffer.from(injectBootstrap(buf.toString('utf8'), storageBootstrap(name, seed)), 'utf8');
+  }
   const total = buf.length;
   const headers: Record<string, string> = {
     'Content-Type': file.mimeType || 'application/octet-stream',

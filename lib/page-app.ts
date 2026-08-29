@@ -123,3 +123,65 @@ export function appCsp(needs: PageNeeds): string {
     "form-action 'none'",
   ].join('; ');
 }
+
+/** JSON that is safe to sit inside a `<script>` element.
+ *
+ *  A stored value containing `</script>` ends the element and the rest of it becomes markup — the
+ *  app's own saved data turning into an injection. The HTML parser only looks for `<`, so escaping
+ *  that (plus the line separators JS treats as newlines) is the whole fix. */
+function embed(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * The bootstrap injected into an app's entry document when it declared storage.
+ *
+ * An app on an opaque origin gets a `localStorage` that throws on touch, so without this the first
+ * `getItem` crashes the app — which is why the inline path has carried an in-memory shim for months.
+ * This is that shim with the data actually kept: the framework holds it, the serving route seeds it
+ * here so reads answer **synchronously**, and writes go out as a message to the page that frames
+ * this document, which is the only party able to prove which page this is.
+ *
+ * `sessionStorage` stays in-memory on purpose — a session store that outlived the session would be
+ * a different thing wearing its name.
+ *
+ * A write refused for the page's budget cannot throw from `setItem` (it already returned), so it
+ * arrives as a `store:error` message and, unhandled, as a console error. An app that cares can
+ * listen for it.
+ */
+export function storageBootstrap(slug: string, seed: Record<string, string>): string {
+  return `<script>(function(){
+var S=${embed(seed)},SLUG=${embed(slug)};
+function post(op,k,v){try{parent.postMessage({v:1,fb:'store',slug:SLUG,op:op,key:k,value:v},'*')}catch(e){}}
+function mk(store,persist){return{
+ getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(store,k)?store[k]:null},
+ setItem:function(k,v){k=String(k);v=String(v);store[k]=v;if(persist)post('set',k,v)},
+ removeItem:function(k){k=String(k);delete store[k];if(persist)post('delete',k)},
+ clear:function(){Object.keys(store).forEach(function(k){if(persist)post('delete',k);delete store[k]})},
+ key:function(i){return Object.keys(store)[i]||null},
+ get length(){return Object.keys(store).length}}}
+function install(name,shim){try{window[name]&&window[name].getItem('__fb')}catch(e){try{Object.defineProperty(window,name,{value:shim,configurable:true})}catch(_){}}}
+install('localStorage',mk(S,true));
+install('sessionStorage',mk({},false));
+addEventListener('message',function(e){var d=e.data;if(d&&d.fb==='store:error'){console.error('[firebat] storage: '+d.error)}});
+})()</script>`;
+}
+
+/**
+ * Put the bootstrap into an HTML document before anything of the app's own runs.
+ *
+ * After `<head>` when there is one, otherwise at the very top: the app's first script must not be
+ * able to touch storage before the shim is installed.
+ */
+export function injectBootstrap(html: string, bootstrap: string): string {
+  const head = html.match(/<head[^>]*>/i);
+  if (head?.index !== undefined) {
+    const at = head.index + head[0].length;
+    return html.slice(0, at) + bootstrap + html.slice(at);
+  }
+  return bootstrap + html;
+}

@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * AppFrame — a page whose body is its own app, served from files.
  *
@@ -12,7 +14,13 @@
  * accepts cookie auth, so a same-origin app could act as the signed-in admin. Measured 2026-08-29:
  * inside this sandbox the app's own requests carry no cookies and go out cross-site, while the
  * frame navigation itself still carries them so the visibility gate works.
+ *
+ * Which is also why this component exists on the client: an app with no origin has no storage and
+ * no way to prove which page it is, so it posts a message here and this page — already
+ * authenticated for this viewer — makes the call. The app's own transport, the way stdin/stdout is
+ * a module's.
  */
+import { useCallback, useEffect, useRef } from 'react';
 import { sandboxTokens, frameAllow, type PageNeeds } from '../../../lib/page-app';
 
 /** The same full-bleed lock the inline app path uses (page.tsx `isApp`): header and footer hidden,
@@ -24,14 +32,74 @@ const LOCK_CSS =
   'body>main{margin:0;padding:0}' +
   '.firebat-cms-content{margin:0!important;padding:0!important;max-width:none!important}';
 
-export function AppFrame({ slug, needs, title }: { slug: string; needs: PageNeeds; title?: string }) {
+interface StoreMessage {
+  v?: number;
+  fb?: string;
+  slug?: string;
+  op?: string;
+  key?: string;
+  value?: string;
+}
+
+export function AppFrame({
+  slug,
+  needs,
+  title,
+}: {
+  slug: string;
+  needs: PageNeeds;
+  title?: string;
+}) {
   const src = `/user/pages/${slug.split('/').map(encodeURIComponent).join('/')}/`;
   const allow = frameAllow(needs);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  const relay = useCallback(
+    async (msg: StoreMessage) => {
+      try {
+        const res = await fetch('/api/page-store', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ slug, op: msg.op, key: msg.key, value: msg.value }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!json?.ok) {
+          // A write refused for the page's budget has to reach the app somehow — its setItem
+          // already returned, so this arrives as a message it can listen for and, failing that, as
+          // a console error rather than silence.
+          frameRef.current?.contentWindow?.postMessage(
+            { fb: 'store:error', op: msg.op, key: msg.key, error: json?.error ?? 'store failed' },
+            '*',
+          );
+        }
+      } catch {
+        /* a dropped write is not worth breaking the app over */
+      }
+    },
+    [slug],
+  );
+
+  useEffect(() => {
+    if (!needs.storage) return;
+    const onMessage = (e: MessageEvent) => {
+      // Only this frame, and only for this page. The frame has an opaque origin, so `e.origin` is
+      // "null" and proves nothing — identity here is the window itself.
+      if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
+      const d = e.data as StoreMessage | null;
+      if (!d || d.fb !== 'store' || d.slug !== slug) return;
+      if (d.op !== 'set' && d.op !== 'delete') return;
+      void relay(d);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [needs.storage, relay, slug]);
+
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: LOCK_CSS }} />
       <main className="bg-white">
         <iframe
+          ref={frameRef}
           src={src}
           title={title || slug}
           sandbox={sandboxTokens(needs)}

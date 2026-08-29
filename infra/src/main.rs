@@ -648,9 +648,13 @@ async fn main() -> Result<()> {
     let page_manager = Arc::new(
         PageManager::new(db.clone(), storage.clone()).with_page_store(page_store.clone()),
     );
-    // AppManager is not constructed here yet — nothing calls it until the bridge lands, and an
-    // instance wired to no caller is a claim that something works. It takes `page_manager` and this
-    // same `page_store`.
+    // The manager a published app talks to — its declaration, its permissions, its store.
+    // Reached through PageService.AppStore; the app itself never calls in directly (opaque origin
+    // + postMessage envelope, the browser-side twin of a module's stdin/stdout).
+    let app_manager = Arc::new(
+        firebat_core::managers::app::AppManager::new(page_manager.clone())
+            .with_store(page_store.clone()),
+    );
     // Phase B-18 Step 1.5 — ConversationManager 에 embedder + log 주입 →
     // save() 시 메시지 단위 임베딩 자동 sync + search_history cosine 검색 활성.
     let conversation_manager = Arc::new(
@@ -1410,7 +1414,8 @@ async fn main() -> Result<()> {
             module_manager.clone(),
             cache_adapter.clone(),
         )
-        .with_event(event_manager.clone());
+        .with_event(event_manager.clone())
+        .with_app(app_manager.clone());
     // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =

@@ -6,6 +6,8 @@
 
 import {
   MediaUsageEntryPb,
+  PageAppStoreRequestSchema,
+  PageAppStoreResponse,
   PageDeleteRequestSchema,
   PageFindMediaUsageRequestSchema,
   PageFindRelatedRequestSchema,
@@ -152,6 +154,15 @@ export async function listAllTags(): Promise<RpcResult<TagSummaryPb[]>> {
 export async function resolveBinding(args: MessageInitShape<typeof PageResolveBindingRequestSchema>): Promise<RpcResult<PageResolveBindingResponse>> {
   try {
       const response = await pageClient.resolveBinding(args ?? {});
+      return { ok: true, data: unBigInt(response) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function appStore(args: MessageInitShape<typeof PageAppStoreRequestSchema>): Promise<RpcResult<PageAppStoreResponse>> {
+  try {
+      const response = await pageClient.appStore(args ?? {});
       return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);

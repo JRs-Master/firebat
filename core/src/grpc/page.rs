@@ -11,7 +11,8 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::page::{PageManager, TagSummary};
 use crate::ports::{MediaUsageEntry, PageListItem, PageRecord};
 use crate::proto::{
-    page_service_server::PageService, MediaUsageEntryPb, MediaUsageListPb, PageDeleteRequest,
+    page_service_server::PageService, MediaUsageEntryPb, MediaUsageListPb, PageAppStoreRequest,
+    PageAppStoreResponse, PageDeleteRequest,
     PageDeleteResponse, PageFindMediaUsageRequest, PageFindRelatedRequest, PageGetRedirectRequest,
     PageGetRedirectResponse, PageGetRequest, PageListAllTagsRequest, PageListItemPb,
     PageFindRelatedResponse, PageListRequest, PageListResponse, PageListStaticRequest,
@@ -24,6 +25,9 @@ use crate::proto::{
 
 pub struct PageServiceImpl {
     manager: Arc<PageManager>,
+    /// The app side of a page — its declaration and its store. Optional so an instance without
+    /// page storage still serves pages; the RPC then answers with the reason rather than 500.
+    app: Option<Arc<crate::managers::app::AppManager>>,
     /// module 블록 publish-bake — save 시 pageBinding 선언 모듈 실행(page_binding 헬퍼).
     /// pending 승인 commit·hub·admin 라우트가 전부 이 Save 를 타므로 여기 배선이 그 표면 전체 커버.
     modules: Arc<crate::managers::module::ModuleManager>,
@@ -42,12 +46,18 @@ impl PageServiceImpl {
         modules: Arc<crate::managers::module::ModuleManager>,
         cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
     ) -> Self {
-        Self { manager, modules, cache, event: None }
+        Self { manager, modules, cache, event: None, app: None }
     }
 
     /// Wire the event bus (post-construction builder — `new()` callers/tests stay unchanged).
     pub fn with_event(mut self, event: Arc<crate::managers::event::EventManager>) -> Self {
         self.event = Some(event);
+        self
+    }
+
+    /// Wire the app manager so published apps can reach their own store.
+    pub fn with_app(mut self, app: Arc<crate::managers::app::AppManager>) -> Self {
+        self.app = Some(app);
         self
     }
 
@@ -364,6 +374,51 @@ impl PageService for PageServiceImpl {
             }
         }
     }
+    /// Per-page app storage. Every guard lives in `AppManager`: the page must be an app, must have
+    /// declared `needs.storage`, and its budget is checked on write. Errors come back in the
+    /// envelope rather than as a status, because the caller is a published page relaying to an app
+    /// that has to show the reason to a person.
+    async fn app_store(
+        &self,
+        req: Request<PageAppStoreRequest>,
+    ) -> Result<Response<PageAppStoreResponse>, TonicStatus> {
+        let a = req.into_inner();
+        let fail = |e: String| {
+            Ok(Response::new(PageAppStoreResponse {
+                ok: false,
+                error: Some(e),
+                value: None,
+                entries_json: String::new(),
+                bytes: 0,
+            }))
+        };
+        let Some(app) = &self.app else {
+            return fail("page storage is not wired on this instance".to_string());
+        };
+        let key = a.key.unwrap_or_default();
+        let result: Result<(Option<String>, String), String> = match a.op.as_str() {
+            "get" => app.store_get(&a.slug, &key).map(|v| (v, String::new())),
+            "set" => app
+                .store_set(&a.slug, &key, &a.value.unwrap_or_default())
+                .map(|()| (None, String::new())),
+            "delete" => app.store_delete(&a.slug, &key).map(|()| (None, String::new())),
+            "entries" => Ok((None, app.store_seed(&a.slug).to_string())),
+            other => Err(format!(
+                "unknown storage op '{other}' — use get | set | delete | entries"
+            )),
+        };
+        match result {
+            Ok((value, entries_json)) => Ok(Response::new(PageAppStoreResponse {
+                ok: true,
+                error: None,
+                value,
+                entries_json,
+                bytes: app.store_bytes(&a.slug),
+            })),
+            Err(e) => fail(e),
+        }
+    }
+
 }
 
 // Tests 이관 — `infra/tests/svc_page_test.rs` (integration test).
