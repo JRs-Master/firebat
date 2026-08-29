@@ -1,0 +1,924 @@
+<div id="caromRoot" style="position:relative;width:100%;height:100dvh;min-height:520px;overflow:hidden;background:#07090b">
+<style>
+  #caromRoot, #caromRoot * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  #caromRoot { color:#e8e6e1; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    user-select:none; touch-action:none; }
+  #cStage { position:absolute; inset:0; }
+  #cStage canvas { display:block; }
+
+  .cHud { position:absolute; left:0; right:0; top:0; padding:9px 11px; display:flex; gap:7px;
+    align-items:flex-start; pointer-events:none; font-size:12px; z-index:3; }
+  .cChip { pointer-events:auto; background:rgba(16,18,21,.74); border:1px solid rgba(255,255,255,.10);
+    border-radius:9px; padding:6px 10px; backdrop-filter:blur(8px); line-height:1.4; white-space:nowrap; }
+  .cChip b { font-weight:700; }
+  .cScore { font-variant-numeric:tabular-nums; }
+  .cScore .me { color:#dfe6ee; } .cScore .op { color:#e8b621; }
+  .cScore .on { text-decoration:underline; text-underline-offset:3px; }
+  .cLog { flex:1; min-width:0; color:#a9b4bf; overflow:hidden; text-overflow:ellipsis; }
+  .cLog:empty { display:none; }
+  .cBtn { pointer-events:auto; background:rgba(16,18,21,.74); border:1px solid rgba(255,255,255,.10);
+    border-radius:9px; padding:7px 10px; color:#e8e6e1; font-size:12px; cursor:pointer; }
+  .cBtn:active { background:rgba(255,255,255,.13); }
+  .cBtn.on { background:#1d4ed8; border-color:#3b6fe0; }
+
+  .cDock { position:absolute; left:0; right:0; bottom:0; padding:10px 12px 14px;
+    display:flex; align-items:flex-end; gap:12px; pointer-events:none; z-index:3; }
+  #cTip { pointer-events:auto; width:88px; height:88px; flex:0 0 auto; touch-action:none; }
+  #cTipC { width:100%; height:100%; display:block; border-radius:50%; }
+  .cMid { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
+  .cRead { font-size:11.5px; color:#8492a0; pointer-events:none; padding-left:4px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #cGauge { pointer-events:none; height:40px; border-radius:20px; position:relative; overflow:hidden;
+    background:linear-gradient(180deg,rgba(8,10,13,.9),rgba(20,24,30,.9));
+    border:1px solid rgba(255,255,255,.13); box-shadow:inset 0 2px 6px rgba(0,0,0,.6); }
+  /* the whole range is painted, dim, so you can see where the needle is heading */
+  #cGaugeTrack { position:absolute; inset:3px; border-radius:17px; opacity:.22;
+    background:linear-gradient(90deg,#2f7d4f,#c8b02a 58%,#d1452b); }
+  #cGaugeFill { position:absolute; left:3px; top:3px; bottom:3px; width:0%; border-radius:17px;
+    background:linear-gradient(90deg,#3ac177,#ffd23d 58%,#ff5a37);
+    box-shadow:0 0 14px rgba(255,190,60,.35); }
+  #cGaugeTicks { position:absolute; inset:3px; border-radius:17px; pointer-events:none;
+    background:repeating-linear-gradient(90deg,rgba(255,255,255,.16) 0 1px,transparent 1px 10%); }
+  #cGaugeMark { position:absolute; top:1px; bottom:1px; width:3px; border-radius:2px;
+    background:#fff; box-shadow:0 0 8px rgba(255,255,255,.8); opacity:0; }
+  #cGaugeLbl { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:12.5px; font-weight:800; letter-spacing:.04em;
+    text-shadow:0 1px 4px rgba(0,0,0,.85); font-variant-numeric:tabular-nums; }
+  #cFire { pointer-events:auto; flex:0 0 auto; width:82px; height:82px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.20); color:#fff; font-size:15px; font-weight:800; cursor:pointer;
+    letter-spacing:.04em; background:radial-gradient(circle at 36% 30%,#3d7ae8,#0f2554);
+    box-shadow:0 6px 18px rgba(0,0,0,.55), inset 0 -3px 10px rgba(0,0,0,.45); transition:transform .08s; }
+  #cFire.armed { background:radial-gradient(circle at 36% 30%,#ffb52e,#7a4a05);
+    border-color:rgba(255,220,150,.55); box-shadow:0 0 22px rgba(255,180,50,.45); }
+  #cFire:active { transform:scale(.95); }
+  #cFire:disabled { opacity:.3; box-shadow:none; }
+
+  .cVeil { position:absolute; inset:0; z-index:6; display:none; place-items:center;
+    background:rgba(6,8,10,.86); backdrop-filter:blur(4px); padding:22px; }
+  .cVeil.show { display:grid; }
+  .cCard { width:min(420px,94%); background:#12151a; border:1px solid rgba(255,255,255,.11);
+    border-radius:14px; padding:18px; }
+  .cCard h3 { margin:0 0 4px; font-size:16px; }
+  .cCard p { margin:0 0 14px; font-size:12.5px; color:#98a4b0; line-height:1.6; }
+  .cRow { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:12px; }
+  .cOpt { flex:1 1 auto; min-width:64px; padding:9px 6px; text-align:center; font-size:12.5px;
+    border:1px solid rgba(255,255,255,.12); border-radius:9px; background:#171b21; cursor:pointer; }
+  .cOpt.sel { background:#1d4ed8; border-color:#3b6fe0; font-weight:700; }
+  .cGo { width:100%; padding:12px; border:0; border-radius:10px; background:#1d4ed8; color:#fff;
+    font-size:14px; font-weight:700; cursor:pointer; }
+  .cGo.ghost { background:#1b2029; border:1px solid rgba(255,255,255,.12); margin-top:8px; }
+  .cName { width:100%; padding:10px; border-radius:9px; background:#0e1116; color:#e8e6e1;
+    border:1px solid rgba(255,255,255,.13); font-size:14px; margin-bottom:10px; }
+  .cRank { max-height:230px; overflow:auto; margin:2px 0 12px; font-size:12.5px; }
+  .cRank div { display:flex; gap:8px; padding:6px 2px; border-bottom:1px solid rgba(255,255,255,.06);
+    font-variant-numeric:tabular-nums; }
+  .cRank i { width:22px; color:#7c8894; font-style:normal; }
+  .cRank span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cRank em { font-style:normal; color:#9fb3c8; }
+
+  .cTurn { position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); z-index:4;
+    font-size:22px; font-weight:800; letter-spacing:.02em; pointer-events:none; opacity:0;
+    text-shadow:0 2px 18px rgba(0,0,0,.9); transition:opacity .25s; }
+  .cTurn.show { opacity:1; }
+
+  #cRotate { position:absolute; inset:0; z-index:8; display:none; place-items:center; text-align:center;
+    background:#07090b; font-size:14px; color:#9aa6b2; padding:26px; line-height:1.9; }
+  #cRotate.show { display:grid; }
+</style>
+
+<div id="cStage"></div>
+<div class="cTurn" id="cTurn"></div>
+
+<div class="cHud">
+  <div class="cChip cScore" id="cSc"><b class="me">0</b> : <b class="op">0</b></div>
+  <div class="cChip" id="cInfo">3쿠션 · 10점</div>
+  <button class="cBtn" id="cMenu">메뉴</button>
+  <button class="cBtn" id="cView">탑뷰</button>
+  <div class="cChip cLog" id="cLog">테이블을 끌어서 조준</div>
+</div>
+
+<div class="cDock">
+  <div id="cTip"><canvas id="cTipC" width="176" height="176"></canvas></div>
+  <div class="cMid">
+    <div class="cRead"><span id="cHint">테이블을 끌어서 조준</span></div>
+    <div id="cGauge"><div id="cGaugeTrack"></div><div id="cGaugeFill"></div><div id="cGaugeTicks"></div><div id="cGaugeMark"></div><div id="cGaugeLbl">힘</div></div>
+  </div>
+  <button id="cFire">치기</button>
+</div>
+
+<div class="cVeil show" id="cSetup"><div class="cCard">
+  <h3>당구</h3>
+  <p>종목과 목표 점수, 상대 실력을 고르세요. 상대는 매 수마다 수백~수천 개의 큐질을 실제로 시뮬레이션해서 고릅니다 — 실력이 높을수록 더 많이 보고, 손이 덜 떨립니다.</p>
+  <div class="cRow" id="cOptGame">
+    <div class="cOpt sel" data-v="three">3쿠션</div><div class="cOpt" data-v="four">4구</div>
+  </div>
+  <div class="cRow" id="cOptTarget"></div>
+  <div class="cRow" id="cOptLevel">
+    <!-- filled from AI.LEVELS so the rating shown always matches the game -->
+  </div>
+  <button class="cGo" id="cStart">시작</button>
+  <button class="cGo ghost" id="cOpenRank">랭킹 보기</button>
+</div></div>
+
+<div class="cVeil" id="cOver"><div class="cCard">
+  <h3 id="cOverT">경기 종료</h3>
+  <p id="cOverP"></p>
+  <input class="cName" id="cWho" maxlength="12" placeholder="랭킹에 올릴 이름">
+  <button class="cGo" id="cSubmit">랭킹 등록</button>
+  <button class="cGo ghost" id="cAgain">다시 하기</button>
+</div></div>
+
+<div class="cVeil" id="cRankV"><div class="cCard">
+  <h3>랭킹</h3>
+  <p id="cRankP">이닝이 적을수록 위입니다 — 같은 점수를 몇 번에 냈는지가 실력이니까요.</p>
+  <div class="cRank" id="cRankL"></div>
+  <button class="cGo ghost" id="cRankClose">닫기</button>
+</div></div>
+
+<div id="cRotate">📱↔️<br>가로로 돌려서 하시는 걸 권합니다<br><span style="font-size:12px;color:#6f7c88">세로로도 되지만 테이블이 작아집니다</span>
+  <br><button class="cBtn" id="cRotateOk" style="margin-top:14px">세로로 할래요</button></div>
+
+<!--ENGINE-->
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const P = window.CaromPhysics, Rules = window.CaromRules, AI = window.CaromAI;
+const R = P.DEFAULTS.R;
+const TABLE = P.TABLES.large, W = TABLE.w, H = TABLE.h;
+const sx = (px) => px - W / 2, sz = (py) => H / 2 - py;
+const MAXV = AI.MAXV;
+const root = document.getElementById('caromRoot');
+const el = (id) => document.getElementById(id);
+
+/* ══ state ══════════════════════════════════════════════════════════════════ */
+const cfg = { game: 'three', target: 10, level: 'club' };
+let match = null, world = null, spec = [];
+let shot = { angle: 0, side: 0, vert: 0 };
+let shotLog = [], startLayout = null;
+const HUMAN = 'white', BOT = 'yellow';
+
+const TINT = { white: 0xd6d0c0, yellow: 0xc7961c, red: 0xa8281a };
+function layout(game) {
+  return game === 'four'
+    ? [{ id: 'white', tint: 'white', p: [W * 0.25, H / 2 - 0.184] },
+       { id: 'yellow', tint: 'yellow', p: [W * 0.25, H / 2 + 0.184] },
+       { id: 'red1', tint: 'red', p: [W * 0.75, H / 2] },
+       { id: 'red2', tint: 'red', p: [W * 0.50, H / 2] }]
+    : [{ id: 'white', tint: 'white', p: [W * 0.25, H / 2 - 0.184] },
+       { id: 'yellow', tint: 'yellow', p: [W * 0.25, H / 2] },
+       { id: 'red', tint: 'red', p: [W * 0.75, H / 2] }];
+}
+
+/* ══ renderer ═══════════════════════════════════════════════════════════════
+   The look is a dim hall with one fixture over the table. Reflections stay quiet on purpose:
+   a mirror-finish ball and a shiny bed are the two things that make a render read as CG. What
+   sells it instead is the falloff toward the corners, the felt's micro-normal, and the small
+   dark ring where each ball meets the cloth.
+   ═════════════════════════════════════════════════════════════════════════ */
+const stage = el('cStage');
+const MOBILE = matchMedia('(pointer: coarse)').matches;
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.6 : 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.78;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06080a);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 60);
+
+function hallEnvironment() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256;
+  const g = c.getContext('2d');
+  const bg = g.createLinearGradient(0, 0, 0, 256);
+  bg.addColorStop(0, '#0f141b'); bg.addColorStop(0.5, '#0a0d11'); bg.addColorStop(1, '#06080a');
+  g.fillStyle = bg; g.fillRect(0, 0, 512, 256);
+  // one long soft fixture — a wide, dim band rather than a bright point, so a ball catches a
+  // gentle streak instead of a hard white dot
+  const lamp = g.createRadialGradient(256, 50, 8, 256, 50, 170);
+  lamp.addColorStop(0, '#d9cdb6'); lamp.addColorStop(0.4, '#59503f'); lamp.addColorStop(1, 'rgba(0,0,0,0)');
+  g.save(); g.translate(256, 50); g.scale(2.3, 0.42); g.translate(-256, -50);
+  g.fillStyle = lamp; g.fillRect(0, 0, 512, 200); g.restore();
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const pm = new THREE.PMREMGenerator(renderer);
+  const env = pm.fromEquirectangular(tex).texture;
+  pm.dispose(); tex.dispose();
+  return env;
+}
+scene.environment = hallEnvironment();
+
+function clothNormal() {
+  const n = 256, c = document.createElement('canvas'); c.width = c.height = n;
+  const g = c.getContext('2d'), img = g.createImageData(n, n);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = (y * n + x) * 4;
+    const fib = Math.sin(x * 1.7) * 0.5 + Math.sin(y * 1.9 + 1.3) * 0.5;
+    const noise = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+    const d = fib * 14 + noise * 10;
+    img.data[i] = 128 + d; img.data[i + 1] = 128 - d * 0.6; img.data[i + 2] = 255; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(48, 24);
+  return t;
+}
+const clothMat = new THREE.MeshStandardMaterial({
+  color: 0x11402c, roughness: 0.96, metalness: 0, envMapIntensity: 0.16,
+  normalMap: clothNormal(), normalScale: new THREE.Vector2(0.30, 0.30),
+});
+// Dark walnut. (This was written as an arithmetic expression by mistake and produced a pale
+// colour, which is why the lit rail was blowing out to white under the fixture.)
+const railWood = new THREE.MeshStandardMaterial({
+  color: 0x2e1b10, roughness: 0.62, metalness: 0, envMapIntensity: 0.18,
+});
+
+const table = new THREE.Group(); scene.add(table);
+const bed = new THREE.Mesh(new THREE.BoxGeometry(W + 0.10, 0.05, H + 0.10), clothMat);
+bed.position.y = -0.025; bed.receiveShadow = true; bed.castShadow = true; table.add(bed);
+
+const NOSE = P.DEFAULTS.noseHeight * R;
+function cushion(len, horiz, off) {
+  const m = new THREE.Mesh(horiz ? new THREE.BoxGeometry(len, NOSE, 0.05)
+                                 : new THREE.BoxGeometry(0.05, NOSE, len), clothMat);
+  m.position.set(horiz ? 0 : off, NOSE / 2, horiz ? off : 0);
+  m.castShadow = true; m.receiveShadow = true; table.add(m);
+}
+cushion(W + 0.10, true, H / 2 + 0.025);  cushion(W + 0.10, true, -H / 2 - 0.025);
+cushion(H, false, W / 2 + 0.025);        cushion(H, false, -W / 2 - 0.025);
+
+const RAIL = 0.11;
+function frame(len, horiz, off) {
+  const m = new THREE.Mesh(horiz ? new THREE.BoxGeometry(len, 0.075, 0.12)
+                                 : new THREE.BoxGeometry(0.12, 0.075, len), railWood);
+  m.position.set(horiz ? 0 : off, 0.0375, horiz ? off : 0);
+  m.castShadow = true; m.receiveShadow = true; table.add(m);
+}
+frame(W + 0.34, true, H / 2 + RAIL);  frame(W + 0.34, true, -H / 2 - RAIL);
+frame(H + 0.10, false, W / 2 + RAIL); frame(H + 0.10, false, -W / 2 - RAIL);
+
+// Diamonds. Regulation: the long rail is divided into eight by seven sights, the short rail
+// into four by three, both measured from the cushion noses — which is the playing surface, not
+// the outside of the rail. (They look uneven in a tilted view; that is perspective, and the
+// top view is the one to check them in.)
+const dotMat = new THREE.MeshStandardMaterial({ color: 0xd6cbb2, roughness: 0.5 });
+const dotGeo = new THREE.CircleGeometry(0.0062, 16);
+function diamond(x, z) {
+  const d = new THREE.Mesh(dotGeo, dotMat);
+  d.rotation.x = -Math.PI / 2; d.position.set(x, 0.0755, z); table.add(d);
+}
+for (let i = 1; i <= 7; i++) for (const s of [1, -1]) diamond(-W / 2 + (W / 8) * i, s * (H / 2 + RAIL));
+for (let i = 1; i <= 3; i++) for (const s of [1, -1]) diamond(s * (W / 2 + RAIL), -H / 2 + (H / 4) * i);
+
+// ── one fixture, hung long and low over the middle of the table. Two lamps put two pools on
+//    the cloth and lit the ends evenly; one wide one gives the single pool with dark ends that
+//    a hall actually has.
+const lamps = [];
+const key = new THREE.SpotLight(0xffeed4, 12.5, 6, 1.06, 0.88, 2);
+key.position.set(0, 1.18, 0);
+key.target.position.set(0, 0, 0);
+key.castShadow = true;
+key.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
+key.shadow.camera.near = 0.3; key.shadow.camera.far = 3.2;
+key.shadow.bias = -0.0011; key.shadow.radius = 2;
+scene.add(key); scene.add(key.target);
+{
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.10, 0.24),
+    new THREE.MeshStandardMaterial({ color: 0x191c20, roughness: 0.55 }));
+  body.position.set(0, 1.26, 0); scene.add(body); lamps.push(body);
+  const glow = new THREE.Mesh(new THREE.BoxGeometry(1.44, 0.02, 0.19),
+    new THREE.MeshBasicMaterial({ color: 0xffeccd }));
+  glow.position.set(0, 1.205, 0); scene.add(glow); lamps.push(glow);
+}
+function lampVisibility() { for (const m of lamps) m.visible = cam.el < 0.95; }
+scene.add(new THREE.AmbientLight(0x232c36, 0.16));
+// bounce off the cloth: without it a ball lit from straight above goes black underneath and
+// reads as a sticker rather than a sphere
+scene.add(new THREE.HemisphereLight(0x26323e, 0x2c7350, 0.80));
+
+const legMat = new THREE.MeshStandardMaterial({ color: 0x27180f, roughness: 0.6 });
+for (const lx of [-W / 2 + 0.16, W / 2 - 0.16]) for (const lz of [-H / 2 + 0.10, H / 2 - 0.10]) {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.78, 0.10), legMat);
+  leg.position.set(lx, -0.44, lz); leg.castShadow = true; scene.add(leg);
+}
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16),
+  new THREE.MeshStandardMaterial({ color: 0x17130f, roughness: 0.94, envMapIntensity: 0.12 }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = -0.83; floor.receiveShadow = true; scene.add(floor);
+
+function contactMaterial() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const rad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  rad.addColorStop(0, 'rgba(0,0,0,0.68)'); rad.addColorStop(0.45, 'rgba(0,0,0,0.26)');
+  rad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rad; g.fillRect(0, 0, 64, 64);
+  return new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false });
+}
+const contactMat = contactMaterial();
+const contactGeo = new THREE.PlaneGeometry(R * 3.0, R * 3.0);
+
+function ballTexture(hex) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#' + hex.toString(16).padStart(6, '0'); g.fillRect(0, 0, 256, 128);
+  g.fillStyle = 'rgba(0,0,0,0.28)';
+  g.beginPath(); g.arc(64, 64, 6, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(192, 64, 6, 0, Math.PI * 2); g.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const ballGeo = new THREE.SphereGeometry(R, 40, 28);
+const view = new Map();
+function buildBalls() {
+  for (const v of view.values()) { table.remove(v.mesh); table.remove(v.shadow); }
+  view.clear();
+  for (const b of spec) {
+    const mesh = new THREE.Mesh(ballGeo, new THREE.MeshPhysicalMaterial({
+      map: ballTexture(TINT[b.tint]),
+      // A polished ball is not a mirror. Roughness this high spreads the lamp into a soft
+      // streak instead of stamping a hard white dot, which is what "은은하게" means here.
+      roughness: 0.17, metalness: 0,
+      clearcoat: 0.35, clearcoatRoughness: 0.20,
+      envMapIntensity: 0.40,
+    }));
+    mesh.castShadow = true;
+    const shadow = new THREE.Mesh(contactGeo, contactMat);
+    shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.0012;
+    table.add(mesh); table.add(shadow);
+    view.set(b.id, { mesh, shadow, q: new THREE.Quaternion(), last: null });
+  }
+}
+function syncView() {
+  for (const b of world.balls) {
+    const v = view.get(b.id); if (!v) continue;
+    const x = sx(b.p[0]), z = sz(b.p[1]);
+    if (v.last) {
+      const dx = x - v.last[0], dz = z - v.last[1], d = Math.hypot(dx, dz);
+      if (d > 1e-7) {
+        v.q.premultiply(new THREE.Quaternion()
+          .setFromAxisAngle(new THREE.Vector3(-dz / d, 0, dx / d), d / R));
+      }
+    }
+    v.last = [x, z];
+    v.mesh.position.set(x, R, z); v.mesh.quaternion.copy(v.q);
+    v.shadow.position.set(x, 0.0012, z);
+  }
+}
+
+/* ── the cue stick. Standard in every billiards game and it is also the clearest possible
+      statement of "you are dragging the aim, not clicking a point". */
+const cueMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.5 });
+const cueTipMat = new THREE.MeshStandardMaterial({ color: 0x2b6ea8, roughness: 0.6 });
+const cueGroup = new THREE.Group();
+{
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.013, 1.35, 14), cueMat);
+  shaft.rotation.z = Math.PI / 2; shaft.position.x = -0.675; cueGroup.add(shaft);
+  const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.0062, 0.0062, 0.02, 12), cueTipMat);
+  tip.rotation.z = Math.PI / 2; tip.position.x = -0.01; cueGroup.add(tip);
+  cueGroup.position.y = R;
+}
+table.add(cueGroup);
+
+/* ── aim guide. The same simulator the shot will use, so it cannot disagree with what happens.
+      Only up to the first contact, plus the ghost ball: a full path would be an autopilot. */
+const guideMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.40 });
+const guideGeo = new THREE.BufferGeometry();
+guideGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 320), 3));
+const guideLine = new THREE.Line(guideGeo, guideMat); guideLine.frustumCulled = false; table.add(guideLine);
+const ghost = new THREE.Mesh(new THREE.SphereGeometry(R * 1.01, 24, 16),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 }));
+ghost.visible = false; table.add(ghost);
+
+let needGuide = true;
+function previewWorld() {
+  const w = P.createWorld({ table: TABLE, balls: world.balls.map(b => ({ id: b.id, p: b.p.slice() })) });
+  w.k.maxTime = 2.4; return w;
+}
+function buildGuide() {
+  needGuide = false;
+  const cb = P.ball(world, HUMAN);
+  const dirx = Math.cos(shot.angle), diry = Math.sin(shot.angle);
+  cueGroup.position.set(sx(cb.p[0]), R, sz(cb.p[1]));
+  cueGroup.rotation.y = Math.atan2(-diry, dirx);
+  cueGroup.visible = !playing && !botThinking && match && !match.over && Rules.shooterOf(match) === HUMAN;
+
+  if (!cueGroup.visible) { guideLine.visible = false; ghost.visible = false; return; }
+
+  const w = previewWorld();
+  const m = P.shoot(w, HUMAN, { angle: shot.angle, speed: Math.max(0.9, gauge.value) * MAXV, side: shot.side, vert: shot.vert });
+  if (m.miscue) { guideLine.visible = false; ghost.visible = false; return; }
+  const res = P.simulate(w, { trace: true, traceEvery: 2 });
+  const first = res.events.find(e => e.type === 'ball' || e.type === 'cushion');
+  const tEnd = first ? first.t : 0.55;
+
+  // Always start from the cue ball itself. When an object ball is sitting right in front there
+  // is no room for a traced path, and the earlier version simply hid the line — exactly when
+  // the player most needs to see where they are pointed.
+  const pos = guideGeo.attributes.position;
+  pos.array[0] = sx(cb.p[0]); pos.array[1] = R; pos.array[2] = sz(cb.p[1]);
+  let n = 1;
+  for (const f of res.trace) {
+    if (f[0] > tEnd || n >= 300) break;
+    pos.array[n * 3] = sx(f[1]); pos.array[n * 3 + 1] = R; pos.array[n * 3 + 2] = sz(f[2]);
+    n++;
+  }
+  if (n < 2) {
+    // contact is immediate: draw a stub along the aim so the line never vanishes
+    pos.array[3] = sx(cb.p[0] + dirx * R * 1.6); pos.array[4] = R; pos.array[5] = sz(cb.p[1] + diry * R * 1.6);
+    n = 2;
+  }
+  guideGeo.setDrawRange(0, n); pos.needsUpdate = true; guideLine.visible = true;
+  ghost.position.set(pos.array[(n - 1) * 3], R, pos.array[(n - 1) * 3 + 2]); ghost.visible = true;
+}
+
+/* ══ camera ═════════════════════════════════════════════════════════════════ */
+const cam = { az: -Math.PI / 2, el: 0.82, dist: 3.5, top: false };
+function placeCamera() {
+  const r = cam.dist;
+  camera.position.set(Math.cos(cam.az) * Math.cos(cam.el) * r, Math.sin(cam.el) * r,
+                      Math.sin(cam.az) * Math.cos(cam.el) * r);
+  camera.lookAt(0, 0.02, 0);
+}
+const FIT = [];
+for (const x of [-W / 2 - 0.22, W / 2 + 0.22]) for (const z of [-H / 2 - 0.22, H / 2 + 0.22])
+  for (const y of [0, 0.09]) FIT.push(new THREE.Vector3(x, y, z));
+function fitCamera() {
+  cam.dist = 1.4;
+  for (let i = 0; i < 120; i++) {
+    placeCamera(); camera.updateMatrixWorld(true);
+    let inside = true;
+    for (const p of FIT) {
+      const q = p.clone().project(camera);
+      if (q.x < -0.995 || q.x > 0.995 || q.y < -0.70 || q.y > 0.96) { inside = false; break; }
+    }
+    if (inside) break;
+    cam.dist *= 1.02;
+  }
+  lampVisibility();
+}
+function resize() {
+  const w = root.clientWidth, h = root.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h; camera.fov = h > w ? 44 : 34; camera.updateProjectionMatrix();
+  if (!cam.top) { cam.az = h > w ? Math.PI : -Math.PI / 2; cam.el = h > w ? 1.18 : 0.82; }
+  fitCamera();
+  el('cRotate').classList.toggle('show', MOBILE && h > w && !rotateDismissed);
+}
+let rotateDismissed = false;
+addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(resize, 250));
+
+/* ══ sound ══════════════════════════════════════════════════════════════════ */
+let ac = null;
+function audio() {
+  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  if (ac.state === 'suspended') ac.resume();
+  return ac;
+}
+function clack(at, speed, kind) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + Math.max(0, at);
+  const amp = Math.min(1, Math.pow(Math.min(speed, 5) / 5, 0.7));
+  if (amp < 0.02) return;
+  const g = a.createGain(); g.connect(a.destination);
+  if (kind === 'ball') {
+    g.gain.setValueAtTime(amp * 0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    for (const [f, m] of [[2300, 1], [3450, 0.55], [5200, 0.22]]) {
+      const o = a.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f * (0.94 + amp * 0.12), t);
+      const og = a.createGain(); og.gain.value = m;
+      o.connect(og); og.connect(g); o.start(t); o.stop(t + 0.06);
+    }
+  } else {
+    g.gain.setValueAtTime(amp * 0.4, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    const nb = a.createBuffer(1, Math.floor(a.sampleRate * 0.16), a.sampleRate);
+    const d = nb.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (a.sampleRate * 0.035));
+    const src = a.createBufferSource(); src.buffer = nb;
+    const bp = a.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.value = 900;
+    src.connect(bp); bp.connect(g); src.start(t);
+    const o = a.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(150, t);
+    const og = a.createGain(); og.gain.value = 0.5; o.connect(og); og.connect(g);
+    o.start(t); o.stop(t + 0.14);
+  }
+}
+function chime(good) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime, g = a.createGain(); g.connect(a.destination);
+  g.gain.setValueAtTime(0.16, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  (good ? [523, 784] : [300, 220]).forEach((f, i) => {
+    const o = a.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(f, t + i * 0.08);
+    o.connect(g); o.start(t + i * 0.08); o.stop(t + 0.45);
+  });
+}
+
+/* ══ controls ═══════════════════════════════════════════════════════════════
+   Standard billiards handling: DRAG on the table swings the aim — the cue points wherever your
+   finger is relative to the cue ball, so there is nothing to discover. Power is the arcade
+   sweeping gauge: press once to start it, press again to stop it. Clicking a slider to set a
+   number is not how anyone plays this.
+   ═════════════════════════════════════════════════════════════════════════ */
+const gauge = { running: false, value: 0.35, t0: 0, locked: false };
+const GAUGE_PERIOD = 1250;
+
+function readout() { /* the cue and the tip dial say it better than words did */ }
+
+const tipC = el('cTipC'), tg = tipC.getContext('2d');
+function drawTip() {
+  const n = 176, c = n / 2, rad = n / 2 - 7;
+  tg.clearRect(0, 0, n, n);
+  const sph = tg.createRadialGradient(c - rad * 0.3, c - rad * 0.35, rad * 0.1, c, c, rad);
+  sph.addColorStop(0, '#f6f2e8'); sph.addColorStop(0.62, '#d3cec1'); sph.addColorStop(1, '#82806f');
+  tg.fillStyle = sph; tg.beginPath(); tg.arc(c, c, rad, 0, Math.PI * 2); tg.fill();
+  tg.strokeStyle = 'rgba(255,255,255,.20)'; tg.lineWidth = 2; tg.stroke();
+  tg.strokeStyle = 'rgba(0,0,0,.20)'; tg.lineWidth = 1.5;
+  tg.beginPath(); tg.arc(c, c, rad * P.DEFAULTS.maxTipOffset * 2, 0, Math.PI * 2); tg.stroke();
+  tg.strokeStyle = 'rgba(0,0,0,.12)';
+  tg.beginPath(); tg.moveTo(c - rad, c); tg.lineTo(c + rad, c);
+  tg.moveTo(c, c - rad); tg.lineTo(c, c + rad); tg.stroke();
+  tg.fillStyle = '#1d4ed8';
+  tg.beginPath(); tg.arc(c + shot.side * rad, c - shot.vert * rad, 8.5, 0, Math.PI * 2); tg.fill();
+  tg.strokeStyle = 'rgba(255,255,255,.9)'; tg.lineWidth = 2; tg.stroke();
+}
+function setTip(e) {
+  const r = tipC.getBoundingClientRect();
+  let dx = (e.clientX - r.left) / r.width * 2 - 1, dy = 1 - (e.clientY - r.top) / r.height * 2;
+  const m = Math.hypot(dx, dy), lim = P.DEFAULTS.maxTipOffset * 2;
+  if (m > lim) { dx = dx / m * lim; dy = dy / m * lim; }
+  shot.side = dx / 2; shot.vert = dy / 2;
+  drawTip(); readout(); needGuide = true;
+}
+let tipDrag = false;
+el('cTip').addEventListener('pointerdown', e => { tipDrag = true; el('cTip').setPointerCapture(e.pointerId); setTip(e); e.stopPropagation(); });
+el('cTip').addEventListener('pointermove', e => { if (tipDrag) setTip(e); });
+el('cTip').addEventListener('pointerup', () => { tipDrag = false; });
+
+const ray = new THREE.Raycaster();
+const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function tableHit(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1,
+                               -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(nd, camera);
+  const hit = new THREE.Vector3();
+  return ray.ray.intersectPlane(plane, hit) ? hit : null;
+}
+function aimAt(e) {
+  const hit = tableHit(e); if (!hit) return;
+  const cb = P.ball(world, HUMAN);
+  const ax = hit.x - sx(cb.p[0]), az = hit.z - sz(cb.p[1]);
+  if (Math.hypot(ax, az) < R * 1.2) return;
+  shot.angle = Math.atan2(-az, ax);
+  readout(); needGuide = true;
+}
+
+const pointers = new Map();
+let aiming = false, pinch = null;
+stage.addEventListener('pointerdown', e => {
+  pointers.set(e.pointerId, e);
+  stage.setPointerCapture(e.pointerId);
+  if (pointers.size >= 2) { aiming = false; pinch = null; return; }
+  if (!canPlay()) return;
+  aiming = true; aimAt(e);
+});
+stage.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, e);
+  if (pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+    if (pinch) {
+      cam.dist = Math.min(7, Math.max(1.5, cam.dist * (pinch.d / d)));
+      cam.az += (cx - pinch.cx) * 0.005;
+      cam.el = Math.min(1.50, Math.max(0.15, cam.el - (cy - pinch.cy) * 0.004));
+      placeCamera(); lampVisibility();
+    }
+    pinch = { d, cx, cy };
+    return;
+  }
+  if (aiming) aimAt(e);
+});
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (pointers.size === 0) aiming = false;
+}
+stage.addEventListener('pointerup', endPointer);
+stage.addEventListener('pointercancel', endPointer);
+stage.addEventListener('contextmenu', e => e.preventDefault());
+
+function canPlay() {
+  return match && !match.over && !playing && !botThinking && Rules.shooterOf(match) === HUMAN;
+}
+
+/* ── the gauge: press to start it sweeping, press again to stop where you want it. */
+const fire = el('cFire');
+function gaugeTick(now) {
+  if (!gauge.running) return;
+  const ph = ((now - gauge.t0) % GAUGE_PERIOD) / GAUGE_PERIOD;
+  const v = ph < 0.5 ? ph * 2 : (1 - ph) * 2;           // up then back down
+  gauge.value = 0.06 + v * 0.94;
+  el('cGaugeFill').style.width = (gauge.value * 100) + '%';
+  el('cGaugeLbl').textContent = Math.round(gauge.value * 100) + '%';
+}
+function startGauge() {
+  gauge.running = true; gauge.t0 = performance.now();
+  el('cGaugeMark').style.opacity = 0;
+  fire.classList.add('armed'); fire.textContent = '멈춤';
+  el('cHint').textContent = '원하는 세기에서 다시 누르면 칩니다';
+}
+function stopGaugeAndFire() {
+  gauge.running = false;
+  fire.classList.remove('armed'); fire.textContent = '치기';
+  el('cGaugeMark').style.left = (gauge.value * 100) + '%';
+  el('cGaugeMark').style.opacity = 0.9;
+  el('cHint').textContent = '';
+  playShot(HUMAN, { angle: shot.angle, speed: gauge.value * MAXV, side: shot.side, vert: shot.vert });
+}
+fire.addEventListener('click', () => {
+  if (!canPlay()) return;
+  audio();
+  if (gauge.running) stopGaugeAndFire(); else startGauge();
+});
+addEventListener('keydown', e => {
+  if (e.code !== 'Space' || !canPlay()) return;
+  e.preventDefault(); audio();
+  if (gauge.running) stopGaugeAndFire(); else startGauge();
+});
+
+/* ══ playing a shot ═════════════════════════════════════════════════════════
+   Simulated to completion the instant it is struck, then replayed. The outcome is settled
+   before the first frame is drawn, so the score can never disagree with the animation — and
+   the same property is what lets the server re-derive a submitted score from the shot log.
+   ═════════════════════════════════════════════════════════════════════════ */
+let playing = null, botThinking = false;
+
+function playShot(who, sh) {
+  const probe = P.createWorld({ table: TABLE, balls: world.balls.map(b => ({ id: b.id, p: b.p.slice() })) });
+  const m = P.shoot(probe, who, sh);
+  if (m.miscue) { el('cLog').textContent = '미스큐 — 당점이 공을 벗어났습니다'; return; }
+  const res = P.simulate(probe, { trace: true, traceEvery: 4 });
+  audio();
+  for (const e of res.events) clack(e.t, e.speed || 1, e.type);
+  shotLog.push({ who, ...sh });
+  playing = { res, finalP: probe.balls.map(b => [b.p[0], b.p[1]]), t0: performance.now(), i: 0 };
+  guideLine.visible = false; ghost.visible = false; cueGroup.visible = false;
+  fire.disabled = true;
+  el('cLog').textContent = '';
+}
+
+function advancePlayback() {
+  const pb = playing, tr = pb.res.trace;
+  const t = (performance.now() - pb.t0) / 1000;
+  while (pb.i < tr.length - 1 && tr[pb.i + 1][0] <= t) pb.i++;
+  const f = tr[pb.i], g = tr[Math.min(pb.i + 1, tr.length - 1)];
+  const span = Math.max(1e-6, g[0] - f[0]);
+  const k = Math.min(1, Math.max(0, (t - f[0]) / span));
+  world.balls.forEach((b, i) => {
+    const o = 1 + i * 4;
+    b.p[0] = f[o] + (g[o] - f[o]) * k;
+    b.p[1] = f[o + 1] + (g[o + 1] - f[o + 1]) * k;
+  });
+  if (!tr.length || t >= tr[tr.length - 1][0]) {
+    world.balls.forEach((b, i) => { b.p[0] = pb.finalP[i][0]; b.p[1] = pb.finalP[i][1]; });
+    const events = pb.res.events;
+    playing = null; fire.disabled = false;
+    settleShot(events);
+  }
+}
+
+function settleShot(events) {
+  const who = Rules.shooterOf(match);
+  const s = Rules.score(match.game, who, events);
+  Rules.applyShot(match, events);
+  chime(s.points > 0);
+  announce(s, who);
+  el('cLog').textContent = verdict(s, who);
+  paintScore();
+  needGuide = true;
+  if (match.over) return finishMatch();
+  if (Rules.shooterOf(match) === BOT) setTimeout(botTurn, 700);
+}
+
+/** Say what happened in the words a player would use — the contact list is for debugging. */
+function verdict(s, who) {
+  const me = who === HUMAN, sub = me ? '' : '상대 ';
+  if (s.points > 0) {
+    return sub + '득점' + (match.game === 'three' ? ` · 쿠션 ${s.cushionsBeforeSecond}개` : '');
+  }
+  if (s.points < 0) return sub + '벌점 — 상대 공을 맞혔습니다';
+  if (s.reason === 'miss_nothing') return sub + '헛쳤습니다';
+  if (s.reason === 'miss_one_ball') return sub + `적구를 ${s.shortBy}개 덜 맞혔습니다`;
+  if (s.reason === 'not_enough_cushions') return sub + `쿠션이 ${s.shortBy}개 모자랍니다 (${s.cushionsBeforeSecond}개)`;
+  return sub + '실패';
+}
+
+function announce(s, who) {
+  const t = el('cTurn');
+  const mine = who === HUMAN;
+  t.textContent = s.points > 0 ? (mine ? '득점!' : '상대 득점')
+    : s.points < 0 ? (mine ? '벌점' : '상대 벌점')
+    : (mine ? '실패' : '상대 실패');
+  t.style.color = s.points > 0 ? (mine ? '#6ee7a8' : '#ffb84d') : '#c9d3dd';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 900);
+}
+
+function paintScore() {
+  const me = match.scores[HUMAN], op = match.scores[BOT];
+  const turn = Rules.shooterOf(match);
+  el('cSc').innerHTML = `<b class="me${turn === HUMAN ? ' on' : ''}">${me}</b> : ` +
+                        `<b class="op${turn === BOT ? ' on' : ''}">${op}</b>`;
+  el('cInfo').textContent = `${match.game === 'three' ? '3쿠션' : '4구'} · ${match.target}점 · ` +
+    `${match.inning}이닝 · ${AI.levelLabel(cfg.level, cfg.game)}`;
+}
+
+/* ── the opponent, in a worker so a three-thousand-shot search does not freeze the table */
+let worker = null;
+function ensureWorker() {
+  if (worker) return worker;
+  const src = document.getElementById('caromEngineSrc');
+  if (!src) return null;
+  const glue = `self.onmessage=function(e){var d=e.data;` +
+    `var w=CaromPhysics.createWorld({table:d.table,balls:d.balls});` +
+    `self.postMessage(CaromAI.plan(w,d.game,d.shooter,d.level,d.seed));};`;
+  try {
+    const url = URL.createObjectURL(new Blob([src.textContent + '\n' + glue], { type: 'text/javascript' }));
+    worker = new Worker(url);
+    return worker;
+  } catch { return null; }
+}
+
+function botTurn() {
+  if (!match || match.over) return;
+  botThinking = true;
+  cueGroup.visible = false; guideLine.visible = false; ghost.visible = false;
+  el('cLog').textContent = '상대가 생각 중…';
+  const payload = { table: TABLE, balls: world.balls.map(b => ({ id: b.id, p: b.p.slice() })),
+                    game: match.game, shooter: BOT, level: cfg.level, seed: (Math.random() * 1e9) | 0 };
+  const w = ensureWorker();
+  const done = (pick) => {
+    botThinking = false;
+    el('cLog').textContent = `상대: 후보 ${pick.looked}개 검토`;
+    playShot(BOT, pick.play);
+  };
+  if (w) {
+    w.onmessage = (e) => done(e.data);
+    w.onerror = () => { botThinking = false; done(AI.plan(world, match.game, BOT, cfg.level)); };
+    w.postMessage(payload);
+  } else {
+    // no worker (rare, and file:// blocks blob workers in some builds) — think on the main
+    // thread, which stutters but never leaves the game stuck on the opponent's turn
+    setTimeout(() => done(AI.plan(world, match.game, BOT, cfg.level)), 30);
+  }
+}
+
+/* ══ match lifecycle ════════════════════════════════════════════════════════ */
+function startMatch() {
+  spec = layout(cfg.game);
+  world = P.createWorld({ table: TABLE, balls: spec.map(b => ({ id: b.id, p: b.p.slice() })) });
+  startLayout = spec.map(b => ({ id: b.id, p: b.p.slice() }));
+  shotLog = [];
+  match = Rules.newMatch(cfg.game, cfg.target,
+    [{ id: HUMAN, name: '나' }, { id: BOT, name: AI.levelLabel(cfg.level, cfg.game) }]);
+  buildBalls(); syncView(); paintScore(); readout(); drawTip();
+  gauge.running = false; gauge.value = 0.35;
+  el('cGaugeFill').style.width = '35%'; el('cGaugeLbl').textContent = '힘';
+  el('cGaugeMark').style.opacity = 0;
+  fire.textContent = '치기'; fire.classList.remove('armed'); fire.disabled = false;
+  el('cLog').textContent = '';
+  el('cHint').textContent = '테이블을 끌어서 조준 · [치기] 로 세기 게이지 시작';
+  needGuide = true;
+}
+
+function finishMatch() {
+  const won = match.winner === HUMAN;
+  el('cOverT').textContent = won ? '이겼습니다' : '졌습니다';
+  el('cOverP').textContent =
+    `${match.game === 'three' ? '3쿠션' : '4구'} ${match.target}점 · ${AI.levelLabel(cfg.level, cfg.game)} 상대 · ` +
+    `${match.inning}이닝 · 하이런 ${match.best[HUMAN]}점 · 최종 ${match.scores[HUMAN]}:${match.scores[BOT]}`;
+  el('cSubmit').style.display = won ? '' : 'none';
+  el('cOver').classList.add('show');
+}
+
+/* ══ ranking ════════════════════════════════════════════════════════════════
+   Anyone can POST a number, so the score is submitted WITH the shot log and the opening
+   layout, and the module replays it through this same physics to see whether the claimed
+   result actually falls out. One engine file, two readers — the page cannot beat the server
+   because they are running the same code.
+   ═════════════════════════════════════════════════════════════════════════ */
+const SLUG = (location.pathname.split('/').filter(Boolean).pop() || 'carom');
+async function callModule(action, data) {
+  const res = await fetch('/api/page-form', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug: SLUG, module: 'carom', data: { action, ...data } }),
+  });
+  return res.json();
+}
+async function loadRanking() {
+  const box = el('cRankL');
+  box.innerHTML = '<div style="color:#7c8894">불러오는 중…</div>';
+  try {
+    const r = await callModule('top_scores', { game: cfg.game, limit: 20 });
+    const rows = (r && r.data && r.data.scores) || [];
+    box.innerHTML = rows.length ? rows.map((s, i) =>
+      `<div><i>${i + 1}</i><span>${escapeHtml(s.name)}</span>` +
+      `<em>${s.innings}이닝 · 하이런 ${s.high} · ${s.level}</em></div>`).join('')
+      : '<div style="color:#7c8894">아직 기록이 없습니다</div>';
+  } catch {
+    box.innerHTML = '<div style="color:#7c8894">랭킹은 발행된 페이지에서만 동작합니다</div>';
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+el('cSubmit').addEventListener('click', async () => {
+  const name = (el('cWho').value || '').trim().slice(0, 12) || '익명';
+  el('cSubmit').disabled = true; el('cSubmit').textContent = '등록 중…';
+  try {
+    const r = await callModule('submit_score', {
+      name, game: match.game, target: match.target, level: cfg.level,
+      innings: match.inning, high: match.best[HUMAN],
+      layout: startLayout, shots: shotLog,
+    });
+    el('cSubmit').textContent = (r && r.success) ? '등록 완료' : ((r && r.error) || '등록 실패');
+  } catch {
+    el('cSubmit').textContent = '발행 페이지에서만 등록됩니다';
+  }
+});
+el('cAgain').addEventListener('click', () => { el('cOver').classList.remove('show'); el('cSetup').classList.add('show'); });
+el('cOpenRank').addEventListener('click', () => { el('cRankV').classList.add('show'); loadRanking(); });
+el('cRankClose').addEventListener('click', () => el('cRankV').classList.remove('show'));
+
+/* ══ setup screen ═══════════════════════════════════════════════════════════ */
+function optionRow(id, key, values) {
+  const box = el(id);
+  if (values) box.innerHTML = values.map(v => `<div class="cOpt" data-v="${v}">${v}점</div>`).join('');
+  box.addEventListener('click', e => {
+    const o = e.target.closest('.cOpt'); if (!o) return;
+    [...box.children].forEach(c => c.classList.toggle('sel', c === o));
+    const v = o.dataset.v;
+    cfg[key] = key === 'target' ? parseInt(v, 10) : v;
+    if (key === 'game') syncTargets();
+  });
+}
+function syncTargets() {
+  const vals = cfg.game === 'three' ? [5, 10, 15, 20] : [10, 20, 30, 50];
+  el('cOptTarget').innerHTML = vals.map(v =>
+    `<div class="cOpt${v === vals[1] ? ' sel' : ''}" data-v="${v}">${v}점</div>`).join('');
+  cfg.target = vals[1];
+  // The opponent's rating is quoted in the units of the game being played, so it has to be
+  // rebuilt whenever the game changes.
+  el('cOptLevel').innerHTML = ['beginner', 'club', 'strong', 'pro'].map(k =>
+    `<div class="cOpt${k === cfg.level ? ' sel' : ''}" data-v="${k}">${AI.levelLabel(k, cfg.game)}</div>`).join('');
+}
+optionRow('cOptGame', 'game');
+optionRow('cOptTarget', 'target');
+optionRow('cOptLevel', 'level');
+syncTargets();
+
+el('cStart').addEventListener('click', () => { audio(); el('cSetup').classList.remove('show'); startMatch(); });
+el('cMenu').addEventListener('click', () => el('cSetup').classList.add('show'));
+el('cView').addEventListener('click', () => {
+  cam.top = !cam.top;
+  el('cView').textContent = cam.top ? '입체뷰' : '탑뷰';
+  el('cView').classList.toggle('on', cam.top);
+  if (cam.top) { cam.az = root.clientHeight > root.clientWidth ? Math.PI : -Math.PI / 2; cam.el = 1.50; }
+  else resize();
+  fitCamera();
+});
+el('cRotateOk').addEventListener('click', () => { rotateDismissed = true; el('cRotate').classList.remove('show'); });
+
+/* ══ boot ═══════════════════════════════════════════════════════════════════ */
+spec = layout(cfg.game);
+world = P.createWorld({ table: TABLE, balls: spec.map(b => ({ id: b.id, p: b.p.slice() })) });
+buildBalls(); resize(); readout(); drawTip(); syncView();
+
+window.__carom = { P, Rules, AI, cam, camera, scene, renderer, cfg, FIT, fitCamera, resize,
+  get world() { return world; }, get match() { return match; }, get shot() { return shot; },
+  get gauge() { return gauge; }, get busy() { return !!playing || botThinking; },
+  startMatch, playShot, botTurn,
+  // the probe moves balls directly, which no interaction did, so it needs a way to ask for a
+  // fresh guide — without it the check reads the previous frame's line and passes for nothing
+  refreshGuide() { needGuide = true; } };
+
+renderer.setAnimationLoop((now) => {
+  gaugeTick(now);
+  if (playing) advancePlayback();
+  else if (needGuide) buildGuide();
+  syncView();
+  renderer.render(scene, camera);
+});
+</script>
+</div>
