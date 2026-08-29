@@ -91,24 +91,29 @@ export async function GET(
   const file = read.ok ? (read.data as BinaryRead) : null;
   if (!file?.base64) return notFound();
 
-  // The app document exists inside the frame and nowhere else. Framed, the page around it is the
-  // app's transport: it relays storage writes and module calls, because an app on an opaque origin
-  // cannot prove which page it is. Reached directly there is no relay — `localStorage` resolves to
-  // the browser's own instead of the page's, and every `firebat.call` hangs until it times out. The
-  // app still draws, which is the worst shape of broken (measured 2026-08-30: `/user/pages/carom`
-  // painted its canvas and its buttons did nothing).
+  // A navigation into this space is not how an app is opened, and mostly not how anything here is
+  // meant to be reached. The frame is the app's transport: it relays storage writes and module calls,
+  // because an app on an opaque origin cannot prove which page it is. Reached directly there is no
+  // relay — `localStorage` resolves to the browser's own instead of the page's, and every
+  // `firebat.call` hangs until it times out, while the app still draws (measured 2026-08-30:
+  // `/user/pages/carom` painted its canvas and its buttons did nothing).
   //
-  // Serving that address properly is not on the table — it would put the app on our own origin,
-  // which is the one grant the sandbox never makes. So it is not an address: a navigation gets the
-  // same 404 as a miss, and the app is reachable at its page. `Sec-Fetch-Dest` tells the two apart
-  // (`document` = someone navigating, `iframe` = the page framing it); a request without the header
-  // is served as before, since this decides which URL an app has and not who may read it — that is
-  // `gatePage`, above, and it has already run.
+  // Serving the document properly is not on the table — it would put the app on our own origin, the
+  // one grant the sandbox never makes. And the escape is not limited to HTML: an `.svg` or `.xhtml`
+  // navigated to top-level is a *document* on our origin, and this response's own CSP allows its
+  // inline script, with the admin's cookie in scope. Deciding it by file type would be a list that
+  // has to keep pace with what browsers agree to render ([[feedback_boundary_not_blocklist]]).
   //
-  // Only the document. The app's other files are inert in a tab, and one may legitimately be
-  // navigated to (a download an app declared), so they are left alone.
-  if ((req.headers.get('sec-fetch-dest') || '') === 'document' && (file.mimeType || '').startsWith('text/html')) {
-    return notFound();
+  // So a navigation is refused unless the page declared `downloads`, and a page that did gets its
+  // bytes as an attachment — never as a document. The app document itself has no address either way.
+  // `Sec-Fetch-Dest` tells a navigation from the frame's own request (`document` vs `iframe`); a
+  // request without the header is served as before, since this decides how many URLs an app has and
+  // not who may read it — that is `gatePage`, above, and it has already run.
+  let attachment: string | null = null;
+  if ((req.headers.get('sec-fetch-dest') || '') === 'document') {
+    if (!decl.needs.downloads || (file.mimeType || '').startsWith('text/html')) return notFound();
+    // Segments are already `[A-Za-z0-9._-]` only, so the quoted name needs no further escaping.
+    attachment = `attachment; filename="${base.split('/').pop()}"`;
   }
 
   let buf = Buffer.from(file.base64, 'base64');
@@ -140,8 +145,9 @@ export async function GET(
     'Cache-Control': visibility === 'public' ? 'public, max-age=300' : 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',
-    // The entry document answers differently to a navigation than to the frame (above).
+    // This answers differently to a navigation than to the frame's own request (above).
     Vary: 'Sec-Fetch-Dest',
+    ...(attachment ? { 'Content-Disposition': attachment } : {}),
     // The app frames on an opaque origin, so every request it makes for its own files is
     // cross-origin. A classic `<script src>` does not care; a `<script type="module">` is fetched
     // with CORS and is BLOCKED without this header — measured 2026-08-30 on carom, where the
