@@ -3,7 +3,7 @@
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
 import { compareName } from '../../../lib/util/sort-name';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, ChevronLeft, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, FolderOpen, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText, Download, Loader2 } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, ChevronLeft, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, FolderOpen, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText, Download, Loader2, Palette } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { AnchoredMenu, CascadeMenuItem } from './Menu';
 import { CronPanel, ScheduleModal } from './CronPanel';
@@ -23,6 +23,7 @@ import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 import { rowActionsClass } from '../utils/row-actions';
 import { useRowActions } from '../hooks/useRowActions';
 import { logger } from '../../../lib/util/logger';
+import { ProjectThemeModal } from './ProjectThemeModal';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { TIME } from '../../../lib/util/time';
 import { findModuleEntryWithFallback } from '../../../lib/util/module';
@@ -307,6 +308,8 @@ export function Sidebar({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   // 비밀번호 입력 모달
   const [pwModal, setPwModal] = useState<{ type: 'page' | 'project'; target: string } | null>(null);
+  // 프로젝트 테마 — 그 프로젝트 페이지에만 적용되는 override. 읽는 쪽은 원래부터 있었고 이 화면이 없었다.
+  const [themeProject, setThemeProject] = useState<string | null>(null);
   const [pwInput, setPwInput] = useState('');
 
   const fetchProjects = useCallback(async () => {
@@ -1113,6 +1116,14 @@ export function Sidebar({
                                     <Globe size={11} /> 프로젝트 이름 변경
                                   </button>
                                 )}
+                                {!isSingle && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setThemeProject(mp.name); setOpenMenu(null); setSelectedItem(null); }}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                  >
+                                    <Palette size={11} /> 프로젝트 테마
+                                  </button>
+                                )}
                                 <div className="border-t border-slate-100 my-0.5" />
                                 {isSingle && mainSlug ? (
                                   <button
@@ -1493,6 +1504,10 @@ export function Sidebar({
           onClose={() => setEditingPageSlug(null)}
           onSaved={fetchPages}
         />
+      )}
+
+      {themeProject && (
+        <ProjectThemeModal project={themeProject} onClose={() => setThemeProject(null)} />
       )}
 
       {/* URL / 프로젝트 이름 변경 모달 */}
