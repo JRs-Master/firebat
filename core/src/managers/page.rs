@@ -675,7 +675,7 @@ mod tests {
         assert!(slugs.contains("extra-baz-480w"));
     }
 
-    // ── project 의 두 집 ────────────────────────────────────────────────
+    // ── project has two homes ──────────────────────────────────────────
     // Measured 2026-08-29: 13 pages named a project, 2 were grouped, and the column was never once
     // set without the spec also saying so. The model writes it inside the spec; only the column is
     // counted. These pin the absorber and the normalization that keeps the two from drifting.

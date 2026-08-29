@@ -64,7 +64,7 @@ impl ProjectManager {
         Self { storage, db, vault }
     }
 
-    /// 프로젝트 목록 스캔 — user/pages 디렉터리 + user/modules 선언 + DB pages 통합.
+    /// Scan for projects — user/pages directories + user/modules declarations + DB pages.
     ///
     /// A project is a name that something claims. Three things can claim one, and the third was
     /// added 2026-08-29: a directory under `user/pages/`. Before that a file-based app could not be
@@ -197,7 +197,7 @@ impl ProjectManager {
             .into_iter()
             .map(|(name, (paths, page_slugs))| {
                 let visibility = self.get_visibility(&name);
-                // hub 워크스페이스는 자기 앱 디렉터리를 갖지 않는다 — 방문자 자료는 `user/hub/` 밑이다.
+                // A hub workspace owns no app directory — a visitor's files live under `user/hub/`.
                 ProjectEntry { name, paths, page_slugs, visibility, has_app: false }
             })
             .collect();

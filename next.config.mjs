@@ -30,10 +30,12 @@ const nextConfig = {
         source: '/:project/feed.xml',
         destination: '/feed.xml?project=:project',
       },
-      // ⚠️ 루트 한 칸(`[^/]+`)으로 제한. 옛 `.+` 는 깊이 제한이 없어 **하위 경로의 모든**
-      // .html/.txt/.xml 을 삼켰고, afterFiles rewrite 는 동적 라우트보다 먼저 평가되므로
-      // `/user/pages/<app>/index.html` 이 여기로 끌려가 404 가 됐다(2026-08-29 실측).
-      // 인증 파일은 정의상 루트에만 놓이고 핸들러도 단일 세그먼트(`[file]`)라 원래 루트용이었다.
+      // Site-ownership verification files — /google1234.html, /ads.txt, /BingSiteAuth.xml.
+      // ⚠️ Root segment only (`[^/]+`). The old `.+` had no depth limit and swallowed EVERY nested
+      // .html/.txt/.xml; afterFiles rewrites are evaluated ahead of dynamic routes, so
+      // `/user/pages/<app>/index.html` was pulled in here and answered 404 (measured 2026-08-29).
+      // Verification files sit at the root by definition and the handler takes one segment, so this
+      // was always meant to be root-only.
       {
         source: '/:file([^/]+\\.(?:txt|html|xml))',
         destination: '/api/verifications/:file',

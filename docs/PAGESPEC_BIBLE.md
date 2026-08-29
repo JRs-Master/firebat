@@ -186,9 +186,8 @@ private 는 admin 미리보기)를 지나고, 에셋은 비번 폼을 못 그리
 · 그리고 **빌드가 pull 보다 오래되면 rewrite 는 옛 규칙으로 돈다** — `routes-manifest.json` 에
   빌드 시점에 굳는 값이라 pull + rsync + restart 만으로는 안 바뀐다.
 
-⬜ **다음 단계** — 이 디렉터리가 프로젝트의 집이 된다: `user/pages/<project>/{web,modules,data}`.
-`web/` 만 서빙, `modules/` 는 그 프로젝트 전용(전역 카탈로그 제외), `data/` 는 프레임워크 주입.
-폴더 이름 = slug 첫 segment(= `PageManager::rename` 이 이미 쓰는 규약).
+⬜ 이 구조는 재설계 대기 중이다 — 설계 전문 = `~/.claude/plans/page-app-cms-template-redesign.md`.
+아래 서술은 **지금 돌아가는 것**이다.
 
 ## 프로젝트 그룹은 파생이다 (`core/src/managers/project.rs::scan`)
 

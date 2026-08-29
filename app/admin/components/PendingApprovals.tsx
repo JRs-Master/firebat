@@ -37,9 +37,9 @@ interface Card {
  *
  *  It ran on a bare `setInterval`, which made twenty seconds a floor rather than a ceiling: a
  *  background tab is throttled to a minute or more, and coming back to the tab re-read nothing at
- *  all — the card sat there until the next throttled tick. Measured 2026-08-29, the user's own
- *  correction: "20초 아니고 60초 같은데". `usePolling` stops while hidden and fires once the moment
- *  the tab is visible again, which is the read that was missing. */
+ *  all — the card sat there until the next throttled tick. Measured 2026-08-29: the felt delay was
+ *  a minute, not the twenty seconds this constant asks for. `usePolling` stops while the tab is
+ *  hidden and fires once the moment it is visible again, which is the read that was missing. */
 const POLL_MS = 20000;
 
 function when(ms?: number): string {

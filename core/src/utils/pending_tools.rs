@@ -76,8 +76,8 @@ pub struct WriteFileArgs {
     pub content: String,
 }
 
-/// save_page 도구 인자 — slug + PageSpec + 덮어쓰기 허용 + 저장 메타 넷.
-/// spec 은 동적 PageSpec schema (24+ block 종류) — serde_json::Value 유지.
+/// save_page arguments — slug + PageSpec + overwrite permission + the four page-metadata fields.
+/// `spec` is the dynamic PageSpec schema (24+ block kinds), so it stays a `serde_json::Value`.
 ///
 /// The four metadata fields are here because this struct is the card's memory of the call. The
 /// direct save path reads them straight off the model's arguments, but an approval card round-trips
@@ -92,10 +92,10 @@ pub struct SavePageArgs {
     pub spec: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_overwrite: Option<bool>,
-    /// "published" | "draft" — 미지정 시 저장 측 기본값.
+    /// "published" | "draft" — the save path defaults it when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
-    /// 프로젝트 그룹. hub 커밋 경로는 이 값을 읽지 않고 방문자 스코프를 강제한다.
+    /// Project group. The hub commit path ignores this and forces the visitor's own scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
     /// "public" | "password" | "private".
