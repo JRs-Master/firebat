@@ -106,10 +106,34 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
 
 /// TTS 도구 — 스크립트 + 화자 억양으로 LC 오디오 생성. provider/voice 는 설정·자동배정(AI 는 억양만).
 /// 캐시: 같은 (provider+script+화자+style) = 같은 파일 재사용(switch-back 재생성 0). conv-scoped 저장(대화 삭제 시 cascade).
+/// The timing a caller needs from a synthesis, from the alignment we already compute.
+///
+/// `tts` used to answer `{url, cached}` while holding word-level timings and writing them to a
+/// sidecar file nobody but the listening component reads. Measured 2026-08-29 on a 60-second
+/// explainer: to learn the length the model had to discover and call another module
+/// (`motion duration`) — three rounds and one empty call — and, still knowing nothing about where
+/// each sentence fell, it timed the visuals by hand against a single audio file. The picture drifts
+/// from the voice for the rest of the video. A response that states what it already knows costs
+/// nothing and removes both.
+fn tts_timing(lines: &[crate::ports::TtsLine]) -> serde_json::Value {
+    let seconds = lines.iter().map(|l| l.end).fold(0.0_f64, f64::max);
+    serde_json::json!({
+        "seconds": (seconds * 1000.0).round() / 1000.0,
+        "lines": lines
+            .iter()
+            .map(|l| serde_json::json!({
+                "text": l.text,
+                "at": (l.start * 1000.0).round() / 1000.0,
+                "end": (l.end * 1000.0).round() / 1000.0,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
 fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "tts".to_string(),
-        description: "Text to listening audio; returns { url } for a `listening` component's audioUrl. You choose the script and, for dialogues, each speaker's accent and gender (realistic to the target test); provider and voices come from settings. Multi-speaker: write 'Name: line' per turn and list those names in `speakers`. A line of `[pause: N]` inserts N seconds of silence. Cached — the same script and voice is not regenerated."
+        description: "Text to listening audio; returns { url, seconds, lines:[{text, at, end}] } — `url` for a `listening` component's audioUrl, `seconds` for the length you have to fit, and `lines` for where each sentence actually lands (place a caption, a scene or a `voices` entry at that `at` and picture and voice cannot drift). You choose the script and, for dialogues, each speaker's accent and gender (realistic to the target test); provider and voices come from settings. Multi-speaker: write 'Name: line' per turn and list those names in `speakers`. A line of `[pause: N]` inserts N seconds of silence. Cached — the same script and voice is not regenerated."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -216,7 +240,27 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 style.hash(&mut hasher);
                 let name = format!("tts-{:016x}.{ext}", hasher.finish());
                 if let Some(url) = media.conv_attachment_url(&conv, &name).await? {
-                    return Ok(serde_json::json!({ "url": url, "cached": true }));
+                    // A cache hit answers the same shape or the caller learns the timing from a
+                    // fresh call and not from a repeat — the alignment is already on disk beside
+                    // the audio, so read it back rather than making the answer depend on luck.
+                    let mut out = serde_json::json!({ "url": url, "cached": true });
+                    if let Ok(Some((bytes, _))) = media
+                        .read_conv_attachment(&conv, &format!("{name}.lrc.json"))
+                        .await
+                    {
+                        if let Ok(lines) =
+                            serde_json::from_slice::<Vec<crate::ports::TtsLine>>(&bytes)
+                        {
+                            if let (Some(o), Some(t)) =
+                                (out.as_object_mut(), tts_timing(&lines).as_object())
+                            {
+                                for (k, v) in t {
+                                    o.insert(k.clone(), v.clone());
+                                }
+                            }
+                        }
+                    }
+                    return Ok(out);
                 }
                 let req = crate::ports::TtsRequest {
                     provider,
@@ -238,7 +282,13 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         let _ = media.save_conv_attachment(&conv, &lrc_name, &json).await;
                     }
                 }
-                Ok(serde_json::json!({ "url": url, "cached": false }))
+                let mut out = serde_json::json!({ "url": url, "cached": false });
+                if let (Some(o), Some(t)) = (out.as_object_mut(), tts_timing(&result.lines).as_object()) {
+                    for (k, v) in t {
+                        o.insert(k.clone(), v.clone());
+                    }
+                }
+                Ok(out)
             }
         }),
     );
@@ -3251,4 +3301,45 @@ fn register_tool_schema_tool(tools: &Arc<ToolManager>) {
             }
         }),
     );
+}
+
+#[cfg(test)]
+mod tts_timing_tests {
+    use super::tts_timing;
+    use crate::ports::{TtsLine, TtsWord};
+
+    fn line(text: &str, start: f64, end: f64) -> TtsLine {
+        TtsLine {
+            speaker: None,
+            text: text.to_string(),
+            start,
+            end,
+            words: vec![TtsWord { word: text.to_string(), start, end }],
+        }
+    }
+
+    /// The length is the last line's end, not the count of lines or their sum — a gap of silence
+    /// between two lines belongs to the audio, and a caller fitting a 60-second video to it has to
+    /// see the same number the file would report.
+    #[test]
+    fn the_timing_names_the_length_and_where_each_line_lands() {
+        let out = tts_timing(&[
+            line("첫 문장", 0.0, 2.5),
+            line("둘째 문장", 3.25, 6.1234),
+        ]);
+        assert_eq!(out["seconds"], 6.123);
+        let lines = out["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1]["text"], "둘째 문장");
+        assert_eq!(lines[1]["at"], 3.25);
+        assert_eq!(lines[1]["end"], 6.123);
+    }
+
+    /// An unaligned synthesis still answers — zero, not a missing field a caller has to guess at.
+    #[test]
+    fn no_alignment_is_zero_seconds_and_no_lines() {
+        let out = tts_timing(&[]);
+        assert_eq!(out["seconds"], 0.0);
+        assert_eq!(out["lines"].as_array().unwrap().len(), 0);
+    }
 }
