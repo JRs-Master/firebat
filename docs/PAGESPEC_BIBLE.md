@@ -132,8 +132,57 @@ middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layou
 | Component | 역할 | 주요 Props |
 |---|---|---|
 | `Chart` | 단순 차트 (색상/팔레트 커스텀) | chartType(bar/line/pie/doughnut, `donut` alias→doughnut), data/series, labels, title, color, palette, subtitle, unit, showValues |
-| `Html` | 사용자 HTML (iframe sandbox) | content |
+| `Html` | 사용자 HTML (조건부 iframe — 아래 절) | content, dependencies[] |
 | `AdSlot` | 광고 슬롯 | slotId, format |
+
+## Html 블록의 샌드박스 계약 (2026-08-29 실측)
+
+`Html` 은 두 가지로 렌더된다. 가르는 것은 **한 줄**이고, 저자가 고를 수 없다:
+
+```ts
+// app/(user)/[...slug]/components.tsx
+const useIframe = hasDeps || hasScript;   // dependencies[] 가 있거나 content 에 <script 가 있으면
+```
+
+스크립트가 없으면 페이지에 그대로 인라인된다. 있으면 **iframe `srcdoc`** 으로 들어가고, 그 순간
+`IFRAME_CSP`(`lib/cdn-libraries.ts`)가 붙는다. 이게 실제 계약이다:
+
+| | |
+|---|---|
+| `default-src` | `'none'` — 명시 안 된 건 전부 차단 |
+| `script-src` | `'unsafe-inline'` + **CDN 5곳만**(jsdelivr · unpkg · cdnjs · tailwind · datatables) |
+| `style-src` | 같은 CDN + fonts.googleapis |
+| `img-src` | `'self' data: blob: https:` · `connect-src https:` · `font-src https: data:` |
+| `frame-src` | `'none'` — **중첩 iframe 불가** |
+
+⚠️ **`script-src` 에 `'self'` 가 없다.** 우리 서버가 200 으로 잘 서빙하는 `/user/pages/<x>/app.js`
+조차 이 안에서는 **차단된다**. 즉 **발행 페이지의 앱은 스크립트를 전부 인라인해야 한다** —
+파일로 쪼개 두고 `<script src>` 로 부르는 구조는 로컬에서만 돌고 발행하면 죽는다.
+이 문장이 없어서 8/29 에 반나절을 썼다. 같이 죽는 것들: **Blob 워커**(`default-src 'none'`) ·
+**중첩 iframe** · `<a download>`.
+
+**`isApp` = 풀블리드 전환** (`app/(user)/[...slug]/page.tsx:298`) — 본문이 **Html 한 블록뿐**이고
+그 블록에 script 나 dependencies 가 있으면 헤더·푸터를 숨기고 페이지 스크롤을 잠근다(앱 안만 스크롤).
+블록이 둘 이상이면 안 걸린다 — **게임·앱 페이지는 Html 한 블록이어야 한다.**
+
+**대안: Caddy 직접 서빙** — `user/pages/<slug>/` 는 정적으로 서빙된다(`@pages` 매처).
+CSP 도 iframe 도 없으니 파일을 쪼개도 되고 워커도 돈다. 대신 DB 페이지가 아니라서
+워크스페이스 목록·프로젝트 그룹·visibility 에 안 잡힌다. **앱은 이쪽, 문서는 페이지 쪽.**
+
+## 프로젝트 그룹은 파생이다 (`core/src/managers/project.rs::scan`)
+
+`user/projects/<name>/` 은 **theme override 전용**이고 그룹의 원본이 아니다. 그룹은 둘에서 파생된다:
+
+- `user/modules/*/config.json` 의 `project` 필드 → 그 프로젝트의 **모듈** 목록
+- DB `pages.project` 컬럼 → 그 프로젝트의 **페이지** 목록 (`hub:` prefix 는 제외)
+
+즉 페이지를 그룹에 넣는 유일한 방법은 **`pages.project` 에 값이 들어가는 것**이다.
+
+⚠️ **승인 카드 경로는 그 값을 버린다** (2026-08-29 실측, 미수정):
+`SavePageArgs`(`core/src/utils/pending_tools.rs:83`)가 `slug`·`spec`·`allowOverwrite` 셋뿐이라
+`from_call` 의 `serde_json::from_value` 에서 **`project`·`visibility`·`status`·`password` 가
+조용히 사라진다**. 핸들러도 `page.save` 도 project 를 제대로 받으므로 구멍은 카드 한 층뿐인데,
+그 층이 admin 발행의 정규 경로다 — **카드로 발행한 페이지는 절대 그룹에 안 붙는다.**
 
 ### 카드·요약 (v0.1, 2026-04-19 추가)
 | Component | 역할 | 주요 Props |
