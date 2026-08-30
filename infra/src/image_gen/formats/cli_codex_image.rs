@@ -15,7 +15,9 @@
 //!
 //! cost_usd None (구독 포함).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -50,6 +52,57 @@ impl Drop for TempFile {
 const HARVEST_POLL: Duration = Duration::from_millis(1000);
 const HARVEST_SETTLE: Duration = Duration::from_millis(700);
 
+/// A run that has written nothing for this long is wedged, not slow.
+///
+/// `CODEX_TIMEOUT` measures total time, and a wedged run is indistinguishable from a slow one
+/// until it has cost all 1500 seconds — with the run lock held, so nothing else generates either.
+/// Measured 2026-08-31, four runs in one afternoon: each froze about fourteen seconds in, the
+/// session rollout stopped growing and never resumed, the socket sat in CLOSE-WAIT with 101 unread
+/// bytes and the process slept on `futex_do_wait`. The answer had arrived and codex was not reading
+/// it. None produced an image and none recovered.
+///
+/// So watch progress, not the clock. Successful runs write continuously and finish in 62~70s; five
+/// quiet minutes has never been part of one. The total cap stays as it is — it measures a different
+/// thing (a slow run that will still land), and shortening THAT is what threw away finished images
+/// on 2026-08-30.
+const STALL_TIMEOUT: Duration = Duration::from_secs(300);
+const STALL_POLL: Duration = Duration::from_secs(5);
+
+/// One retry, because the wedge is per-connection: the next spawn gets a new socket.
+const MAX_ATTEMPTS: u32 = 2;
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Newest write anywhere under `dir`, in millis since the epoch (0 = nothing there).
+///
+/// The session rollout takes one jsonl line per event, so its mtime advances for as long as the run
+/// is doing anything at all — which is the signal a wedged run stops producing.
+fn newest_write_ms(dir: &Path) -> u64 {
+    let mut best = 0u64;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else { continue };
+        if kind.is_dir() {
+            best = best.max(newest_write_ms(&entry.path()));
+        } else if let Some(ms) = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+        {
+            best = best.max(ms.as_millis() as u64);
+        }
+    }
+    best
+}
+
 /// 실행이 어떻게 끝났나 — 에러 메시지 문맥 + 재수확 여부 결정.
 enum RunEnd {
     /// 산출 파일을 먼저 건져 조기 종료(정상 경로).
@@ -57,6 +110,8 @@ enum RunEnd {
     /// codex 가 스스로 끝남. 마지막 stdout 줄들(진단용).
     Exited(Vec<String>),
     TimedOut,
+    /// 살아 있는데 아무것도 안 쓴다 — codex 안쪽 교착. 재시도 대상.
+    Stalled,
 }
 
 /// 파일별 크기 — 두 번 찍어 같으면 쓰기 완료로 본다.
@@ -213,75 +268,122 @@ impl ImageFormatHandler for CliCodexImageFormat {
         // The temp file outlives the spawn and is removed when this scope ends.
         let _ref_guard = ref_tmp.map(TempFile);
 
-        let mut child = cmd.spawn().map_err(|e| format!("Codex CLI spawn 실패: {e}"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "Codex stdout pipe 없음".to_string())?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| "Codex stderr pipe 없음".to_string())?;
+        // One attempt, then one retry if it wedges. The wedge is per-connection — the socket is
+        // left in CLOSE-WAIT with the answer unread — so the next spawn is not the same coin.
+        let mut end = RunEnd::Stalled;
+        let mut stderr_pipe = None;
+        for attempt in 1..=MAX_ATTEMPTS {
+            let mut child = cmd.spawn().map_err(|e| format!("Codex CLI spawn 실패: {e}"))?;
+            let stdout = child
+                .stdout
+                .take()
+                .ok_or_else(|| "Codex stdout pipe 없음".to_string())?;
+            stderr_pipe = Some(
+                child
+                    .stderr
+                    .take()
+                    .ok_or_else(|| "Codex stderr pipe 없음".to_string())?,
+            );
 
-        // stdout 은 진단용으로만 흘려보낸다(파이프가 차서 자식이 멈추는 것도 방지).
-        let drain = async {
-            let mut reader = BufReader::new(stdout).lines();
-            let mut last_lines: Vec<String> = Vec::new();
-            while let Ok(Some(line)) = reader.next_line().await {
-                if line.trim().is_empty() {
-                    continue;
+            // Last sign of life, millis since the epoch — read by the stall watch below.
+            let progress = Arc::new(AtomicU64::new(now_ms()));
+
+            // stdout 은 진단용으로만 흘려보낸다(파이프가 차서 자식이 멈추는 것도 방지).
+            let drain = {
+                let progress = Arc::clone(&progress);
+                async move {
+                    let mut reader = BufReader::new(stdout).lines();
+                    let mut last_lines: Vec<String> = Vec::new();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        progress.store(now_ms(), Ordering::Relaxed);
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        last_lines.push(line);
+                        if last_lines.len() > 20 {
+                            last_lines.remove(0);
+                        }
+                    }
+                    last_lines
                 }
-                last_lines.push(line);
-                if last_lines.len() > 20 {
-                    last_lines.remove(0);
+            };
+
+            // Liveness, not the clock: stdout lines and the session rollout both stop when codex
+            // wedges, and neither stops while it is working.
+            let stall = {
+                let progress = Arc::clone(&progress);
+                let sessions = codex_home.as_ref().map(|h| h.join("sessions"));
+                async move {
+                    loop {
+                        tokio::time::sleep(STALL_POLL).await;
+                        let mut last = progress.load(Ordering::Relaxed);
+                        if let Some(dir) = sessions.as_ref() {
+                            last = last.max(newest_write_ms(dir));
+                        }
+                        if now_ms().saturating_sub(last) > STALL_TIMEOUT.as_millis() as u64 {
+                            return;
+                        }
+                    }
                 }
+            };
+
+            let run = async {
+                let last_lines = drain.await;
+                let _ = child.wait().await;
+                last_lines
+            };
+
+            // **완료 신호 = 산출 파일, 프로세스 종료가 아니다.** codex 는 이미지를 낸 뒤에도 한참
+            // 안 끝난다(2026-07-27 실측: 생성 56초 / 종료 대기 420초 = 타임아웃까지 감). 도구 결과에
+            // "The generated image is already displayed to the user" 라고 적혀 있어 모델은 더 할 일이
+            // 없다고 보고 마무리를 서두르지 않는다 — 우리가 기다릴 이유가 없다.
+            // 파일이 보이면 크기가 안정될 때까지만 확인(쓰는 중 truncated read 방지) 후 즉시 종료.
+            let watch = async {
+                loop {
+                    tokio::time::sleep(HARVEST_POLL).await;
+                    let Some(home) = codex_home.as_ref() else {
+                        continue;
+                    };
+                    let files = harvest_generated_images(home, started_at);
+                    if files.is_empty() {
+                        continue;
+                    }
+                    let before = file_sizes(&files);
+                    tokio::time::sleep(HARVEST_SETTLE).await;
+                    let after = harvest_generated_images(home, started_at);
+                    if after.len() == files.len() && file_sizes(&after) == before {
+                        return after;
+                    }
+                }
+            };
+
+            end = match timeout(CODEX_TIMEOUT, async {
+                tokio::select! {
+                    files = watch => RunEnd::Harvested(files),
+                    lines = run => RunEnd::Exited(lines),
+                    _ = stall => RunEnd::Stalled,
+                }
+            })
+            .await
+            {
+                Ok(e) => e,
+                Err(_) => RunEnd::TimedOut,
+            };
+            // child kill — 파일을 먼저 건졌으면 아직 살아 있다(그게 정상 경로).
+            let _ = child.kill().await;
+
+            if matches!(end, RunEnd::Stalled) && attempt < MAX_ATTEMPTS {
+                // Loud on purpose: a retry that hides the wedge means the wedge never gets counted.
+                tracing::warn!(
+                    target: "media",
+                    "[cli-codex-image] attempt {attempt} wrote nothing for {}s — killed, retrying",
+                    STALL_TIMEOUT.as_secs()
+                );
+                continue;
             }
-            last_lines
-        };
-
-        let run = async {
-            let last_lines = drain.await;
-            let _ = child.wait().await;
-            last_lines
-        };
-
-        // **완료 신호 = 산출 파일, 프로세스 종료가 아니다.** codex 는 이미지를 낸 뒤에도 한참
-        // 안 끝난다(2026-07-27 실측: 생성 56초 / 종료 대기 420초 = 타임아웃까지 감). 도구 결과에
-        // "The generated image is already displayed to the user" 라고 적혀 있어 모델은 더 할 일이
-        // 없다고 보고 마무리를 서두르지 않는다 — 우리가 기다릴 이유가 없다.
-        // 파일이 보이면 크기가 안정될 때까지만 확인(쓰는 중 truncated read 방지) 후 즉시 종료.
-        let watch = async {
-            loop {
-                tokio::time::sleep(HARVEST_POLL).await;
-                let Some(home) = codex_home.as_ref() else {
-                    continue;
-                };
-                let files = harvest_generated_images(home, started_at);
-                if files.is_empty() {
-                    continue;
-                }
-                let before = file_sizes(&files);
-                tokio::time::sleep(HARVEST_SETTLE).await;
-                let after = harvest_generated_images(home, started_at);
-                if after.len() == files.len() && file_sizes(&after) == before {
-                    return after;
-                }
-            }
-        };
-
-        let end = match timeout(CODEX_TIMEOUT, async {
-            tokio::select! {
-                files = watch => RunEnd::Harvested(files),
-                lines = run => RunEnd::Exited(lines),
-            }
-        })
-        .await
-        {
-            Ok(e) => e,
-            Err(_) => RunEnd::TimedOut,
-        };
-        // child kill — 파일을 먼저 건졌으면 아직 살아 있다(그게 정상 경로).
-        let _ = child.kill().await;
+            break;
+        }
+        let stderr = stderr_pipe.ok_or_else(|| "Codex stderr pipe 없음".to_string())?;
         // Rotated tokens go home — the image home refreshing a copied token is exactly how the
         // two lineages burned each other (2026-08-06, "refresh token was already used" → every
         // image sat on a silent 401 to the 420s timeout). Success or timeout, push back.
@@ -310,6 +412,11 @@ impl ImageFormatHandler for CliCodexImageFormat {
                 }
                 // Harvested 인데 비었다 = 도달 불가(watch 는 비면 return 안 함)
                 RunEnd::Harvested(_) => "산출 파일 없음".to_string(),
+                RunEnd::Stalled => format!(
+                    "codex 가 {}초간 아무것도 쓰지 않음 (내부 교착) — {}회 시도 후 포기",
+                    STALL_TIMEOUT.as_secs(),
+                    MAX_ATTEMPTS
+                ),
             };
             return Err(format!(
                 "Codex CLI 이미지 수확 실패 ({tail} / stderr: {})",
