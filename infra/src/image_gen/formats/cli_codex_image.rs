@@ -112,6 +112,23 @@ impl ImageFormatHandler for CliCodexImageFormat {
 
         let codex_home = Self::ensure_image_codex_home();
         // 수확 워터마크 — spawn 직전. 이전 실행 잔여물 재수확 차단.
+        // One codex image run at a time.
+        //
+        // Every run shares one CODEX_HOME, the harvest is the whole `generated_images` tree filtered
+        // by "newer than this run started", and the adapter deletes everything it harvested. That is
+        // correct while runs are sequential and wrong the moment two overlap: each sees the other's
+        // output, `harvested.last()` can be the OTHER request's picture, and whichever finishes
+        // first deletes the other's file.
+        //
+        // Measured 2026-08-30 — two image_gen calls ten seconds apart: the second read its image at
+        // .728 and cleaned up, the first read at .731 and got ENOENT. That failure was the lucky
+        // shape. The silent one is returning the other request's image, which nothing downstream
+        // could detect.
+        //
+        // Serialising restores the assumption the watermark already makes rather than adding a
+        // second mechanism beside it. A run is ~50s and generations are not a throughput path.
+        static RUN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _run_guard = RUN_LOCK.lock().await;
         let started_at = SystemTime::now();
 
         // 플래그 = `--json --skip-git-repo-check` 만 (LLM 경로 `cli_codex.rs` 와 동일 base_flags).
