@@ -2054,10 +2054,11 @@ class Scene:
             act = next(iter(sheets))
         sh = sheets[act]
         cells = sh["cells"]
+        order = sh.get("order") or list(range(len(cells)))
         i = int((t - t0) * sh["fps"])
-        if not sh["loop"] and i >= len(cells):
-            i = len(cells) - 1
-        x0, y0, x1, y1 = cells[i % len(cells)]
+        if not sh["loop"] and i >= len(order):
+            i = len(order) - 1
+        x0, y0, x1, y1 = cells[order[i % len(order)]]
         src = self._sheet_image(sh["media"])
         piece = src.crop((x0, y0, x1 + 1, y1 + 1))
         tall = max(c[3] - c[1] + 1 for c in cells)
@@ -2089,7 +2090,7 @@ class Scene:
         if sh.get("anchor") == "body" and sh.get("bodyY"):
             # `at` is the body. Aligning bottoms would swing an airborne character by
             # the difference in frame heights, which for a bird is the wingspan.
-            py = int(y - h * float(sh["bodyY"][i % len(cells)]))
+            py = int(y - h * float(sh["bodyY"][order[i % len(order)]]))
         else:
             py = int(y - h)                 # `at` is the feet
         # The frame buffer is RGB, so composite the way the image layer does.
@@ -2804,6 +2805,7 @@ def validate_sheets(sheets):
             raise SceneError(
                 f"sheets[{a}].anchor must be 'feet' (standing on the ground) or "
                 "'body' (airborne — flying, jumping)")
+        frames = spec.get("frames")
         cells = spec.get("cells")
         if cells is None:
             cells = find_sheet_cells(media)
@@ -2814,9 +2816,33 @@ def validate_sheets(sheets):
             if not (isinstance(c, (list, tuple)) and len(c) == 4):
                 raise SceneError(f"sheets[{a}].cells[{j}] must be [x0,y0,x1,y1]")
             norm.append([int(v) for v in c])
+        # `frames` = the order the drawings play in, counting them off the sheet from
+        # 1. A generated sheet is not always a cycle: the swallow's six frames were
+        # one wingbeat in three drawings plus three near-duplicates, and played in
+        # sheet order the wing jumped about. [1,2,3,2] is that beat, and the same
+        # field also drops a bad drawing or holds one for two beats.
+        if frames is not None:
+            if not (isinstance(frames, list) and 2 <= len(frames) <= 64):
+                raise SceneError(f"sheets[{a}].frames must be 2..64 frame numbers")
+            try:
+                seq = [int(v) for v in frames]
+            except (TypeError, ValueError):
+                raise SceneError(f"sheets[{a}].frames must be whole numbers") from None
+            bad = [v for v in seq if not 1 <= v <= len(norm)]
+            if bad:
+                raise SceneError(
+                    f"sheets[{a}].frames has {bad[0]} but this sheet has "
+                    f"{len(norm)} frames — they are numbered 1..{len(norm)} in the "
+                    "order they are drawn, left to right then top to bottom")
+            used = sorted({v - 1 for v in seq})
+            norm = [norm[i] for i in used]
+            order = [used.index(v - 1) for v in seq]
+        else:
+            order = None
         out[a] = {
             "media": media,
             "cells": norm,
+            "order": order,
             "fps": _num(spec.get("fps", 12), f"sheets[{a}].fps", 1, 30),
             "loop": bool(spec.get("loop", True)),
             # How far the feet travel across this action, measured off the drawings.
@@ -2892,7 +2918,7 @@ def action_save_asset(inp):
     thumb.save(tp)
     return {"success": True,
             "data": {"asset": name, "parts": len(parts), "replaced": replaced,
-                     **({"sheets": {k: {"frames": len(v["cells"]),
+                     **({"sheets": {k: {"frames": len(v.get("order") or v["cells"]),
                                         "anchor": v.get("anchor", "feet"),
                                         "stride": v.get("stride", 0)}
                                     for k, v in sheets.items()}}
@@ -3129,11 +3155,16 @@ def action_assets(_inp):
                   "the previous state and holds. This is THE way to zoom into a "
                   "region while its line is spoken (never swap whole background "
                   "images per segment). zoom:1 returns to full frame",
-        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, anchor?}}} — a character "
+        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, frames?, anchor?}}} — a character "
                       "whose actions are DRAWN frames, not a posed rig. Ask the image generator "
                       "for an animation sheet (\"6-frame flying cycle, 3x2, clear space between "
                       "frames, transparent background, small even change between neighbours\"), "
                       "save it under an action name, and the frame boxes are found from the alpha "
+                      "(a flat single-colour backdrop is keyed out on import, so a chroma-key "
+                      "or checkerboard sheet works too). What comes back is often not a cycle "
+                      "— frames:[1,2,3,2] says which drawings play and in what order, "
+                      "counting them off the sheet from 1, which turns three good drawings into "
+                      "a loop and leaves out the ones that do not fit "
                       "— no coordinates by hand. A scene plays it with {kind:'sprite', name, "
                       "plays:[{action, at, for?, travel?:'right'|'left'}]} and frames are pasted, "
                       "never blended. travel lets the STRIDE set the speed — the sheet's own foot "
@@ -3884,6 +3915,39 @@ def action_selftest():
         sd_note = f"{type(e).__name__}: {e}"
     ck("a grounded character gets a contact shadow that spreads with the legs",
        "apart > together > 0, off = 0, darkest >= 28/255", sd_note, sd_ok)
+
+    # A declared play order: which drawings, in which order, however they sit on the
+    # sheet. A generated sheet is not always a cycle, and without this the only way
+    # to fix one is to generate it again.
+    or_note, or_ok = "", False
+    try:
+        orp = os.path.join(OUT_DIR, "selftest-order.png")
+        row = Image.new("RGBA", (600, 160), (0, 0, 0, 0))
+        rd = ImageDraw.Draw(row)
+        for k, cx in enumerate((100, 300, 500)):          # three different heights
+            rd.ellipse([cx - 45, 30 + k * 30, cx + 45, 130], fill=(30, 40, 80, 255))
+        row.save(orp)
+        sv3 = action_save_asset({"action": "save_asset", "name": "selftest-order",
+                                 "sheets": {"beat": {"media": orp, "fps": 4,
+                                                     "frames": [1, 2, 3, 2]}}})
+        played = ((sv3.get("data") or {}).get("sheets") or {}).get("beat", {})
+        decl = load_custom_asset("selftest-order")["sheets"]["beat"]
+        try:
+            validate_sheets({"x": {"media": orp, "frames": [1, 9]}})
+            refused_hi = False
+        except SceneError:
+            refused_hi = True
+        or_note = (f"played={played.get('frames')} order={decl.get('order')} "
+                   f"cells={len(decl['cells'])} out-of-range-refused={refused_hi}")
+        or_ok = (played.get("frames") == 4 and decl.get("order") == [0, 1, 2, 1]
+                 and len(decl["cells"]) == 3 and refused_hi)
+        os.remove(orp)
+        action_delete_asset({"name": "selftest-order"})
+    except Exception as e:  # noqa: BLE001
+        or_note = f"{type(e).__name__}: {e}"
+    ck("a sheet can declare which frames play and in what order",
+       "4 played from 3 cells as [0,1,2,1], a frame past the end refused",
+       or_note, or_ok)
 
     m3_note, m3_ok = "", False
     try:
