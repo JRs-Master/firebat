@@ -859,6 +859,69 @@ def _label_blobs(mask):
     return flat[lab]
 
 
+# Chebyshev distance from the backdrop colour: at or under _KEY_NEAR is
+# background, at or over _KEY_FAR is drawing, between the two is the
+# anti-aliased edge and gets partial alpha.
+_KEY_NEAR, _KEY_FAR = 40, 90
+
+
+def _key_flat_background(im):
+    """An RGBA sheet whose flat backdrop has been turned into real transparency.
+
+    A drawn sheet's frames are told apart by their alpha. The generator does not
+    always deliver one: asked for a transparent background it sometimes answers
+    with RGB on a flat chroma backdrop and says so in as many words ("a removable
+    flat chroma-key backdrop"). Both answers come back for the same prompt —
+    measured 2026-08-30, an eight-frame sheet arrived RGBA and a four-frame one
+    arrived RGB on green — so writing "transparent" more forcefully is not the
+    fix. Both were asked for it. The import has to take either.
+
+    The key colour is read off the sheet's own border, so nothing here knows what
+    green is; a magenta or white backdrop keys the same way. A border that is not
+    one flat colour is a picture, not a backdrop, and is returned untouched.
+    """
+    a = np.asarray(im)[:, :, 3]
+    if int(a.min()) < 250:
+        return im                      # already has an alpha channel of its own
+    rgb = np.asarray(im)[:, :, :3].astype(np.int16)
+    H, W, _ = rgb.shape
+    if H < 8 or W < 8:
+        return im
+    ring = np.concatenate([rgb[:2].reshape(-1, 3), rgb[-2:].reshape(-1, 3),
+                           rgb[:, :2].reshape(-1, 3), rgb[:, -2:].reshape(-1, 3)])
+    bg = np.median(ring, 0).astype(np.int16)
+    # Flat means flat: nearly the whole border sits on that one colour. A drawing
+    # that runs to the edge fails this and keeps every pixel it has.
+    if float((np.abs(ring - bg).max(1) <= _KEY_NEAR).mean()) < 0.90:
+        return im
+    dist = np.abs(rgb - bg).max(2)
+    alpha = np.clip((dist.astype(np.float32) - _KEY_NEAR) / float(_KEY_FAR - _KEY_NEAR),
+                    0.0, 1.0)
+    kept = float((alpha > 0.5).mean())
+    # Nothing keyed, or nearly everything keyed: the guess was wrong either way,
+    # and a sheet emptied by a bad guess is worse than one we could not read.
+    if kept < 0.005 or kept > 0.98:
+        return im
+    out = rgb.copy()
+    # Despill — the backdrop bleeds into anti-aliased edges, which is what leaves a
+    # coloured fringe around a cut-out. Cap whichever channel the backdrop is made
+    # of, at the edge pixels only, where the spill lives.
+    k = int(np.argmax(bg))
+    if int(bg[k]) - int(np.sort(bg)[-2]) > 60:
+        edge = alpha < 0.999
+        other = np.max(np.delete(out, k, axis=2), axis=2)
+        ch = out[:, :, k]
+        out[:, :, k] = np.where(edge, np.minimum(ch, other), ch)
+    keyed = np.dstack([out.astype(np.uint8),
+                       (alpha * 255).astype(np.uint8)])
+    return Image.fromarray(keyed, "RGBA")
+
+
+def load_sheet(path):
+    """One drawn sheet, always with an alpha channel worth reading."""
+    return _key_flat_background(Image.open(media_path(path)).convert("RGBA"))
+
+
 def find_sheet_cells(path, min_frac=0.004, row_tol=0.18):
     """Where each drawn frame sits on a sheet, found from the alpha.
 
@@ -869,7 +932,7 @@ def find_sheet_cells(path, min_frac=0.004, row_tol=0.18):
     finished video. Separate pixels are what a blob finds, and overlapping boxes
     do not fool it. Reading order is row-major, the order a sheet is drawn in.
     """
-    im = Image.open(media_path(path)).convert("RGBA")
+    im = load_sheet(path)
     a = np.asarray(im)[:, :, 3]
     H, W = a.shape
     lab = _label_blobs(a > 16)
@@ -884,8 +947,10 @@ def find_sheet_cells(path, min_frac=0.004, row_tol=0.18):
         out.append([int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())])
     if not out:
         raise SceneError(
-            f"no frames found on {path!r} — a sheet needs a transparent background "
-            "(ask the image generator for one) so the frames can be told apart")
+            f"no frames found on {path!r} — frames are told apart by transparency, and "
+            "this sheet has neither an alpha channel nor one flat backdrop colour to key "
+            "out. Ask the image generator for a transparent background, or for a plain "
+            "single-colour backdrop the import can remove")
     out.sort(key=lambda b: (int(b[1] / (H * row_tol)), b[0]))
     return out
 
@@ -1997,7 +2062,7 @@ class Scene:
         if path not in cache:
             if len(cache) > 8:
                 cache.clear()
-            cache[path] = Image.open(media_path(path)).convert("RGBA")
+            cache[path] = load_sheet(path)
         return cache[path]
 
     def _draw_spritesheet(self, d, g, t, a, L):
@@ -2525,7 +2590,7 @@ def _sheet_stride(media, cells):
 
     Measured in the bottom tenth of each cell — that band is feet. Returns 0 when
     the action never separates them (a bird, a bow), which means "does not walk"."""
-    im = Image.open(media_path(media)).convert("RGBA")
+    im = load_sheet(media)
     a = np.asarray(im)[:, :, 3] > 16
     tall = max(c[3] - c[1] + 1 for c in cells) or 1
     widest = 0
@@ -2636,7 +2701,7 @@ def action_save_asset(inp):
         # The browsable face of a drawn character is its first frame.
         first = next(iter(sheets.values()))
         x0, y0, x1, y1 = first["cells"][0]
-        thumb = Image.open(media_path(first["media"])).convert("RGBA").crop((x0, y0, x1 + 1, y1 + 1))
+        thumb = load_sheet(first["media"]).crop((x0, y0, x1 + 1, y1 + 1))
         thumb.thumbnail((480, 480), Image.LANCZOS)
     else:
         thumb = _custom_sticker_png({"parts": parts, "bones": bones or None}, 480, {})
@@ -3427,6 +3492,40 @@ def action_selftest():
         sh_note = f"{type(e).__name__}: {e}"
     ck("a spritesheet layer advances cells at fps and loops",
        "green -> yellow -> red at the center", sh_note, sh_ok)
+
+    # Keying a flat backdrop, both ways: a sheet that needs it becomes readable,
+    # and a picture that does not is returned with every pixel it had. One
+    # direction alone would pass while the other silently ate real drawings.
+    key_note, key_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        kp = os.path.join(OUT_DIR, "selftest-chroma.png")
+        flat = Image.new("RGB", (400, 200), (0, 255, 0))
+        kd = ImageDraw.Draw(flat)
+        kd.ellipse([30, 40, 130, 160], fill=(200, 90, 70))
+        kd.ellipse([250, 40, 350, 160], fill=(200, 90, 70))
+        flat.save(kp)
+        keyed_cells = find_sheet_cells(kp)
+
+        # The negative canary: a photo-like sheet whose border is not one colour.
+        pp = os.path.join(OUT_DIR, "selftest-nokey.png")
+        grad = Image.new("RGB", (400, 200))
+        gpx = grad.load()
+        for gy in range(200):
+            for gx in range(400):
+                gpx[gx, gy] = (gx % 256, gy % 256, (gx + gy) % 256)
+        grad.save(pp)
+        untouched = np.asarray(_key_flat_background(
+            Image.open(pp).convert("RGBA")))[:, :, 3].min() == 255
+
+        key_note = f"keyed cells={len(keyed_cells)} gradient-untouched={untouched}"
+        key_ok = len(keyed_cells) == 2 and untouched
+        os.remove(kp)
+        os.remove(pp)
+    except Exception as e:  # noqa: BLE001
+        key_note = f"{type(e).__name__}: {e}"
+    ck("a flat backdrop is keyed to alpha, a real picture is left alone",
+       "keyed cells=2 gradient-untouched=True", key_note, key_ok)
 
     m3_note, m3_ok = "", False
     try:
