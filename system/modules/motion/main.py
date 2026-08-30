@@ -2077,7 +2077,12 @@ class Scene:
             cycles = (t - t0) * sh["fps"] / float(len(cells))
             x = x + per_cycle * cycles * (1.0 if travel > 0 else -1.0)
         px = int(x - w / 2)
-        py = int(y - h)                     # `at` is the feet
+        if sh.get("anchor") == "body" and sh.get("bodyY"):
+            # `at` is the body. Aligning bottoms would swing an airborne character by
+            # the difference in frame heights, which for a bird is the wingspan.
+            py = int(y - h * float(sh["bodyY"][i % len(cells)]))
+        else:
+            py = int(y - h)                 # `at` is the feet
         # The frame buffer is RGB, so composite the way the image layer does.
         self._frame_img.paste(piece, (px, py), alpha)
 
@@ -2641,13 +2646,46 @@ def _sheet_stride(media, cells):
     return round(widest / float(tall), 4)
 
 
+def _sheet_body_y(media, cells):
+    """Where the body sits inside each cell, as a fraction of that cell's height.
+
+    Measured from the middle 40% of the columns: the outer fifths are the parts that
+    swing furthest — an outstretched arm, a raised wing — and they are exactly what
+    must not decide where the character is pinned.
+
+    This is what a flying or jumping sheet is anchored on. Standing on the ground is
+    the other case and stays anchored on the feet.
+    """
+    im = load_sheet(media)
+    a = np.asarray(im)[:, :, 3] > 16
+    out = []
+    for (x0, y0, x1, y1) in cells:
+        sub = a[y0:y1 + 1, x0:x1 + 1]
+        h, w = sub.shape
+        core = sub[:, int(w * 0.30):int(w * 0.70)].astype(np.float32)
+        tot = float(core.sum())
+        if tot <= 0:
+            out.append(0.5)
+            continue
+        ys = np.arange(h, dtype=np.float32)
+        out.append(round(float((core.sum(1) * ys).sum() / tot) / max(1, h), 4))
+    return out
+
+
 def validate_sheets(sheets):
-    """`sheets: {action: {media, fps?, loop?, cells?}}` — drawn animation, by name.
+    """`sheets: {action: {media, fps?, loop?, anchor?, cells?}}` — drawn animation, by name.
 
     An action is a sheet of real drawings, not a pose warped out of one picture.
     `cells` is found from the alpha when it is not given, so an author never
     types frame coordinates: the sheet is the original and the numbers are read
     off it.
+
+    `anchor` says what `at` pins. 'feet' (default) puts the bottom of every frame on
+    the same line, which is what standing on the ground means. 'body' pins the body
+    instead, for an action that is not standing on anything: a flying bird's frame
+    box is as tall as its raised wing, so aligning bottoms swings the whole bird up
+    and down — measured 2026-08-30 on a six-frame swallow whose cells ran 172 to 354
+    pixels tall and whose body moved 62px per cycle on feet and 0 on body.
     """
     if sheets is None:
         return None
@@ -2664,6 +2702,11 @@ def validate_sheets(sheets):
         if not isinstance(media, str) or not media.strip():
             raise SceneError(f"sheets[{a}].media must be a media-store path")
         media = media.strip()
+        anchor = str(spec.get("anchor") or "feet")
+        if anchor not in ("feet", "body"):
+            raise SceneError(
+                f"sheets[{a}].anchor must be 'feet' (standing on the ground) or "
+                "'body' (airborne — flying, jumping)")
         cells = spec.get("cells")
         if cells is None:
             cells = find_sheet_cells(media)
@@ -2685,6 +2728,11 @@ def validate_sheets(sheets):
             # race walk (measured 2026-08-30 — twelve steps taken while covering six
             # strides of ground). The stride is in the artwork, so read it there.
             "stride": _sheet_stride(media, norm),
+            "anchor": anchor,
+            # Where the body sits in each cell, for the 'body' anchor. Read off the
+            # drawing at save time like the cells and the stride, so a scene never
+            # carries frame geometry.
+            "bodyY": _sheet_body_y(media, norm) if anchor == "body" else None,
         }
     return out
 
@@ -2695,6 +2743,18 @@ def action_save_asset(inp):
         sheets = validate_sheets(inp.get("sheets"))
     except SceneError as e:
         return {"success": False, "error": str(e)}
+    # Feet on a sheet whose frames are wildly different heights is almost always the
+    # wrong pin, and it is invisible in a still — it shows up as the character bobbing
+    # once per cycle. Say so here rather than guessing: a bow bends low and IS on its
+    # feet, so height alone cannot decide it.
+    sheet_notes = []
+    for _a, _v in (sheets or {}).items():
+        hs = [c[3] - c[1] + 1 for c in _v["cells"]]
+        if _v.get("anchor") == "feet" and len(hs) > 1 and min(hs) < 0.75 * max(hs):
+            sheet_notes.append(
+                f"'{_a}' frames run {min(hs)}..{max(hs)}px tall and are pinned by the feet, "
+                "so the character will rise and fall once per cycle. If this action is not "
+                f"standing on the ground, save it with sheets.{_a}.anchor='body'.")
     # A sheet-only character carries no shape parts: its drawings ARE the asset.
     if sheets and inp.get("parts") is None:
         parts = []
@@ -2735,8 +2795,12 @@ def action_save_asset(inp):
     thumb.save(tp)
     return {"success": True,
             "data": {"asset": name, "parts": len(parts), "replaced": replaced,
-                     **({"sheets": {k: len(v["cells"]) for k, v in sheets.items()}}
+                     **({"sheets": {k: {"frames": len(v["cells"]),
+                                        "anchor": v.get("anchor", "feet"),
+                                        "stride": v.get("stride", 0)}
+                                    for k, v in sheets.items()}}
                         if sheets else {}),
+                     **({"note": " ".join(sheet_notes)} if sheet_notes else {}),
                      "next": "reference it as a sprite layer {kind:'sprite', name: '"
                              + name + "'} or export sizes with the sticker action",
                      "_mediaImport": {"path": _out(tp), "contentType": "image/png",
@@ -2961,7 +3025,7 @@ def action_assets(_inp):
                   "the previous state and holds. This is THE way to zoom into a "
                   "region while its line is spoken (never swap whole background "
                   "images per segment). zoom:1 returns to full frame",
-        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?}}} — a character "
+        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, anchor?}}} — a character "
                       "whose actions are DRAWN frames, not a posed rig. Ask the image generator "
                       "for an animation sheet (\"6-frame flying cycle, 3x2, clear space between "
                       "frames, transparent background, small even change between neighbours\"), "
@@ -2974,7 +3038,11 @@ def action_assets(_inp):
                       "move act is what makes it look like race walking. A sheet whose feet "
                       "never separate has no stride and travel does nothing for it — a "
                       "bird or a rolling ball crosses the screen with a move act, which "
-                      "works on drawn characters exactly as it does on rigs. Playback fps is the "
+                      "works on drawn characters exactly as it does on rigs. anchor says what `at` "
+                      "pins — 'feet' (default) lines up the bottoms, which is standing on the "
+                      "ground; 'body' pins the body and is what a flying or jumping action "
+                      "needs, since a raised wing makes the frame box taller and aligning "
+                      "bottoms would swing the character once per cycle. Playback fps is the "
                       "animation cadence, not the video's: 8 is anime's usual 3s, 12 is 2s. Sheets "
                       "and shape parts are alternatives: a drawn character needs no parts",
     "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
@@ -3579,6 +3647,45 @@ def action_selftest():
         mv_note = f"{type(e).__name__}: {e}"
     ck("a move act carries a sprite whether it is drawn frames or a rig",
        "0.6 of the width", mv_note, mv_ok)
+
+    # What `at` pins. Two frames with the body at the same height but very different
+    # box heights: pinned by the feet they sit 100px apart, pinned by the body they
+    # do not move at all. A still cannot show this — it is a once-per-cycle bob.
+    an_note, an_ok = "", False
+    try:
+        ap = os.path.join(OUT_DIR, "selftest-anchor.png")
+        fly = Image.new("RGBA", (440, 300), (0, 0, 0, 0))
+        ad = ImageDraw.Draw(fly)
+        ink = (30, 40, 80, 255)
+        for cx, up in ((100, True), (330, False)):
+            # The body sits at exactly the same height in both frames. What differs is
+            # the wing: raised in one, lowered in the other, so the box bottom is the
+            # body in one frame and the wingtip in the other. That is the swallow.
+            ad.ellipse([cx - 45, 190, cx + 45, 240], fill=ink)
+            if up:
+                ad.polygon([(cx - 45, 205), (cx - 30, 20), (cx - 12, 210)], fill=ink)
+            else:
+                ad.polygon([(cx - 45, 225), (cx - 30, 290), (cx - 12, 230)], fill=ink)
+        fly.save(ap)
+        cs = find_sheet_cells(ap)
+        by = _sheet_body_y(ap, cs)
+        hs = [c[3] - c[1] + 1 for c in cs]
+        feet = [by[j] * hs[j] - hs[j] for j in range(len(cs))]
+        body = [0.0 for _ in cs]
+        an_note = (f"heights={hs} feet-spread={max(feet) - min(feet):.0f}px "
+                   f"body-spread={max(body) - min(body):.0f}px")
+        try:
+            validate_sheets({"x": {"media": ap, "anchor": "sideways"}})
+            refused = False
+        except SceneError:
+            refused = True
+        an_ok = (max(feet) - min(feet)) > 30 and refused
+        an_note += f" bad-anchor-refused={refused}"
+        os.remove(ap)
+    except Exception as e:  # noqa: BLE001
+        an_note = f"{type(e).__name__}: {e}"
+    ck("anchor decides what `at` pins, and an unknown one is refused",
+       "feet-spread > 30px, bad-anchor-refused=True", an_note, an_ok)
 
     m3_note, m3_ok = "", False
     try:
