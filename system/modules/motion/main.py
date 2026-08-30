@@ -1585,6 +1585,33 @@ class Scene:
         at = L.get("at") or default
         return at[0] * self.SW, at[1] * self.SH
 
+    def _move_acts(self, L, t, x, y):
+        """Where a sprite's move acts have carried it by time `t`, in pixels.
+
+        Shared by both sprite paths. A drawn-sheet character read `at` straight off
+        the layer and never came here, so a move act was accepted, validated and
+        silently ignored — measured 2026-08-30 on a flying swallow that stayed put
+        for three seconds. Anything that travels without a walking stride (a bird, a
+        thrown ball, a car) has no other way across the screen.
+        """
+        for act in sorted((a for a in L.get("acts") or []
+                           if str(a.get("do")) == "move"),
+                          key=lambda a: float(a.get("at", L["from"]))):
+            at = float(act.get("at", L["from"]))
+            if t < at:
+                break
+            to = act.get("to")
+            if not (isinstance(to, (list, tuple)) and len(to) == 2):
+                raise SceneError("move act needs to:[x,y] (0..1 screen coords)")
+            mdur = max(0.05, float(act.get("for", 0.6)))
+            ease_m = str(act.get("ease", "smooth"))
+            if ease_m not in _EASE_NAMES:
+                raise SceneError(f"move ease must be one of {sorted(_EASE_NAMES)}")
+            f = ease2d(ease_m, (t - at) / mdur)
+            tx, ty = clamp01(float(to[0])) * self.SW, clamp01(float(to[1])) * self.SH
+            x, y = x + (tx - x) * f, y + (ty - y) * f
+        return x, y
+
     def _draw_sprite(self, d, g, t, a, L):
         name = str(L.get("name", "firebat"))
         saved = load_custom_asset(name)
@@ -1618,22 +1645,7 @@ class Scene:
         elif enter == "pop":
             scale_mul = max(0.05, eob(p))
             s *= scale_mul
-        for act in sorted((a for a in L.get("acts") or []
-                           if str(a.get("do")) == "move"),
-                          key=lambda a: float(a.get("at", L["from"]))):
-            at = float(act.get("at", L["from"]))
-            if t < at:
-                break
-            to = act.get("to")
-            if not (isinstance(to, (list, tuple)) and len(to) == 2):
-                raise SceneError("move act needs to:[x,y] (0..1 screen coords)")
-            mdur = max(0.05, float(act.get("for", 0.6)))
-            ease_m = str(act.get("ease", "smooth"))
-            if ease_m not in _EASE_NAMES:
-                raise SceneError(f"move ease must be one of {sorted(_EASE_NAMES)}")
-            f = ease2d(ease_m, (t - at) / mdur)
-            tx, ty = clamp01(float(to[0])) * SW, clamp01(float(to[1])) * SH
-            x, y = x + (tx - x) * f, y + (ty - y) * f
+        x, y = self._move_acts(L, t, x, y)
         mouth, wave, sy = 0.0, 0.0, 1.0
         express = None
         jump_h = 0.0
@@ -2056,16 +2068,16 @@ class Scene:
         alpha = piece.getchannel("A")
         if a < 0.999:
             alpha = alpha.point(lambda v: int(v * a))
-        fx, fy = L.get("at", [0.5, 0.9])
+        x, y = self._move_acts(L, t, *self._at(L, [0.5, 0.9]))
         # travel: let the stride decide the speed. Two steps per cycle, each one
         # stride long, so the ground passes at exactly the rate the legs are walking
         # and nothing skates. dir -1 walks back the way the drawing faces.
         if travel and sh.get("stride"):
-            per_cycle = 2.0 * sh["stride"] * (tall * scale) / float(self.SW)
+            per_cycle = 2.0 * sh["stride"] * (tall * scale)
             cycles = (t - t0) * sh["fps"] / float(len(cells))
-            fx = fx + per_cycle * cycles * (1.0 if travel > 0 else -1.0)
-        px = int(fx * self.SW - w / 2)
-        py = int(fy * self.SH - h)          # `at` is the feet
+            x = x + per_cycle * cycles * (1.0 if travel > 0 else -1.0)
+        px = int(x - w / 2)
+        py = int(y - h)                     # `at` is the feet
         # The frame buffer is RGB, so composite the way the image layer does.
         self._frame_img.paste(piece, (px, py), alpha)
 
@@ -2959,7 +2971,10 @@ def action_assets(_inp):
                       "never blended. travel lets the STRIDE set the speed — the sheet's own foot "
                       "separation is measured at save time, so the ground passes at exactly the "
                       "rate the legs walk and nothing skates; moving a walker with a hand-written "
-                      "move act is what makes it look like race walking. Playback fps is the "
+                      "move act is what makes it look like race walking. A sheet whose feet "
+                      "never separate has no stride and travel does nothing for it — a "
+                      "bird or a rolling ball crosses the screen with a move act, which "
+                      "works on drawn characters exactly as it does on rigs. Playback fps is the "
                       "animation cadence, not the video's: 8 is anime's usual 3s, 12 is 2s. Sheets "
                       "and shape parts are alternatives: a drawn character needs no parts",
     "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
@@ -3544,6 +3559,26 @@ def action_selftest():
         key_note = f"{type(e).__name__}: {e}"
     ck("a flat backdrop is keyed to alpha, an enclosed area of the same colour is kept",
        "keyed cells=2 enclosed-belly-alpha>240 gradient-untouched=True", key_note, key_ok)
+
+    # A move act has to carry a drawn-sheet character too. It was accepted and
+    # ignored, which reads as "the scene is wrong" rather than "this does nothing".
+    mv_note, mv_ok = "", False
+    try:
+        mvL = {"kind": "sprite", "name": "nongbu-selftest", "from": 0, "to": 2,
+               "at": [0.2, 0.9], "plays": [{"action": "walk", "at": 0}],
+               "acts": [{"at": 0, "do": "move", "for": 2, "to": [0.8, 0.9],
+                         "ease": "linear"}]}
+        mvs = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                     "layers": []})
+        x_start, _ = mvs._move_acts(mvL, 0.0, *mvs._at(mvL, [0.5, 0.9]))
+        x_end, _ = mvs._move_acts(mvL, 2.0, *mvs._at(mvL, [0.5, 0.9]))
+        travelled = (x_end - x_start) / float(mvs.SW)
+        mv_note = f"moved {travelled:.2f} of the width"
+        mv_ok = 0.55 < travelled < 0.65
+    except Exception as e:  # noqa: BLE001
+        mv_note = f"{type(e).__name__}: {e}"
+    ck("a move act carries a sprite whether it is drawn frames or a rig",
+       "0.6 of the width", mv_note, mv_ok)
 
     m3_note, m3_ok = "", False
     try:
