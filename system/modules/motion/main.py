@@ -2107,16 +2107,22 @@ class Scene:
             return
         xs = np.where(band.any(0))[0]
         span = int(xs.max() - xs.min()) + 1
-        sw = max(6, int(span * 1.35))
-        shh = max(3, int(sw * 0.22))
+        sw = max(8, int(span * 1.5))
+        shh = max(4, int(sw * 0.26))
         pad = shh * 2
         sh_img = Image.new("L", (sw + pad * 2, shh + pad * 2), 0)
         ImageDraw.Draw(sh_img).ellipse([pad, pad, pad + sw, pad + shh],
-                                       fill=int(72 * max(0.0, min(1.0, a))))
-        sh_img = sh_img.filter(ImageFilter.GaussianBlur(shh * 0.55))
+                                       fill=int(165 * max(0.0, min(1.0, a))))
+        # Blur well under the ellipse's own height. Softening by more than half of it
+        # spreads the shadow into nothing: measured 2026-08-30 at radius 0.55h, the
+        # ground darkened by 18 of 255 at its deepest and the shadow was invisible on
+        # screen while every check still called it present.
+        sh_img = sh_img.filter(ImageFilter.GaussianBlur(max(1.0, shh * 0.3)))
         cx = px + int(xs.min()) + span // 2
-        self._frame_img.paste((26, 24, 22), (cx - sh_img.width // 2,
-                                             feet_y - sh_img.height // 2), sh_img)
+        # Biased down: the character is pasted over this, so a shadow centred on the
+        # feet line only shows the half that is not behind them.
+        top = feet_y - sh_img.height // 2 + int(shh * 0.35)
+        self._frame_img.paste((22, 20, 18), (cx - sh_img.width // 2, top), sh_img)
 
     def _sheet_image(self, path):
         cache = getattr(self, "_sheet_cache", None)
@@ -3745,6 +3751,16 @@ def action_selftest():
         if not sv2.get("success"):
             raise SceneError(str(sv2.get("error")))
 
+        def ground_dark(layer, tq):
+            """How much darker the ground goes just under the feet, 0..255."""
+            scn = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                         "background": {"kind": "gradient", "top": [235, 235, 235],
+                                        "bottom": [235, 235, 235], "vignette": 0},
+                         "layers": [layer]})
+            fr = scn.draw_frame(tq).astype(int)
+            row = fr[int(0.915 * fr.shape[0]), :, :].mean(1)
+            return int(np.median(row) - row.min())
+
         def ground_px(layer, tq):
             scn = Scene({"action": "render", "duration": 2.0, "quality": "draft",
                          "background": {"kind": "gradient", "top": [255, 255, 255],
@@ -3762,14 +3778,18 @@ def action_selftest():
         together = ground_px(base, 1.1)
         apart = ground_px(base, 0.6)
         off_px = ground_px({**base, "shadow": False}, 0.6)
-        sd_note = f"together={together} apart={apart} shadow-off={off_px}"
-        sd_ok = together > 0 and apart > together and off_px == 0
+        deep = ground_dark(base, 0.6)
+        sd_note = (f"together={together} apart={apart} shadow-off={off_px} "
+                   f"darkest={deep}/255")
+        # Wide enough to read as contact, and DARK enough to be seen. Asserting only
+        # that it exists is how it shipped invisible once.
+        sd_ok = together > 0 and apart > together and off_px == 0 and deep >= 28
         os.remove(sdp)
         action_delete_asset({"name": "selftest-shadow"})
     except Exception as e:  # noqa: BLE001
         sd_note = f"{type(e).__name__}: {e}"
     ck("a grounded character gets a contact shadow that spreads with the legs",
-       "apart > together > 0, off = 0", sd_note, sd_ok)
+       "apart > together > 0, off = 0, darkest >= 28/255", sd_note, sd_ok)
 
     m3_note, m3_ok = "", False
     try:
