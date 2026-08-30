@@ -2520,7 +2520,7 @@ def action_assets(_inp):
             "fields": {"at": "[x,y] of the feet (default [0.5,0.9])",
                        "scale": "1.0 default", "enter": "walk | peek | pop | none",
                        "lipsync": "true = talk acts follow audio.voice envelope",
-                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose'|'anim'|'move', "
+                       "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose'|'anim'|'move'|'express', "
                                "for, to:[x,y], bones:{name:deg}, ease?, squash?, "
                                "name?}] — anim plays a built-in 2D keypose cycle "
                                "(see anims2d); point aims a presenter "
@@ -2528,7 +2528,10 @@ def action_assets(_inp):
                                "(weather-caster style); a rig with upperArmR/foreArmR (or L) bones raises that arm to aim along the stick. pose eases declared bones to "
                                "the given angles (degrees, + = clockwise) and holds — "
                                "chain pose acts for keyframe choreography (punch, "
-                               "bow, kick)"},
+                               "bow, kick). express {as:'<variant name>'} swaps the "
+                               "crop of every part that declares that name for its "
+                               "window, so the face changes while the body keeps "
+                               "moving"},
         },
         "layers": {
             "bubble": "{text, at?, heart?, typing?} speech balloon, types itself out",
@@ -2603,7 +2606,10 @@ def action_assets(_inp):
                        "glow:true mirrors the part onto the scene glow layer. Extra "
                        "shapes: roundedrect {radius}, text {height, bind:'text'|value}, "
                        "and image {media, crop:[[x,y]..] 3..60 pairs in 0..1 IMAGE "
-                       "coords, at:[vx,vy], width in viewBox units, pivot?, flip?} — "
+                       "coords, at:[vx,vy], width in viewBox units, pivot?, flip?, variants?:{name: crop}} — "
+                       "(variants = named alternate crops of the SAME picture; the "
+                       "express act picks one, so generate the character as ONE "
+                       "expression sheet and cut each face from it) — "
                        "cutout rigging: a polygon-cropped piece of a real picture "
                        "becomes a joint and animates with the same roles (crop a limb, "
                        "put pivot at its shoulder, give it swing or flap; mouth drops "
