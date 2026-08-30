@@ -43,10 +43,10 @@
       {
         "id": "save_asset",
         "name": "클립아트 저장",
-        "description": "캐릭터·소품을 재사용하게 저장한다 — 도형 파츠 선언(JSON)이 원본으로 남고 썸네일 PNG 가 미디어 창고(클립아트 칩)에 뜬다. 저장 후엔 씬 sprite 와 sticker 가 이름으로 참조한다. 파츠 문법은 assets 액션이 말한다.",
+        "description": "캐릭터·소품을 재사용하게 저장한다 — 선언(JSON)이 원본으로 남고 썸네일 PNG 가 미디어 창고(클립아트 칩)에 뜬다. 두 형태 중 하나다: 도형 파츠 리그(parts), 또는 동작마다 한 장씩 그려진 애니메이션 시트(sheets — 걷기·절·날기 같은 프레임 그림). 저장 후엔 씬 sprite 와 sticker 가 이름으로 참조한다. 문법은 assets 액션이 말한다.",
         "domain": "제작",
-        "params": ["name", "parts", "bones"],
-        "tags": ["클립아트 저장", "캐릭터 저장", "재사용", "에셋 등록"]
+        "params": ["name", "parts", "sheets", "bones"],
+        "tags": ["클립아트 저장", "캐릭터 저장", "재사용", "에셋 등록", "애니메이션 시트", "스프라이트 시트", "걷기 동작", "그린 캐릭터"]
       },
       {
         "id": "delete_asset",
@@ -125,7 +125,7 @@
       },
       "layers": {
         "type": "array",
-        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (character with enter walk/peek/pop, acts wave/talk/jump/point/pose/anim/move (move eases position to:[x,y] and holds — chain for paths) — anim plays hand-keyed 2D cartoon keypose cycles walk/run/idle/punch/dance (prefer over mocap clip for cartoon rigs), pose takes ease snap/overshoot/anticipate and squash — point taps a normalized [x,y] target with a presenter stick, pose keyframes declared bones — and clip: built-in CMU mocap walk/punch/boxing/dance or any BVH from the media store driving the bones), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), spritesheet (animated frame-grid image: media+grid:[cols,rows]+fps, loops — free game sprite sheets work as-is), fireworks, hearts, confetti, spark (impact flash), shake (camera shake), speedlines, hpbar (fighting-game health bar), model3d (a rigged 3D character .glb toon-rendered server-side — built-in robot with 13 clips or any media-store glb; clip/plays picks animations, model_info lists them). Field-level contract comes from the assets action."
+        "description": "[render] Scene layers drawn in order, each with from/to seconds. Kinds: sprite (a saved or seed character by `name`; a character saved with drawn sheets plays them with plays:[{action, at, for?, travel?}] and needs no acts; a shape/cutout rig takes enter walk/peek/pop, acts wave/talk/jump/point/pose/anim/move (move eases position to:[x,y] and holds — chain for paths) — anim plays hand-keyed 2D cartoon keypose cycles walk/run/idle/punch/dance (prefer over mocap clip for cartoon rigs), pose takes ease snap/overshoot/anticipate and squash — point taps a normalized [x,y] target with a presenter stick, pose keyframes declared bones — and clip: built-in CMU mocap walk/punch/boxing/dance or any BVH from the media store driving the bones), bubble (speech balloon, typing), title (stacked display lines), caption (subtitle pill), card (label/value info rows), list (time-table rows with color dots and a highlight tag), image (media picture with optional Ken Burns pan-zoom), spritesheet (animated frame-grid image: media+grid:[cols,rows]+fps, loops — free game sprite sheets work as-is), fireworks, hearts, confetti, spark (impact flash), shake (camera shake), speedlines, hpbar (fighting-game health bar), model3d (a rigged 3D character .glb toon-rendered server-side — built-in robot with 13 clips or any media-store glb; clip/plays picks animations, model_info lists them). Field-level contract comes from the assets action."
       },
       "audio": {
         "type": "object",
@@ -181,7 +181,11 @@
       },
       "parts": {
         "type": "array",
-        "description": "[save_asset] The clip art's shape parts — the ORIGINAL that scenes and stickers redraw from. 100x100 viewBox, feet at (50,100), y down. Each part: {shape: ellipse|rect|polygon|capsule|heart|star, at/size or points or ends+width, fill:[r,g,b], outline?, role: swing (waves) | mouth (opens on talk) | eye (blinks)}. shape 'image' = cutout rigging: {media, crop polygon in 0..1 image coords, at, width, pivot?, role?} turns a piece of an attached picture into a joint. Full grammar: the assets action."
+        "description": "[save_asset] The clip art's shape parts — the ORIGINAL that scenes and stickers redraw from. 100x100 viewBox, feet at (50,100), y down. Each part: {shape: ellipse|rect|polygon|capsule|heart|star, at/size or points or ends+width, fill:[r,g,b], outline?, role: swing (waves) | mouth (opens on talk) | eye (blinks)}. shape 'image' = cutout rigging: {media, crop polygon in 0..1 image coords, at, width, pivot?, role?} turns a piece of an attached picture into a joint. Full grammar: the assets action. Alternative to sheets — a drawn character needs no parts."
+      },
+      "sheets": {
+        "type": "object",
+        "description": "[save_asset] A character whose actions are DRAWN frames instead of a posed rig: {<action name>: {media, fps?, loop?}}. Ask image_gen for an animation sheet (e.g. \"8-frame walk cycle, 4x2, clear space between frames, transparent background, small even change between neighbours\"); frame boxes are read off the image, so no coordinates are typed. A backdrop of one flat colour is keyed out on import, so a chroma-key sheet works too. Scenes play it as {kind:'sprite', name, plays:[{action, at, for?, travel?:'right'|'left'}]} — travel walks at the sheet's own measured stride, which is what stops a walker from skating. fps is the animation cadence, not the video's (8 = anime's 3s, 12 = 2s). Alternative to parts. Full grammar: the assets action."
       },
       "pose": {
         "type": "object",
