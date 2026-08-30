@@ -818,6 +818,78 @@ def _clip_path(decl):
 _CUTOUT_CACHE = {}
 
 
+def _label_blobs(mask):
+    """Two-pass connected components, 8-neighbour. numpy only — no scipy on this box."""
+    H, W = mask.shape
+    lab = np.zeros((H, W), np.int32)
+    parent = [0]
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    nxt = 1
+    for y in range(H):
+        for x in np.where(mask[y])[0]:
+            near = []
+            if x > 0 and lab[y, x - 1]:
+                near.append(lab[y, x - 1])
+            if y > 0:
+                for dx in (-1, 0, 1):
+                    xx = x + dx
+                    if 0 <= xx < W and lab[y - 1, xx]:
+                        near.append(lab[y - 1, xx])
+            if not near:
+                lab[y, x] = nxt
+                parent.append(nxt)
+                nxt += 1
+            else:
+                m = min(near)
+                lab[y, x] = m
+                for o in near:
+                    union(m, o)
+    flat = np.array([find(i) for i in range(nxt)], np.int32)
+    return flat[lab]
+
+
+def find_sheet_cells(path, min_frac=0.004, row_tol=0.18):
+    """Where each drawn frame sits on a sheet, found from the alpha.
+
+    A generated animation sheet is not a tidy grid: the figures are unevenly
+    spaced and their bounding boxes overlap, so splitting by column density cuts
+    through a drawing — measured 2026-08-30, two of three cuts on a four-frame
+    sheet landed at densities 28 and 37 and one frame lost its front foot in the
+    finished video. Separate pixels are what a blob finds, and overlapping boxes
+    do not fool it. Reading order is row-major, the order a sheet is drawn in.
+    """
+    im = Image.open(media_path(path)).convert("RGBA")
+    a = np.asarray(im)[:, :, 3]
+    H, W = a.shape
+    lab = _label_blobs(a > 16)
+    min_px = int(H * W * min_frac)
+    out = []
+    for i in np.unique(lab):
+        if i == 0:
+            continue
+        ys, xs = np.where(lab == i)
+        if len(ys) < min_px:
+            continue
+        out.append([int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())])
+    if not out:
+        raise SceneError(
+            f"no frames found on {path!r} — a sheet needs a transparent background "
+            "(ask the image generator for one) so the frames can be told apart")
+    out.sort(key=lambda b: (int(b[1] / (H * row_tol)), b[0]))
+    return out
+
+
 def _cutout_piece(q, crop=None):
     """Load, polygon-crop and alpha-mask one image part; cached per (media, crop).
 
@@ -1441,6 +1513,11 @@ class Scene:
             raise SceneError(
                 f"unknown sprite {name!r} — assets lists seed and saved clip art; "
                 "save one first with save_asset")
+        # A character whose asset carries drawn sheets plays those frames instead of
+        # being posed. Nothing is warped or interpolated: each frame is a drawing, and
+        # they are shown one after another, which is what animation is.
+        if saved.get("sheets"):
+            return self._draw_sheet_sprite(t, a, L, saved["sheets"])
         custom = saved["parts"]
         SW, SH, ss = self.SW, self.SH, self.ss
         x, y = self._at(L, [0.5, 0.9])
@@ -1860,6 +1937,59 @@ class Scene:
         else:
             mask = Image.new("L", im.size, int(255 * a))
         self._frame_img.paste(im, (int(cx - wz / 2 + panx), int(cy - hz / 2)), mask)
+
+    def _draw_sheet_sprite(self, t, a, L, sheets):
+        """Play a saved character's drawn frames.
+
+        `plays: [{action, at, for?}]` picks which sheet is running; without it the
+        first action loops. Frames are pasted, never blended — a cross-dissolve
+        between two poses shows both limbs at once (measured 2026-08-30, and it read
+        as ghosting). Every frame is scaled by ONE factor and set on a common
+        baseline: equalising each frame's height instead makes the character grow and
+        shrink every frame, because a passing pose IS shorter than a contact pose.
+        """
+        if self._frame_img is None:
+            return
+        act, t0 = None, L["from"]
+        for p in L.get("plays") or []:
+            at = float(p.get("at", L["from"]))
+            dur = p.get("for")
+            end = at + float(dur) if dur is not None else L["to"]
+            if at <= t < end and str(p.get("action") or "") in sheets:
+                act, t0 = str(p["action"]), at
+        if act is None:
+            act = next(iter(sheets))
+        sh = sheets[act]
+        cells = sh["cells"]
+        i = int((t - t0) * sh["fps"])
+        if not sh["loop"] and i >= len(cells):
+            i = len(cells) - 1
+        x0, y0, x1, y1 = cells[i % len(cells)]
+        src = self._sheet_image(sh["media"])
+        piece = src.crop((x0, y0, x1 + 1, y1 + 1))
+        tall = max(c[3] - c[1] + 1 for c in cells)
+        scale = (self.SH * 0.42 * float(L.get("scale", 1.0))) / max(1, tall)
+        w = max(1, int(round(piece.width * scale)))
+        h = max(1, int(round(piece.height * scale)))
+        piece = piece.resize((w, h), Image.LANCZOS)
+        alpha = piece.getchannel("A")
+        if a < 0.999:
+            alpha = alpha.point(lambda v: int(v * a))
+        fx, fy = L.get("at", [0.5, 0.9])
+        px = int(fx * self.SW - w / 2)
+        py = int(fy * self.SH - h)          # `at` is the feet
+        # The frame buffer is RGB, so composite the way the image layer does.
+        self._frame_img.paste(piece, (px, py), alpha)
+
+    def _sheet_image(self, path):
+        cache = getattr(self, "_sheet_cache", None)
+        if cache is None:
+            cache = self._sheet_cache = {}
+        if path not in cache:
+            if len(cache) > 8:
+                cache.clear()
+            cache[path] = Image.open(media_path(path)).convert("RGBA")
+        return cache[path]
 
     def _draw_spritesheet(self, d, g, t, a, L):
         # Free game sprite sheets (and future canvas-baked sequences) as an
@@ -2381,13 +2511,63 @@ def action_sticker(inp):
                                       "filenameHint": f"clip-{name}",
                                       "source": "clipart"}}}
 
+def validate_sheets(sheets):
+    """`sheets: {action: {media, fps?, loop?, cells?}}` — drawn animation, by name.
+
+    An action is a sheet of real drawings, not a pose warped out of one picture.
+    `cells` is found from the alpha when it is not given, so an author never
+    types frame coordinates: the sheet is the original and the numbers are read
+    off it.
+    """
+    if sheets is None:
+        return None
+    if not isinstance(sheets, dict) or not 1 <= len(sheets) <= 16:
+        raise SceneError("sheets must be {action: {media, fps?, loop?}} — 1 to 16 actions")
+    out = {}
+    for act, spec in sheets.items():
+        a = str(act).strip()
+        if not a or len(a) > 24:
+            raise SceneError("sheets: action name must be 1..24 chars")
+        if not isinstance(spec, dict):
+            raise SceneError(f"sheets[{a}] must be an object with a media path")
+        media = spec.get("media")
+        if not isinstance(media, str) or not media.strip():
+            raise SceneError(f"sheets[{a}].media must be a media-store path")
+        media = media.strip()
+        cells = spec.get("cells")
+        if cells is None:
+            cells = find_sheet_cells(media)
+        if not (isinstance(cells, list) and 1 <= len(cells) <= 32):
+            raise SceneError(f"sheets[{a}].cells must be 1..32 [x0,y0,x1,y1] boxes")
+        norm = []
+        for j, c in enumerate(cells):
+            if not (isinstance(c, (list, tuple)) and len(c) == 4):
+                raise SceneError(f"sheets[{a}].cells[{j}] must be [x0,y0,x1,y1]")
+            norm.append([int(v) for v in c])
+        out[a] = {
+            "media": media,
+            "cells": norm,
+            "fps": _num(spec.get("fps", 12), f"sheets[{a}].fps", 1, 30),
+            "loop": bool(spec.get("loop", True)),
+        }
+    return out
+
+
 def action_save_asset(inp):
     name = str(inp.get("name") or "").strip()
     try:
-        parts = validate_asset_decl(name, inp.get("parts"))
+        sheets = validate_sheets(inp.get("sheets"))
     except SceneError as e:
-        return {"success": False,
-                "error": f"{e} — the assets action documents the part grammar"}
+        return {"success": False, "error": str(e)}
+    # A sheet-only character carries no shape parts: its drawings ARE the asset.
+    if sheets and inp.get("parts") is None:
+        parts = []
+    else:
+        try:
+            parts = validate_asset_decl(name, inp.get("parts"))
+        except SceneError as e:
+            return {"success": False,
+                    "error": f"{e} — the assets action documents the part grammar"}
     try:
         bones = validate_bones(inp.get("bones"), parts)
         for q in parts:
@@ -2401,15 +2581,26 @@ def action_save_asset(inp):
         decl = {"parts": parts}
         if bones:
             decl["bones"] = bones
+        if sheets:
+            decl["sheets"] = sheets
         json.dump(decl, fh, ensure_ascii=False, indent=1)
     # The browsable face: a thumbnail lands in the media store as clip art. The
     # declaration stays the original — consumers re-render from it, never from this PNG.
     os.makedirs(OUT_DIR, exist_ok=True)
-    thumb = _custom_sticker_png({"parts": parts, "bones": bones or None}, 480, {})
+    if sheets and not parts:
+        # The browsable face of a drawn character is its first frame.
+        first = next(iter(sheets.values()))
+        x0, y0, x1, y1 = first["cells"][0]
+        thumb = Image.open(media_path(first["media"])).convert("RGBA").crop((x0, y0, x1 + 1, y1 + 1))
+        thumb.thumbnail((480, 480), Image.LANCZOS)
+    else:
+        thumb = _custom_sticker_png({"parts": parts, "bones": bones or None}, 480, {})
     tp = os.path.join(OUT_DIR, f"asset-thumb-{name}.png")
     thumb.save(tp)
     return {"success": True,
             "data": {"asset": name, "parts": len(parts), "replaced": replaced,
+                     **({"sheets": {k: len(v["cells"]) for k, v in sheets.items()}}
+                        if sheets else {}),
                      "next": "reference it as a sprite layer {kind:'sprite', name: '"
                              + name + "'} or export sizes with the sticker action",
                      "_mediaImport": {"path": _out(tp), "contentType": "image/png",
@@ -2634,7 +2825,15 @@ def action_assets(_inp):
                   "the previous state and holds. This is THE way to zoom into a "
                   "region while its line is spoken (never swap whole background "
                   "images per segment). zoom:1 returns to full frame",
-        "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
+        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?}}} — a character "
+                      "whose actions are DRAWN frames, not a posed rig. Ask the image generator "
+                      "for an animation sheet (\"6-frame flying cycle, 3x2, clear space between "
+                      "frames, transparent background, small even change between neighbours\"), "
+                      "save it under an action name, and the frame boxes are found from the alpha "
+                      "— no coordinates by hand. A scene plays it with {kind:'sprite', name, "
+                      "plays:[{action, at, for?}]} and frames are pasted, never blended. Sheets "
+                      "and shape parts are alternatives: a drawn character needs no parts",
+    "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
               "in order, ffmpeg stream copy, no re-encode. This is how a video "
               "longer than one scene is made: a 10s 1080p draft costs ~53s of "
               "render, so five minutes is ~30min whichever way it is cut - as one "
