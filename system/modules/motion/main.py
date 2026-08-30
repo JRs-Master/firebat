@@ -2865,9 +2865,14 @@ def validate_sheets(sheets):
         # one wingbeat in three drawings plus three near-duplicates, and played in
         # sheet order the wing jumped about. [1,2,3,2] is that beat, and the same
         # field also drops a bad drawing or holds one for two beats.
+        #
+        # One number is a held pose. That is how a standing character and a walking one
+        # come off the same sheets: `idle` takes the frame where he is on both feet,
+        # `walk` takes the cycle and leaves that frame out. Asking the generator for a
+        # standing pose alongside the cycle costs one cell and saves a second character.
         if frames is not None:
-            if not (isinstance(frames, list) and 2 <= len(frames) <= 64):
-                raise SceneError(f"sheets[{a}].frames must be 2..64 frame numbers")
+            if not (isinstance(frames, list) and 1 <= len(frames) <= 64):
+                raise SceneError(f"sheets[{a}].frames must be 1..64 frame numbers")
             try:
                 seq = [int(v) for v in frames]
             except (TypeError, ValueError):
@@ -3986,8 +3991,17 @@ def action_selftest():
             refused_hi = True
         or_note = (f"played={played.get('frames')} order={decl.get('order')} "
                    f"cells={len(decl['cells'])} out-of-range-refused={refused_hi}")
+        # And one number is a held pose — an idle taken off a walk sheet.
+        sv5 = action_save_asset({"action": "save_asset", "name": "selftest-order",
+                                 "sheets": {"beat": {"media": orp, "fps": 4,
+                                                     "frames": [1, 2, 3, 2]},
+                                            "stand": {"media": orp, "frames": [2]}}})
+        held = load_custom_asset("selftest-order")["sheets"]["stand"]
+        or_note += (f" held={len(held['cells'])}cell/{len(held.get('order') or [])}play"
+                    f" saved={bool(sv5.get('success'))}")
         or_ok = (played.get("frames") == 4 and decl.get("order") == [0, 1, 2, 1]
-                 and len(decl["cells"]) == 3 and refused_hi)
+                 and len(decl["cells"]) == 3 and refused_hi
+                 and len(held["cells"]) == 1 and held.get("order") == [0])
         os.remove(orp)
         action_delete_asset({"name": "selftest-order"})
     except Exception as e:  # noqa: BLE001
