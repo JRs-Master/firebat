@@ -1276,7 +1276,18 @@ impl MediaManager {
             Ok(r) => r,
             Err(e) => {
                 self.log_error(&format!("[MediaManager] [{model_id}] 생성 실패: {e}"));
-                // 실패 기록 — 미디어에서 사용자가 prompt 보고 재시도/삭제 가능
+                // 실패 기록 — 미디어에서 사용자가 prompt 보고 재시도/삭제 가능.
+                //
+                // Only when nobody is holding a record for this request. The background path
+                // (`start_generate`) reserved a placeholder slug before spawning and stamps the
+                // error onto THAT one when we return, so minting a second record here files the
+                // same failure twice: one placeholder marked `error` and one 0-byte row with the
+                // same prompt beside it. Measured 2026-08-30 — a single image_gen call left two
+                // failed cards in the gallery, 57s apart. Same reasoning as the cost/event wrap
+                // further down, which the background caller also owns.
+                if existing_slug.is_some() {
+                    return Err(e);
+                }
                 let err_opts = MediaSaveOptions {
                     filename_hint: input.filename_hint.clone(),
                     scope: Some(scope),
