@@ -2685,14 +2685,19 @@ def _sheet_stride(media, cells):
 
 
 def _sheet_body_y(media, cells):
-    """Where the body sits inside each cell, as a fraction of that cell's height.
+    """Where the body's own line sits inside each cell, as a fraction of its height.
 
-    Measured from the middle 40% of the columns: the outer fifths are the parts that
-    swing furthest — an outstretched arm, a raised wing — and they are exactly what
-    must not decide where the character is pinned.
+    Taken as the midpoint between the two ends of the silhouette — for a side-view
+    creature, nose and tail. Those are on the body and stay on it; what swings is
+    everything between them.
 
-    This is what a flying or jumping sheet is anchored on. Standing on the ground is
-    the other case and stays anchored on the feet.
+    An earlier version averaged the middle fifths of the columns, on the theory that
+    the outer ones are the parts that move. That is true of a person, whose arms
+    swing at the sides, and false of a bird, whose wing is attached mid-body and
+    sweeps straight through those columns. Measured 2026-08-30 on the six-frame
+    swallow, and the user saw it before the numbers did: middle-fifths held the beak
+    to within 135px and the tail to 150 — WORSE than aligning the bottoms — while the
+    nose-to-tail midpoint holds both to 8px.
     """
     im = load_sheet(media)
     a = np.asarray(im)[:, :, 3] > 16
@@ -2700,13 +2705,12 @@ def _sheet_body_y(media, cells):
     for (x0, y0, x1, y1) in cells:
         sub = a[y0:y1 + 1, x0:x1 + 1]
         h, w = sub.shape
-        core = sub[:, int(w * 0.30):int(w * 0.70)].astype(np.float32)
-        tot = float(core.sum())
-        if tot <= 0:
-            out.append(0.5)
-            continue
-        ys = np.arange(h, dtype=np.float32)
-        out.append(round(float((core.sum(1) * ys).sum() / tot) / max(1, h), 4))
+        edge = max(1, int(w * 0.03))
+        ends = []
+        for col in (sub[:, -edge:], sub[:, :edge]):
+            rows = np.where(col.any(1))[0]
+            ends.append(float(np.median(rows)) if len(rows) else h / 2.0)
+        out.append(round(float(np.mean(ends)) / max(1, h), 4))
     return out
 
 
@@ -3085,7 +3089,8 @@ def action_assets(_inp):
                       "bird or a rolling ball crosses the screen with a move act, which "
                       "works on drawn characters exactly as it does on rigs. anchor says what `at` "
                       "pins — 'feet' (default) lines up the bottoms, which is standing on the "
-                      "ground; 'body' pins the body and is what a flying or jumping action "
+                      "ground; 'body' pins the line from nose to tail and is what a flying "
+                      "or jumping action "
                       "needs, since a raised wing makes the frame box taller and aligning "
                       "bottoms would swing the character once per cycle. Playback fps is the "
                       "animation cadence, not the video's: 8 is anime's usual 3s, 12 is 2s. Sheets "
@@ -3699,38 +3704,51 @@ def action_selftest():
     an_note, an_ok = "", False
     try:
         ap = os.path.join(OUT_DIR, "selftest-anchor.png")
-        fly = Image.new("RGBA", (440, 300), (0, 0, 0, 0))
+        fly = Image.new("RGBA", (460, 300), (0, 0, 0, 0))
         ad = ImageDraw.Draw(fly)
         ink = (30, 40, 80, 255)
-        for cx, up in ((100, True), (330, False)):
-            # The body sits at exactly the same height in both frames. What differs is
-            # the wing: raised in one, lowered in the other, so the box bottom is the
-            # body in one frame and the wingtip in the other. That is the swallow.
-            ad.ellipse([cx - 45, 190, cx + 45, 240], fill=ink)
+        for cx, up in ((110, True), (340, False)):
+            # The body, its nose and its tail sit at exactly the same height in both
+            # frames. Only the wing moves — raised in one, lowered in the other, and
+            # attached mid-body so it sweeps through the middle columns. That is the
+            # shape that made a middle-fifths average worse than no anchor at all.
+            ad.ellipse([cx - 40, 190, cx + 40, 235], fill=ink)
+            ad.polygon([(cx + 38, 205), (cx + 85, 210), (cx + 38, 218)], fill=ink)
+            ad.polygon([(cx - 38, 205), (cx - 88, 210), (cx - 38, 218)], fill=ink)
             if up:
-                ad.polygon([(cx - 45, 205), (cx - 30, 20), (cx - 12, 210)], fill=ink)
+                ad.polygon([(cx - 20, 200), (cx - 5, 20), (cx + 14, 205)], fill=ink)
             else:
-                ad.polygon([(cx - 45, 225), (cx - 30, 290), (cx - 12, 230)], fill=ink)
+                ad.polygon([(cx - 20, 225), (cx - 5, 292), (cx + 14, 230)], fill=ink)
         fly.save(ap)
         cs = find_sheet_cells(ap)
         by = _sheet_body_y(ap, cs)
         hs = [c[3] - c[1] + 1 for c in cs]
-        feet = [by[j] * hs[j] - hs[j] for j in range(len(cs))]
-        body = [0.0 for _ in cs]
-        an_note = (f"heights={hs} feet-spread={max(feet) - min(feet):.0f}px "
-                   f"body-spread={max(body) - min(body):.0f}px")
+
+        def nose_y(j, pin):
+            """Screen y of the nose once cell j is pinned by `pin` ('feet'|'body')."""
+            x0, y0, x1, y1 = cs[j]
+            sub = np.asarray(load_sheet(ap))[y0:y1 + 1, x0:x1 + 1, 3] > 16
+            h, w = sub.shape
+            rows = np.where(sub[:, int(w * 0.97):].any(1))[0]
+            n = float(np.median(rows)) if len(rows) else h / 2.0
+            return n - (h if pin == "feet" else h * by[j])
+
+        feet = [nose_y(j, "feet") for j in range(len(cs))]
+        body = [nose_y(j, "body") for j in range(len(cs))]
+        an_note = (f"heights={hs} nose-on-feet={max(feet) - min(feet):.0f}px "
+                   f"nose-on-body={max(body) - min(body):.0f}px")
         try:
             validate_sheets({"x": {"media": ap, "anchor": "sideways"}})
             refused = False
         except SceneError:
             refused = True
-        an_ok = (max(feet) - min(feet)) > 30 and refused
+        an_ok = (max(feet) - min(feet)) > 30 and (max(body) - min(body)) < 6 and refused
         an_note += f" bad-anchor-refused={refused}"
         os.remove(ap)
     except Exception as e:  # noqa: BLE001
         an_note = f"{type(e).__name__}: {e}"
-    ck("anchor decides what `at` pins, and an unknown one is refused",
-       "feet-spread > 30px, bad-anchor-refused=True", an_note, an_ok)
+    ck("the body anchor holds the nose still while the wing sweeps",
+       "nose moves > 30px on feet, < 6px on body, bad anchor refused", an_note, an_ok)
 
     # The contact shadow: present under a grounded character, absent under an
     # airborne one, and wider when the legs are apart than when they pass.
