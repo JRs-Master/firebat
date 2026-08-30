@@ -120,9 +120,18 @@ impl ImageFormatHandler for CliCodexImageFormat {
         };
         // "정확히 1장" 고정 — 이 포트는 1 호출 = 1 이미지 계약(openai-image·gemini 와 동일)이고,
         // 프롬프트에 장수가 섞여 들어오면 codex 가 순차로 N 번 호출해 시간만 N 배가 된다.
+        // How many, said once and exactly. A set that has to look like each other -
+        // the parts of one animation cycle - has to be drawn in one call, because
+        // separate calls redraw the character from scratch every time.
+        let want = opts.n.unwrap_or(1).clamp(1, 8) as usize;
+        let count_line = if want == 1 {
+            "Generate exactly one image.".to_string()
+        } else {
+            format!("Generate exactly {want} images, all in this one turn.")
+        };
         let prompt = format!(
-            "$imagegen {}{}{}\n\nGenerate exactly one image.",
-            opts.prompt, size_hint, quality_hint
+            "$imagegen {}{}{}\n\n{}",
+            opts.prompt, size_hint, quality_hint, count_line
         );
 
         let codex_home = Self::ensure_image_codex_home();
@@ -304,10 +313,35 @@ impl ImageFormatHandler for CliCodexImageFormat {
                 harvested.len() - 1
             );
         }
-        let picked = harvested.last().expect("non-empty");
+        // Oldest first, so a multi-part set comes back in the order it was drawn.
+        let mut harvested = harvested;
+        harvested.sort_by_key(|p| {
+            std::fs::metadata(p)
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH)
+        });
+        let picked = harvested.first().expect("non-empty");
         let binary = std::fs::read(picked)
             .map_err(|e| format!("이미지 파일 읽기 실패 ({}): {e}", picked.display()))?;
         let content_type = content_type_for(picked);
+        // Everything past the first. A caller that asked for one gets an empty list
+        // and never learns this existed.
+        let mut extras: Vec<firebat_core::ports::ImageGenImage> = Vec::new();
+        for path in harvested.iter().skip(1) {
+            match std::fs::read(path) {
+                Ok(bytes) => extras.push(firebat_core::ports::ImageGenImage {
+                    binary: bytes,
+                    content_type: content_type_for(path).to_string(),
+                    width: None,
+                    height: None,
+                }),
+                Err(e) => tracing::warn!(
+                    target: "media",
+                    "[cli-codex-image] extra output unreadable ({}): {e}",
+                    path.display()
+                ),
+            }
+        }
 
         // 소비한 산출물 정리 — /tmp 무한 증식 방지(장당 ~2MB).
         for path in &harvested {
@@ -324,6 +358,7 @@ impl ImageFormatHandler for CliCodexImageFormat {
             height: None,
             revised_prompt,
             cost_usd: None,
+            extras,
         })
     }
 }

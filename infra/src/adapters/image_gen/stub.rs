@@ -68,6 +68,7 @@ impl IImageGenPort for StubImageGenAdapter {
             height: Some(1),
             revised_prompt: Some(opts.prompt.clone()),
             cost_usd: None, // stub = 구독 흉내, 비용 미저장
+            extras: Vec::new(),
         })
     }
 }

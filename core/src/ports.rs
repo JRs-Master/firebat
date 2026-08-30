@@ -1535,7 +1535,9 @@ pub struct ImageGenOpts {
     pub quality: Option<String>,
     /// 스타일 지시 (선택)
     pub style: Option<String>,
-    /// n 개 생성 (1 권장, 다수 지원 provider 만)
+    /// How many pictures this one call should produce. A set that has to look like
+    /// each other — the parts of one animation cycle — has to be drawn in one call,
+    /// because separate calls redraw the character from scratch each time.
     pub n: Option<u32>,
     /// 모델 ID override — 미설정 시 ImageGenCallOpts 의 default
     pub model: Option<String>,
@@ -1554,6 +1556,20 @@ pub struct ImageGenCallOpts {
     pub corr_id: Option<String>,
 }
 
+/// One picture out of a generation that produced several.
+///
+/// A backend asked for four sheets draws them in one context, which is the only way
+/// their characters match. The port used to carry one image and the CLI adapter
+/// logged the rest as discarded, so asking for four meant four calls and four
+/// slightly different characters.
+#[derive(Debug, Clone)]
+pub struct ImageGenImage {
+    pub binary: Vec<u8>,
+    pub content_type: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ImageGenResult {
     /// 생성된 이미지 binary (PNG/WEBP 등)
@@ -1567,6 +1583,9 @@ pub struct ImageGenResult {
     /// 이미지 1장 비용 USD — 어댑터가 config.pricing 으로 산정.
     /// 구독 기반 (CLI) 은 `None`. CostManager 가 LLM 비용 통계에 통합 누적.
     pub cost_usd: Option<f64>,
+    /// The rest of the pictures, when `n` asked for more than one. Empty otherwise,
+    /// so a backend that only ever makes one needs to know nothing about this.
+    pub extras: Vec<ImageGenImage>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

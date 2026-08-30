@@ -204,6 +204,7 @@ impl ImageFormatHandler for OpenAiImageFormat {
             height,
             revised_prompt: first.revised_prompt,
             cost_usd,
+            extras: Vec::new(),
         })
     }
 }

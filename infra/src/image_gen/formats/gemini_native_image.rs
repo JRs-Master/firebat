@@ -180,6 +180,7 @@ impl ImageFormatHandler for GeminiNativeImageFormat {
             height: None,
             revised_prompt: None,
             cost_usd,
+            extras: Vec::new(),
         })
     }
 }

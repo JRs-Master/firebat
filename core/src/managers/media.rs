@@ -93,6 +93,13 @@ pub struct GenerateImageInput {
     pub focus_point: Option<serde_json::Value>,
     #[serde(rename = "referenceImage", default, skip_serializing_if = "Option::is_none")]
     pub reference_image: Option<ReferenceImageInput>,
+    /// How many pictures this one request should produce (1..8, default 1).
+    ///
+    /// Several in one call, not one call several times: the parts of an animation
+    /// cycle are drawn in the same context and so look like each other, which four
+    /// separate calls cannot promise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
 }
 
 /// 외부에서 만들어진 이미지 바이너리의 미디어 편입 — `MediaManager` 구현.
@@ -1022,10 +1029,17 @@ impl MediaManager {
     ///   - 백그라운드 완료: status.done + event.notify_media + cost.record (cost_usd 설정되어 있으면)
     ///   - 백그라운드 실패: status.fail + event.notify_media (error)
     ///   - placeholder 등장 즉시 event.notify_media (사용자가 "렌더링중" 카드 봄)
+    /// Reserve the media records this request will fill, and generate in the
+    /// background. Returns one (slug, url) per picture asked for, in order.
+    ///
+    /// The caller gets its URLs before anything is drawn — that is what lets a page be
+    /// saved in the same turn — so a request for several has to reserve several up
+    /// front. Any that the backend does not deliver are marked failed, the same as a
+    /// single one that does not arrive.
     pub async fn start_generate(
         self: &Arc<Self>,
         input: GenerateImageInput,
-    ) -> InfraResult<(String, String)> {
+    ) -> InfraResult<Vec<(String, String)>> {
         let processor = self
             .processor
             .as_ref()
@@ -1069,40 +1083,48 @@ impl MediaManager {
             source: Some("ai-generated".to_string()),
             hub_owner: input.hub_owner.clone(),
         };
-        let saved = self
-            .media
-            .save(&placeholder, "image/png", &save_opts)
-            .await?;
-        // status='rendering' 마킹 — 미디어 UI 가 spinner / 빨간 테두리 분기
-        let _ = self
-            .media
-            .update_meta(
-                &saved.slug,
-                &serde_json::json!({"status": "rendering"}),
-            )
-            .await;
+        let want = input.count.unwrap_or(1).clamp(1, 8) as usize;
+        let mut reserved: Vec<(String, String)> = Vec::with_capacity(want);
+        for _ in 0..want {
+            let saved = self
+                .media
+                .save(&placeholder, "image/png", &save_opts)
+                .await?;
+            // status='rendering' 마킹 — 미디어 UI 가 spinner / 빨간 테두리 분기
+            let _ = self
+                .media
+                .update_meta(
+                    &saved.slug,
+                    &serde_json::json!({"status": "rendering"}),
+                )
+                .await;
 
-        // Cross-call hook: placeholder 등장 즉시 미디어 SSE — "렌더링중" 카드 가시화 (옛 TS 1:1)
-        if let Some(event) = &self.event {
-            event.notify_media(serde_json::json!({
-                "slug": saved.slug,
-                "scope": scope.as_str(),
-            }));
+            // Cross-call hook: placeholder 등장 즉시 미디어 SSE — "렌더링중" 카드 가시화 (옛 TS 1:1)
+            if let Some(event) = &self.event {
+                event.notify_media(serde_json::json!({
+                    "slug": saved.slug,
+                    "scope": scope.as_str(),
+                }));
+            }
+            reserved.push((saved.slug.clone(), saved.url.clone()));
         }
+        let saved_slug = reserved[0].0.clone();
+        let saved_url = reserved[0].1.clone();
 
         self.log_info(&format!(
-            "[MediaManager] startGenerate: placeholder slug={} url={} — 백그라운드 생성 시작",
-            saved.slug, saved.url
+            "[MediaManager] startGenerate: placeholder slug={} url={} ({} 장) — 백그라운드 생성 시작",
+            saved_slug, saved_url, want
         ));
 
         // 백그라운드 — generate_image existing_slug 모드. caller 즉시 반환.
         let mgr = self.clone();
         let bg_input = input.clone();
-        let bg_slug = saved.slug.clone();
+        let bg_slug = saved_slug.clone();
+        let bg_rest: Vec<String> = reserved.iter().skip(1).map(|(s, _)| s.clone()).collect();
         let bg_scope = scope;
         let bg_status_id = status_job_id.clone();
         tokio::spawn(async move {
-            let result = mgr.generate_image(bg_input, Some(&bg_slug)).await;
+            let result = mgr.produce_image(bg_input, Some(&bg_slug), &bg_rest, None).await;
             match result {
                 Ok(success) => {
                     // Cross-call hook 2: status.complete — 백그라운드 완료 (옛 TS 1:1)
@@ -1142,13 +1164,18 @@ impl MediaManager {
                             "scope": bg_scope.as_str(),
                         }));
                     }
-                    let _ = mgr
-                        .media
-                        .update_meta(
-                            &bg_slug,
-                            &serde_json::json!({"status": "error", "errorMsg": e}),
-                        )
-                        .await;
+                    // Every record this request reserved, not just the first. A
+                    // placeholder nobody marks stays "rendering" for ever and the
+                    // gallery spins on a card that will never arrive.
+                    for slug in std::iter::once(&bg_slug).chain(bg_rest.iter()) {
+                        let _ = mgr
+                            .media
+                            .update_meta(
+                                slug,
+                                &serde_json::json!({"status": "error", "errorMsg": e}),
+                            )
+                            .await;
+                    }
                     mgr.log_error(&format!(
                         "[MediaManager] 백그라운드 generate_image 실패 (slug={} scope={}): {e}",
                         bg_slug,
@@ -1158,7 +1185,7 @@ impl MediaManager {
             }
         });
 
-        Ok((saved.slug, saved.url))
+        Ok(reserved)
     }
 
     /// AI image_gen 도구 → MediaManager.generate_image → 생성 + 후처리 + 저장.
@@ -1168,7 +1195,7 @@ impl MediaManager {
         input: GenerateImageInput,
         existing_slug: Option<&str>,
     ) -> InfraResult<GenerateImageResult> {
-        self.produce_image(input, existing_slug, None).await
+        self.produce_image(input, existing_slug, &[], None).await
     }
 
     /// **이미 만들어진** 이미지 바이너리를 미디어에 편입 — 생성만 건너뛰고 후처리는 동일.
@@ -1192,16 +1219,21 @@ impl MediaManager {
             revised_prompt: None,
             // 구독 CLI 산출물 = 별도 과금 없음(비용은 그 CLI 턴에 이미 잡힌다).
             cost_usd: None,
+            extras: Vec::new(),
         };
-        self.produce_image(input, None, Some(preset)).await
+        self.produce_image(input, None, &[], Some(preset)).await
     }
 
     /// generate_image / import_image 공용 본체. `preset` 이 있으면 생성 단계만 건너뛴다 —
     /// 크롭·저장·variants·썸네일·blurhash·메타 갱신·미디어 이벤트는 두 경로가 완전히 동일.
-    async fn produce_image(
+    ///
+    /// `extra_slugs` = records already reserved for the pictures past the first, when
+    /// this call asked for several. Filled in the order the backend drew them.
+    pub(crate) async fn produce_image(
         self: &Arc<Self>,
         input: GenerateImageInput,
         existing_slug: Option<&str>,
+        extra_slugs: &[String],
         preset: Option<ImageGenResult>,
     ) -> InfraResult<GenerateImageResult> {
         let started_at = SystemTime::now();
@@ -1258,7 +1290,7 @@ impl MediaManager {
             size: size.clone(),
             quality: quality.clone(),
             style: None,
-            n: None,
+            n: input.count,
             model: Some(model_id.clone()),
             reference_image,
         };
@@ -1395,6 +1427,66 @@ impl MediaManager {
                 .save(&base_binary, &base_content_type, &save_opts)
                 .await?
         };
+
+        // 4b) The rest of the pictures, into the records this request already reserved.
+        //
+        // Each goes through `finalize_base` exactly as the first did, so a set of four
+        // sheets carries the same variants, thumbnail and metadata as a single one —
+        // the reason this path exists at all rather than a second, thinner save.
+        let mut extra_urls: Vec<String> = Vec::new();
+        for (slug, img) in extra_slugs.iter().zip(gen_result.extras.iter()) {
+            match self
+                .media
+                .finalize_base(slug, scope.as_str(), &img.binary, &img.content_type, None)
+                .await
+            {
+                Ok(_) => {
+                    let ext = ext_from_content_type(&img.content_type);
+                    let _ = self
+                        .media
+                        .update_meta(
+                            slug,
+                            &serde_json::json!({
+                                "status": "done",
+                                "revisedPrompt": gen_result.revised_prompt.clone(),
+                            }),
+                        )
+                        .await;
+                    if let Some(event) = &self.event {
+                        event.notify_media(serde_json::json!({
+                            "slug": slug,
+                            "scope": scope.as_str(),
+                        }));
+                    }
+                    extra_urls.push(format!("/{}/media/{}.{}", scope.as_str(), slug, ext));
+                }
+                Err(e) => {
+                    self.log_error(&format!("[MediaManager] 추가 산출물 저장 실패 ({slug}): {e}"));
+                    let _ = self
+                        .media
+                        .update_meta(
+                            slug,
+                            &serde_json::json!({"status": "error", "errorMsg": e}),
+                        )
+                        .await;
+                }
+            }
+        }
+        // Reserved but never drawn: say so rather than leaving a card spinning.
+        if extra_slugs.len() > gen_result.extras.len() {
+            for slug in extra_slugs.iter().skip(gen_result.extras.len()) {
+                let _ = self
+                    .media
+                    .update_meta(
+                        slug,
+                        &serde_json::json!({
+                            "status": "error",
+                            "errorMsg": "the generator returned fewer pictures than were asked for",
+                        }),
+                    )
+                    .await;
+            }
+        }
 
         // 5) 메타데이터 파싱
         let meta = processor.get_metadata(&base_binary).await.ok();

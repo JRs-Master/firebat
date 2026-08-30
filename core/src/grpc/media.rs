@@ -232,7 +232,12 @@ impl MediaService for MediaServiceImpl {
         let input: GenerateImageInput = serde_json::from_str(&args.input_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("input_json: {e}")))?;
         match self.manager.start_generate(input).await {
-            Ok((slug, url)) => Ok(Response::new(StartGenerationPb { slug, url })),
+            // The panel asks for one; the first record is that one. A request for
+            // several comes through the tool, which carries the whole list.
+            Ok(reserved) => {
+                let (slug, url) = reserved.into_iter().next().unwrap_or_default();
+                Ok(Response::new(StartGenerationPb { slug, url }))
+            }
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }

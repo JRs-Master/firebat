@@ -2186,6 +2186,10 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 "filenameHint": {"type": "string", "description": "파일명 힌트"},
                 "aspectRatio": {"type": "string", "description": "16:9 / 1:1 / 4:5 / 3:2 등 — 지정 시 sharp 가 focusPoint 전략으로 crop"},
                 "focusPoint": {"description": "'attention' / 'entropy' / 'center' 또는 {x, y} 객체"},
+                "count": {
+                    "type": "integer",
+                    "description": "How many pictures to draw, 1 to 8 (default 1). Several in ONE call, not several calls: the parts of one set are drawn in the same context and so match each other, which separate calls cannot promise — this is how a multi-sheet animation cycle keeps one character. Returns `urls`, one per picture, in the order drawn."
+                },
                 "referenceImage": {
                     "type": "object",
                     "description": "image-to-image 변환용 참조 이미지. slug/url/base64 중 하나",
@@ -2206,7 +2210,9 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             let media = media.clone();
             async move {
                 let input = parse_generate_image_input(&args)?;
-                let (slug, url) = media.start_generate(input).await?;
+                let reserved = media.start_generate(input).await?;
+                let (slug, url) = reserved.first().cloned().unwrap_or_default();
+                let urls: Vec<String> = reserved.iter().map(|(_, u)| u.clone()).collect();
                 // The `next` line is consumption-point steering: solar-pro4 answered a successful
                 // start by calling image_gen AGAIN with the identical prompt (2026-08-09 logo turn,
                 // two generations billed for one request) — the result itself has to say the job
@@ -2214,6 +2220,8 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 Ok(serde_json::json!({
                     "slug": slug,
                     "url": url,
+                    // One url per picture asked for, in the order they were drawn.
+                    "urls": urls,
                     "status": "rendering",
                     "message": "이미지 생성 시작됨 — placeholder URL 반환. 페이지 reload 시 실제 이미지로 자동 swap.",
                     "next": "Generation has ALREADY started — do NOT call image_gen again for this request (a second call bills a second image). Embed this exact url in an image block now; the UI shows a generating card and swaps in the finished image by itself."
@@ -2297,6 +2305,10 @@ fn parse_generate_image_input(
         }
     });
     let hub_owner = args.get("hubOwner").and_then(|v| v.as_str()).map(String::from);
+    let count = args
+        .get("count")
+        .and_then(|v| v.as_u64())
+        .map(|n| n.clamp(1, 8) as u32);
     Ok(GenerateImageInput {
         prompt,
         size,
@@ -2308,6 +2320,7 @@ fn parse_generate_image_input(
         focus_point,
         reference_image,
         hub_owner,
+        count,
     })
 }
 
