@@ -2058,8 +2058,9 @@ class Scene:
         i = int((t - t0) * sh["fps"])
         if not sh["loop"] and i >= len(order):
             i = len(order) - 1
-        x0, y0, x1, y1 = cells[order[i % len(order)]]
-        src = self._sheet_image(sh["media"])
+        cell_i = order[i % len(order)]
+        x0, y0, x1, y1 = cells[cell_i]
+        src = self._sheet_image(_sheet_file(sh, cell_i))
         piece = src.crop((x0, y0, x1 + 1, y1 + 1))
         tall = max(c[3] - c[1] + 1 for c in cells)
         scale = (self.SH * 0.42 * float(L.get("scale", 1.0))) / max(1, tall)
@@ -2090,7 +2091,7 @@ class Scene:
         if sh.get("anchor") == "body" and sh.get("bodyY"):
             # `at` is the body. Aligning bottoms would swing an airborne character by
             # the difference in frame heights, which for a bird is the wingspan.
-            py = int(y - h * float(sh["bodyY"][order[i % len(order)]]))
+            py = int(y - h * float(sh["bodyY"][cell_i]))
         else:
             py = int(y - h)                 # `at` is the feet
         # The frame buffer is RGB, so composite the way the image layer does.
@@ -2655,17 +2656,42 @@ def action_sticker(inp):
                                       "filenameHint": f"clip-{name}",
                                       "source": "clipart"}}}
 
-def _sheet_stride(media, cells):
+def _sheet_file(sh, cell_i):
+    """Which sheet file frame `cell_i` of this action was drawn on.
+
+    `media` is a list once an action can span several sheets; a declaration saved
+    before that is a bare string and stays readable.
+    """
+    m = sh.get("media")
+    if isinstance(m, str):
+        return m
+    return m[(sh.get("cellOf") or [0] * len(m))[cell_i] if sh.get("cellOf") else 0]
+
+
+def _sheet_masks(medias, cells, cell_of):
+    """One boolean mask per frame, however many files the frames are spread over.
+
+    An action's frames do not have to come from one picture. A dozen full-height
+    figures do not fit on one generated sheet — measured 2026-08-30, a 4x3 walk
+    sheet came back with its bottom row's feet cut off at the canvas edge — so a
+    long cycle arrives as several sheets and is read here as one sequence.
+    """
+    loaded, out = {}, []
+    for idx, (x0, y0, x1, y1) in zip(cell_of, cells):
+        if idx not in loaded:
+            loaded[idx] = np.asarray(load_sheet(medias[idx]))[:, :, 3] > 16
+        out.append(loaded[idx][y0:y1 + 1, x0:x1 + 1])
+    return out
+
+
+def _sheet_stride(masks):
     """Widest foot separation across the frames, as a fraction of frame height.
 
     Measured in the bottom tenth of each cell — that band is feet. Returns 0 when
     the action never separates them (a bird, a bow), which means "does not walk"."""
-    im = load_sheet(media)
-    a = np.asarray(im)[:, :, 3] > 16
-    tall = max(c[3] - c[1] + 1 for c in cells) or 1
+    tall = max(m.shape[0] for m in masks) or 1
     widest = 0
-    for (x0, y0, x1, y1) in cells:
-        sub = a[y0:y1 + 1, x0:x1 + 1]
+    for sub in masks:
         foot = sub[int(sub.shape[0] * 0.90):]
         on = foot.any(0)
         idx = np.where(on)[0]
@@ -2685,7 +2711,7 @@ def _sheet_stride(media, cells):
     return round(widest / float(tall), 4)
 
 
-def _sheet_body_y(media, cells, work=128, rounds=15):
+def _sheet_body_y(masks, work=128, rounds=15):
     """Where the part that does NOT move sits in each cell, as a fraction of height.
 
     Overlay every frame of an action and some of the drawing lands on itself — that
@@ -2708,9 +2734,7 @@ def _sheet_body_y(media, cells, work=128, rounds=15):
     frame in turn takes the offset that puts the most of itself onto the region the
     others all agree on. It settles in a few rounds.
     """
-    im = load_sheet(media)
-    a = np.asarray(im)[:, :, 3] > 16
-    subs = [a[y0:y1 + 1, x0:x1 + 1] for (x0, y0, x1, y1) in cells]
+    subs = masks
     n = len(subs)
     if n < 2:
         return [0.5] * n
@@ -2796,10 +2820,18 @@ def validate_sheets(sheets):
             raise SceneError("sheets: action name must be 1..24 chars")
         if not isinstance(spec, dict):
             raise SceneError(f"sheets[{a}] must be an object with a media path")
+        # One action, one or several sheets. Twelve full-height figures do not fit on
+        # one generated canvas — measured 2026-08-30, a 4x3 walk sheet came back with
+        # the bottom row's feet cut off at the edge — so a long cycle is asked for in
+        # parts and listed here in order. Frames are numbered straight through them.
         media = spec.get("media")
-        if not isinstance(media, str) or not media.strip():
-            raise SceneError(f"sheets[{a}].media must be a media-store path")
-        media = media.strip()
+        medias = media if isinstance(media, list) else [media]
+        if not (1 <= len(medias) <= 8) or not all(
+                isinstance(m, str) and m.strip() for m in medias):
+            raise SceneError(
+                f"sheets[{a}].media must be a media-store path, or a list of 1..8 of "
+                "them for an action drawn across several sheets")
+        medias = [m.strip() for m in medias]
         anchor = str(spec.get("anchor") or "feet")
         if anchor not in ("feet", "body"):
             raise SceneError(
@@ -2807,15 +2839,27 @@ def validate_sheets(sheets):
                 "'body' (airborne — flying, jumping)")
         frames = spec.get("frames")
         cells = spec.get("cells")
+        norm, cell_of = [], []
         if cells is None:
-            cells = find_sheet_cells(media)
-        if not (isinstance(cells, list) and 1 <= len(cells) <= 32):
-            raise SceneError(f"sheets[{a}].cells must be 1..32 [x0,y0,x1,y1] boxes")
-        norm = []
-        for j, c in enumerate(cells):
-            if not (isinstance(c, (list, tuple)) and len(c) == 4):
-                raise SceneError(f"sheets[{a}].cells[{j}] must be [x0,y0,x1,y1]")
-            norm.append([int(v) for v in c])
+            for mi, m in enumerate(medias):
+                found = find_sheet_cells(m)
+                norm.extend(found)
+                cell_of.extend([mi] * len(found))
+        else:
+            if len(medias) > 1:
+                raise SceneError(
+                    f"sheets[{a}].cells is for one sheet — across several sheets the "
+                    "boxes are read off each of them")
+            if not (isinstance(cells, list) and 1 <= len(cells) <= 32):
+                raise SceneError(f"sheets[{a}].cells must be 1..32 [x0,y0,x1,y1] boxes")
+            for j, c in enumerate(cells):
+                if not (isinstance(c, (list, tuple)) and len(c) == 4):
+                    raise SceneError(f"sheets[{a}].cells[{j}] must be [x0,y0,x1,y1]")
+                norm.append([int(v) for v in c])
+                cell_of.append(0)
+        if not 1 <= len(norm) <= 48:
+            raise SceneError(
+                f"sheets[{a}] came to {len(norm)} frames — 1 to 48 across all its sheets")
         # `frames` = the order the drawings play in, counting them off the sheet from
         # 1. A generated sheet is not always a cycle: the swallow's six frames were
         # one wingbeat in three drawings plus three near-duplicates, and played in
@@ -2836,11 +2880,14 @@ def validate_sheets(sheets):
                     "order they are drawn, left to right then top to bottom")
             used = sorted({v - 1 for v in seq})
             norm = [norm[i] for i in used]
+            cell_of = [cell_of[i] for i in used]
             order = [used.index(v - 1) for v in seq]
         else:
             order = None
+        masks = _sheet_masks(medias, norm, cell_of)
         out[a] = {
-            "media": media,
+            "media": medias,
+            "cellOf": cell_of,
             "cells": norm,
             "order": order,
             "fps": _num(spec.get("fps", 12), f"sheets[{a}].fps", 1, 30),
@@ -2852,12 +2899,12 @@ def validate_sheets(sheets):
             # strides of ground). The stride is in the artwork, so read it there.
             # An airborne action has no stride by definition: the feet separating on a
             # flying bird is the tail and a wingtip, not a step.
-            "stride": _sheet_stride(media, norm) if anchor == "feet" else 0.0,
+            "stride": _sheet_stride(masks) if anchor == "feet" else 0.0,
             "anchor": anchor,
             # Where the body sits in each cell, for the 'body' anchor. Read off the
             # drawing at save time like the cells and the stride, so a scene never
             # carries frame geometry.
-            "bodyY": _sheet_body_y(media, norm) if anchor == "body" else None,
+            "bodyY": _sheet_body_y(masks) if anchor == "body" else None,
         }
     return out
 
@@ -2912,7 +2959,7 @@ def action_save_asset(inp):
         # The browsable face of a drawn character is its first frame.
         first = next(iter(sheets.values()))
         x0, y0, x1, y1 = first["cells"][0]
-        thumb = load_sheet(first["media"]).crop((x0, y0, x1 + 1, y1 + 1))
+        thumb = load_sheet(_sheet_file(first, 0)).crop((x0, y0, x1 + 1, y1 + 1))
         thumb.thumbnail((480, 480), Image.LANCZOS)
     else:
         thumb = _custom_sticker_png({"parts": parts, "bones": bones or None}, 480, {})
@@ -3157,7 +3204,7 @@ def action_assets(_inp):
                   "the previous state and holds. This is THE way to zoom into a "
                   "region while its line is spoken (never swap whole background "
                   "images per segment). zoom:1 returns to full frame",
-        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, frames?, anchor?}}} — a character "
+        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, frames?, anchor?}}} — media is one sheet or a LIST of them, since a long cycle does not fit on one canvas: 6 frames a sheet at 1536x1024 leaves each drawing room, 12 comes back with the bottom row cut off at the edge. Frames are numbered straight through the list. A character "
                       "whose actions are DRAWN frames, not a posed rig. " + 'Ask image_gen for: one action split into N distinct frames with the wing/limb position named for EACH frame and no two alike (asking for "8 frames" alone comes back as three drawings and five near-copies); the body held still so only the moving part moves; and a TRANSPARENT background, adding that if transparency is not possible it should use a flat solid backdrop of one stated colour (e.g. magenta #FF00FF) that appears NOWHERE on the character, since that colour is keyed out on import and any of it in the drawing is a hole. Stating the colour is followed closely — measured, #FF00FF came back as rgb(247,5,245) over 99.8% of the ground; saying only "transparent" came back three different ways (real alpha, green, a painted checkerboard).' + " "
                       "save it under an action name, and the frame boxes are found from the alpha "
                       "(a flat single-colour backdrop is keyed out on import, so a chroma-key "
@@ -3806,7 +3853,7 @@ def action_selftest():
             ad.polygon([(cx - 20, near), (cx - 5, tipy), (cx + 14, near + 5)], fill=ink)
         fly.save(ap)
         cs = find_sheet_cells(ap)
-        by = _sheet_body_y(ap, cs)
+        by = _sheet_body_y(_sheet_masks([ap], cs, [0] * len(cs)))
         hs = [c[3] - c[1] + 1 for c in cs]
 
         def nose_y(j, pin):
@@ -3948,6 +3995,37 @@ def action_selftest():
     ck("a sheet can declare which frames play and in what order",
        "4 played from 3 cells as [0,1,2,1], a frame past the end refused",
        or_note, or_ok)
+
+    # One action across several sheets. A dozen full-height figures do not fit on one
+    # generated canvas, so a long cycle arrives in parts and has to read as one.
+    ms_note, ms_ok = "", False
+    try:
+        paths = []
+        for part in range(2):
+            mp = os.path.join(OUT_DIR, f"selftest-multi{part}.png")
+            sheet = Image.new("RGBA", (400, 160), (0, 0, 0, 0))
+            md = ImageDraw.Draw(sheet)
+            for k, cx in enumerate((100, 300)):
+                md.ellipse([cx - 40, 30 + (part * 2 + k) * 12, cx + 40, 130],
+                           fill=(60, 40, 90, 255))
+            sheet.save(mp)
+            paths.append(mp)
+        sv4 = action_save_asset({"action": "save_asset", "name": "selftest-multi",
+                                 "sheets": {"go": {"media": paths, "fps": 4}}})
+        decl = load_custom_asset("selftest-multi")["sheets"]["go"]
+        # The frames must come off BOTH files, in the order the files were listed.
+        two_files = _sheet_file(decl, 0) != _sheet_file(decl, 3)
+        ms_note = (f"frames={((sv4.get('data') or {}).get('sheets') or {}).get('go', {}).get('frames')} "
+                   f"cellOf={decl.get('cellOf')} spans-both={two_files}")
+        ms_ok = (len(decl["cells"]) == 4 and decl.get("cellOf") == [0, 0, 1, 1]
+                 and two_files)
+        for mp in paths:
+            os.remove(mp)
+        action_delete_asset({"name": "selftest-multi"})
+    except Exception as e:  # noqa: BLE001
+        ms_note = f"{type(e).__name__}: {e}"
+    ck("one action can be drawn across several sheets and read as one sequence",
+       "4 frames, cellOf [0,0,1,1], drawn from both files", ms_note, ms_ok)
 
     m3_note, m3_ok = "", False
     try:
