@@ -2096,33 +2096,33 @@ class Scene:
         self._frame_img.paste(piece, (px, py), alpha)
 
     def _foot_shadow(self, piece, px, feet_y, w, h, a):
-        """A soft ellipse under the feet, as wide as the feet actually are.
+        """The shadow of whatever is touching the ground, squashed flat under it.
 
-        Measured off the frame being drawn: the bottom band of the silhouette is the
-        feet, so the shadow spreads when the legs part and gathers when they pass.
-        A fixed oval reads as a sticker following the character.
+        Not an oval: an oval is a pool the character floats over, because the dark is
+        deepest in the middle of the pool and the feet are at its edges. The shape
+        here is the bottom of the silhouette itself, flattened — so the dark is under
+        each foot, it parts as the legs part, and it is exactly as wide as whatever is
+        standing there. Nothing about it is a walker's anatomy; a chair or a cart
+        would cast its own outline the same way.
         """
-        band = np.asarray(piece)[int(h * 0.93):, :, 3] > 16
-        if not band.any():
+        alpha = piece.getchannel("A")
+        band_h = max(2, int(h * 0.10))
+        band = alpha.crop((0, h - band_h, w, h))
+        if not band.getbbox():
             return
-        xs = np.where(band.any(0))[0]
-        span = int(xs.max() - xs.min()) + 1
-        sw = max(8, int(span * 1.5))
-        shh = max(4, int(sw * 0.26))
-        pad = shh * 2
-        sh_img = Image.new("L", (sw + pad * 2, shh + pad * 2), 0)
-        ImageDraw.Draw(sh_img).ellipse([pad, pad, pad + sw, pad + shh],
-                                       fill=int(165 * max(0.0, min(1.0, a))))
-        # Blur well under the ellipse's own height. Softening by more than half of it
-        # spreads the shadow into nothing: measured 2026-08-30 at radius 0.55h, the
-        # ground darkened by 18 of 255 at its deepest and the shadow was invisible on
-        # screen while every check still called it present.
-        sh_img = sh_img.filter(ImageFilter.GaussianBlur(max(1.0, shh * 0.3)))
-        cx = px + int(xs.min()) + span // 2
-        # Biased down: the character is pasted over this, so a shadow centred on the
-        # feet line only shows the half that is not behind them.
-        top = feet_y - sh_img.height // 2 + int(shh * 0.35)
-        self._frame_img.paste((22, 20, 18), (cx - sh_img.width // 2, top), sh_img)
+        shh = max(4, int(h * 0.045))
+        pad = shh * 3
+        flat = band.resize((max(4, int(w * 1.06)), shh), Image.BILINEAR)
+        sh_img = Image.new("L", (flat.width + pad * 2, shh + pad * 2), 0)
+        sh_img.paste(flat.point(lambda v: int(v * 0.62 * max(0.0, min(1.0, a)))),
+                     (pad, pad))
+        sh_img = sh_img.filter(ImageFilter.GaussianBlur(max(1.5, shh * 0.5)))
+        cx = px + w // 2
+        # Straddling the ground line: the near half is behind the feet, which is what
+        # makes it read as contact instead of as something lying further away.
+        self._frame_img.paste((22, 20, 18),
+                              (cx - sh_img.width // 2,
+                               feet_y - sh_img.height // 2), sh_img)
 
     def _sheet_image(self, path):
         cache = getattr(self, "_sheet_cache", None)
