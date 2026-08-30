@@ -2077,6 +2077,15 @@ class Scene:
             cycles = (t - t0) * sh["fps"] / float(len(cells))
             x = x + per_cycle * cycles * (1.0 if travel > 0 else -1.0)
         px = int(x - w / 2)
+        # A contact shadow is what sets a character ON the ground rather than in front
+        # of it — the same reason it does more for a photoreal render than any amount
+        # of reflection. It is derived, not declared twice: `anchor` already says
+        # whether this action stands on anything, so a flying sheet casts none.
+        # Its width comes from the drawing's own feet, so it spreads as the legs part.
+        if sh.get("anchor") != "body" and L.get("shadow", True) is not False:
+            self._foot_shadow(piece, px, int(y), w, h,
+                              a * float(L.get("shadow", 1.0) if isinstance(
+                                  L.get("shadow"), (int, float)) else 1.0))
         if sh.get("anchor") == "body" and sh.get("bodyY"):
             # `at` is the body. Aligning bottoms would swing an airborne character by
             # the difference in frame heights, which for a bird is the wingspan.
@@ -2085,6 +2094,29 @@ class Scene:
             py = int(y - h)                 # `at` is the feet
         # The frame buffer is RGB, so composite the way the image layer does.
         self._frame_img.paste(piece, (px, py), alpha)
+
+    def _foot_shadow(self, piece, px, feet_y, w, h, a):
+        """A soft ellipse under the feet, as wide as the feet actually are.
+
+        Measured off the frame being drawn: the bottom band of the silhouette is the
+        feet, so the shadow spreads when the legs part and gathers when they pass.
+        A fixed oval reads as a sticker following the character.
+        """
+        band = np.asarray(piece)[int(h * 0.93):, :, 3] > 16
+        if not band.any():
+            return
+        xs = np.where(band.any(0))[0]
+        span = int(xs.max() - xs.min()) + 1
+        sw = max(6, int(span * 1.35))
+        shh = max(3, int(sw * 0.22))
+        pad = shh * 2
+        sh_img = Image.new("L", (sw + pad * 2, shh + pad * 2), 0)
+        ImageDraw.Draw(sh_img).ellipse([pad, pad, pad + sw, pad + shh],
+                                       fill=int(72 * max(0.0, min(1.0, a))))
+        sh_img = sh_img.filter(ImageFilter.GaussianBlur(shh * 0.55))
+        cx = px + int(xs.min()) + span // 2
+        self._frame_img.paste((26, 24, 22), (cx - sh_img.width // 2,
+                                             feet_y - sh_img.height // 2), sh_img)
 
     def _sheet_image(self, path):
         cache = getattr(self, "_sheet_cache", None)
@@ -2909,6 +2941,13 @@ def action_assets(_inp):
                     "saved ones come from save_asset; both are the same grammar and "
                     "both animate (enter, acts, roles)",
             "fields": {"at": "[x,y] of the feet (default [0.5,0.9])",
+                       "shadow": "drawn-sheet characters standing on the ground get a "
+                                 "soft contact shadow under the feet, spreading as the "
+                                 "legs part. It is what sets a character ON the ground "
+                                 "instead of in front of it. shadow:false turns it off "
+                                 "(a floor that is not there, a silhouette scene); a "
+                                 "number 0..1 dims it. An anchor:'body' action is "
+                                 "airborne and casts none",
                        "scale": "1.0 default", "enter": "walk | peek | pop | none",
                        "lipsync": "true = talk acts follow audio.voice envelope",
                        "acts": "[{at, do:'wave'|'talk'|'jump'|'point'|'pose'|'anim'|'move'|'express', "
@@ -3686,6 +3725,51 @@ def action_selftest():
         an_note = f"{type(e).__name__}: {e}"
     ck("anchor decides what `at` pins, and an unknown one is refused",
        "feet-spread > 30px, bad-anchor-refused=True", an_note, an_ok)
+
+    # The contact shadow: present under a grounded character, absent under an
+    # airborne one, and wider when the legs are apart than when they pass.
+    sd_note, sd_ok = "", False
+    try:
+        sdp = os.path.join(OUT_DIR, "selftest-shadow.png")
+        fig = Image.new("RGBA", (440, 240), (0, 0, 0, 0))
+        fd = ImageDraw.Draw(fig)
+        for cx, spread_legs in ((100, False), (330, True)):
+            fd.ellipse([cx - 30, 40, cx + 30, 150], fill=(40, 60, 120, 255))
+            off = 42 if spread_legs else 8
+            for s_ in (-off, off):
+                fd.polygon([(cx - 6, 140), (cx + 6, 140), (cx + s_ + 10, 225),
+                            (cx + s_ - 10, 225)], fill=(40, 60, 120, 255))
+        fig.save(sdp)
+        sv2 = action_save_asset({"action": "save_asset", "name": "selftest-shadow",
+                                 "sheets": {"walk": {"media": sdp, "fps": 2}}})
+        if not sv2.get("success"):
+            raise SceneError(str(sv2.get("error")))
+
+        def ground_px(layer, tq):
+            scn = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                         "background": {"kind": "gradient", "top": [255, 255, 255],
+                                        "bottom": [255, 255, 255], "vignette": 0},
+                         "layers": [layer]})
+            fr = scn.draw_frame(tq)
+            # the row just under the feet, where only a shadow can darken it
+            row = fr[int(0.905 * fr.shape[0]), :, :].astype(int).sum(1)
+            # Darker than the background of that same row, whatever it is.
+            return int((row < int(np.median(row)) - 12).sum())
+
+        base = {"kind": "sprite", "name": "selftest-shadow", "from": 0, "to": 2,
+                "at": [0.5, 0.9], "plays": [{"action": "walk", "at": 0}]}
+        # Past the 0.4s fade-in, so the sprite is at full alpha in both samples.
+        together = ground_px(base, 1.1)
+        apart = ground_px(base, 0.6)
+        off_px = ground_px({**base, "shadow": False}, 0.6)
+        sd_note = f"together={together} apart={apart} shadow-off={off_px}"
+        sd_ok = together > 0 and apart > together and off_px == 0
+        os.remove(sdp)
+        action_delete_asset({"name": "selftest-shadow"})
+    except Exception as e:  # noqa: BLE001
+        sd_note = f"{type(e).__name__}: {e}"
+    ck("a grounded character gets a contact shadow that spreads with the legs",
+       "apart > together > 0, off = 0", sd_note, sd_ok)
 
     m3_note, m3_ok = "", False
     try:
