@@ -2684,34 +2684,89 @@ def _sheet_stride(media, cells):
     return round(widest / float(tall), 4)
 
 
-def _sheet_body_y(media, cells):
-    """Where the body's own line sits inside each cell, as a fraction of its height.
+def _sheet_body_y(media, cells, work=128, rounds=15):
+    """Where the part that does NOT move sits in each cell, as a fraction of height.
 
-    Taken as the midpoint between the two ends of the silhouette — for a side-view
-    creature, nose and tail. Those are on the body and stay on it; what swings is
-    everything between them.
+    Overlay every frame of an action and some of the drawing lands on itself — that
+    is the character, and the rest is the motion. So the anchor is not a body part
+    anybody has to name: line the frames up so the region common to ALL of them is
+    as large as it can be, and pin that.
 
-    An earlier version averaged the middle fifths of the columns, on the theory that
-    the outer ones are the parts that move. That is true of a person, whose arms
-    swing at the sides, and false of a bird, whose wing is attached mid-body and
-    sweeps straight through those columns. Measured 2026-08-30 on the six-frame
-    swallow, and the user saw it before the numbers did: middle-fifths held the beak
-    to within 135px and the tail to 150 — WORSE than aligning the bottoms — while the
-    nose-to-tail midpoint holds both to 8px.
+    Two named guesses came before this and both were wrong outside the case they
+    were invented for. The centroid of the middle fifths tracked a bird's wing,
+    which is attached mid-body and sweeps through exactly those columns. The
+    midpoint between the silhouette's two ends is nose and tail on a swallow and a
+    swinging hand and foot on a walking man. Measured across three real sheets, as
+    the share of the average frame that every frame shares:
+
+        swallow 6   feet .314   middle-fifths .168   nose-tail .410   this .495
+        walker  8   feet .476   middle-fifths .491   nose-tail .315   this .503
+        walker  4   feet .575   middle-fifths .570   nose-tail .427   this .590
+
+    Coordinate descent, at a reduced size because the answer is a fraction: each
+    frame in turn takes the offset that puts the most of itself onto the region the
+    others all agree on. It settles in a few rounds.
     """
     im = load_sheet(media)
     a = np.asarray(im)[:, :, 3] > 16
-    out = []
-    for (x0, y0, x1, y1) in cells:
-        sub = a[y0:y1 + 1, x0:x1 + 1]
-        h, w = sub.shape
-        edge = max(1, int(w * 0.03))
-        ends = []
-        for col in (sub[:, -edge:], sub[:, :edge]):
-            rows = np.where(col.any(1))[0]
-            ends.append(float(np.median(rows)) if len(rows) else h / 2.0)
-        out.append(round(float(np.mean(ends)) / max(1, h), 4))
-    return out
+    subs = [a[y0:y1 + 1, x0:x1 + 1] for (x0, y0, x1, y1) in cells]
+    n = len(subs)
+    if n < 2:
+        return [0.5] * n
+    tallest = max(s.shape[0] for s in subs)
+    sc = work / float(tallest)
+    small = []
+    for s in subs:
+        w = max(2, int(round(s.shape[1] * sc)))
+        h = max(2, int(round(s.shape[0] * sc)))
+        small.append(np.asarray(Image.fromarray((s * 255).astype(np.uint8))
+                                .resize((w, h), Image.BILINEAR)) > 96)
+    CW = max(s.shape[1] for s in small) + 4
+    CH = work * 3
+    xs = [(CW - s.shape[1]) // 2 for s in small]
+
+    def stack(offs):
+        st = np.zeros((n, CH, CW), bool)
+        for j, sm in enumerate(small):
+            h, w = sm.shape
+            st[j, offs[j]:offs[j] + h, xs[j]:xs[j] + w] = sm
+        return st
+
+    offs = [(CH - s.shape[0]) // 2 for s in small]
+    start = list(offs)
+    # Frames of one action do not leap: bound the search so a frame cannot slide a
+    # third of a body away and land its wing on someone else's back. Without this the
+    # two-frame case aligns the raised wing onto the lowered one and the anchor comes
+    # out past the end of the cell entirely (measured 2026-08-30).
+    reach = max(4, work // 3)
+    for _ in range(rounds):
+        st = stack(offs)
+        cnt = st.sum(0)
+        moved = False
+        for j, sm in enumerate(small):
+            # What every OTHER frame agrees on. Falling back to all-but-one keeps a
+            # single ragged frame from emptying the target.
+            agreed = (cnt - st[j]) >= (n - 1)
+            if agreed.sum() < 8:
+                agreed = (cnt - st[j]) >= max(1, n - 2)
+            h, w = sm.shape
+            lo = max(0, start[j] - reach)
+            hi = min(CH - h, start[j] + reach)
+            win = np.lib.stride_tricks.sliding_window_view(
+                agreed[:, xs[j]:xs[j] + w].astype(np.float32), (h, w))[:, 0][lo:hi + 1]
+            best = lo + int(np.argmax(np.einsum('dhw,hw->d', win, sm.astype(np.float32))))
+            if best != offs[j]:
+                offs[j] = best
+                moved = True
+        if not moved:
+            break
+    core = stack(offs).all(0)
+    if core.any():
+        ref = float(np.average(np.arange(CH), weights=core.sum(1)))
+    else:
+        ref = CH / 2.0
+    return [round(float(min(1.0, max(0.0, (ref - offs[j]) / max(1, small[j].shape[0])))), 4)
+            for j in range(n)]
 
 
 def validate_sheets(sheets):
@@ -3089,8 +3144,9 @@ def action_assets(_inp):
                       "bird or a rolling ball crosses the screen with a move act, which "
                       "works on drawn characters exactly as it does on rigs. anchor says what `at` "
                       "pins — 'feet' (default) lines up the bottoms, which is standing on the "
-                      "ground; 'body' pins the line from nose to tail and is what a flying "
-                      "or jumping action "
+                      "ground; 'body' pins whatever every frame of the action has in common "
+                      "(overlay them: the part that lands on itself is the character, "
+                      "the rest is the motion) and is what a flying or jumping action "
                       "needs, since a raised wing makes the frame box taller and aligning "
                       "bottoms would swing the character once per cycle. Playback fps is the "
                       "animation cadence, not the video's: 8 is anime's usual 3s, 12 is 2s. Sheets "
@@ -3704,21 +3760,19 @@ def action_selftest():
     an_note, an_ok = "", False
     try:
         ap = os.path.join(OUT_DIR, "selftest-anchor.png")
-        fly = Image.new("RGBA", (460, 300), (0, 0, 0, 0))
+        # Four frames of one wingbeat. The body, nose and tail hold exactly still and
+        # only the wing moves — attached mid-body, sweeping through the very columns a
+        # middle-fifths average would have called "the body". Four and not two: what
+        # every frame has in common is not a question two frames can answer.
+        fly = Image.new("RGBA", (900, 300), (0, 0, 0, 0))
         ad = ImageDraw.Draw(fly)
         ink = (30, 40, 80, 255)
-        for cx, up in ((110, True), (340, False)):
-            # The body, its nose and its tail sit at exactly the same height in both
-            # frames. Only the wing moves — raised in one, lowered in the other, and
-            # attached mid-body so it sweeps through the middle columns. That is the
-            # shape that made a middle-fifths average worse than no anchor at all.
+        for cx, tipy in ((110, 20), (330, 150), (550, 292), (770, 150)):
             ad.ellipse([cx - 40, 190, cx + 40, 235], fill=ink)
             ad.polygon([(cx + 38, 205), (cx + 85, 210), (cx + 38, 218)], fill=ink)
             ad.polygon([(cx - 38, 205), (cx - 88, 210), (cx - 38, 218)], fill=ink)
-            if up:
-                ad.polygon([(cx - 20, 200), (cx - 5, 20), (cx + 14, 205)], fill=ink)
-            else:
-                ad.polygon([(cx - 20, 225), (cx - 5, 292), (cx + 14, 230)], fill=ink)
+            near = 200 if tipy < 200 else 225
+            ad.polygon([(cx - 20, near), (cx - 5, tipy), (cx + 14, near + 5)], fill=ink)
         fly.save(ap)
         cs = find_sheet_cells(ap)
         by = _sheet_body_y(ap, cs)
@@ -3735,20 +3789,42 @@ def action_selftest():
 
         feet = [nose_y(j, "feet") for j in range(len(cs))]
         body = [nose_y(j, "body") for j in range(len(cs))]
+
+        def common_share(pin):
+            """Share of an average frame that EVERY frame shares, once pinned."""
+            masks, offs = [], []
+            src = np.asarray(load_sheet(ap))
+            for j, (x0, y0, x1, y1) in enumerate(cs):
+                m = src[y0:y1 + 1, x0:x1 + 1, 3] > 16
+                masks.append(m)
+                masks_h = m.shape[0]
+                offs.append(masks_h if pin == "feet" else masks_h * by[j])
+            H2 = int(max(m.shape[0] for m in masks) * 3)
+            W2 = max(m.shape[1] for m in masks) + 4
+            st = np.zeros((len(masks), H2, W2), bool)
+            for j, m in enumerate(masks):
+                h, w = m.shape
+                top = int(H2 // 2 - offs[j])
+                st[j, top:top + h, (W2 - w) // 2:(W2 - w) // 2 + w] = m
+            return st.all(0).sum() / max(1.0, st.sum(axis=(1, 2)).mean())
+
+        share_feet, share_body = common_share("feet"), common_share("body")
         an_note = (f"heights={hs} nose-on-feet={max(feet) - min(feet):.0f}px "
-                   f"nose-on-body={max(body) - min(body):.0f}px")
+                   f"nose-on-body={max(body) - min(body):.0f}px "
+                   f"common feet={share_feet:.2f} body={share_body:.2f}")
         try:
             validate_sheets({"x": {"media": ap, "anchor": "sideways"}})
             refused = False
         except SceneError:
             refused = True
-        an_ok = (max(feet) - min(feet)) > 30 and (max(body) - min(body)) < 6 and refused
+        an_ok = ((max(feet) - min(feet)) > 30 and (max(body) - min(body)) < 6
+                 and share_body > share_feet and refused)
         an_note += f" bad-anchor-refused={refused}"
         os.remove(ap)
     except Exception as e:  # noqa: BLE001
         an_note = f"{type(e).__name__}: {e}"
-    ck("the body anchor holds the nose still while the wing sweeps",
-       "nose moves > 30px on feet, < 6px on body, bad anchor refused", an_note, an_ok)
+    ck("the body anchor lands on what every frame has in common",
+       "nose still on body, and more of the drawing shared than on feet", an_note, an_ok)
 
     # The contact shadow: present under a grounded character, absent under an
     # airborne one, and wider when the legs are apart than when they pass.
