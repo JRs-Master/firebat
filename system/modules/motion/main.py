@@ -895,8 +895,22 @@ def _key_flat_background(im):
     if float((np.abs(ring - bg).max(1) <= _KEY_NEAR).mean()) < 0.90:
         return im
     dist = np.abs(rgb - bg).max(2)
-    alpha = np.clip((dist.astype(np.float32) - _KEY_NEAR) / float(_KEY_FAR - _KEY_NEAR),
-                    0.0, 1.0)
+    # Background is what the border reaches, not every pixel of that colour. Keying by
+    # colour alone eats the subject wherever the subject shares it: measured 2026-08-30
+    # on a swallow sheet drawn on a white checkerboard, the birds lost their white
+    # bellies. An enclosed area is inside the drawing however pale it is, so the key
+    # runs as a flood from the edge and stops at the outline.
+    near = dist <= _KEY_FAR
+    lab = _label_blobs(near)
+    edge_labels = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+    edge_labels = edge_labels[edge_labels != 0]
+    if not len(edge_labels):
+        return im
+    outside = np.isin(lab, edge_labels)
+    alpha = np.ones(dist.shape, np.float32)
+    alpha[outside] = np.clip(
+        (dist[outside].astype(np.float32) - _KEY_NEAR) / float(_KEY_FAR - _KEY_NEAR),
+        0.0, 1.0)
     kept = float((alpha > 0.5).mean())
     # Nothing keyed, or nearly everything keyed: the guess was wrong either way,
     # and a sheet emptied by a bad guess is worse than one we could not read.
@@ -908,7 +922,7 @@ def _key_flat_background(im):
     # of, at the edge pixels only, where the spill lives.
     k = int(np.argmax(bg))
     if int(bg[k]) - int(np.sort(bg)[-2]) > 60:
-        edge = alpha < 0.999
+        edge = outside & (alpha < 0.999)
         other = np.max(np.delete(out, k, axis=2), axis=2)
         ch = out[:, :, k]
         out[:, :, k] = np.where(edge, np.minimum(ch, other), ch)
@@ -3500,12 +3514,15 @@ def action_selftest():
     try:
         os.makedirs(OUT_DIR, exist_ok=True)
         kp = os.path.join(OUT_DIR, "selftest-chroma.png")
-        flat = Image.new("RGB", (400, 200), (0, 255, 0))
+        flat = Image.new("RGB", (400, 200), (250, 250, 250))
         kd = ImageDraw.Draw(flat)
-        kd.ellipse([30, 40, 130, 160], fill=(200, 90, 70))
-        kd.ellipse([250, 40, 350, 160], fill=(200, 90, 70))
+        for cx in (80, 300):
+            kd.ellipse([cx - 50, 40, cx + 50, 160], fill=(40, 50, 90))
+            # A white belly inside the figure: the backdrop's own colour, enclosed.
+            kd.ellipse([cx - 25, 95, cx + 25, 140], fill=(252, 252, 252))
         flat.save(kp)
         keyed_cells = find_sheet_cells(kp)
+        belly = np.asarray(load_sheet(kp))[118, 80, 3]
 
         # The negative canary: a photo-like sheet whose border is not one colour.
         pp = os.path.join(OUT_DIR, "selftest-nokey.png")
@@ -3518,14 +3535,15 @@ def action_selftest():
         untouched = np.asarray(_key_flat_background(
             Image.open(pp).convert("RGBA")))[:, :, 3].min() == 255
 
-        key_note = f"keyed cells={len(keyed_cells)} gradient-untouched={untouched}"
-        key_ok = len(keyed_cells) == 2 and untouched
+        key_note = (f"keyed cells={len(keyed_cells)} enclosed-belly-alpha={int(belly)} "
+                    f"gradient-untouched={untouched}")
+        key_ok = len(keyed_cells) == 2 and int(belly) > 240 and untouched
         os.remove(kp)
         os.remove(pp)
     except Exception as e:  # noqa: BLE001
         key_note = f"{type(e).__name__}: {e}"
-    ck("a flat backdrop is keyed to alpha, a real picture is left alone",
-       "keyed cells=2 gradient-untouched=True", key_note, key_ok)
+    ck("a flat backdrop is keyed to alpha, an enclosed area of the same colour is kept",
+       "keyed cells=2 enclosed-belly-alpha>240 gradient-untouched=True", key_note, key_ok)
 
     m3_note, m3_ok = "", False
     try:
