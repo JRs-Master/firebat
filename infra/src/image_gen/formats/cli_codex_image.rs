@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -70,6 +70,9 @@ const STALL_POLL: Duration = Duration::from_secs(5);
 
 /// One retry, because the wedge is per-connection: the next spawn gets a new socket.
 const MAX_ATTEMPTS: u32 = 2;
+
+/// How much of the child's stderr to keep for a failure message.
+const STDERR_TAIL_MAX: usize = 8192;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -271,22 +274,45 @@ impl ImageFormatHandler for CliCodexImageFormat {
         // One attempt, then one retry if it wedges. The wedge is per-connection — the socket is
         // left in CLOSE-WAIT with the answer unread — so the next spawn is not the same coin.
         let mut end = RunEnd::Stalled;
-        let mut stderr_pipe = None;
+        let mut stderr_task: Option<tokio::task::JoinHandle<String>> = None;
         for attempt in 1..=MAX_ATTEMPTS {
             let mut child = cmd.spawn().map_err(|e| format!("Codex CLI spawn 실패: {e}"))?;
             let stdout = child
                 .stdout
                 .take()
                 .ok_or_else(|| "Codex stdout pipe 없음".to_string())?;
-            stderr_pipe = Some(
-                child
-                    .stderr
-                    .take()
-                    .ok_or_else(|| "Codex stderr pipe 없음".to_string())?,
-            );
+            let stderr = child
+                .stderr
+                .take()
+                .ok_or_else(|| "Codex stderr pipe 없음".to_string())?;
 
             // Last sign of life, millis since the epoch — read by the stall watch below.
             let progress = Arc::new(AtomicU64::new(now_ms()));
+
+            // Drain stderr WHILE the child runs. This one line is the whole bug the stall watch
+            // below was built to survive: the service runs with RUST_LOG=info, codex writes ~95 KB
+            // of tracing there, and a pipe nobody reads holds 64 KB — so the child blocked in
+            // write(2) forever, about fourteen seconds in, having produced nothing. Measured
+            // 2026-08-31: six shell runs of the identical command all finished in 28~53s because
+            // their stderr went to a file, while the adapter wedged every time. The three sibling
+            // CLI adapters already drain stderr concurrently and say why; this one did not.
+            stderr_task = Some(tokio::spawn({
+                let progress = Arc::clone(&progress);
+                async move {
+                    let mut reader = BufReader::new(stderr).lines();
+                    let mut tail = String::new();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        progress.store(now_ms(), Ordering::Relaxed);
+                        tail.push_str(&line);
+                        tail.push('\n');
+                        if tail.len() > STDERR_TAIL_MAX {
+                            let cut = tail.len() - STDERR_TAIL_MAX;
+                            tail.drain(..cut);
+                        }
+                    }
+                    tail
+                }
+            }));
 
             // stdout 은 진단용으로만 흘려보낸다(파이프가 차서 자식이 멈추는 것도 방지).
             let drain = {
@@ -383,7 +409,10 @@ impl ImageFormatHandler for CliCodexImageFormat {
             }
             break;
         }
-        let stderr = stderr_pipe.ok_or_else(|| "Codex stderr pipe 없음".to_string())?;
+        let stderr_text = match stderr_task {
+            Some(handle) => handle.await.unwrap_or_default(),
+            None => String::new(),
+        };
         // Rotated tokens go home — the image home refreshing a copied token is exactly how the
         // two lineages burned each other (2026-08-06, "refresh token was already used" → every
         // image sat on a silent 401 to the 420s timeout). Success or timeout, push back.
@@ -402,7 +431,6 @@ impl ImageFormatHandler for CliCodexImageFormat {
         };
 
         if harvested.is_empty() {
-            let stderr_text = read_stderr(stderr).await;
             let tail = match &end {
                 RunEnd::TimedOut => {
                     format!("타임아웃 ({}초) — 산출 파일 없음", CODEX_TIMEOUT.as_secs())
@@ -482,13 +510,6 @@ impl ImageFormatHandler for CliCodexImageFormat {
             extras,
         })
     }
-}
-
-async fn read_stderr(stderr: tokio::process::ChildStderr) -> String {
-    let mut buf = Vec::new();
-    let mut reader = BufReader::new(stderr);
-    let _ = reader.read_to_end(&mut buf).await;
-    String::from_utf8_lossy(&buf).to_string()
 }
 
 fn truncate(s: &str, max: usize) -> String {
