@@ -22,6 +22,7 @@ import math
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -2579,7 +2580,14 @@ def action_assets(_inp):
                   "the previous state and holds. This is THE way to zoom into a "
                   "region while its line is spoken (never swap whole background "
                   "images per segment). zoom:1 returns to full frame",
-        "trim": "trim {media:'<mp4 in the media store or data/motion>', from?, to} "
+        "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
+              "in order, ffmpeg stream copy, no re-encode. This is how a video "
+              "longer than one scene is made: a 10s 1080p draft costs ~53s of "
+              "render, so five minutes is ~30min whichever way it is cut - as one "
+              "bake, fixing one line costs that again; as clips it costs the one "
+              "clip plus a join measured in seconds. Every part must share size, "
+              "fps and quality",
+    "trim": "trim {media:'<mp4 in the media store or data/motion>', from?, to} "
                 "or {media, segments:[{from,to}..up to 6]} — ffmpeg stream copy, "
                 "no re-render: splitting a finished video is seconds, not minutes. "
                 "Cuts snap to keyframes (edges may start up to ~1s early)",
@@ -2648,6 +2656,71 @@ def action_trim(inp):
                              "so a boundary can start up to ~1s before the "
                              "requested second",
                      "_mediaImport": imports if len(imports) > 1 else imports[0]}}
+
+def action_concat(inp):
+    """Join finished mp4s into one, with ffmpeg stream copy - no re-render.
+
+    The 90-second scene cap is not why a long story is built in clips. Measured
+    2026-08-30 on this server, a 10-second 1920x1080 draft frame loop costs 53
+    seconds of wall time, so five minutes is half an hour of rendering however it
+    is cut. Baked as one file, fixing one caption costs that half hour again;
+    baked as clips it costs the eight minutes of the clip that was wrong, plus
+    this, which is seconds.
+
+    Stream copy needs the parts to agree on codec, size and frame rate.
+    Everything `render` makes does, because it makes them with the same settings.
+    When they do not, ffmpeg's own complaint is reported rather than a guess.
+    """
+    import imageio_ffmpeg
+    media = inp.get("media")
+    if not isinstance(media, list) or not 2 <= len(media) <= 12:
+        return {"success": False,
+                "error": "concat needs {media:[<mp4>, <mp4>, ...]} - 2 to 12 clips "
+                         "in the order they should play"}
+    paths = []
+    for i, m in enumerate(media):
+        try:
+            paths.append(media_path(m))
+        except SceneError as e:
+            return {"success": False, "error": f"media[{i}]: {e}"}
+    ff = imageio_ffmpeg.get_ffmpeg_exe()
+    os.makedirs(OUT_DIR, exist_ok=True)
+    tag = hashlib.sha1(":".join(paths).encode()).hexdigest()[:10]
+    # Each part is linked into a scratch directory under a plain name before the
+    # list file is written. A media name may carry a space or a quote, and the
+    # demuxer would take a bare one as the end of the path and silently join the
+    # wrong set - linking removes the question instead of escaping around it.
+    work = os.path.join(OUT_DIR, "concat-" + tag)
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work, exist_ok=True)
+    listing = os.path.join(work, "parts.txt")
+    with open(listing, "w", encoding="utf-8") as fh:
+        for i, path in enumerate(paths):
+            link = os.path.join(work, "p%02d.mp4" % i)
+            try:
+                os.symlink(os.path.abspath(path), link)
+            except OSError:
+                shutil.copyfile(path, link)
+            fh.write("file " + chr(39) + os.path.basename(link) + chr(39) + chr(10))
+    out = os.path.join(OUT_DIR, f"concat-{tag}.mp4")
+    r = subprocess.run(
+        [ff, "-y", "-f", "concat", "-safe", "0", "-i", listing,
+         "-c", "copy", "-movflags", "+faststart", out],
+        capture_output=True, timeout=300)
+    shutil.rmtree(work, ignore_errors=True)
+    if r.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) < 1000:
+        tail = r.stderr.decode("utf-8", "replace")[-400:]
+        return {"success": False,
+                "error": f"concat failed: {tail} - stream copy needs every clip at "
+                         "the same size, fps and codec; render the parts with the "
+                         "same size/fps/quality and join again"}
+    return {"success": True,
+            "data": {"parts": len(paths), "bytes": os.path.getsize(out),
+                     "note": "stream copy - no re-encode, so the joined file is "
+                             "exactly the quality of its parts",
+                     "_mediaImport": {"path": _out(out), "contentType": "video/mp4",
+                                      "filenameHint": f"motion-concat-{tag}"}}}
+
 
 def action_model_info(inp):
     ref = str(inp.get("media") or "robot")
@@ -3146,6 +3219,8 @@ def main():
             out = action_model_info(inp)
         elif action == "trim":
             out = action_trim(inp)
+        elif action == "concat":
+            out = action_concat(inp)
         elif action == "job":
             out = action_job(inp)
         elif action == "save_asset":
@@ -3158,7 +3233,7 @@ def main():
             out = {"success": False,
                    "error": f"unknown action {action!r} — one of: render, sticker, "
                             "assets, save_asset, delete_asset, duration, job, "
-                            "model_info, trim, selftest"}
+                            "model_info, trim, concat, selftest"}
     except SceneError as e:
         out = {"success": False,
                "error": f"{e} — call {{\"action\": \"assets\"}} for the scene grammar"}
