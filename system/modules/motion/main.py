@@ -2850,7 +2850,9 @@ def validate_sheets(sheets):
             # one speed and the legs at another, and the eye reads it instantly as a
             # race walk (measured 2026-08-30 — twelve steps taken while covering six
             # strides of ground). The stride is in the artwork, so read it there.
-            "stride": _sheet_stride(media, norm),
+            # An airborne action has no stride by definition: the feet separating on a
+            # flying bird is the tail and a wingtip, not a step.
+            "stride": _sheet_stride(media, norm) if anchor == "feet" else 0.0,
             "anchor": anchor,
             # Where the body sits in each cell, for the 'body' anchor. Read off the
             # drawing at save time like the cells and the stride, so a scene never
@@ -3156,9 +3158,7 @@ def action_assets(_inp):
                   "region while its line is spoken (never swap whole background "
                   "images per segment). zoom:1 returns to full frame",
         "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, frames?, anchor?}}} — a character "
-                      "whose actions are DRAWN frames, not a posed rig. Ask the image generator "
-                      "for an animation sheet (\"6-frame flying cycle, 3x2, clear space between "
-                      "frames, transparent background, small even change between neighbours\"), "
+                      "whose actions are DRAWN frames, not a posed rig. " + 'Ask image_gen for: one action split into N distinct frames with the wing/limb position named for EACH frame and no two alike (asking for "8 frames" alone comes back as three drawings and five near-copies); the body held still so only the moving part moves; and a TRANSPARENT background, adding that if transparency is not possible it should use a flat solid backdrop of one stated colour (e.g. magenta #FF00FF) that appears NOWHERE on the character, since that colour is keyed out on import and any of it in the drawing is a hole. Stating the colour is followed closely — measured, #FF00FF came back as rgb(247,5,245) over 99.8% of the ground; saying only "transparent" came back three different ways (real alpha, green, a painted checkerboard).' + " "
                       "save it under an action name, and the frame boxes are found from the alpha "
                       "(a flat single-colour backdrop is keyed out on import, so a chroma-key "
                       "or checkerboard sheet works too). What comes back is often not a cycle "
