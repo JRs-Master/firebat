@@ -1283,6 +1283,29 @@ impl MediaManager {
             Some(_) => self.resolve_reference_image(input.reference_image.as_ref()).await,
             None => None,
         };
+        // A reference that would not resolve is not the same thing as no reference. Every layer
+        // below here is happy to draw without one, so the caller gets a perfectly good picture of
+        // the wrong thing and nothing in the stack says a word. Measured 2026-08-31: a
+        // referenceImage.url naming a file with no media record generated a fresh character, and
+        // the only complaint anywhere came from the model itself, inside its own transcript --
+        // "the reference image isn't attached in the available conversation".
+        if image_gen.is_some() && input.reference_image.is_some() && reference_image.is_none() {
+            let asked = input
+                .reference_image
+                .as_ref()
+                .map(|r| match (&r.slug, &r.url, &r.base64) {
+                    (Some(s), _, _) => format!("slug={s}"),
+                    (_, Some(u), _) => format!("url={u}"),
+                    (_, _, Some(_)) => "base64".to_string(),
+                    _ => "(비어 있음)".to_string(),
+                })
+                .unwrap_or_default();
+            let msg = format!(
+                "referenceImage 를 못 읽었습니다 ({asked}) — 참조 없이 생성하면 다른 그림이                  나오므로 중단합니다. slug 는 search_media 결과의 것이어야 하고, url 은                  미디어 저장소에 레코드가 있는 파일이어야 합니다."
+            );
+            self.log_error(&format!("[MediaManager] {msg}"));
+            return Err(msg.into());
+        }
 
         // 2) image_gen.generate — preset 이 있으면 그 바이너리를 그대로 쓴다(편입 경로).
         let gen_opts = ImageGenOpts {
