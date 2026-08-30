@@ -26,10 +26,17 @@ use crate::image_gen::format_handler::{ImageFormatHandler, ImageFormatHandlerCon
 use crate::llm::formats::cli_codex::{copy_auth_json, extract_image_prompt, harvest_generated_images};
 use firebat_core::ports::{ImageGenCallOpts, ImageGenOpts, ImageGenResult, InfraResult};
 
-/// 1장 생성 기준 여유 — 실측 단일 이미지 60~90초. 옛 300초는 프롬프트에 "4장" 이 들어오면
-/// (모델이 순차로 4번 호출) 그대로 벽에 부딪혔다. 아래에서 1장으로 고정하므로 이 값은 재시도·
-/// 추론 지연까지 덮는 여유분.
-const CODEX_TIMEOUT: Duration = Duration::from_secs(420);
+/// How long to wait for one image. Not a provider limit — ours.
+///
+/// A plain single image lands in 60~90s, which is what 420 was sized for. A harder ask does not:
+/// measured 2026-08-30, an eight-frame animation sheet and a reference-guided sheet both finished
+/// AFTER we gave up, and the finished PNGs were still sitting in `generated_images` when the user
+/// asked whether the file had actually arrived. We had reported failure and thrown the work away.
+///
+/// Waiting longer costs nothing here. The caller is never blocked — `start_generate` hands back a
+/// placeholder slug immediately and this runs in the background — so the only thing a short timeout
+/// buys is discarding results that were about to exist.
+const CODEX_TIMEOUT: Duration = Duration::from_secs(1500);
 
 /// 산출 파일 폴링 주기 / 크기 안정 확인 간격(쓰는 중 truncated read 방지).
 const HARVEST_POLL: Duration = Duration::from_millis(1000);
