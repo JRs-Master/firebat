@@ -1542,7 +1542,7 @@ pub struct ImageGenOpts {
     /// 참조 이미지 (image-to-image). MediaManager 가 slug/url/base64 → binary 로 resolve 후 주입.
     /// - OpenAI: `/v1/images/edits` 엔드포인트 + multipart
     /// - Gemini: `contents.parts` 에 inline_data part 추가
-    /// - Codex CLI: 미지원 (description 에 명시)
+    /// - Codex CLI: `--image <path>` (임시 파일로 떨궈 전달)
     pub reference_image: Option<ImageReferenceImage>,
 }
 

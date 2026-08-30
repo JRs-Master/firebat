@@ -38,6 +38,14 @@ use firebat_core::ports::{ImageGenCallOpts, ImageGenOpts, ImageGenResult, InfraR
 /// buys is discarding results that were about to exist.
 const CODEX_TIMEOUT: Duration = Duration::from_secs(1500);
 
+/// Deletes the reference image we handed to the CLI once the run is over.
+struct TempFile(std::path::PathBuf);
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 /// 산출 파일 폴링 주기 / 크기 안정 확인 간격(쓰는 중 truncated read 방지).
 const HARVEST_POLL: Duration = Duration::from_millis(1000);
 const HARVEST_SETTLE: Duration = Duration::from_millis(700);
@@ -141,17 +149,46 @@ impl ImageFormatHandler for CliCodexImageFormat {
         // 플래그 = `--json --skip-git-repo-check` 만 (LLM 경로 `cli_codex.rs` 와 동일 base_flags).
         // 옛 `--output-format stream-json` 은 신버전 codex exec 에서 제거돼 exit 2 로 죽는다
         // (2026-07-23 실측). spawn 지점이 둘이면 둘 다 갱신할 것.
+        // Reference image (image-to-image). The CLI takes `--image <path>` and the chat adapter
+        // beside this one has been passing attachments that way all along — this handler simply
+        // never wired it, and a comment on the port said "Codex CLI: 미지원", which reads as a
+        // provider limit rather than a missing edge. Four reference-guided runs were spent on that
+        // sentence before anyone opened the file it was describing (2026-08-30).
+        let mut ref_tmp: Option<std::path::PathBuf> = None;
+        if let Some(r) = &opts.reference_image {
+            let ext = match r.content_type.as_str() {
+                "image/jpeg" | "image/jpg" => "jpg",
+                "image/webp" => "webp",
+                _ => "png",
+            };
+            let path = std::env::temp_dir().join(format!(
+                "firebat-imgref-{}.{ext}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            std::fs::write(&path, &r.binary)
+                .map_err(|e| format!("참조 이미지 임시 저장 실패 ({}): {e}", path.display()))?;
+            ref_tmp = Some(path);
+        }
+
         let mut cmd = Command::new("codex");
         cmd.arg("exec")
             .arg("--json")
             .arg("--skip-git-repo-check")
-            .arg(&prompt)
-            .stdin(std::process::Stdio::null())
+            .arg(&prompt);
+        if let Some(p) = &ref_tmp {
+            cmd.arg("--image").arg(p);
+        }
+        cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         if let Some(home) = &codex_home {
             cmd.env("CODEX_HOME", home);
         }
+        // The temp file outlives the spawn and is removed when this scope ends.
+        let _ref_guard = ref_tmp.map(TempFile);
 
         let mut child = cmd.spawn().map_err(|e| format!("Codex CLI spawn 실패: {e}"))?;
         let stdout = child
