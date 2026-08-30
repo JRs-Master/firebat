@@ -1950,13 +1950,15 @@ class Scene:
         """
         if self._frame_img is None:
             return
-        act, t0 = None, L["from"]
+        act, t0, travel = None, L["from"], 0
         for p in L.get("plays") or []:
             at = float(p.get("at", L["from"]))
             dur = p.get("for")
             end = at + float(dur) if dur is not None else L["to"]
             if at <= t < end and str(p.get("action") or "") in sheets:
                 act, t0 = str(p["action"]), at
+                tv = p.get("travel")
+                travel = 0 if not tv else (-1 if str(tv) == "left" else 1)
         if act is None:
             act = next(iter(sheets))
         sh = sheets[act]
@@ -1976,6 +1978,13 @@ class Scene:
         if a < 0.999:
             alpha = alpha.point(lambda v: int(v * a))
         fx, fy = L.get("at", [0.5, 0.9])
+        # travel: let the stride decide the speed. Two steps per cycle, each one
+        # stride long, so the ground passes at exactly the rate the legs are walking
+        # and nothing skates. dir -1 walks back the way the drawing faces.
+        if travel and sh.get("stride"):
+            per_cycle = 2.0 * sh["stride"] * (tall * scale) / float(self.SW)
+            cycles = (t - t0) * sh["fps"] / float(len(cells))
+            fx = fx + per_cycle * cycles * (1.0 if travel > 0 else -1.0)
         px = int(fx * self.SW - w / 2)
         py = int(fy * self.SH - h)          # `at` is the feet
         # The frame buffer is RGB, so composite the way the image layer does.
@@ -2511,6 +2520,36 @@ def action_sticker(inp):
                                       "filenameHint": f"clip-{name}",
                                       "source": "clipart"}}}
 
+def _sheet_stride(media, cells):
+    """Widest foot separation across the frames, as a fraction of frame height.
+
+    Measured in the bottom tenth of each cell — that band is feet. Returns 0 when
+    the action never separates them (a bird, a bow), which means "does not walk"."""
+    im = Image.open(media_path(media)).convert("RGBA")
+    a = np.asarray(im)[:, :, 3] > 16
+    tall = max(c[3] - c[1] + 1 for c in cells) or 1
+    widest = 0
+    for (x0, y0, x1, y1) in cells:
+        sub = a[y0:y1 + 1, x0:x1 + 1]
+        foot = sub[int(sub.shape[0] * 0.90):]
+        on = foot.any(0)
+        idx = np.where(on)[0]
+        if len(idx) < 2:
+            continue
+        runs, st = [], None
+        for i in range(len(on)):
+            if on[i] and st is None:
+                st = i
+            elif not on[i] and st is not None:
+                runs.append((st, i - 1))
+                st = None
+        if st is not None:
+            runs.append((st, len(on) - 1))
+        if len(runs) > 1:
+            widest = max(widest, runs[-1][0] - runs[0][1])
+    return round(widest / float(tall), 4)
+
+
 def validate_sheets(sheets):
     """`sheets: {action: {media, fps?, loop?, cells?}}` — drawn animation, by name.
 
@@ -2549,6 +2588,12 @@ def validate_sheets(sheets):
             "cells": norm,
             "fps": _num(spec.get("fps", 12), f"sheets[{a}].fps", 1, 30),
             "loop": bool(spec.get("loop", True)),
+            # How far the feet travel across this action, measured off the drawings.
+            # A walker whose translation is guessed by hand skates: the ground moves at
+            # one speed and the legs at another, and the eye reads it instantly as a
+            # race walk (measured 2026-08-30 — twelve steps taken while covering six
+            # strides of ground). The stride is in the artwork, so read it there.
+            "stride": _sheet_stride(media, norm),
         }
     return out
 
@@ -2831,7 +2876,12 @@ def action_assets(_inp):
                       "frames, transparent background, small even change between neighbours\"), "
                       "save it under an action name, and the frame boxes are found from the alpha "
                       "— no coordinates by hand. A scene plays it with {kind:'sprite', name, "
-                      "plays:[{action, at, for?}]} and frames are pasted, never blended. Sheets "
+                      "plays:[{action, at, for?, travel?:'right'|'left'}]} and frames are pasted, "
+                      "never blended. travel lets the STRIDE set the speed — the sheet's own foot "
+                      "separation is measured at save time, so the ground passes at exactly the "
+                      "rate the legs walk and nothing skates; moving a walker with a hand-written "
+                      "move act is what makes it look like race walking. Playback fps is the "
+                      "animation cadence, not the video's: 8 is anime's usual 3s, 12 is 2s. Sheets "
                       "and shape parts are alternatives: a drawn character needs no parts",
     "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
               "in order, ffmpeg stream copy, no re-encode. This is how a video "
