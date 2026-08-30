@@ -368,6 +368,35 @@ def validate_parts(parts):
                 q["flip"] = True
             if role in ("swing", "flap", "mouth"):
                 q["pivot"] = _pt(p.get("pivot", q["at"]), f"parts[{i}].pivot")
+            # Alternate crops of the SAME picture, named. A character generated as
+            # one expression sheet gives four faces that cannot disagree about the
+            # jaw, the skin or the line weight, because they are four rectangles of
+            # one file - consistency by not regenerating, which is the whole reason
+            # a cutout rig beats a fresh image per shot.
+            variants = p.get("variants")
+            if variants is not None:
+                if not isinstance(variants, dict) or not 1 <= len(variants) <= 12:
+                    raise SceneError(
+                        f"parts[{i}].variants must be {{name: crop}} - 1 to 12 named "
+                        "alternate crops of the same media")
+                vv = {}
+                for vname, vcrop in variants.items():
+                    vn = str(vname).strip()
+                    if not vn or len(vn) > 24:
+                        raise SceneError(f"parts[{i}].variants: name 1..24 chars")
+                    if not (isinstance(vcrop, list) and 3 <= len(vcrop) <= 60):
+                        raise SceneError(
+                            f"parts[{i}].variants[{vn}] must be 3..60 [x,y] pairs")
+                    cv = []
+                    for j, v in enumerate(vcrop):
+                        if not (isinstance(v, (list, tuple)) and len(v) == 2
+                                and all(isinstance(c, (int, float)) and 0.0 <= c <= 1.0
+                                        for c in v)):
+                            raise SceneError(
+                                f"parts[{i}].variants[{vn}][{j}] must be [x,y] in 0..1")
+                        cv.append([float(v[0]), float(v[1])])
+                    vv[vn] = cv
+                q["variants"] = vv
             norm.append(q)
             continue
         if shape == "roundedrect":
@@ -789,15 +818,19 @@ def _clip_path(decl):
 _CUTOUT_CACHE = {}
 
 
-def _cutout_piece(q):
-    """Load, polygon-crop and alpha-mask one image part; cached per (media, crop)."""
-    key = (q["media"], json.dumps(q["crop"]), bool(q.get("flip")))
+def _cutout_piece(q, crop=None):
+    """Load, polygon-crop and alpha-mask one image part; cached per (media, crop).
+
+    `crop` overrides the part's own - that is how a named variant is drawn without
+    a second declaration or a second file."""
+    crop = crop or q["crop"]
+    key = (q["media"], json.dumps(crop), bool(q.get("flip")))
     got = _CUTOUT_CACHE.get(key)
     if got is not None:
         return got
     src = Image.open(media_path(q["media"])).convert("RGBA")
     w0, h0 = src.size
-    poly = [(p[0] * w0, p[1] * h0) for p in q["crop"]]
+    poly = [(p[0] * w0, p[1] * h0) for p in crop]
     xs, ys = [p[0] for p in poly], [p[1] for p in poly]
     x0 = max(0, int(min(xs))); y0 = max(0, int(min(ys)))
     x1 = min(w0, int(max(xs)) + 1); y1 = min(h0, int(max(ys)) + 1)
@@ -809,7 +842,7 @@ def _cutout_piece(q):
     piece.putalpha(ImageChops.multiply(piece.getchannel("A"), mask))
     if q.get("flip"):
         piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
-    if len(_CUTOUT_CACHE) > 32:
+    if len(_CUTOUT_CACHE) > 48:
         _CUTOUT_CACHE.clear()
     _CUTOUT_CACHE[key] = piece
     return piece
@@ -817,7 +850,7 @@ def _cutout_piece(q):
 
 def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
                 sy=1.0, blink_t=None, g=None, text="", fonts=None, canvas=None,
-                bones=None, bone_angles=None):
+                bones=None, bone_angles=None, express=None):
     """cx, cy = feet (unit point (50,100)). One unit = 4*s px. `g` is the scene's
     glow layer — parts flagged `glow` mirror an enlarged translucent copy there."""
     u = 4.0 * s
@@ -840,7 +873,10 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
         if q["shape"] == "image":
             if canvas is None:
                 continue
-            piece = _cutout_piece(q)
+            # A named expression swaps this part's crop for its own. Parts that do
+            # not carry that name are untouched, so one act changes the face while
+            # the body it belongs to keeps moving.
+            piece = _cutout_piece(q, (q.get("variants") or {}).get(express))
             wpx = max(2, int(q["width"] * u * sxw))
             hpx = max(2, int(wpx * piece.height / max(1, piece.width) * sy))
             if role == "eye":
@@ -1443,6 +1479,7 @@ class Scene:
             tx, ty = clamp01(float(to[0])) * SW, clamp01(float(to[1])) * SH
             x, y = x + (tx - x) * f, y + (ty - y) * f
         mouth, wave, sy = 0.0, 0.0, 1.0
+        express = None
         jump_h = 0.0
         point_s, point_to = 0.0, None
         bones_decl = saved.get("bones") or {}
@@ -1553,12 +1590,22 @@ class Scene:
                     to = act.get("to") or [0.7, 0.4]
                     point_s = pw
                     point_to = (clamp01(float(to[0])), clamp01(float(to[1])))
+            elif kind == "express":
+                # Last one wins inside an overlap: two expressions at once is not a
+                # face, and picking the later act is what the timeline already means.
+                if at <= t < at + dur:
+                    want = str(act.get("as") or "").strip()
+                    if not want:
+                        raise SceneError(
+                            "sprite act express needs {do:'express', as:'<variant "
+                            "name>', at, for} - the name comes from a part's variants")
+                    express = want
             elif kind in ("pose", "anim", "move"):
                 pass  # blended above, in timeline order
             else:
                 raise SceneError(
                     f"sprite act {kind!r} — one of wave, talk, jump, point, "
-                    "pose, anim, move")
+                    "pose, anim, move, express")
         sy *= pose_sy * anim_sy
         jump_h += -anim_dy * 4.0 * s
         point_arm = None
@@ -1585,7 +1632,8 @@ class Scene:
         draw_custom(d, x, y - jump_h, s, t, custom, mouth=mouth, wave=wave,
                     walk=walk, sy=sy, blink_t=blink_phase(t), g=g,
                     fonts=self.fonts, canvas=self._frame_img,
-                    bones=bones_decl or None, bone_angles=bone_angles)
+                    bones=bones_decl or None, bone_angles=bone_angles,
+                    express=express)
         if point_s > 0 and point_to is not None:
             # weather-caster pointer v2: a rigid hand-held stick AIMED at the
             # target (never a screen-long pole, never a floating rod), the arm
@@ -2780,6 +2828,29 @@ def action_selftest():
     ck("a list that already fits is left exactly where it was asked for",
        (0.30, 0), (ok_scene.layers[0]["at"][1], len(ok_scene.layout_fixes)),
        ok_scene.layers[0]["at"][1] == 0.30 and not ok_scene.layout_fixes)
+
+    # Expression variants: the declaration keeps them, and a malformed one is
+    # refused at save time rather than at the first frame of a paid render.
+    base = {"shape": "image", "media": "x.png", "at": [50, 20], "width": 20,
+            "crop": [[0.1, 0.1], [0.4, 0.1], [0.4, 0.4], [0.1, 0.4]]}
+    kept = validate_asset_decl("t", [dict(base, variants={
+        "슬픔": [[0.5, 0.1], [0.8, 0.1], [0.8, 0.4], [0.5, 0.4]]})])[0]
+    ck("a face part keeps its named alternate crops",
+       ["슬픔"], list((kept.get("variants") or {}).keys()),
+       list((kept.get("variants") or {}).keys()) == ["슬픔"]
+       and kept["variants"]["슬픔"][1] == [0.8, 0.1])
+    bad = None
+    try:
+        validate_asset_decl("t", [dict(base, variants={"x": [[0.1, 0.1]]})])
+    except SceneError as e:
+        bad = str(e)
+    ck("a variant with too few points is refused at save time",
+       "SceneError", bad, bad is not None and "variants" in bad)
+    # The other half of the canary: no variants declared means the part is
+    # untouched by any expression, so a scene that never asks still renders.
+    plain = validate_asset_decl("t", [dict(base)])[0]
+    ck("a part with no variants declares none",
+       None, plain.get("variants"), plain.get("variants") is None)
 
     ck("win() is zero outside its window and full at mid-window",
        (0.0, 1.0), (win(0.1, 1, 2), win(1.5, 1, 2)),
