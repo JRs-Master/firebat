@@ -134,8 +134,6 @@ impl ImageFormatHandler for CliCodexImageFormat {
             opts.prompt, size_hint, quality_hint, count_line
         );
 
-        let codex_home = Self::ensure_image_codex_home();
-        // 수확 워터마크 — spawn 직전. 이전 실행 잔여물 재수확 차단.
         // One codex image run at a time.
         //
         // Every run shares one CODEX_HOME, the harvest is the whole `generated_images` tree filtered
@@ -153,6 +151,22 @@ impl ImageFormatHandler for CliCodexImageFormat {
         // second mechanism beside it. A run is ~50s and generations are not a throughput path.
         static RUN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
         let _run_guard = RUN_LOCK.lock().await;
+
+        // Preparing the home belongs INSIDE the lock, not before it.
+        //
+        // It rewrites this home's `auth.json` and `config.toml`, and the running child is
+        // reading both. Four requests arriving together each prepared the home while the
+        // first one's codex was live: measured 2026-08-30, run A finished in 62s and run
+        // B then sat for sixteen minutes without writing a single line to its rollout —
+        // codex never got started at all. Refresh tokens are single-use (see
+        // `copy_auth_json` below), so a copy landing under a live process is exactly the
+        // way to strand the next one on a token nobody can use.
+        //
+        // The lock was put here to stop two runs harvesting each other's pictures. The
+        // preparation was left outside it, which meant the lock did not cover the thing
+        // it was named for: one run at a time.
+        let codex_home = Self::ensure_image_codex_home();
+        // 수확 워터마크 — spawn 직전. 이전 실행 잔여물 재수확 차단.
         let started_at = SystemTime::now();
 
         // 플래그 = `--json --skip-git-repo-check` 만 (LLM 경로 `cli_codex.rs` 와 동일 base_flags).
