@@ -863,6 +863,8 @@ def _label_blobs(mask):
 # background, at or over _KEY_FAR is drawing, between the two is the
 # anti-aliased edge and gets partial alpha.
 _KEY_NEAR, _KEY_FAR = 40, 90
+# An enclosed patch of backdrop bigger than this is taken to be part of the drawing.
+_KEY_POCKET_MAX_FRAC = 0.0005
 
 
 def _key_flat_background(im):
@@ -907,6 +909,23 @@ def _key_flat_background(im):
     if not len(edge_labels):
         return im
     outside = np.isin(lab, edge_labels)
+    # A pocket the drawing encloses is backdrop too. The gap between this man's headband tail
+    # and his neck is one, and the flood cannot reach it — it came through into a finished
+    # video as a pink patch on his throat (2026-08-31). Only tiny ones are taken: an enclosed
+    # area is usually PART of the drawing, which is the whole reason this keys by flood and
+    # not by colour, and a swallow's white belly on a white backdrop is what that protects.
+    # Measured the same day, the neck pockets were 122 px and 56 px on a 1536x1024 sheet
+    # (0.008%), while a body part runs percent-scale. Folding them into `outside` rather than
+    # zeroing them separately is what also gets them despilled below — the magenta fringe
+    # around the pocket, not the pocket itself, was most of what showed.
+    pocket_cap = max(64, int(H * W * _KEY_POCKET_MAX_FRAC))
+    pockets = _label_blobs(near & ~outside)
+    for pid in np.unique(pockets):
+        if pid == 0:
+            continue
+        m = pockets == pid
+        if int(m.sum()) <= pocket_cap:
+            outside |= m
     alpha = np.ones(dist.shape, np.float32)
     alpha[outside] = np.clip(
         (dist[outside].astype(np.float32) - _KEY_NEAR) / float(_KEY_FAR - _KEY_NEAR),
@@ -2062,10 +2081,14 @@ class Scene:
         x0, y0, x1, y1 = cells[cell_i]
         src = self._sheet_image(_sheet_file(sh, cell_i))
         piece = src.crop((x0, y0, x1 + 1, y1 + 1))
-        tall = max(c[3] - c[1] + 1 for c in cells)
-        scale = (self.SH * 0.42 * float(L.get("scale", 1.0))) / max(1, tall)
-        w = max(1, int(round(piece.width * scale)))
-        h = max(1, int(round(piece.height * scale)))
+        # Frames drawn on separate canvases come back at separate sizes; cellScale puts them
+        # back on one. It is 1.0 for every cell of a single-sheet action, where a height
+        # difference is the pose and has to survive.
+        cs = sh.get("cellScale") or [1.0] * len(cells)
+        tall = max((c[3] - c[1] + 1) * cs[j] for j, c in enumerate(cells))
+        scale = (self.SH * 0.42 * float(L.get("scale", 1.0))) / max(1.0, tall)
+        w = max(1, int(round(piece.width * scale * cs[cell_i])))
+        h = max(1, int(round(piece.height * scale * cs[cell_i])))
         piece = piece.resize((w, h), Image.LANCZOS)
         alpha = piece.getchannel("A")
         if a < 0.999:
@@ -2794,6 +2817,30 @@ def _sheet_body_y(masks, work=128, rounds=15):
             for j in range(n)]
 
 
+def _sheet_cell_scale(cells, cell_of, n_files):
+    """One scale per cell, so frames drawn on separate canvases are the same character.
+
+    Heights inside ONE sheet are pose: the drawings share a canvas, so a shorter frame is a
+    crouch. Heights ACROSS sheets are not: each generation picks its own figure size, and the
+    difference is nothing but canvas. That is the whole rule, and it needs no anatomy.
+
+    Measured 2026-08-31 on a seven-frame walk drawn one frame per call: the bounding boxes ran
+    1327..1401 px, and the head-to-box ratio held to 0.4% across all seven — the head was
+    growing and shrinking with the body, which says the scatter was the drawing being sized
+    differently, not the man moving. On screen it read as his height changing mid-stride.
+    Normalising per FILE and never within one leaves a real crouch alone.
+    """
+    if n_files < 2:
+        return [1.0] * len(cells)
+    heights = [c[3] - c[1] + 1 for c in cells]
+    by_file = {}
+    for h, f in zip(heights, cell_of or [0] * len(cells)):
+        by_file.setdefault(f, []).append(h)
+    med = {f: sorted(v)[len(v) // 2] for f, v in by_file.items()}
+    target = max(med.values())
+    return [round(target / float(med[f]), 4) for f in (cell_of or [0] * len(cells))]
+
+
 def validate_sheets(sheets):
     """`sheets: {action: {media, fps?, loop?, anchor?, cells?}}` — drawn animation, by name.
 
@@ -2894,6 +2941,7 @@ def validate_sheets(sheets):
             "media": medias,
             "cellOf": cell_of,
             "cells": norm,
+            "cellScale": _sheet_cell_scale(norm, cell_of, len(medias)),
             "order": order,
             "fps": _num(spec.get("fps", 12), f"sheets[{a}].fps", 1, 30),
             "loop": bool(spec.get("loop", True)),
@@ -2926,6 +2974,31 @@ def action_save_asset(inp):
     # feet, so height alone cannot decide it.
     sheet_notes = []
     for _a, _v in (sheets or {}).items():
+        # A drawing on BOTH sides of another means the motion runs there and comes straight
+        # back through the same picture. On a wing that is right — up and down really are the
+        # same arc reversed. On a walk it is the twitch you see at full stride, because the
+        # two halves of a step are different drawings: the leg reaching to land (body high,
+        # heel still up) is not the leg that just landed (body low, knee loaded). Measured
+        # 2026-08-31 — [1,2,3,4,5,4,3,2] read as a hitch at both contacts and went away when
+        # the two 'up' drawings were added and it became [1,2,3,4,5,6,3,7].
+        _ord = _v.get("order")
+        if _ord and len(_ord) > 2:
+            _back = sorted({_ord[i] + 1 for i in range(len(_ord))
+                            if _ord[(i - 1) % len(_ord)] == _ord[(i + 1) % len(_ord)]})
+            if _back:
+                sheet_notes.append(
+                    f"'{_a}' plays the same drawing on both sides of frame(s) "
+                    f"{', '.join(str(v) for v in _back)}, so the motion reverses there rather "
+                    "than carrying on. That is right for a beat that really is symmetric (a "
+                    "wing going up and back down) and wrong for a cycle that has to alternate "
+                    "— a walk needs a separate drawing either side of full stride.")
+        _sc = _v.get("cellScale") or []
+        if _sc and (max(_sc) - min(_sc)) > 0.02:
+            sheet_notes.append(
+                f"'{_a}' was drawn across {len(_v['media'])} sheets whose figures came back "
+                f"{round((max(_sc) / min(_sc) - 1) * 100)}% apart in size; they have been put "
+                "on one scale (heights inside a single sheet are left alone — there a "
+                "difference is the pose).")
         hs = [c[3] - c[1] + 1 for c in _v["cells"]]
         if _v.get("anchor") == "feet" and len(hs) > 1 and min(hs) < 0.75 * max(hs):
             sheet_notes.append(
@@ -3794,9 +3867,15 @@ def action_selftest():
             kd.ellipse([cx - 50, 40, cx + 50, 160], fill=(40, 50, 90))
             # A white belly inside the figure: the backdrop's own colour, enclosed.
             kd.ellipse([cx - 25, 95, cx + 25, 140], fill=(252, 252, 252))
+            # And a tiny enclosed hole: backdrop the flood cannot reach. This is the gap
+            # between a headband tail and a neck, which reached a finished video as a pink
+            # patch on the man's throat. Size is the only thing telling it from the belly.
+            kd.ellipse([cx - 3, 57, cx + 3, 63], fill=(250, 250, 250))
         flat.save(kp)
         keyed_cells = find_sheet_cells(kp)
-        belly = np.asarray(load_sheet(kp))[118, 80, 3]
+        _ka = np.asarray(load_sheet(kp))[:, :, 3]
+        belly = _ka[118, 80]
+        pocket = _ka[60, 80]
 
         # The negative canary: a photo-like sheet whose border is not one colour.
         pp = os.path.join(OUT_DIR, "selftest-nokey.png")
@@ -3810,14 +3889,47 @@ def action_selftest():
             Image.open(pp).convert("RGBA")))[:, :, 3].min() == 255
 
         key_note = (f"keyed cells={len(keyed_cells)} enclosed-belly-alpha={int(belly)} "
-                    f"gradient-untouched={untouched}")
-        key_ok = len(keyed_cells) == 2 and int(belly) > 240 and untouched
+                    f"tiny-pocket-alpha={int(pocket)} gradient-untouched={untouched}")
+        key_ok = (len(keyed_cells) == 2 and int(belly) > 240
+                  and int(pocket) < 40 and untouched)
         os.remove(kp)
         os.remove(pp)
     except Exception as e:  # noqa: BLE001
         key_note = f"{type(e).__name__}: {e}"
-    ck("a flat backdrop is keyed to alpha, an enclosed area of the same colour is kept",
-       "keyed cells=2 enclosed-belly-alpha>240 gradient-untouched=True", key_note, key_ok)
+    ck("a flat backdrop is keyed to alpha; a big enclosed area is kept, a tiny one is not",
+       "keyed cells=2 belly>240 pocket<40 gradient-untouched=True", key_note, key_ok)
+
+    # Frames drawn on separate canvases, both ways. Two sheets whose figures came back at
+    # different sizes are put on one; a single sheet is left exactly as drawn, because there
+    # a height difference is the pose and flattening it would delete a crouch.
+    cs_note, cs_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        cs_paths = []
+        for idx, fig_h in enumerate((120, 90)):          # same character, two canvas sizes
+            cp = os.path.join(OUT_DIR, f"selftest-scale{idx}.png")
+            im2 = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+            ImageDraw.Draw(im2).ellipse([80, 190 - fig_h, 120, 190], fill=(30, 40, 90, 255))
+            im2.save(cp)
+            cs_paths.append(_out(cp))
+        two = validate_sheets({"a": {"media": cs_paths}})["a"]["cellScale"]
+        one = os.path.join(OUT_DIR, "selftest-scale-one.png")
+        im3 = Image.new("RGBA", (400, 200), (0, 0, 0, 0))
+        d3 = ImageDraw.Draw(im3)
+        d3.ellipse([40, 70, 80, 190], fill=(30, 40, 90, 255))     # tall pose
+        d3.ellipse([240, 100, 280, 190], fill=(30, 40, 90, 255))  # crouched pose
+        im3.save(one)
+        same = validate_sheets({"a": {"media": _out(one)}})["a"]["cellScale"]
+        cs_note = (f"across-sheets={[round(v, 2) for v in two]} "
+                   f"within-one-sheet={[round(v, 2) for v in same]}")
+        cs_ok = (len(two) == 2 and abs(max(two) / min(two) - 120 / 90) < 0.08
+                 and set(round(v, 3) for v in same) == {1.0})
+        for cp in cs_paths + [one]:
+            os.remove(media_path(cp) if cp.startswith("/") else cp)
+    except Exception as e:  # noqa: BLE001
+        cs_note = f"{type(e).__name__}: {e}"
+    ck("figures drawn on separate canvases are put on one scale, one sheet is left alone",
+       "across-sheets ~[1.0, 1.33], within-one-sheet all 1.0", cs_note, cs_ok)
 
     # A move act has to carry a drawn-sheet character too. It was accepted and
     # ignored, which reads as "the scene is wrong" rather than "this does nothing".
