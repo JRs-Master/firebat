@@ -2854,22 +2854,45 @@ def _sheet_body_y(masks, work=128, rounds=15):
             for j in range(n)]
 
 
+# Below this much scatter in cell height the frames differ because the generator drew the
+# same character at slightly different sizes; above it they differ because the ACTION moves
+# the body — a wing goes up, a figure crouches — and flattening that would delete the motion.
+# Measured 2026-08-31 over every sheet on hand: five walk sheets scattered 0.9 / 0.9 / 2.8 /
+# 5.9 / 8.3 %, while an eight-beat wingbeat ran 98.5 %. The two are an order of magnitude
+# apart, so this is the middle of a wide valley and not a knife edge.
+CELL_SIZE_GATE = 0.15
+
+
 def _sheet_cell_scale(cells, cell_of, n_files):
-    """One scale per cell, so frames drawn on separate canvases are the same character.
+    """One scale per cell, so every frame is the same character at the same size.
 
-    Heights inside ONE sheet are pose: the drawings share a canvas, so a shorter frame is a
-    crouch. Heights ACROSS sheets are not: each generation picks its own figure size, and the
-    difference is nothing but canvas. That is the whole rule, and it needs no anatomy.
+    Cell heights differ for two reasons that need opposite treatment. One is the ACTION:
+    a raised wing makes the box taller, a crouch makes it shorter, and that has to survive.
+    The other is the GENERATOR: asked for the same character twice it draws him a few percent
+    different, and on screen that reads as his height dropping mid-stride. Telling them apart
+    by anatomy needs a body part the pose does not move, and no general one was found —
+    a colour-keyed torso works for one character, silhouette-overlap fitting scored 33% on a
+    sheet already flat to 0.9%, and an invariant-band search made two sheets worse. What does
+    separate them is SIZE: the two populations sit an order of magnitude apart (see
+    CELL_SIZE_GATE), so the scatter itself says which one this is.
 
-    Measured 2026-08-31 on a seven-frame walk drawn one frame per call: the bounding boxes ran
-    1327..1401 px, and the head-to-box ratio held to 0.4% across all seven — the head was
-    growing and shrinking with the body, which says the scatter was the drawing being sized
-    differently, not the man moving. On screen it read as his height changing mid-stride.
-    Normalising per FILE and never within one leaves a real crouch alone.
+    Scatter under the gate: put every cell on the median height, across sheets and within
+    one alike. Over it: leave the drawings alone and only put separate CANVASES on one scale,
+    which is the older, narrower rule and is still right for a wingbeat.
+
+    (The claim this function used to carry — that a seven-frame walk held its head-to-box
+    ratio to 0.4% — was measured with a broken ruler and is withdrawn: re-measured by area
+    the heads scattered 14.4%.)
     """
+    if not cells:
+        return []
+    heights = [float(c[3] - c[1] + 1) for c in cells]
+    mean = sum(heights) / len(heights)
+    if mean > 0 and (max(heights) - min(heights)) / mean <= CELL_SIZE_GATE:
+        target = sorted(heights)[len(heights) // 2]
+        return [round(target / h, 4) for h in heights]
     if n_files < 2:
         return [1.0] * len(cells)
-    heights = [c[3] - c[1] + 1 for c in cells]
     by_file = {}
     for h, f in zip(heights, cell_of or [0] * len(cells)):
         by_file.setdefault(f, []).append(h)
@@ -3032,10 +3055,10 @@ def action_save_asset(inp):
         _sc = _v.get("cellScale") or []
         if _sc and (max(_sc) - min(_sc)) > 0.02:
             sheet_notes.append(
-                f"'{_a}' was drawn across {len(_v['media'])} sheets whose figures came back "
-                f"{round((max(_sc) / min(_sc) - 1) * 100)}% apart in size; they have been put "
-                "on one scale (heights inside a single sheet are left alone — there a "
-                "difference is the pose).")
+                f"'{_a}' frames came back {round((max(_sc) / min(_sc) - 1) * 100)}% apart in "
+                "size and have been put on one scale. Scatter that small is the generator "
+                "drawing the same character at different sizes, not the action moving him; "
+                "past 15% it is read as motion and the drawings are left as they are.")
         hs = [c[3] - c[1] + 1 for c in _v["cells"]]
         if _v.get("anchor") == "feet" and len(hs) > 1 and min(hs) < 0.75 * max(hs):
             sheet_notes.append(
@@ -3963,16 +3986,28 @@ def action_selftest():
         d3.ellipse([240, 100, 280, 190], fill=(30, 40, 90, 255))  # crouched pose
         im3.save(one)
         same = validate_sheets({"a": {"media": _out(one)}})["a"]["cellScale"]
+        # The other side of the gate: the same two-cell sheet, but only 5% apart. That is
+        # the generator drawing one character at two sizes, and it has to be flattened --
+        # left alone it is the height dropping mid-stride that started all this.
+        near = os.path.join(OUT_DIR, "selftest-scale-near.png")
+        im4 = Image.new("RGBA", (400, 200), (0, 0, 0, 0))
+        d4 = ImageDraw.Draw(im4)
+        d4.ellipse([40, 70, 80, 190], fill=(30, 40, 90, 255))     # 120 tall
+        d4.ellipse([240, 76, 280, 190], fill=(30, 40, 90, 255))   # 114 tall -> 5% scatter
+        im4.save(near)
+        small = validate_sheets({"a": {"media": _out(near)}})["a"]["cellScale"]
         cs_note = (f"across-sheets={[round(v, 2) for v in two]} "
-                   f"within-one-sheet={[round(v, 2) for v in same]}")
+                   f"far-apart-in-one-sheet={[round(v, 2) for v in same]} "
+                   f"close-in-one-sheet={[round(v, 3) for v in small]}")
         cs_ok = (len(two) == 2 and abs(max(two) / min(two) - 120 / 90) < 0.08
-                 and set(round(v, 3) for v in same) == {1.0})
-        for cp in cs_paths + [one]:
+                 and set(round(v, 3) for v in same) == {1.0}
+                 and len(small) == 2 and abs(max(small) / min(small) - 120 / 114) < 0.03)
+        for cp in cs_paths + [one, near]:
             os.remove(media_path(cp) if cp.startswith("/") else cp)
     except Exception as e:  # noqa: BLE001
         cs_note = f"{type(e).__name__}: {e}"
-    ck("figures drawn on separate canvases are put on one scale, one sheet is left alone",
-       "across-sheets ~[1.0, 1.33], within-one-sheet all 1.0", cs_note, cs_ok)
+    ck("cell heights: scatter is flattened, motion is left alone",
+       "across-sheets ~[1.0, 1.33], far-apart all 1.0, close ~[1.0, 1.053]", cs_note, cs_ok)
 
     # A move act has to carry a drawn-sheet character too. It was accepted and
     # ignored, which reads as "the scene is wrong" rather than "this does nothing".
