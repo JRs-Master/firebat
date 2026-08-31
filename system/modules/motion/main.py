@@ -992,7 +992,7 @@ def load_sheet(path):
     return _key_flat_background(Image.open(media_path(path)).convert("RGBA"))
 
 
-def find_sheet_cells(path, min_frac=0.004, row_tol=0.18):
+def find_sheet_cells(path, min_frac=0.004):
     """Where each drawn frame sits on a sheet, found from the alpha.
 
     A generated animation sheet is not a tidy grid: the figures are unevenly
@@ -1001,6 +1001,14 @@ def find_sheet_cells(path, min_frac=0.004, row_tol=0.18):
     sheet landed at densities 28 and 37 and one frame lost its front foot in the
     finished video. Separate pixels are what a blob finds, and overlapping boxes
     do not fool it. Reading order is row-major, the order a sheet is drawn in.
+
+    Rows are found by vertical OVERLAP, never by quantised bands. Figures stand
+    bottom-anchored on a shared ground line, so a frame the generator drew a few
+    percent short STARTS LOWER, and with fixed bands (y0 // 18% of sheet height)
+    that start can fall across a band edge and sort the frame into the next row.
+    Measured 2026-09-01: one short cell in a 2x2 walk sheet swapped play order
+    with its neighbour, the left step ran contact -> passing -> weight, and the
+    walk limped. Overlap has no edges to fall across.
     """
     im = load_sheet(path)
     a = np.asarray(im)[:, :, 3]
@@ -1021,8 +1029,20 @@ def find_sheet_cells(path, min_frac=0.004, row_tol=0.18):
             "this sheet has neither an alpha channel nor one flat backdrop colour to key "
             "out. Ask the image generator for a transparent background, or for a plain "
             "single-colour backdrop the import can remove")
-    out.sort(key=lambda b: (int(b[1] / (H * row_tol)), b[0]))
-    return out
+    out.sort(key=lambda b: b[1])
+    rows = []
+    for b in out:
+        for r in rows:
+            ov = min(r["y1"], b[3]) - max(r["y0"], b[1])
+            if ov > 0.5 * min(b[3] - b[1], r["y1"] - r["y0"]):
+                r["boxes"].append(b)
+                r["y0"] = min(r["y0"], b[1])
+                r["y1"] = max(r["y1"], b[3])
+                break
+        else:
+            rows.append({"y0": b[1], "y1": b[3], "boxes": [b]})
+    rows.sort(key=lambda r: r["y0"])
+    return [b for r in rows for b in sorted(r["boxes"], key=lambda b: b[0])]
 
 
 def _cutout_piece(q, crop=None):
@@ -3919,6 +3939,36 @@ def action_selftest():
         sh_note = f"{type(e).__name__}: {e}"
     ck("a spritesheet layer advances cells at fps and loops",
        "green -> yellow -> red at the center", sh_note, sh_ok)
+
+    # Reading order, both ways: a short bottom-anchored figure must stay in its
+    # row (its higher top once fell across a fixed band edge and swapped play
+    # order with its neighbour -- the walk limped), and two REAL rows must still
+    # come back as two rows read top-to-bottom.
+    ro_note, ro_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        rp = os.path.join(OUT_DIR, "selftest-roworder.png")
+        ri = Image.new("RGBA", (600, 1000), (0, 0, 0, 0))
+        rd = ImageDraw.Draw(ri)
+        rd.ellipse([100, 100, 180, 380], fill=(30, 40, 90, 255))    # top-left
+        rd.ellipse([400, 100, 480, 380], fill=(30, 40, 90, 255))    # top-right
+        # bottom row, feet on one line at y=950; the LEFT one is drawn short, so its
+        # top (570) sits across the old 18%-band edge from its neighbour's (520)
+        rd.ellipse([100, 570, 180, 950], fill=(30, 40, 90, 255))    # bottom-left, short
+        rd.ellipse([400, 520, 480, 950], fill=(30, 40, 90, 255))    # bottom-right, tall
+        ri.save(rp)
+        rc = find_sheet_cells(rp)
+        xs = [c[0] for c in rc]
+        ys = [c[1] for c in rc]
+        ro_note = f"order x={xs} y={ys}"
+        ro_ok = (len(rc) == 4 and ys[0] < 400 and ys[1] < 400          # top row first
+                 and ys[2] > 400 and ys[3] > 400                       # then the bottom row
+                 and xs[0] < xs[1] and xs[2] < xs[3])                  # left before right in each
+        os.remove(rp)
+    except Exception as e:  # noqa: BLE001
+        ro_note = f"{type(e).__name__}: {e}"
+    ck("reading order survives a short frame, and real rows stay rows",
+       "TL, TR, BL(short), BR", ro_note, ro_ok)
 
     # Keying a flat backdrop, both ways: a sheet that needs it becomes readable,
     # and a picture that does not is returned with every pixel it had. One
