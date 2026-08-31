@@ -3109,6 +3109,12 @@ pub struct MediaSaveOptions {
     pub quality: Option<String>,
     #[serde(rename = "aspectRatio", default, skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<String>,
+    /// What steered this generation, as an identity and never the bytes: a media slug, a
+    /// url, or "base64 (N bytes)". Without it a sheet cannot be told after the fact from
+    /// one drawn with no reference at all -- measured 2026-08-31, that gap blocked the
+    /// same A/B twice in one day.
+    #[serde(rename = "referenceImage", default, skip_serializing_if = "Option::is_none")]
+    pub reference_image: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>, // "ai-generated" / "upload"
     /// hub instance id — Some 이면 `user/hub/<id>/media/` 영역에 저장 (scope 무시).
@@ -3175,6 +3181,12 @@ pub struct MediaFileRecord {
     pub quality: Option<String>,
     #[serde(rename = "aspectRatio", default, skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<String>,
+    /// What steered this generation, as an identity and never the bytes: a media slug, a
+    /// url, or "base64 (N bytes)". Without it a sheet cannot be told after the fact from
+    /// one drawn with no reference at all -- measured 2026-08-31, that gap blocked the
+    /// same A/B twice in one day.
+    #[serde(rename = "referenceImage", default, skip_serializing_if = "Option::is_none")]
+    pub reference_image: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variants: Vec<MediaVariant>,
     #[serde(rename = "thumbnailUrl", default, skip_serializing_if = "Option::is_none")]

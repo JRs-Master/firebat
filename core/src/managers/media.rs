@@ -186,6 +186,27 @@ pub struct ReferenceImageInput {
     pub base64: Option<String>,
 }
 
+
+/// How a reference image is named in the record: the identity, never the bytes.
+///
+/// A base64 reference is megabytes and would bloat every meta file it touched, so it is
+/// recorded by size alone. Naming it at all is the point: a sheet drawn with a reference
+/// and one drawn without look the same afterwards, and telling them apart is what an A/B
+/// on this generator needs.
+fn reference_identity(r: Option<&ReferenceImageInput>) -> Option<String> {
+    let r = r?;
+    if let Some(s) = r.slug.as_deref().filter(|v| !v.is_empty()) {
+        return Some(s.to_string());
+    }
+    if let Some(u) = r.url.as_deref().filter(|v| !v.is_empty()) {
+        return Some(u.to_string());
+    }
+    r.base64
+        .as_deref()
+        .filter(|v| !v.is_empty())
+        .map(|b| format!("base64 ({} bytes)", b.len()))
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateImageResult {
@@ -1080,6 +1101,7 @@ impl MediaManager {
             size: input.size.clone(),
             quality: input.quality.clone(),
             aspect_ratio: input.aspect_ratio.clone(),
+            reference_image: reference_identity(input.reference_image.as_ref()),
             source: Some("ai-generated".to_string()),
             hub_owner: input.hub_owner.clone(),
         };
@@ -1351,6 +1373,7 @@ impl MediaManager {
                     size: size.clone(),
                     quality: quality.clone(),
                     aspect_ratio: input.aspect_ratio.clone(),
+                    reference_image: reference_identity(input.reference_image.as_ref()),
                     source: Some("ai-generated".to_string()),
                     hub_owner: input.hub_owner.clone(),
                     ..Default::default()
@@ -1442,6 +1465,7 @@ impl MediaManager {
                 size: size.clone(),
                 quality: quality.clone(),
                 aspect_ratio: applied_aspect_ratio.clone(),
+                reference_image: reference_identity(input.reference_image.as_ref()),
                 source: Some("ai-generated".to_string()),
                 hub_owner: input.hub_owner.clone(),
                 ..Default::default()
