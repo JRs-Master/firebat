@@ -2147,6 +2147,42 @@ class Scene:
         w = max(1, int(round(piece.width * scale * cs[cell_i])))
         h = max(1, int(round(piece.height * scale * cs[cell_i])))
         piece = piece.resize((w, h), Image.LANCZOS)
+        fc = sh.get("face")
+        if fc:
+            # The bank head, pasted over this frame's own at the frame's own head
+            # anchor. Size comes from `fh` x the shared drawn height, so it is the
+            # SAME number of pixels in every frame — the proportion lottery the
+            # generator rolls per call ends here at zero, not merely small.
+            key = (id(sh), fc["file"], tuple(fc["box"]))
+            fcache = getattr(self, "_face_cache", None)
+            if fcache is None:
+                fcache = self._face_cache = {}
+            bank = fcache.get(key)
+            if bank is None:
+                bx0, by0, bx1, by1 = fc["box"]
+                bank = self._sheet_image(
+                    sh["media"][fc["file"]] if isinstance(sh["media"], list)
+                    else sh["media"]).crop((bx0, by0, bx1 + 1, by1 + 1))
+                fcache[key] = bank
+            hh = max(1, int(round(fc["fh"] * tall * scale)))
+            hw = max(1, int(round(bank.width * hh / max(1, bank.height))))
+            hd = bank.resize((hw, hh), Image.LANCZOS)
+            hx = int(round(fc["ax"][cell_i] * w - fc["bax"] * hw))
+            # Erase before pasting. Covering alone is not replacing: a real head has
+            # a topknot and a headband tail that stick out past the bank's box in a
+            # different place every frame, and those remnants put the variance right
+            # back (measured 2026-09-01 — pasting over heungbu's frames moved the
+            # head spread 8.1% -> 7.9%; erasing first is what ends it). Above the
+            # neck line nothing but the head exists in a grounded action, so the
+            # whole band goes; below it the frame keeps its own life.
+            ey = min(piece.height, max(1, int(hh * 0.92)))
+            piece.paste((0, 0, 0, 0), (0, 0, piece.width, ey))
+            sx = max(0, -hx)
+            dx = max(0, hx)
+            cw_ = min(hd.width - sx, piece.width - dx)
+            if cw_ > 0:
+                piece.alpha_composite(
+                    hd.crop((sx, 0, sx + cw_, min(hd.height, piece.height))), (dx, 0))
         alpha = piece.getchannel("A")
         if a < 0.999:
             alpha = alpha.point(lambda v: int(v * a))
@@ -2764,6 +2800,96 @@ def _sheet_masks(medias, cells, cell_of):
     return out
 
 
+def _head_extent(mask, bottom_frac=None):
+    """Rows 0..neck of one frame's silhouette — the head, read off the shape.
+
+    The neck is the narrowest row in the upper part of the figure. Precision is
+    not the point: the bank head is pasted OVER whatever is there, so the cut
+    only has to land between chin and shoulder. A silhouette with no waist in
+    that band falls back to a fixed fraction, and `bottom` overrides both.
+    Returns (cut_row, x0, x1, centroid_x) or None when there is nothing there.
+    """
+    h = mask.shape[0]
+    if bottom_frac:
+        cut = max(2, int(h * bottom_frac))
+    else:
+        w = mask.sum(1)
+        lo, hi = int(h * 0.08), int(h * 0.40)
+        band = w[lo:hi]
+        if len(band) < 3:
+            cut = int(h * 0.24)
+        else:
+            k = int(np.argmin(band))
+            # a minimum sitting on the band's edge is a slope, not a neck
+            cut = lo + k if 0 < k < len(band) - 1 else int(h * 0.24)
+    ys, xs = np.where(mask[:cut])
+    if len(xs) < 20:
+        return None
+    return cut, int(xs.min()), int(xs.max()), float(xs.mean())
+
+
+def _sheet_face(face_spec, medias, all_cells, all_cell_of, used_cells, used_masks):
+    """ONE head for every frame — the proportion fix that scaling cannot be.
+
+    The generator redraws the whole figure each call and rolls the dice on the
+    head every time: measured 2026-08-31, heads scattered 5~9% within a sheet
+    and 14% across single calls, and no uniform scale can fix a PROPORTION
+    difference. So the head is not normalised, it is replaced: the bank head
+    (the biggest one on the sheet, or the frame the author names) is pasted
+    over every frame's own at draw time. Variance ends at zero, not small.
+
+    In a profile action the head is a rigid body that neither deforms nor
+    rotates, which is what makes the paste honest; the biggest head is the
+    default bank so it covers every smaller one underneath.
+    """
+    bottom = None
+    if isinstance(face_spec, dict):
+        bottom = face_spec.get("bottom")
+        if bottom is not None:
+            bottom = _num(bottom, "sheets.face.bottom", 0.08, 0.6)
+    # per-used-cell anchors: the head band's centroid, as a fraction of cell width
+    ax, areas = [], []
+    for m in used_masks:
+        he = _head_extent(m, bottom)
+        if he is None:
+            raise SceneError(
+                "face: a frame has no head region to anchor to — the top of one "
+                "silhouette is nearly empty. Drop that frame or set face.bottom")
+        cut, hx0, hx1, cx = he
+        ax.append(round(cx / max(1, m.shape[1]), 4))
+        areas.append(int(m[:cut].sum()))
+    # the bank: a named frame, or the largest head on the sheet (it covers the rest)
+    if isinstance(face_spec, dict) and face_spec.get("from") is not None:
+        fno = int(_num(face_spec["from"], "sheets.face.from", 1, len(all_cells)))
+        bank_cell = all_cells[fno - 1]
+        bank_file = all_cell_of[fno - 1]
+        bank_mask = _sheet_masks(medias, [bank_cell], [bank_file])[0]
+    else:
+        bi = int(np.argmax(areas))
+        bank_cell = used_cells[bi]
+        # used_cells run parallel to used_masks; find the file the same way
+        bank_file = all_cell_of[all_cells.index(list(bank_cell))] if list(
+            bank_cell) in all_cells else 0
+        bank_mask = used_masks[bi]
+    he = _head_extent(bank_mask, bottom)
+    if he is None:
+        raise SceneError("face: the bank frame has no head region")
+    cut, hx0, hx1, cx = he
+    bx0, by0 = bank_cell[0], bank_cell[1]
+    box = [bx0 + hx0, by0, bx0 + hx1, by0 + cut - 1]
+    return {
+        "file": int(bank_file),
+        "box": [int(v) for v in box],
+        # anchor x within the box — the same landmark the per-cell anchors use
+        "bax": round((cx - hx0) / max(1, hx1 - hx0 + 1), 4),
+        # head height as a fraction of its own cell height; cells are already on
+        # one scale (the size gate), so this fraction of the drawn height is the
+        # same number of output pixels in every frame
+        "fh": round((cut) / float(max(1, bank_mask.shape[0])), 4),
+        "ax": ax,
+    }
+
+
 def _sheet_stride(masks):
     """Widest foot separation across the frames, as a fraction of frame height.
 
@@ -2997,6 +3123,7 @@ def validate_sheets(sheets):
         # come off the same sheets: `idle` takes the frame where he is on both feet,
         # `walk` takes the cycle and leaves that frame out. Asking the generator for a
         # standing pose alongside the cycle costs one cell and saves a second character.
+        norm_all, cell_of_all = list(norm), list(cell_of)
         if frames is not None:
             if not (isinstance(frames, list) and 1 <= len(frames) <= 64):
                 raise SceneError(f"sheets[{a}].frames must be 1..64 frame numbers")
@@ -3017,6 +3144,16 @@ def validate_sheets(sheets):
         else:
             order = None
         masks = _sheet_masks(medias, norm, cell_of)
+        face_spec = spec.get("face")
+        face = None
+        # `face: {}` and `face: true` both mean "on, pick the bank yourself" — an
+        # empty dict is falsy in Python, and gating on truthiness silently turned
+        # the auto mode off (the two-way canary caught it before it shipped).
+        if face_spec is not None and face_spec is not False:
+            # face.from counts drawings off the sheets from 1, same as `frames` —
+            # the bank may be a frame the play order leaves out (a clean portrait
+            # cell generated alongside the cycle).
+            face = _sheet_face(face_spec, medias, norm_all, cell_of_all, norm, masks)
         out[a] = {
             "media": medias,
             "cellOf": cell_of,
@@ -3038,6 +3175,8 @@ def validate_sheets(sheets):
             # drawing at save time like the cells and the stride, so a scene never
             # carries frame geometry.
             "bodyY": _sheet_body_y(masks) if anchor == "body" else None,
+            # ONE head for every frame — proportion variance replaced, not reduced.
+            "face": face,
         }
     return out
 
@@ -3368,7 +3507,7 @@ def action_assets(_inp):
                   "the previous state and holds. This is THE way to zoom into a "
                   "region while its line is spoken (never swap whole background "
                   "images per segment). zoom:1 returns to full frame",
-        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, frames?, anchor?}}} — media is one sheet or a LIST of them, since a long cycle does not fit on one canvas: 6 frames a sheet at 1536x1024 leaves each drawing room, 12 comes back with the bottom row cut off at the edge. Frames are numbered straight through the list. A character "
+        "drawnCharacter": "save_asset {name, sheets:{<action>:{media, fps?, loop?, frames?, anchor?, face?}}} — media is one sheet or a LIST of them, since a long cycle does not fit on one canvas: 6 frames a sheet at 1536x1024 leaves each drawing room, 12 comes back with the bottom row cut off at the edge. Frames are numbered straight through the list. A character "
                       "whose actions are DRAWN frames, not a posed rig. " + 'Ask image_gen for: one action split into N distinct frames with the wing/limb position named for EACH frame and no two alike (asking for "8 frames" alone comes back as three drawings and five near-copies); the body held still so only the moving part moves; and a TRANSPARENT background, adding that if transparency is not possible it should use a flat solid backdrop of one stated colour (e.g. magenta #FF00FF) that appears NOWHERE on the character, since that colour is keyed out on import and any of it in the drawing is a hole. Stating the colour is followed closely — measured, #FF00FF came back as rgb(247,5,245) over 99.8% of the ground; saying only "transparent" came back three different ways (real alpha, green, a painted checkerboard).' + " "
                       "save it under an action name, and the frame boxes are found from the alpha "
                       "(a flat single-colour backdrop is keyed out on import, so a chroma-key "
@@ -3392,7 +3531,14 @@ def action_assets(_inp):
                       "(overlay them: the part that lands on itself is the character, "
                       "the rest is the motion) and is what a flying or jumping action "
                       "needs, since a raised wing makes the frame box taller and aligning "
-                      "bottoms would swing the character once per cycle. Playback fps is the "
+                      "bottoms would swing the character once per cycle. face: {} (or "
+                      "{from: N, bottom?}) banks ONE head and wears it in every frame, "
+                      "erase-then-paste at each frame's own neck anchor — the proportion "
+                      "lottery the generator rolls per call cannot be scaled away (it is "
+                      "non-uniform), so the head is replaced, not normalised: measured, seven "
+                      "frames rendered identical to 0.0% against 4.2% unbanked. For actions "
+                      "where only the head crosses the neck line — a walk, a bow; not a wave. "
+                      "Playback fps is the "
                       "animation cadence, not the video's: 8 is anime's usual 3s, 12 is 2s. Sheets "
                       "and shape parts are alternatives: a drawn character needs no parts",
     "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
@@ -4282,6 +4428,62 @@ def action_selftest():
         ms_note = f"{type(e).__name__}: {e}"
     ck("one action can be drawn across several sheets and read as one sequence",
        "4 frames, cellOf [0,0,1,1], drawn from both files", ms_note, ms_ok)
+
+    # The face bank, both ways: with `face` the two frames wear the SAME head (the
+    # generator draws a different-sized one per call, and no uniform scale can fix a
+    # proportion), and without it the difference must survive — a canary that only
+    # checked one side would pass a paste that never happened.
+    fb_note, fb_ok = "", False
+    try:
+        fbp = os.path.join(OUT_DIR, "selftest-face.png")
+        sheet = Image.new("RGBA", (300, 260), (0, 0, 0, 0))
+        fbd = ImageDraw.Draw(sheet)
+        for cx, r in ((70, 16), (220, 24)):              # same man, two head sizes
+            fbd.ellipse([cx - r, 30 - r + 24, cx + r, 30 + r + 24],
+                        fill=(200, 40, 40, 255))         # head — red
+            fbd.rectangle([cx - 5, 30 + r + 24, cx + 5, 30 + r + 38],
+                          fill=(40, 60, 150, 255))       # neck — the narrow row
+            fbd.ellipse([cx - 26, 30 + r + 38, cx + 26, 190],
+                        fill=(40, 60, 150, 255))         # torso
+            fbd.rectangle([cx - 14, 188, cx - 4, 250], fill=(40, 60, 150, 255))
+            fbd.rectangle([cx + 4, 188, cx + 14, 250], fill=(40, 60, 150, 255))
+        sheet.save(fbp)
+
+        def red_px(with_face, tq):
+            nm = "selftest-face"
+            spec = {"media": fbp, "fps": 2}
+            if with_face:
+                spec["face"] = {}
+            sv = action_save_asset({"action": "save_asset", "name": nm,
+                                    "sheets": {"walk": spec}})
+            if not sv.get("success"):
+                raise SceneError(str(sv.get("error")))
+            scn = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                         "background": {"kind": "gradient", "top": [255, 255, 255],
+                                        "bottom": [255, 255, 255], "vignette": 0},
+                         "layers": [{"kind": "sprite", "name": nm, "from": 0, "to": 2,
+                                     "at": [0.5, 0.9], "shadow": False,
+                                     "plays": [{"action": "walk", "at": 0}]}]})
+            fr = scn.draw_frame(tq).astype(int)
+            return int(((fr[:, :, 0] > 150) & (fr[:, :, 1] < 120)
+                        & (fr[:, :, 2] < 120)).sum())
+
+        on1, on2 = red_px(True, 1.1), red_px(True, 0.6)      # cell 1, cell 2
+        off1, off2 = red_px(False, 1.1), red_px(False, 0.6)
+        decl = load_custom_asset("selftest-face")["sheets"]["walk"]
+        action_delete_asset({"name": "selftest-face"})
+        os.remove(fbp)
+        ratio_on = max(on1, on2) / max(1.0, min(on1, on2))
+        ratio_off = max(off1, off2) / max(1.0, min(off1, off2))
+        fb_note = (f"face-on heads {on1}/{on2}px (x{ratio_on:.2f}) "
+                   f"face-off {off1}/{off2}px (x{ratio_off:.2f}) "
+                   f"decl={'yes' if not decl.get('face') else len(decl['face']['ax'])}anchors")
+        fb_ok = (ratio_on < 1.12 and ratio_off > 1.5
+                 and on1 > 200 and decl.get("face") is None)
+    except Exception as e:  # noqa: BLE001
+        fb_note = f"{type(e).__name__}: {e}"
+    ck("`face` puts one head on every frame; without it the sizes differ",
+       "face-on ratio < 1.12, face-off > 1.5", fb_note, fb_ok)
 
     m3_note, m3_ok = "", False
     try:
