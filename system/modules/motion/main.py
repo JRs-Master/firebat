@@ -2890,6 +2890,78 @@ def _sheet_face(face_spec, medias, all_cells, all_cell_of, used_cells, used_mask
     }
 
 
+def _sheet_foot_lift(masks):
+    """How far each frame lifts a foot off the ground, as a fraction of leg length.
+
+    A walk skims: at mid-swing the toe passes within a centimetre or two of the
+    floor, one or two percent of leg length, directly under the hip. Lift the
+    knee instead and the same drawing reads as a march — measured 2026-09-01, a
+    generated cycle came back with its two passing frames at 27% and 46% and a
+    viewer called it "the knee is at a right angle" without knowing why.
+
+    Feet are the local MAXIMA of the bottom profile. Three earlier detectors got
+    this wrong by trying to separate the two legs — below the crotch they merge
+    into one blob — or by reading the space BETWEEN spread legs, where the lowest
+    pixel is the trouser hem, as a foot in the air. That region is the profile's
+    minimum; a foot, planted or airborne, is a downward bulge.
+    """
+    out = []
+    for m in masks:
+        h, w = m.shape
+        cols = np.where(m.any(0))[0]
+        if len(cols) < 8:
+            out.append(0.0)
+            continue
+        y = np.full(w, -1.0)
+        for x in cols:
+            y[x] = np.where(m[:, x])[0].max()
+        ground = float(y.max())
+        cy = None
+        for yy in range(int(h * 0.45), int(h * 0.92)):
+            runs, prev = 0, False
+            for v in m[yy]:
+                if v and not prev:
+                    runs += 1
+                prev = v
+            if runs >= 2:
+                cy = yy
+                break
+        leg = (ground - cy) if cy else h * 0.45
+        if leg < 8:
+            out.append(0.0)
+            continue
+        lo, hi = int(cols.min()), int(cols.max())
+        seg = y[lo:hi + 1].astype(float)
+        k = max(3, int((hi - lo) * 0.03)) | 1
+        sm = np.convolve(seg, np.ones(k) / k, mode="same")
+        sm[:k], sm[-k:] = seg[:k], seg[-k:]
+        prom = 0.06 * leg
+        peaks, i = [], 1
+        while i < len(sm) - 1:
+            if sm[i] >= sm[i - 1] and sm[i] > sm[i + 1]:
+                r = i
+                while r < len(sm) - 1 and sm[r + 1] <= sm[i] and sm[i] - sm[r] <= prom:
+                    r += 1
+                l = i
+                while l > 0 and sm[l - 1] <= sm[i] and sm[i] - sm[l] <= prom:
+                    l -= 1
+                if sm[i] - min(sm[l], sm[r]) > prom or sm[i] >= ground - 2:
+                    peaks.append((float(sm[i]), i))
+                i = max(i + 1, r)
+            else:
+                i += 1
+        merged = []
+        for v, x in sorted(peaks, key=lambda p: p[1]):
+            if merged and x - merged[-1][1] < 0.25 * leg:
+                if v > merged[-1][0]:
+                    merged[-1] = (v, x)
+            else:
+                merged.append((v, x))
+        gaps = [(ground - v) / leg for v, _ in merged]
+        out.append(round(max(gaps) if gaps else 0.0, 3))
+    return out
+
+
 def _sheet_stride(masks):
     """Widest foot separation across the frames, as a fraction of frame height.
 
@@ -3224,6 +3296,29 @@ def action_save_asset(inp):
                 f"'{_a}' frames run {min(hs)}..{max(hs)}px tall and are pinned by the feet, "
                 "so the character will rise and fall once per cycle. If this action is not "
                 f"standing on the ground, save it with sheets.{_a}.anchor='body'.")
+        # How a walk is told from a march, read off the drawings. Mid-swing in real
+        # walking clears the floor by a centimetre or two — one or two percent of leg
+        # length, the toe skimming under the hip. A generated cycle came back with its
+        # passing frames at 27% and 46% and read as a march, and nothing said so until
+        # someone watched the finished video.
+        if _v.get("anchor") == "feet" and _v.get("stride") and len(_v["cells"]) > 2:
+            lifts = _sheet_foot_lift(_sheet_masks(_v["media"], _v["cells"],
+                                                  _v.get("cellOf") or [0] * len(_v["cells"])))
+            hi = max(lifts) if lifts else 0.0
+            # Only the march is reported. The opposite case — a cycle with no passing at
+            # all — would need a "never lifts" note, and this reading cannot carry one: a
+            # foot hidden directly behind the planted one leaves no trace in the bottom
+            # profile, so "no lift seen" and "no lift drawn" are the same number here.
+            # A knee raised high is always offset sideways, which is why THIS direction
+            # is safe to name.
+            if hi >= 0.25:
+                worst = [i + 1 for i, v in enumerate(lifts) if v >= 0.25]
+                sheet_notes.append(
+                    f"'{_a}' frame(s) {', '.join(str(v) for v in worst)} lift a foot to "
+                    f"{round(hi * 100)}% of leg length. Walking skims: at mid-swing the toe "
+                    "passes a finger's width above the floor, directly under the hip, with "
+                    "the thigh near vertical. A knee raised this far reads as a march. Ask "
+                    "for that frame again with the foot skimming, not the knee lifted.")
     # A sheet-only character carries no shape parts: its drawings ARE the asset.
     if sheets and inp.get("parts") is None:
         parts = []
@@ -4484,6 +4579,47 @@ def action_selftest():
         fb_note = f"{type(e).__name__}: {e}"
     ck("`face` puts one head on every frame; without it the sizes differ",
        "face-on ratio < 1.12, face-off > 1.5", fb_note, fb_ok)
+
+    # Walk vs march, both ways: a cycle whose swing foot skims must pass silently,
+    # and one that lifts the knee must be named. Checking only the bad direction
+    # would pass a detector that flags everything (three earlier ones did).
+    gt_note, gt_ok = "", False
+    try:
+        def lift_note(lift_px):
+            """A 3-frame walk whose middle frame lifts one foot by `lift_px`."""
+            gp = os.path.join(OUT_DIR, "selftest-gait.png")
+            im5 = Image.new("RGBA", (660, 300), (0, 0, 0, 0))
+            g5 = ImageDraw.Draw(im5)
+            for k, cx in enumerate((110, 330, 550)):
+                g5.ellipse([cx - 34, 40, cx + 34, 150], fill=(40, 60, 120, 255))
+                # middle frame = passing; its feet stay apart enough that the lifted
+                # one is not hidden behind the planted one (which is the one thing this
+                # reading cannot see through)
+                spread = 46 if k != 1 else 22
+                for si, s_ in enumerate((-spread, spread)):
+                    # the middle frame lifts its BACK foot by lift_px
+                    up = lift_px if (k == 1 and si == 0) else 0
+                    g5.polygon([(cx - 7, 145), (cx + 7, 145),
+                                (cx + s_ + 11, 280 - up), (cx + s_ - 11, 280 - up)],
+                               fill=(40, 60, 120, 255))
+            im5.save(gp)
+            sv = action_save_asset({"action": "save_asset", "name": "selftest-gait",
+                                    "sheets": {"walk": {"media": gp, "fps": 3}}})
+            notes = " ".join((sv.get("data") or {}).get("notes") or []) or str(
+                (sv.get("data") or {}).get("note") or "")
+            action_delete_asset({"name": "selftest-gait"})
+            os.remove(gp)
+            return notes
+
+        skim = lift_note(6)        # toe skims — must say nothing about a march
+        march = lift_note(90)      # knee up — must be named
+        gt_note = (f"skim-note={'march' in skim.lower()} "
+                   f"march-note={'march' in march.lower()}")
+        gt_ok = ("march" not in skim.lower()) and ("march" in march.lower())
+    except Exception as e:  # noqa: BLE001
+        gt_note = f"{type(e).__name__}: {e}"
+    ck("a knee-high passing frame is named a march; a skimming one is not",
+       "skim silent, march flagged", gt_note, gt_ok)
 
     m3_note, m3_ok = "", False
     try:
