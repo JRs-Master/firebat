@@ -74,6 +74,23 @@ const MAX_ATTEMPTS: u32 = 2;
 /// How much of the child's stderr to keep for a failure message.
 const STDERR_TAIL_MAX: usize = 8192;
 
+/// Keep the last `STDERR_TAIL_MAX` bytes of the child's stderr, dropping WHOLE LINES.
+///
+/// Never a byte offset. Trimming this by length took the service down twice on 2026-08-31:
+/// codex echoes the prompt into its own tracing output, the prompt is Korean, and
+/// `String::drain` to a byte index that lands inside a character panics — which aborts the
+/// process. It only fires past the cap, so it fires on exactly the verbose runs the drain
+/// was added for.
+fn push_tail(tail: &mut std::collections::VecDeque<String>, held: &mut usize, line: String) {
+    *held += line.len() + 1;
+    tail.push_back(line);
+    while *held > STDERR_TAIL_MAX && tail.len() > 1 {
+        if let Some(gone) = tail.pop_front() {
+            *held -= gone.len() + 1;
+        }
+    }
+}
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -299,18 +316,20 @@ impl ImageFormatHandler for CliCodexImageFormat {
             stderr_task = Some(tokio::spawn({
                 let progress = Arc::clone(&progress);
                 async move {
+                    // Whole lines, never a byte offset. Trimming this by length took the
+                    // service down twice on 2026-08-31: codex echoes the prompt into its own
+                    // tracing output, the prompt is Korean, and String::drain to a byte index
+                    // that lands inside a character panics — which aborts the process. It only
+                    // fires past the cap, so it fires on exactly the verbose runs this drain
+                    // was added for.
                     let mut reader = BufReader::new(stderr).lines();
-                    let mut tail = String::new();
+                    let mut tail: std::collections::VecDeque<String> = Default::default();
+                    let mut held = 0usize;
                     while let Ok(Some(line)) = reader.next_line().await {
                         progress.store(now_ms(), Ordering::Relaxed);
-                        tail.push_str(&line);
-                        tail.push('\n');
-                        if tail.len() > STDERR_TAIL_MAX {
-                            let cut = tail.len() - STDERR_TAIL_MAX;
-                            tail.drain(..cut);
-                        }
+                        push_tail(&mut tail, &mut held, line);
                     }
-                    tail
+                    Vec::from(tail).join("\n")
                 }
             }));
 
@@ -572,5 +591,36 @@ mod tests {
         assert_eq!(found[0].file_name().unwrap(), "call_new.png");
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The stderr tail keeps whole lines and never cuts inside a character.
+    ///
+    /// codex echoes the prompt into its tracing output, our prompts carry Korean, and the
+    /// first version of this trimmed by byte length — `String::drain` to an index inside a
+    /// character panics, and a panic on a tokio worker aborts the process. It took the
+    /// service down twice on 2026-08-31 and only ever fires past the cap, which is to say
+    /// on exactly the verbose runs the drain exists for. Both directions: over the cap it
+    /// drops from the front, under it nothing is lost.
+    #[test]
+    fn stderr_tail_trims_by_line_and_survives_multibyte() {
+        fn tail_of(lines: &[String]) -> String {
+            let mut tail: std::collections::VecDeque<String> = Default::default();
+            let mut held = 0usize;
+            for line in lines {
+                push_tail(&mut tail, &mut held, line.clone());
+            }
+            Vec::from(tail).join("\n")
+        }
+
+        let noisy: Vec<String> = (0..400).map(|i| format!("{i} 이미지 생성 로그 한 줄 — codex")).collect();
+        let out = tail_of(&noisy);
+        assert!(out.len() <= STDERR_TAIL_MAX * 2, "tail ran away: {}", out.len());
+        assert!(out.len() > STDERR_TAIL_MAX / 2, "tail lost everything: {}", out.len());
+        assert!(std::str::from_utf8(out.as_bytes()).is_ok());
+        assert!(out.ends_with("399 이미지 생성 로그 한 줄 — codex"), "kept the wrong end");
+        assert!(!out.contains("0 이미지 생성"), "the front should have been dropped");
+
+        let short = vec!["한 줄".to_string(), "두 줄".to_string()];
+        assert_eq!(tail_of(&short), "한 줄\n두 줄");
     }
 }
