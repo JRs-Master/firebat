@@ -867,6 +867,46 @@ _KEY_NEAR, _KEY_FAR = 40, 90
 _KEY_POCKET_MAX_FRAC = 0.0005
 
 
+def _reach_from_border(mask):
+    """Which True pixels a flood entering from the image edge can reach.
+
+    The keyer only ever asked "does the border reach here", never "which blob is this", and
+    the general labeller it was using walks every backdrop pixel in Python — 4.7s for one
+    1024x1536 drawing, which made the one-frame-per-call path (seven files, each read three
+    times) time out the caller. Scanline propagation answers the same question in a handful
+    of whole-array passes: within one row, a run of mask survives if any reached pixel sits
+    in it, which is a pair of running maxima.
+
+    4-connected on purpose. It is the conservative direction — a one-pixel diagonal pinch
+    stops the flood rather than letting it through into the drawing — and a pocket left
+    behind by that is caught by the small-pocket rule below.
+    """
+    reach = np.zeros(mask.shape, bool)
+    reach[0] = mask[0]
+    reach[-1] = mask[-1]
+    reach[:, 0] = mask[:, 0]
+    reach[:, -1] = mask[:, -1]
+
+    def sweep(m, r):
+        n = m.shape[1]
+        idx = np.arange(n)[None, :]
+        wall = np.maximum.accumulate(np.where(~m, idx, -1), axis=1)
+        seed = np.maximum.accumulate(np.where(r, idx, -1), axis=1)
+        out = m & (seed > wall)
+        rm, rr = m[:, ::-1], (r | out)[:, ::-1]
+        wall = np.maximum.accumulate(np.where(~rm, idx, -1), axis=1)
+        seed = np.maximum.accumulate(np.where(rr, idx, -1), axis=1)
+        return out | (rm & (seed > wall))[:, ::-1]
+
+    for _ in range(24):
+        grown = sweep(mask, reach)
+        grown = grown | sweep(mask.T, grown.T).T
+        if grown.sum() == reach.sum():
+            break
+        reach = grown
+    return reach
+
+
 def _key_flat_background(im):
     """An RGBA sheet whose flat backdrop has been turned into real transparency.
 
@@ -903,12 +943,9 @@ def _key_flat_background(im):
     # bellies. An enclosed area is inside the drawing however pale it is, so the key
     # runs as a flood from the edge and stops at the outline.
     near = dist <= _KEY_FAR
-    lab = _label_blobs(near)
-    edge_labels = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
-    edge_labels = edge_labels[edge_labels != 0]
-    if not len(edge_labels):
+    outside = _reach_from_border(near)
+    if not outside.any():
         return im
-    outside = np.isin(lab, edge_labels)
     # A pocket the drawing encloses is backdrop too. The gap between this man's headband tail
     # and his neck is one, and the flood cannot reach it — it came through into a finished
     # video as a pink patch on his throat (2026-08-31). Only tiny ones are taken: an enclosed
