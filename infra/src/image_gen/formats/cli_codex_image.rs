@@ -618,7 +618,16 @@ mod tests {
         assert!(out.len() > STDERR_TAIL_MAX / 2, "tail lost everything: {}", out.len());
         assert!(std::str::from_utf8(out.as_bytes()).is_ok());
         assert!(out.ends_with("399 이미지 생성 로그 한 줄 — codex"), "kept the wrong end");
-        assert!(!out.contains("0 이미지 생성"), "the front should have been dropped");
+        // The first line still present must not be the first line written. Checked by its
+        // number rather than by substring: "0 이미지" is inside "10 이미지" and "100 이미지",
+        // so a contains() here passes and fails for the wrong reasons.
+        let first_kept: usize = out
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().next())
+            .and_then(|n| n.parse().ok())
+            .expect("tail should start with a numbered line");
+        assert!(first_kept > 0, "the front should have been dropped, kept from {first_kept}");
 
         let short = vec!["한 줄".to_string(), "두 줄".to_string()];
         assert_eq!(tail_of(&short), "한 줄\n두 줄");
