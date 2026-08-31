@@ -3047,7 +3047,13 @@ def action_save_asset(inp):
             "data": {"asset": name, "parts": len(parts), "replaced": replaced,
                      **({"sheets": {k: {"frames": len(v.get("order") or v["cells"]),
                                         "anchor": v.get("anchor", "feet"),
-                                        "stride": v.get("stride", 0)}
+                                        "stride": v.get("stride", 0),
+                                        # Only when it did something. Like stride and cells,
+                                        # this is measured here, not passed in — so the answer
+                                        # is the only place an author can see it happened.
+                                        **({"resized": [round(x, 3) for x in v["cellScale"]]}
+                                           if max(v.get("cellScale") or [1.0])
+                                           - min(v.get("cellScale") or [1.0]) > 0.001 else {})}
                                     for k, v in sheets.items()}}
                         if sheets else {}),
                      **({"note": " ".join(sheet_notes)} if sheet_notes else {}),
