@@ -423,6 +423,11 @@ async function actionPublish(site, d) {
   if (d.thumbnail) featured = await uploadMedia(site, d.thumbnail, title);
 
   const cats = [...(d.categories || []), ...(site.category ? [site.category] : [])];
+  // Where the status came from, said out loud. Publishing live or filing a draft is the operator's
+  // decision and it lives on the site row; a caller can override it for one post, and when that
+  // happens the answer has to show it — otherwise "why did that go out as a draft" has no visible
+  // cause and the site setting looks broken.
+  const statusFrom = d.status ? 'call' : (site.status ? 'site' : 'default');
   const post = {
     title,
     content: body,
@@ -445,6 +450,9 @@ async function actionPublish(site, d) {
     url: created?.link,
     id: created?.id,
     status: created?.status,
+    statusFrom: statusFrom === 'call'
+      ? `이 호출이 \`${d.status}\` 로 지정 — 사이트 설정(${site.status || 'publish'})을 덮었습니다`
+      : statusFrom === 'site' ? `사이트 설정 (${site.status})` : '기본값 (publish)',
     thumbnail: featured ? featured.url : null,
     images: uploaded.map(u => u.url),
     categories: cats,
