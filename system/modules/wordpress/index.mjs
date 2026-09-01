@@ -300,8 +300,42 @@ async function fetchBytes(src) {
   return { buf: readFileSync(rel), name: basename(rel) };
 }
 
+/**
+ * A picture the site ALREADY has, or null if this is something to upload.
+ *
+ * Re-uploading a file the library already holds is the quiet wrong answer: it succeeds, the post
+ * looks right, and the library grows a duplicate nobody asked for — and the copy is not the one
+ * the operator curated, so replacing the original later changes nothing. So an attachment id and
+ * a url on the site's own host both resolve to the attachment that is already there.
+ */
+async function existingMedia(site, src) {
+  const s = String(src || '').trim();
+  const asId = /^\d+$/.test(s) ? Number(s)
+    : /^id:(\d+)$/i.test(s) ? Number(s.match(/^id:(\d+)$/i)[1]) : null;
+  if (asId) {
+    const m = await wp(site, `/media/${asId}`);
+    if (!m?.id) throw new Error(`이 사이트의 미디어 ${asId} 번을 찾지 못했습니다 — media 액션으로 `
+      + `목록을 확인해 주세요.`);
+    return { id: m.id, url: m.source_url, name: m.slug, reused: true };
+  }
+  if (!/^https?:\/\//i.test(s)) return null;
+  let host, siteHost;
+  try { host = new URL(s).host; siteHost = new URL(site.url).host; } catch { return null; }
+  if (host !== siteHost) return null;                 // someone else's picture — upload a copy
+  // The library's own url: find the attachment instead of making a second one.
+  const file = basename(new URL(s).pathname).replace(/\.[a-z0-9]+$/i, '');
+  const found = await wp(site, `/media?search=${encodeURIComponent(file)}&per_page=20`);
+  const hit = (found || []).find(m => m.source_url === s)
+    || (found || []).find(m => String(m.source_url || '').includes(file));
+  if (hit) return { id: hit.id, url: hit.source_url, name: hit.slug, reused: true };
+  throw new Error(`\`${s}\` 는 이 사이트 주소인데 미디어 라이브러리에서 찾지 못했습니다. `
+    + `media 액션으로 검색해 id 를 확인하거나, 다른 자리의 파일이면 그 원본 경로를 주세요.`);
+}
+
 /** Upload to the site's media library and return what WordPress now calls it. */
 async function uploadMedia(site, src, alt) {
+  const already = await existingMedia(site, src);
+  if (already) return already;
   const { buf, name } = await fetchBytes(src);
   const ext = (name.split('.').pop() || '').toLowerCase();
   const type = MIME[ext];
@@ -427,6 +461,25 @@ async function actionPosts(site, d) {
     items: (list || []).map(p => ({
       id: p.id, title: p.title?.rendered, url: p.link, status: p.status, date: p.date,
     })),
+  });
+}
+
+async function actionMedia(site, d) {
+  const n = Math.min(Math.max(Number(d.limit) || 20, 1), 50);
+  const q = String(d.query || '').trim();
+  const list = await wp(site, `/media?per_page=${n}&orderby=date&order=desc&media_type=image`
+    + (q ? `&search=${encodeURIComponent(q)}` : ''));
+  return out(true, {
+    identity: `${site.id} = ${site.url}`,
+    items: (list || []).map(m => ({
+      id: m.id,
+      url: m.source_url,
+      title: m.title?.rendered,
+      alt: m.alt_text || null,
+      date: m.date,
+    })),
+    note: '여기 있는 그림을 쓰려면 publish 의 `thumbnail` 이나 `images[].src` 에 그 `id` 를 '
+      + '그대로 넣으세요. 사본이 생기지 않고 이 그림이 그대로 쓰입니다.',
   });
 }
 
@@ -567,8 +620,9 @@ async function main() {
   try {
     if (action === 'publish') return await actionPublish(site, d);
     if (action === 'posts') return await actionPosts(site, d);
+    if (action === 'media') return await actionMedia(site, d);
     if (action === 'categories') return await actionCategories(site);
-    return out(false, `알 수 없는 액션 \`${action}\` — sites / publish / posts / categories`);
+    return out(false, `알 수 없는 액션 \`${action}\` — sites / publish / posts / media / categories`);
   } catch (e) {
     return out(false, e?.message || String(e));
   }

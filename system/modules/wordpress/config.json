@@ -90,12 +90,12 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["sites", "publish", "posts", "categories", "selftest"],
-        "description": "sites = 등록된 사이트와 각 사이트의 글쓰기 지침 / publish = 글 발행 / posts = 최근 글 목록 / categories = 그 사이트의 카테고리"
+        "enum": ["sites", "publish", "posts", "media", "categories", "selftest"],
+        "description": "sites = 등록된 사이트와 각 사이트의 글쓰기 지침 / publish = 글 발행 / posts = 최근 글 목록 / media = 그 사이트 미디어 라이브러리의 그림 / categories = 그 사이트의 카테고리"
       },
       "site": {
         "type": "string",
-        "description": "[publish|posts|categories] 사이트 id — sites 가 돌려준 것. 하나만 등록돼 있으면 생략 가능하다.",
+        "description": "[publish|posts|media|categories] 사이트 id — sites 가 돌려준 것. 하나만 등록돼 있으면 생략 가능하다.",
         "source": "sites",
         "collection": "sites"
       },
@@ -114,11 +114,11 @@
       },
       "thumbnail": {
         "type": "string",
-        "description": "[publish] 대표 이미지(썸네일)로 올릴 파일. /user/media/... 경로 또는 http(s) 주소. image_gen 이 돌려준 url 을 그대로 넣으면 된다."
+        "description": "[publish] 대표 이미지(썸네일). 셋 중 하나다 — 이미 그 사이트 미디어에 있는 그림의 id 숫자(media 액션이 돌려준다), /user/media/... 경로, http(s) 주소. id 를 주면 그 그림이 그대로 쓰이고 사본이 생기지 않는다. 사이트 자기 주소를 주면 라이브러리에서 그 그림을 찾아 쓴다."
       },
       "images": {
         "type": "array",
-        "description": "[publish] 본문에 넣을 이미지들. 각 항목은 `{src, alt?, caption?, after?}` — src 는 /user/media 경로나 http(s) 주소, after 는 몇 번째 블록 뒤에 넣을지(0 = 맨 앞, 생략하면 끝). 워드프레스 미디어로 먼저 올라간 뒤 그 주소로 박힌다.",
+        "description": "[publish] 본문에 넣을 이미지들. 각 항목은 `{src, alt?, caption?, after?}` — src 는 미디어 id 숫자, /user/media 경로, http(s) 주소 중 하나이고, after 는 몇 번째 블록 뒤에 넣을지(0 = 맨 앞, 생략하면 끝). 워드프레스 미디어로 먼저 올라간 뒤 그 주소로 박힌다.",
         "items": { "type": "object" }
       },
       "status": {
@@ -140,11 +140,15 @@
         "type": "string",
         "description": "[publish] 목록에 보이는 요약. 생략하면 워드프레스가 본문 앞부분을 쓴다."
       },
+      "query": {
+        "type": "string",
+        "description": "[media] 파일명·제목으로 좁히기. 생략하면 최근 것부터."
+      },
       "limit": {
         "type": "integer",
         "minimum": 1,
         "maximum": 50,
-        "description": "[posts] 가져올 글 수 (기본 10)"
+        "description": "[posts|media] 가져올 개수 (posts 기본 10, media 기본 20)"
       }
     }
   },
@@ -176,6 +180,14 @@
       "params": ["site", "limit"],
       "required": [],
       "tags": ["글 목록", "발행 이력"]
+    },
+    {
+      "id": "media",
+      "name": "미디어 라이브러리",
+      "description": "그 사이트에 이미 올라가 있는 그림의 id·주소·제목을 돌려준다. 여기 id 를 publish 의 thumbnail 이나 images 에 넣으면 사본 없이 그 그림이 쓰인다.",
+      "params": ["site", "query", "limit"],
+      "required": [],
+      "tags": ["미디어", "이미지 목록", "썸네일 고르기"]
     },
     {
       "id": "categories",
