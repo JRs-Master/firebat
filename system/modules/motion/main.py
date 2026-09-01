@@ -3160,27 +3160,35 @@ def _sheet_cell_scale(cells, cell_of, n_files):
     if not cells:
         return []
     heights = [float(c[3] - c[1] + 1) for c in cells]
-    mean = sum(heights) / len(heights)
-    if mean > 0 and (max(heights) - min(heights)) / mean <= CELL_SIZE_GATE:
-        target = sorted(heights)[len(heights) // 2]
-        return [round(target / h, 4) for h in heights]
-    if n_files < 2:
-        return [1.0] * len(cells)
-    by_file = {}
-    for h, f in zip(heights, cell_of or [0] * len(cells)):
-        by_file.setdefault(f, []).append(h)
-    med = {f: sorted(v)[len(v) // 2] for f, v in by_file.items()}
-    # The target is the median CELL, so the size most of the drawings already are is
-    # the size they all end up. Taking the largest canvas instead let one odd drawing
-    # resize the character: borrowing a passing frame that had been drawn alone on its
-    # own canvas, three times the cells beside it, scaled every other frame up by three
-    # and the same `scale: 0.5` sprite came out 25% taller -- and those frames were
-    # upsampled 3x to get there, when the odd one could have been resampled down.
-    # The LOWER median, so an even split resamples down rather than up: with two cells
-    # and nothing to be a majority there is no evidence which size is the character's,
-    # and downscaling is the one that does not invent detail.
-    target = sorted(heights)[(len(heights) - 1) // 2]
-    return [round(target / float(med[f]), 4) for f in (cell_of or [0] * len(cells))]
+    cell_of = cell_of or [0] * len(cells)
+    # The two treatments COMPOSE; they are not alternatives. Canvases first, then whatever
+    # scatter is left over. Running them as a fork meant one borrowed drawing on its own
+    # canvas took the whole sheet down the canvas branch and switched the per-cell
+    # flattening off for every frame -- and that flattening is the thing that stops his
+    # height dropping mid-stride. Measured: one frame came out 8% short (219px against
+    # 237) because its own sheet had drawn it small and nothing was left to even it out.
+    scale = [1.0] * len(cells)
+    if n_files > 1:
+        by_file = {}
+        for h, f in zip(heights, cell_of):
+            by_file.setdefault(f, []).append(h)
+        med = {f: sorted(v)[len(v) // 2] for f, v in by_file.items()}
+        # The target is the median CELL, so the size most of the drawings already are is
+        # the size they all end up. Taking the largest canvas instead let one odd drawing
+        # resize the character: a passing frame drawn alone at three times the cells
+        # beside it scaled every other frame UP by three, so the same `scale: 0.5` sprite
+        # came out 25% taller and was upsampled 3x to get there.
+        # The LOWER median, so an even split resamples down rather than up: with two cells
+        # and nothing to be a majority there is no evidence which size is the character's,
+        # and downscaling is the one that does not invent detail.
+        target = sorted(heights)[(len(heights) - 1) // 2]
+        scale = [target / float(med[f]) for f in cell_of]
+    adj = [h * s for h, s in zip(heights, scale)]
+    mean = sum(adj) / len(adj)
+    if mean > 0 and (max(adj) - min(adj)) / mean <= CELL_SIZE_GATE:
+        target2 = sorted(adj)[len(adj) // 2]
+        scale = [s * target2 / a for s, a in zip(scale, adj)]
+    return [round(s, 4) for s in scale]
 
 
 def validate_sheets(sheets):
@@ -4806,22 +4814,27 @@ def action_selftest():
     # announced a rise-and-fall in the very frames it had just evened out.
     bg_note, bg_ok = "", False
     try:
-        def figure(path, mul, spread):
-            """One side-view figure, `mul` times life size, feet `spread` apart."""
-            s = float(mul)
-            im7 = Image.new("RGBA", (int(300 * s), int(320 * s)), (0, 0, 0, 0))
+        def sheet(path, muls, spread):
+            """A row of side-view figures, each `mul` times life size, feet `spread` apart."""
+            im7 = Image.new("RGBA", (int(320 * len(muls) * max(muls)), int(330 * max(muls))),
+                            (0, 0, 0, 0))
             g7 = ImageDraw.Draw(im7)
-            g7.ellipse([110 * s, 40 * s, 190 * s, 150 * s], fill=(40, 60, 120, 255))
-            for dx in (-spread, spread):
-                g7.polygon([(146 * s, 145 * s), (154 * s, 145 * s),
-                            ((150 + dx + 12) * s, 285 * s), ((150 + dx - 12) * s, 285 * s)],
-                           fill=(40, 60, 120, 255))
+            for k, mul in enumerate(muls):
+                s = float(mul)
+                ox = int(320 * max(muls)) * k
+                g7.ellipse([ox + 110 * s, 40 * s, ox + 190 * s, 150 * s], fill=(40, 60, 120, 255))
+                for dx in (-spread, spread):
+                    g7.polygon([(ox + 146 * s, 145 * s), (ox + 154 * s, 145 * s),
+                                (ox + (150 + dx + 12) * s, 285 * s),
+                                (ox + (150 + dx - 12) * s, 285 * s)], fill=(40, 60, 120, 255))
             im7.save(path)
             return path
 
-        wide = figure(os.path.join(OUT_DIR, "selftest-big-a.png"), 1, 60)
-        near_small = figure(os.path.join(OUT_DIR, "selftest-big-b.png"), 1, 20)
-        near_big = figure(os.path.join(OUT_DIR, "selftest-big-c.png"), 3, 20)
+        # the wide sheet carries the generator's own few-percent scatter, which is what
+        # the per-cell pass exists to flatten and what the canvas pass must not switch off
+        wide = sheet(os.path.join(OUT_DIR, "selftest-big-a.png"), (1.0, 1.06, 0.94), 60)
+        near_small = sheet(os.path.join(OUT_DIR, "selftest-big-b.png"), (1.0,), 20)
+        near_big = sheet(os.path.join(OUT_DIR, "selftest-big-c.png"), (3.0,), 20)
 
         def saved(paths):
             sv = action_save_asset({"action": "save_asset", "name": "selftest-big",
@@ -4832,27 +4845,29 @@ def action_selftest():
             action_delete_asset({"name": "selftest-big"})
             return out
 
-        def drawn_height(paths):
-            """What one `scale` is measured against: the shared height after cellScale."""
+        def scaled(paths):
+            """Every cell's height after cellScale — one `scale` is measured against these."""
             cl, cf = [], []
             for fi, p in enumerate(paths):
                 for c in find_sheet_cells(p):
                     cl.append(c); cf.append(fi)
             sc = _sheet_cell_scale(cl, cf, len(paths))
-            return max((c[3] - c[1] + 1) * s for c, s in zip(cl, sc))
+            return [(c[3] - c[1] + 1) * s for c, s in zip(cl, sc)]
 
         even_stride, _ = saved([wide, near_small])
         big_stride, big_msg = saved([wide, near_big])
-        h_even, h_big = drawn_height([wide, near_small]), drawn_height([wide, near_big])
+        a_even, a_big = scaled([wide, near_small]), scaled([wide, near_big])
         for p in (wide, near_small, near_big):
             os.remove(p)
         rise = "rise and fall" in big_msg.lower()
+        flat = (max(a_big) - min(a_big)) / (sum(a_big) / len(a_big))
         bg_note = (f"stride even {even_stride} vs one sheet 3x {big_stride}; "
-                   f"drawn height {h_even:.0f} vs {h_big:.0f}; "
-                   f"rise-and-fall claimed: {rise}")
+                   f"drawn height {max(a_even):.0f} vs {max(a_big):.0f}; "
+                   f"heights still {flat*100:.1f}% apart; rise-and-fall claimed: {rise}")
         bg_ok = (even_stride and big_stride
                  and abs(big_stride - even_stride) < 0.02 and not rise
-                 and abs(h_big - h_even) < 0.1 * h_even)
+                 and abs(max(a_big) - max(a_even)) < 0.1 * max(a_even)
+                 and flat < 0.02)
     except Exception as e:  # noqa: BLE001
         bg_note = f"{type(e).__name__}: {e}"
     ck("a frame drawn at another size changes neither the stride nor the anchor advice",
