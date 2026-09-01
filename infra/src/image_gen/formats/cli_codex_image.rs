@@ -71,6 +71,20 @@ const STALL_POLL: Duration = Duration::from_secs(5);
 /// One retry, because the wedge is per-connection: the next spawn gets a new socket.
 const MAX_ATTEMPTS: u32 = 2;
 
+/// How long to keep waiting for the NEXT picture of a multi-image run once one has landed.
+///
+/// The harvest used to return the moment any file was stable, which is right when one picture was
+/// ever asked for and wrong the moment `count` shipped: the kill that follows lands on a codex
+/// that is mid-turn. Measured 2026-09-02 on a two-image request — variant 1 finished at 36.9s,
+/// codex said "generating the second", and the rollout ends with
+/// `turn_aborted / reason: interrupted` at 51.4s. We interrupted it, and the unfilled reservation
+/// was reported to the operator as the generator returning fewer pictures than were asked for.
+///
+/// A picture takes 40~60s, so this is the gap that says "no more are coming" rather than "the next
+/// one is still drawing". Waiting out `CODEX_TIMEOUT` instead would hold the run lock for 25
+/// minutes every time the model decides one is enough.
+const MULTI_GRACE: Duration = Duration::from_secs(150);
+
 /// How much of the child's stderr to keep for a failure message.
 const STDERR_TAIL_MAX: usize = 8192;
 
@@ -382,8 +396,15 @@ impl ImageFormatHandler for CliCodexImageFormat {
             // 안 끝난다(2026-07-27 실측: 생성 56초 / 종료 대기 420초 = 타임아웃까지 감). 도구 결과에
             // "The generated image is already displayed to the user" 라고 적혀 있어 모델은 더 할 일이
             // 없다고 보고 마무리를 서두르지 않는다 — 우리가 기다릴 이유가 없다.
-            // 파일이 보이면 크기가 안정될 때까지만 확인(쓰는 중 truncated read 방지) 후 즉시 종료.
+            // 파일 크기가 안정될 때까지 확인하는 것은 쓰는 중 truncated read 방지.
+            // `want` is part of the completion signal, not just of the prompt. Stopping at the
+            // first stable file kills a codex that is still drawing the rest of the set — see
+            // MULTI_GRACE. So: stop as soon as we have them all, and when fewer arrive, stop only
+            // after the gap that means no more are coming (with whatever did land — a partial set
+            // is worth more than a killed run, and the caller is told how many it got).
             let watch = async {
+                let mut best = 0usize;
+                let mut last_new = std::time::Instant::now();
                 loop {
                     tokio::time::sleep(HARVEST_POLL).await;
                     let Some(home) = codex_home.as_ref() else {
@@ -393,10 +414,28 @@ impl ImageFormatHandler for CliCodexImageFormat {
                     if files.is_empty() {
                         continue;
                     }
+                    if files.len() > best {
+                        best = files.len();
+                        last_new = std::time::Instant::now();
+                    }
                     let before = file_sizes(&files);
                     tokio::time::sleep(HARVEST_SETTLE).await;
                     let after = harvest_generated_images(home, started_at);
-                    if after.len() == files.len() && file_sizes(&after) == before {
+                    let settled = after.len() == files.len() && file_sizes(&after) == before;
+                    if !settled {
+                        continue;
+                    }
+                    if after.len() >= want {
+                        return after;
+                    }
+                    if last_new.elapsed() >= MULTI_GRACE {
+                        tracing::warn!(
+                            target: "media",
+                            "[cli-codex-image] asked for {want}, {} landed and none since {}s \
+                             — taking what there is",
+                            after.len(),
+                            MULTI_GRACE.as_secs()
+                        );
                         return after;
                     }
                 }
