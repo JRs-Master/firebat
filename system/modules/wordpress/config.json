@@ -140,6 +140,11 @@
         "type": "string",
         "description": "[publish] 목록에 보이는 요약. 생략하면 워드프레스가 본문 앞부분을 쓴다."
       },
+      "id": {
+        "type": "integer",
+        "description": "[posts] 이 글 하나만 — 저장된 블록 마크업(content)까지 그대로 돌려준다. 편집기가 블록 오류를 낼 때 실제로 뭐가 들어갔는지 보는 자리다.",
+        "source": "posts or publish"
+      },
       "query": {
         "type": "string",
         "description": "[media] 파일명·제목으로 좁히기. 생략하면 최근 것부터."
@@ -176,10 +181,10 @@
     {
       "id": "posts",
       "name": "최근 글",
-      "description": "그 사이트에 최근 올라간 글의 제목·주소·상태·시각을 돌려준다.",
-      "params": ["site", "limit"],
+      "description": "그 사이트에 최근 올라간 글의 제목·주소·상태·시각을 돌려준다. `id` 를 주면 그 글 하나의 저장된 블록 마크업까지 돌려준다.",
+      "params": ["site", "id", "limit"],
       "required": [],
-      "tags": ["글 목록", "발행 이력"]
+      "tags": ["글 목록", "발행 이력", "본문 확인"]
     },
     {
       "id": "media",

@@ -454,6 +454,21 @@ function wpName(componentType) {
 }
 
 async function actionPosts(site, d) {
+  // One post by id comes back with the block markup AS STORED. Without this the module can write
+  // a post and never read one, so "the editor shows a block error" has no ground truth on this
+  // side and the only way to look is to guess at what was probably serialized.
+  if (d.id != null && String(d.id).trim() !== '') {
+    const p = await wp(site, `/posts/${encodeURIComponent(String(d.id).trim())}?context=edit`);
+    return out(true, {
+      identity: `${site.id} = ${site.url}`,
+      id: p?.id,
+      title: p?.title?.raw ?? p?.title?.rendered,
+      url: p?.link,
+      status: p?.status,
+      featured_media: p?.featured_media || null,
+      content: p?.content?.raw ?? p?.content?.rendered ?? '',
+    });
+  }
   const n = Math.min(Math.max(Number(d.limit) || 10, 1), 50);
   const list = await wp(site, `/posts?per_page=${n}&status=any&orderby=date&order=desc`);
   return out(true, {
