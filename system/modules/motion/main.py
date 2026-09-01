@@ -3170,7 +3170,16 @@ def _sheet_cell_scale(cells, cell_of, n_files):
     for h, f in zip(heights, cell_of or [0] * len(cells)):
         by_file.setdefault(f, []).append(h)
     med = {f: sorted(v)[len(v) // 2] for f, v in by_file.items()}
-    target = max(med.values())
+    # The target is the median CELL, so the size most of the drawings already are is
+    # the size they all end up. Taking the largest canvas instead let one odd drawing
+    # resize the character: borrowing a passing frame that had been drawn alone on its
+    # own canvas, three times the cells beside it, scaled every other frame up by three
+    # and the same `scale: 0.5` sprite came out 25% taller -- and those frames were
+    # upsampled 3x to get there, when the odd one could have been resampled down.
+    # The LOWER median, so an even split resamples down rather than up: with two cells
+    # and nothing to be a majority there is no evidence which size is the character's,
+    # and downscaling is the one that does not invent detail.
+    target = sorted(heights)[(len(heights) - 1) // 2]
     return [round(target / float(med[f]), 4) for f in (cell_of or [0] * len(cells))]
 
 
@@ -4823,15 +4832,27 @@ def action_selftest():
             action_delete_asset({"name": "selftest-big"})
             return out
 
+        def drawn_height(paths):
+            """What one `scale` is measured against: the shared height after cellScale."""
+            cl, cf = [], []
+            for fi, p in enumerate(paths):
+                for c in find_sheet_cells(p):
+                    cl.append(c); cf.append(fi)
+            sc = _sheet_cell_scale(cl, cf, len(paths))
+            return max((c[3] - c[1] + 1) * s for c, s in zip(cl, sc))
+
         even_stride, _ = saved([wide, near_small])
         big_stride, big_msg = saved([wide, near_big])
+        h_even, h_big = drawn_height([wide, near_small]), drawn_height([wide, near_big])
         for p in (wide, near_small, near_big):
             os.remove(p)
         rise = "rise and fall" in big_msg.lower()
         bg_note = (f"stride even {even_stride} vs one sheet 3x {big_stride}; "
+                   f"drawn height {h_even:.0f} vs {h_big:.0f}; "
                    f"rise-and-fall claimed: {rise}")
         bg_ok = (even_stride and big_stride
-                 and abs(big_stride - even_stride) < 0.02 and not rise)
+                 and abs(big_stride - even_stride) < 0.02 and not rise
+                 and abs(h_big - h_even) < 0.1 * h_even)
     except Exception as e:  # noqa: BLE001
         bg_note = f"{type(e).__name__}: {e}"
     ck("a frame drawn at another size changes neither the stride nor the anchor advice",
