@@ -3013,10 +3013,18 @@ def _sheet_stride(masks):
     """Widest foot separation across the frames, as a fraction of frame height.
 
     Measured in the bottom tenth of each cell — that band is feet. Returns 0 when
-    the action never separates them (a bird, a bow), which means "does not walk"."""
-    tall = max(m.shape[0] for m in masks) or 1
-    widest = 0
+    the action never separates them (a bird, a bow), which means "does not walk".
+
+    Each cell is divided by its OWN height, not by the tallest one. The cells are
+    the same character, so a cell's height IS the figure's height, and that is what
+    cellScale then puts them all on. Dividing by the tallest instead only agrees
+    while every drawing came back the same size: add a passing frame drawn on its
+    own canvas, three times the cells beside it, and the stride reads 0.1355 where
+    it should read 0.3896, so the walker covers a third of the ground its legs are
+    walking and skates for the rest."""
+    widest = 0.0
     for sub in masks:
+        tall = sub.shape[0] or 1
         foot = sub[int(sub.shape[0] * 0.90):]
         on = foot.any(0)
         idx = np.where(on)[0]
@@ -3032,8 +3040,8 @@ def _sheet_stride(masks):
         if st is not None:
             runs.append((st, len(on) - 1))
         if len(runs) > 1:
-            widest = max(widest, runs[-1][0] - runs[0][1])
-    return round(widest / float(tall), 4)
+            widest = max(widest, (runs[-1][0] - runs[0][1]) / float(tall))
+    return round(widest, 4)
 
 
 def _sheet_body_y(masks, work=128, rounds=15):
@@ -3334,10 +3342,17 @@ def action_save_asset(inp):
         if _sc and (max(_sc) - min(_sc)) > 0.02:
             sheet_notes.append(
                 f"'{_a}' frames came back {round((max(_sc) / min(_sc) - 1) * 100)}% apart in "
-                "size and have been put on one scale. Scatter that small is the generator "
-                "drawing the same character at different sizes, not the action moving him; "
-                "past 15% it is read as motion and the drawings are left as they are.")
-        hs = [c[3] - c[1] + 1 for c in _v["cells"]]
+                "size and have been put on one scale. A character does not change height "
+                "in the middle of an action, so a difference between whole sheets is the "
+                "generator drawing him at different sizes. Inside ONE sheet the same "
+                "difference past 15% is read as the action instead — a raised wing, a "
+                "crouch — and those drawings are left alone.")
+        # The scaled heights, not the drawn ones. Reading the raw ones announced a
+        # rise-and-fall on an action whose sizes had just been normalised away: a passing
+        # frame drawn on its own canvas is three times the cells beside it and lands on
+        # exactly their height once cellScale is applied.
+        hs = [int(round((c[3] - c[1] + 1) * (_sc[j] if j < len(_sc) else 1.0)))
+              for j, c in enumerate(_v["cells"])]
         if _v.get("anchor") == "feet" and len(hs) > 1 and min(hs) < 0.75 * max(hs):
             sheet_notes.append(
                 f"'{_a}' frames run {min(hs)}..{max(hs)}px tall and are pinned by the feet, "
@@ -4774,6 +4789,53 @@ def action_selftest():
         lm_note = f"{type(e).__name__}: {e}"
     ck("two passings that lift by different amounts are named a limp; an even pair is not",
        "even = march only, uneven = march + limp", lm_note, lm_ok)
+
+    # A drawing that came back three times the size of the others is put on one scale,
+    # so it must change neither the stride nor the anchor advice. Both were read off raw
+    # pixels and both were wrong the moment a passing frame arrived on its own canvas:
+    # the stride fell to a third (the walker then skates for the other two) and the note
+    # announced a rise-and-fall in the very frames it had just evened out.
+    bg_note, bg_ok = "", False
+    try:
+        def figure(path, mul, spread):
+            """One side-view figure, `mul` times life size, feet `spread` apart."""
+            s = float(mul)
+            im7 = Image.new("RGBA", (int(300 * s), int(320 * s)), (0, 0, 0, 0))
+            g7 = ImageDraw.Draw(im7)
+            g7.ellipse([110 * s, 40 * s, 190 * s, 150 * s], fill=(40, 60, 120, 255))
+            for dx in (-spread, spread):
+                g7.polygon([(146 * s, 145 * s), (154 * s, 145 * s),
+                            ((150 + dx + 12) * s, 285 * s), ((150 + dx - 12) * s, 285 * s)],
+                           fill=(40, 60, 120, 255))
+            im7.save(path)
+            return path
+
+        wide = figure(os.path.join(OUT_DIR, "selftest-big-a.png"), 1, 60)
+        near_small = figure(os.path.join(OUT_DIR, "selftest-big-b.png"), 1, 20)
+        near_big = figure(os.path.join(OUT_DIR, "selftest-big-c.png"), 3, 20)
+
+        def saved(paths):
+            sv = action_save_asset({"action": "save_asset", "name": "selftest-big",
+                                    "sheets": {"walk": {"media": paths, "fps": 4}}})
+            d_ = (sv.get("data") or {})
+            out = (d_.get("sheets", {}).get("walk", {}).get("stride"),
+                   " ".join(d_.get("notes") or []) or str(d_.get("note") or ""))
+            action_delete_asset({"name": "selftest-big"})
+            return out
+
+        even_stride, _ = saved([wide, near_small])
+        big_stride, big_msg = saved([wide, near_big])
+        for p in (wide, near_small, near_big):
+            os.remove(p)
+        rise = "rise and fall" in big_msg.lower()
+        bg_note = (f"stride even {even_stride} vs one sheet 3x {big_stride}; "
+                   f"rise-and-fall claimed: {rise}")
+        bg_ok = (even_stride and big_stride
+                 and abs(big_stride - even_stride) < 0.02 and not rise)
+    except Exception as e:  # noqa: BLE001
+        bg_note = f"{type(e).__name__}: {e}"
+    ck("a frame drawn at another size changes neither the stride nor the anchor advice",
+       "same stride, no rise-and-fall", bg_note, bg_ok)
 
     m3_note, m3_ok = "", False
     try:
