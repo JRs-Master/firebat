@@ -1,0 +1,577 @@
+#!/usr/bin/env node
+/**
+ * Firebat wordpress sysmod — publish to WordPress over the REST API.
+ *
+ * A post's body is GUTENBERG BLOCKS, not a lump of HTML. WordPress stores block markup as HTML
+ * comments around the rendered element, and that is what lets the site's theme style a post AND
+ * lets a person open it in the editor afterwards and fix one paragraph. Raw HTML arrives as a
+ * single "custom HTML" block: it renders, and it is uneditable. So the render blocks this module
+ * is handed are TRANSLATED, one to one, into the WordPress block that means the same thing.
+ *
+ * Where the vocabulary comes from: `system/components.json` is the original list of render
+ * components; this file declares only the MAPPING. A component with neither a mapping nor an
+ * explicit "no WordPress equivalent" entry is a hole, and selftest names it rather than letting
+ * the translator drop it in silence — which is what the RSS lowering next door does.
+ *
+ * Credentials are per site, in the module's own settings: WordPress Application Passwords over
+ * Basic auth. WordPress refuses to issue those over plain http, so a site url must be https.
+ */
+
+import { readFileSync, existsSync } from 'node:fs';
+import { basename } from 'node:path';
+
+const MEDIA_ROOTS = ['user/media/', 'user/attachments/', 'system/media/'];
+
+/* ─────────────────────────── envelope ─────────────────────────── */
+
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    let d = '';
+    process.stdin.on('data', c => { d += c.toString('utf-8'); });
+    process.stdin.on('end', () => resolve(d));
+    process.stdin.on('error', reject);
+  });
+}
+
+function out(ok, payload) {
+  process.stdout.write(JSON.stringify(ok ? { success: true, data: payload }
+                                         : { success: false, error: payload }) + '\n');
+}
+
+/* ─────────────────────────── settings ─────────────────────────── */
+
+/** The registered sites. Settings arrive as MODULE_<KEY>; absent means nothing is configured. */
+function loadSites() {
+  const raw = process.env.MODULE_SITES;
+  if (!raw || !raw.trim()) return [];
+  let v;
+  try { v = JSON.parse(raw); } catch { return null; }   // null = unreadable, told apart from empty
+  return Array.isArray(v) ? v : null;
+}
+
+/** Which site this call runs against. One registered site needs no naming; several do. */
+function pickSite(sites, wanted) {
+  const want = String(wanted || '').trim();
+  if (!want) {
+    if (sites.length === 1) return sites[0];
+    return { error: `여러 사이트가 등록돼 있으니 \`site\` 를 지정해야 합니다: `
+      + sites.map(s => s.id).filter(Boolean).join(', ')
+      + ` — 각 사이트의 글쓰기 지침은 sites 액션이 돌려줍니다.` };
+  }
+  const hit = sites.find(s => String(s.id || '').toLowerCase() === want.toLowerCase())
+    || sites.find(s => String(s.url || '').toLowerCase().includes(want.toLowerCase()));
+  if (!hit) {
+    return { error: `\`${want}\` 라는 사이트가 설정에 없습니다. 등록된 것: `
+      + (sites.map(s => s.id).filter(Boolean).join(', ') || '없음')
+      + ` — sites 액션이 목록과 각 사이트의 지침을 돌려줍니다.` };
+  }
+  return hit;
+}
+
+/** What a site is missing before it can be called at all. */
+function siteFault(site) {
+  const url = String(site.url || '').trim();
+  if (!url) return `사이트 \`${site.id}\` 에 주소가 없습니다 — 설정에서 url 을 채워 주세요.`;
+  if (!/^https:\/\//i.test(url)) {
+    return `사이트 \`${site.id}\` 의 주소가 https 가 아닙니다 (${url}). 워드프레스는 평문 http `
+      + `에서는 애플리케이션 비밀번호를 아예 발급하지 않으므로, 이 경로로는 발행할 수 없습니다.`;
+  }
+  if (!String(site.user || '').trim() || !String(site.appPassword || '').trim()) {
+    return `사이트 \`${site.id}\` 의 계정 또는 애플리케이션 비밀번호가 비어 있습니다 — `
+      + `워드프레스 [사용자 → 프로필 → 애플리케이션 비밀번호]에서 발급해 설정에 넣어 주세요.`;
+  }
+  return null;
+}
+
+/* ─────────────────────────── the WordPress REST call ─────────────────────────── */
+
+function apiBase(site) {
+  return String(site.url).replace(/\/+$/, '') + '/wp-json/wp/v2';
+}
+
+function authHeader(site) {
+  // Application Passwords are issued with spaces for readability; WordPress ignores them.
+  const pw = String(site.appPassword).replace(/\s+/g, '');
+  return 'Basic ' + Buffer.from(`${site.user}:${pw}`, 'utf-8').toString('base64');
+}
+
+/** One REST call, with the vendor's own complaint carried through instead of a bare status. */
+async function wp(site, path, { method = 'GET', json, body, headers = {} } = {}) {
+  const url = apiBase(site) + path;
+  const h = { Authorization: authHeader(site), Accept: 'application/json', ...headers };
+  if (json !== undefined) {
+    h['Content-Type'] = 'application/json';
+    body = JSON.stringify(json);
+  }
+  let res;
+  try {
+    res = await fetch(url, { method, headers: h, body });
+  } catch (e) {
+    throw new Error(`${site.url} 에 닿지 못했습니다 (${e?.message || e}). 주소가 맞는지, `
+      + `사이트가 살아 있는지 확인해 주세요.`);
+  }
+  const text = await res.text();
+  let parsed = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch { /* not json — kept as text below */ }
+  if (!res.ok) {
+    const vendor = (parsed && (parsed.message || parsed.code)) || text.slice(0, 300);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`워드프레스가 인증을 거부했습니다 (${res.status}: ${vendor}). 계정 이름과 `
+        + `애플리케이션 비밀번호를 확인하고, 그 계정이 글을 쓸 수 있는 권한인지 보세요. `
+        + `일반 로그인 암호는 REST 에서 통하지 않습니다.`);
+    }
+    if (res.status === 404 && /rest_no_route/.test(text)) {
+      throw new Error(`이 주소에 REST API 가 없습니다 (${url}). 워드프레스가 맞는지, `
+        + `퍼머링크가 켜져 있는지, 보안 플러그인이 /wp-json 을 막고 있지 않은지 확인해 주세요.`);
+    }
+    throw new Error(`워드프레스가 거부했습니다 (${res.status}: ${vendor}) — ${method} ${path}`);
+  }
+  return parsed;
+}
+
+/* ─────────────────────────── render blocks → Gutenberg ─────────────────────────── */
+
+const esc = s => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const wrap = (name, attrs, inner) => {
+  const a = attrs && Object.keys(attrs).length ? ' ' + JSON.stringify(attrs) : '';
+  return `<!-- wp:${name}${a} -->\n${inner}\n<!-- /wp:${name} -->`;
+};
+
+const para = t => wrap('paragraph', null, `<p>${t}</p>`);
+
+/**
+ * componentType → the WordPress block that means the same thing.
+ * A component that WordPress has no block for is listed in NO_WP_BLOCK with the reason, so the
+ * difference between "we forgot" and "there is nothing to map it to" stays visible.
+ */
+const TO_WP = {
+  Header: p => {
+    const lvl = Math.min(Math.max(Number(p.level) || 2, 1), 6);
+    return wrap('heading', lvl === 2 ? null : { level: lvl },
+      `<h${lvl} class="wp-block-heading">${esc(p.text)}</h${lvl}>`);
+  },
+  Text: p => para(esc(p.content)),
+  List: p => {
+    const items = Array.isArray(p.items) ? p.items : [];
+    const tag = p.ordered ? 'ol' : 'ul';
+    const li = items.map(i => wrap('list-item', null, `<li>${esc(i)}</li>`)).join('');
+    return wrap('list', p.ordered ? { ordered: true } : null,
+      `<${tag} class="wp-block-list">${li}</${tag}>`);
+  },
+  Table: p => {
+    const headers = Array.isArray(p.headers) ? p.headers : [];
+    const rows = Array.isArray(p.rows) ? p.rows : [];
+    const thead = headers.length
+      ? `<thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>` : '';
+    const tbody = `<tbody>${rows.map(r =>
+      `<tr>${(Array.isArray(r) ? r : [r]).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    return wrap('table', null,
+      `<figure class="wp-block-table"><table>${thead}${tbody}</table></figure>`);
+  },
+  Callout: p => {
+    const title = p.title ? `<strong>${esc(p.title)}</strong> ` : '';
+    return wrap('quote', null,
+      `<blockquote class="wp-block-quote">${para(title + esc(p.message))}</blockquote>`);
+  },
+  Image: p => imageBlock({ src: p.src, alt: p.alt }),
+  Divider: () => wrap('separator', null,
+    '<hr class="wp-block-separator has-alpha-channel-opacity"/>'),
+  Code: p => wrap('code', null,
+    `<pre class="wp-block-code"><code>${esc(p.code)}</code></pre>`),
+  Metric: p => {
+    const unit = p.unit ? ' ' + esc(p.unit) : '';
+    const delta = p.delta != null && p.delta !== '' ? ` (${esc(p.delta)})` : '';
+    return para(`<strong>${esc(p.label)}</strong>: ${esc(p.value)}${unit}${delta}`);
+  },
+  KeyValue: p => {
+    const items = Array.isArray(p.items) ? p.items : [];
+    const rows = items.map(i =>
+      `<tr><td>${esc(i?.key)}</td><td>${esc(i?.value)}</td></tr>`).join('');
+    return wrap('table', null,
+      `<figure class="wp-block-table"><table><tbody>${rows}</tbody></table></figure>`);
+  },
+  Badge: p => para(`<strong>${esc(p.text)}</strong>`),
+  StatusBadge: p => {
+    const items = Array.isArray(p.items) ? p.items : [];
+    return para(items.map(i =>
+      `<strong>${esc(i?.label ?? i?.text ?? i)}</strong>${i?.value != null ? ': ' + esc(i.value) : ''}`
+    ).join(' · '));
+  },
+  Math: p => (p.block
+    ? wrap('code', null, `<pre class="wp-block-code"><code>${esc(p.expression)}</code></pre>`)
+    : para(`<code>${esc(p.expression)}</code>`)),
+  // Containers: WordPress has a group, and the children are blocks in their own right.
+  Card: (p, walk) => {
+    const head = p.title ? TO_WP.Header({ text: p.title, level: 3 }) : '';
+    const lead = p.content || p.text || p.description || p.body;
+    const inner = [head, lead ? para(esc(lead)) : '', walk(p.children)].filter(Boolean).join('\n');
+    return inner ? wrap('group', null, `<div class="wp-block-group">${inner}</div>`) : '';
+  },
+  Grid: (p, walk) => {
+    const inner = walk(p.children);
+    return inner ? wrap('group', null, `<div class="wp-block-group">${inner}</div>`) : '';
+  },
+};
+
+/** Components WordPress has no block for. The reason is the point — it is why selftest passes. */
+const NO_WP_BLOCK = {
+  chart: '차트는 워드프레스 블록으로 옮길 수 없다 (스크립트가 실행되지 않는다)',
+  stock_chart: '차트는 워드프레스 블록으로 옮길 수 없다',
+  live_chart: '실시간 스트림은 발행된 글에서 살 수 없다',
+  live_stock_chart: '실시간 스트림은 발행된 글에서 살 수 없다',
+  live_feed: '실시간 스트림은 발행된 글에서 살 수 없다',
+  function_plot: '수식 그래프는 그려서 이미지로 넣어야 한다',
+  diagram: '다이어그램은 그려서 이미지로 넣어야 한다',
+  network: '그래프 시각화는 그려서 이미지로 넣어야 한다',
+  map: '지도는 임베드가 필요하다 (워드프레스 쪽 플러그인 몫)',
+  lottie: '애니메이션은 스크립트가 필요하다',
+  slideshow: '워드프레스 갤러리와 의미가 다르다 — 이미지 여러 장으로 넣는다',
+  carousel: '워드프레스 갤러리와 의미가 다르다',
+  player: '미디어는 워드프레스 미디어 블록의 몫 (v1 미지원)',
+  karaoke: '노래방 무대는 발행된 글의 물건이 아니다',
+  timeline: '목록으로 쓰는 편이 낫다',
+  compare: '표로 쓰는 편이 낫다',
+  progress: '값 하나는 문장으로 쓰는 편이 낫다',
+  countdown: '시간이 흐르는 표시는 저장된 글에서 뜻이 없다',
+  form: '입력 폼은 워드프레스 쪽 플러그인 몫',
+  button: '버튼은 링크로 쓴다',
+  slider: '조작 컨트롤은 저장된 글에서 뜻이 없다',
+  tabs: '탭은 스크립트가 필요하다',
+  accordion: '아코디언은 스크립트가 필요하다',
+  plan_card: '파이어뱃 내부 카드다',
+  quiz: '학습 컴포넌트 — 발행 글의 물건이 아니다',
+  quiz_group: '학습 컴포넌트',
+  sentence: '학습 컴포넌트',
+  vocab: '학습 컴포넌트',
+  passage: '학습 컴포넌트',
+  concept: '학습 컴포넌트',
+  listening: '학습 컴포넌트',
+};
+
+/** blocks → { html, unsupported[] }. What could not be translated is named, never dropped. */
+export function blocksToGutenberg(blocks) {
+  const unsupported = [];
+  const walk = list => (Array.isArray(list) ? list : []).map(b => {
+    if (!b || typeof b !== 'object') return '';
+    const t = String(b.type || '');
+    const p = b.props || {};
+    if (t === 'Html') return wrap('html', null, String(p.content ?? ''));
+    const fn = TO_WP[t];
+    if (!fn) { unsupported.push(t || '(이름 없는 블록)'); return ''; }
+    return fn(p, walk);
+  }).filter(Boolean).join('\n\n');
+  return { html: walk(blocks), unsupported };
+}
+
+function imageBlock({ src, alt, caption, id }) {
+  if (!src) return '';
+  const cap = caption
+    ? `<figcaption class="wp-block-image__caption">${esc(caption)}</figcaption>` : '';
+  const cls = id ? ` class="wp-image-${id}"` : '';
+  return wrap('image', id ? { id, sizeSlug: 'large' } : null,
+    `<figure class="wp-block-image size-large">`
+    + `<img src="${esc(src)}" alt="${esc(alt || '')}"${cls}/>${cap}</figure>`);
+}
+
+/* ─────────────────────────── media ─────────────────────────── */
+
+const MIME = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', svg: 'image/svg+xml', avif: 'image/avif',
+};
+
+/** A source the caller gave us → bytes. Workspace media paths and http(s) both. */
+async function fetchBytes(src) {
+  const s = String(src || '').trim();
+  if (!s) throw new Error('이미지 경로가 비어 있습니다.');
+  if (/^https?:\/\//i.test(s)) {
+    const r = await fetch(s);
+    if (!r.ok) throw new Error(`이미지를 받지 못했습니다 (${r.status}): ${s}`);
+    return { buf: Buffer.from(await r.arrayBuffer()), name: basename(new URL(s).pathname) || 'image' };
+  }
+  const rel = s.replace(/^\/+/, '');
+  if (!MEDIA_ROOTS.some(r => rel.startsWith(r))) {
+    throw new Error(`\`${s}\` 는 읽을 수 있는 자리가 아닙니다. `
+      + `/user/media/... 경로(image_gen 이 돌려주는 주소)나 http(s) 주소를 주세요.`);
+  }
+  if (!existsSync(rel)) throw new Error(`파일이 없습니다: ${s}`);
+  return { buf: readFileSync(rel), name: basename(rel) };
+}
+
+/** Upload to the site's media library and return what WordPress now calls it. */
+async function uploadMedia(site, src, alt) {
+  const { buf, name } = await fetchBytes(src);
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const type = MIME[ext];
+  if (!type) {
+    throw new Error(`\`${name}\` 은 올릴 수 있는 그림 형식이 아닙니다 `
+      + `(${Object.keys(MIME).join(', ')} 중 하나여야 합니다).`);
+  }
+  const created = await wp(site, '/media', {
+    method: 'POST',
+    body: buf,
+    headers: { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${name}"` },
+  });
+  if (alt && created?.id) {
+    try { await wp(site, `/media/${created.id}`, { method: 'POST', json: { alt_text: alt } }); }
+    catch (e) { process.stderr.write(`alt_text 설정 실패: ${e.message}\n`); }
+  }
+  return { id: created?.id, url: created?.source_url, name };
+}
+
+/* ─────────────────────────── taxonomy ─────────────────────────── */
+
+/** Names → term ids, creating what the site does not have yet. */
+async function termIds(site, kind, names) {
+  const list = (Array.isArray(names) ? names : []).map(n => String(n).trim()).filter(Boolean);
+  const ids = [];
+  for (const name of list) {
+    const found = await wp(site, `/${kind}?search=${encodeURIComponent(name)}&per_page=100`);
+    const hit = (found || []).find(t => String(t.name).toLowerCase() === name.toLowerCase());
+    if (hit) { ids.push(hit.id); continue; }
+    const made = await wp(site, `/${kind}`, { method: 'POST', json: { name } });
+    if (made?.id) ids.push(made.id);
+  }
+  return ids;
+}
+
+/* ─────────────────────────── actions ─────────────────────────── */
+
+async function actionPublish(site, d) {
+  const title = String(d.title || '').trim();
+  if (!title) return out(false, '제목(`title`)이 필요합니다.');
+
+  let body = '';
+  let unsupported = [];
+  if (Array.isArray(d.blocks) && d.blocks.length) {
+    const t = blocksToGutenberg(d.blocks);
+    body = t.html;
+    unsupported = [...new Set(t.unsupported)];
+  } else if (typeof d.html === 'string' && d.html.trim()) {
+    body = wrap('html', null, d.html);
+  } else {
+    return out(false, '본문이 없습니다 — `blocks`(권장) 또는 `html` 중 하나를 주세요. '
+      + 'blocks 는 워드프레스 편집기에서 문단 단위로 고칠 수 있는 글이 되고, html 은 통째로 '
+      + '커스텀 HTML 블록 하나가 됩니다.');
+  }
+
+  // Images go into the site's own library first: a post that points at our media store would
+  // break the moment that file moves, and WordPress cannot make it a thumbnail from outside.
+  const uploaded = [];
+  const inline = Array.isArray(d.images) ? d.images : [];
+  for (const im of inline) {
+    const got = await uploadMedia(site, im?.src, im?.alt);
+    uploaded.push({ ...got, alt: im?.alt, caption: im?.caption, after: im?.after });
+  }
+  if (uploaded.length) {
+    const parts = body ? body.split('\n\n') : [];
+    const tail = [];
+    for (const u of uploaded) {
+      const blk = imageBlock({ src: u.url, alt: u.alt, caption: u.caption, id: u.id });
+      const at = Number.isInteger(u.after) ? Math.max(0, Math.min(u.after, parts.length)) : null;
+      if (at === null) tail.push(blk); else parts.splice(at, 0, blk);
+    }
+    body = [...parts, ...tail].join('\n\n');
+  }
+
+  let featured = null;
+  if (d.thumbnail) featured = await uploadMedia(site, d.thumbnail, title);
+
+  const cats = [...(d.categories || []), ...(site.category ? [site.category] : [])];
+  const post = {
+    title,
+    content: body,
+    status: d.status || site.status || 'publish',
+  };
+  if (d.excerpt) post.excerpt = String(d.excerpt);
+  if (featured?.id) post.featured_media = featured.id;
+  const catIds = await termIds(site, 'categories', cats);
+  if (catIds.length) post.categories = catIds;
+  const tagIds = await termIds(site, 'tags', d.tags);
+  if (tagIds.length) post.tags = tagIds;
+
+  const created = await wp(site, '/posts', { method: 'POST', json: post });
+
+  return out(true, {
+    // Which site, and which instruction the writing was supposed to follow — read back off the
+    // settings the call actually resolved to, so a post written for the wrong blog says so here.
+    identity: `${site.id} = ${site.url}`,
+    promptUsed: site.prompt ? String(site.prompt).slice(0, 200) : null,
+    url: created?.link,
+    id: created?.id,
+    status: created?.status,
+    thumbnail: featured ? featured.url : null,
+    images: uploaded.map(u => u.url),
+    categories: cats,
+    tags: d.tags || [],
+    ...(unsupported.length ? {
+      unsupported,
+      unsupportedNote: unsupported.map(t =>
+        `${t}: ${NO_WP_BLOCK[wpName(t)] || '워드프레스에 대응 블록이 없어 본문에서 빠졌습니다'}`),
+    } : {}),
+  });
+}
+
+/** componentType (Pascal) → the components.json name (snake), for the reason table. */
+function wpName(componentType) {
+  return String(componentType).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
+async function actionPosts(site, d) {
+  const n = Math.min(Math.max(Number(d.limit) || 10, 1), 50);
+  const list = await wp(site, `/posts?per_page=${n}&status=any&orderby=date&order=desc`);
+  return out(true, {
+    identity: `${site.id} = ${site.url}`,
+    items: (list || []).map(p => ({
+      id: p.id, title: p.title?.rendered, url: p.link, status: p.status, date: p.date,
+    })),
+  });
+}
+
+async function actionCategories(site) {
+  const list = await wp(site, '/categories?per_page=100&orderby=count&order=desc');
+  return out(true, {
+    identity: `${site.id} = ${site.url}`,
+    items: (list || []).map(c => ({ id: c.id, name: c.name, count: c.count })),
+  });
+}
+
+/* ─────────────────────────── selftest ─────────────────────────── */
+
+function selftest() {
+  const checks = [];
+  const ck = (name, want, got, ok) => checks.push({ name, want, got: String(got), ok: !!ok });
+
+  // Every component either translates or is on the record as having no WordPress block. The list
+  // of components is NOT kept here — it is read from the file that owns it.
+  let coverage = '';
+  let covered = false;
+  try {
+    const comps = JSON.parse(readFileSync('system/components.json', 'utf-8'));
+    const real = new Set(comps.map(c => c.name));
+    const mapped = comps.filter(c => TO_WP[c.componentType] || c.componentType === 'Html');
+    const named = comps.filter(c => !TO_WP[c.componentType] && c.componentType !== 'Html'
+      && NO_WP_BLOCK[c.name]);
+    // Forward: a component that is neither translated nor on the record is a hole.
+    const holes = comps
+      .filter(c => !TO_WP[c.componentType] && !NO_WP_BLOCK[c.name] && c.componentType !== 'Html')
+      .map(c => c.name);
+    // Backward: an entry naming no component is dead weight, and it is what makes the tally lie —
+    // without this the two sides can add up past the catalog and still report zero holes.
+    const dead = Object.keys(NO_WP_BLOCK).filter(n => !real.has(n));
+    const double = mapped.filter(c => NO_WP_BLOCK[c.name]).map(c => c.name);
+    coverage = `${comps.length}종 = 매핑 ${mapped.length} + 대응없음 ${named.length} + 구멍 `
+      + `${holes.length}${holes.length ? ` (${holes.join(', ')})` : ''}`
+      + (dead.length ? ` · 죽은 항목 ${dead.join(', ')}` : '')
+      + (double.length ? ` · 양쪽에 있음 ${double.join(', ')}` : '');
+    covered = holes.length === 0 && dead.length === 0 && double.length === 0
+      && mapped.length + named.length === comps.length;
+  } catch (e) {
+    coverage = `components.json 을 읽지 못했습니다: ${e.message}`;
+  }
+  ck('컴포넌트 전수가 매핑이거나 대응없음이고, 그 합이 카탈로그와 같다',
+    '구멍 0 · 죽은 항목 0 · 합 = 46', coverage, covered);
+
+  // A block becomes WordPress block markup, not bare HTML — that is what keeps a post editable.
+  const t = blocksToGutenberg([
+    { type: 'Header', props: { text: '제목', level: 2 } },
+    { type: 'Text', props: { content: '본문 <b>이스케이프</b>' } },
+    { type: 'List', props: { items: ['a', 'b'] } },
+    { type: 'Table', props: { headers: ['h'], rows: [['v']] } },
+  ]);
+  const wanted = ['wp:heading', 'wp:paragraph', 'wp:list', 'wp:list-item', 'wp:table'];
+  const missing = wanted.filter(w => !t.html.includes(`<!-- ${w}`));
+  ck('렌더 블록이 구텐베르크 블록 주석으로 나온다', '다섯 종 전부',
+    missing.length ? `빠짐: ${missing.join(', ')}` : '전부 있음', missing.length === 0);
+  ck('본문 텍스트는 이스케이프된다', '&lt;b&gt;',
+    t.html.includes('&lt;b&gt;') ? '&lt;b&gt;' : t.html.slice(0, 60),
+    t.html.includes('&lt;b&gt;'));
+
+  // The other direction: an unmapped block must be REPORTED, never silently dropped. That is the
+  // one thing the RSS lowering next door does not do.
+  const u = blocksToGutenberg([
+    { type: 'Text', props: { content: 'ok' } },
+    { type: 'StockChart', props: {} },
+  ]);
+  ck('옮길 수 없는 블록은 이름이 보고된다', 'StockChart',
+    u.unsupported.join(',') || '(없음)',
+    u.unsupported.includes('StockChart') && u.html.includes('<!-- wp:paragraph'));
+
+  // https is not a preference: WordPress will not issue an application password without it.
+  const bad = siteFault({ id: 'x', url: 'http://a.com', user: 'u', appPassword: 'p' });
+  const good = siteFault({ id: 'x', url: 'https://a.com', user: 'u', appPassword: 'p' });
+  ck('http 사이트는 발행 전에 거부된다', 'http 거부 / https 통과',
+    `http=${bad ? '거부' : '통과'} https=${good ? '거부' : '통과'}`, !!bad && !good);
+
+  // One site needs no naming; several do, and the refusal lists them.
+  const one = pickSite([{ id: 'a', url: 'https://a.com' }], '');
+  const many = pickSite([{ id: 'a' }, { id: 'b' }], '');
+  const wrong = pickSite([{ id: 'a' }, { id: 'b' }], 'zzz');
+  ck('사이트가 하나면 생략되고, 여럿이면 목록과 함께 거부된다',
+    '하나=선택 / 여럿=거부 / 오타=거부',
+    `하나=${one.error ? '거부' : one.id} 여럿=${many.error ? '거부' : '통과'} `
+    + `오타=${wrong.error ? '거부' : '통과'}`,
+    !one.error && one.id === 'a' && !!many.error && many.error.includes('a, b') && !!wrong.error);
+
+  const passed = checks.filter(c => c.ok).length;
+  return out(true, { passed, total: checks.length, checks });
+}
+
+/* ─────────────────────────── main ─────────────────────────── */
+
+async function main() {
+  let input;
+  try { input = JSON.parse(await readStdin()); }
+  catch { return out(false, 'stdin 을 JSON 으로 읽지 못했습니다.'); }
+  const d = input.data ?? {};
+  const action = String(d.action || '');
+
+  if (action === 'selftest') return selftest();
+
+  const sites = loadSites();
+  if (sites === null) {
+    return out(false, '설정의 사이트 목록이 JSON 배열이 아닙니다 — 모듈 설정 화면에서 '
+      + '사이트 행을 다시 저장해 주세요.');
+  }
+  if (!sites.length) {
+    return out(false, '등록된 워드프레스 사이트가 없습니다. 모듈 설정 [사이트] 탭에서 주소·계정·'
+      + '애플리케이션 비밀번호·글쓰기 지침을 넣어 주세요. 비밀번호는 워드프레스 '
+      + '[사용자 → 프로필 → 애플리케이션 비밀번호]에서 발급합니다.');
+  }
+
+  if (action === 'sites') {
+    return out(true, {
+      // The prompt IS the payload: the caller reads it and writes to it. Credentials are not
+      // part of that and never leave the settings.
+      items: sites.map(s => ({
+        id: s.id,
+        url: s.url,
+        prompt: s.prompt || null,
+        status: s.status || 'publish',
+        category: s.category || null,
+        ready: !siteFault(s),
+        fault: siteFault(s) || undefined,
+      })),
+      note: '글은 그 사이트의 `prompt` 를 지침으로 삼아 씁니다. 지침이 비어 있는 사이트는 '
+        + '설정에서 채우기 전까지 일반적인 글이 나갑니다.',
+    });
+  }
+
+  const site = pickSite(sites, d.site);
+  if (site.error) return out(false, site.error);
+  const fault = siteFault(site);
+  if (fault) return out(false, fault);
+
+  try {
+    if (action === 'publish') return await actionPublish(site, d);
+    if (action === 'posts') return await actionPosts(site, d);
+    if (action === 'categories') return await actionCategories(site);
+    return out(false, `알 수 없는 액션 \`${action}\` — sites / publish / posts / categories`);
+  } catch (e) {
+    return out(false, e?.message || String(e));
+  }
+}
+
+main();

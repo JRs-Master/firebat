@@ -32,7 +32,7 @@ type Kind = 'trades' | 'strategies';
 export interface EditorFieldDef {
   key: string;                       // dotted (one level) reaches nested objects
   label: string;                     // human-facing, written in the module's config
-  type: 'text' | 'number' | 'toggle' | 'select' | 'ref' | 'json' | 'rules';
+  type: 'text' | 'textarea' | 'secret' | 'number' | 'toggle' | 'select' | 'ref' | 'json' | 'rules';
   options?: Array<{ value: string; label: string }>;
   required?: boolean;                // empty — or outside `options` — blocks the save path
   placeholder?: string;
@@ -108,6 +108,42 @@ function TextField({ item, k, label, onSet, placeholder, list }: {
     <Row label={label}>
       <input type="text" value={getKey(item, k) ?? ''} placeholder={placeholder} list={list}
         onChange={e => onSet(k, e.target.value)} className={INPUT_CLS} />
+    </Row>
+  );
+}
+
+/** Multi-line text. A single-line input is the wrong shape for anything written in sentences —
+ *  a per-site writing instruction scrolls sideways in one and cannot be read back. */
+function AreaField({ item, k, label, onSet, placeholder }: {
+  item: Item; k: string; label: string; onSet: (k: string, v: any) => void; placeholder?: string;
+}) {
+  return (
+    <Row label={label}>
+      <textarea value={getKey(item, k) ?? ''} placeholder={placeholder} rows={5}
+        onChange={e => onSet(k, e.target.value)} className={`${INPUT_CLS} resize-y leading-relaxed`} />
+    </Row>
+  );
+}
+
+/** A stored credential. The value lives in the row like every other setting — the vault holds
+ *  them all — so this masks the SCREEN, which is what a password over someone's shoulder needs.
+ *  Revealing is one click because an application password is pasted, mistyped and re-checked. */
+function SecretField({ item, k, label, onSet, placeholder }: {
+  item: Item; k: string; label: string; onSet: (k: string, v: any) => void; placeholder?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <Row label={label}>
+      <div className="flex items-center gap-1">
+        <input type={show ? 'text' : 'password'} autoComplete="off" spellCheck={false}
+          value={getKey(item, k) ?? ''} placeholder={placeholder}
+          onChange={e => onSet(k, e.target.value)} className={`${INPUT_CLS} flex-1 font-mono`} />
+        <button type="button" onClick={() => setShow(v => !v)}
+          className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs text-slate-600
+            hover:bg-slate-50">
+          {show ? '가리기' : '보기'}
+        </button>
+      </div>
     </Row>
   );
 }
@@ -344,6 +380,22 @@ function SchemaCard({ item, onSet, schema, refIds, t }: {
             return (
               <div key={f.key} className={span}>
                 <NumField item={item} k={f.key} label={f.label} onSet={onSet} />
+              </div>
+            );
+          }
+          if (f.type === 'textarea') {
+            return (
+              <div key={f.key} className={span}>
+                <AreaField item={item} k={f.key} label={f.label} onSet={onSet}
+                  placeholder={f.placeholder} />
+              </div>
+            );
+          }
+          if (f.type === 'secret') {
+            return (
+              <div key={f.key} className={span}>
+                <SecretField item={item} k={f.key} label={f.label} onSet={onSet}
+                  placeholder={f.placeholder} />
               </div>
             );
           }

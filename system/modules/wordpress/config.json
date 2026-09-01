@@ -1,0 +1,197 @@
+{
+  "name": "wordpress",
+  "runtime": "node",
+  "version": "1.0.0",
+  "description": "WordPress 사이트에 글을 발행한다 — 사이트마다 등록된 글쓰기 지침과 자격증명으로, 렌더 블록을 구텐베르크 블록으로 옮겨 올린다.",
+  "tags": ["워드프레스", "구텐베르크", "포스팅", "블로그 발행", "wordpress", "gutenberg"],
+  "settings_fields": [
+    {
+      "key": "sites",
+      "type": "structured-list",
+      "label": "워드프레스 사이트",
+      "description": "사이트마다 주소·계정·글쓰기 지침을 따로 답니다. 지침은 그 사이트에 글을 쓸 때 AI 가 읽고 그대로 따르는 문장입니다 — 주제·말투·길이·금지사항을 여기 적으면 사이트마다 다른 글이 나옵니다. 비밀번호는 워드프레스 로그인 암호가 아니라 [사용자 → 프로필 → 애플리케이션 비밀번호]에서 발급한 것이고, 워드프레스가 https 가 아니면 발급 자체를 거부합니다.",
+      "tab": "사이트",
+      "group": "사이트",
+      "defaultValue": "[]",
+      "placeholder": "[{\"id\":\"blog\",\"url\":\"https://example.com\",\"user\":\"admin\",\"appPassword\":\"xxxx xxxx xxxx xxxx\",\"prompt\":\"...\"}]",
+      "editorSchema": {
+        "summary": ["url", "status", "category"],
+        "newItem": {
+          "id": "",
+          "url": "",
+          "user": "",
+          "appPassword": "",
+          "prompt": "",
+          "status": "publish",
+          "category": ""
+        },
+        "fields": [
+          {
+            "key": "id",
+            "label": "사이트 id",
+            "type": "text",
+            "required": true,
+            "placeholder": "blog",
+            "span": 1
+          },
+          {
+            "key": "url",
+            "label": "주소",
+            "type": "text",
+            "required": true,
+            "placeholder": "https://example.com",
+            "span": 2
+          },
+          {
+            "key": "user",
+            "label": "계정",
+            "type": "text",
+            "required": true,
+            "span": 1
+          },
+          {
+            "key": "appPassword",
+            "label": "애플리케이션 비밀번호",
+            "type": "secret",
+            "required": true,
+            "placeholder": "xxxx xxxx xxxx xxxx xxxx xxxx",
+            "span": 2
+          },
+          {
+            "key": "status",
+            "label": "발행 상태",
+            "type": "select",
+            "options": [
+              { "value": "publish", "label": "즉시 공개" },
+              { "value": "draft", "label": "초안" },
+              { "value": "pending", "label": "검토 대기" },
+              { "value": "private", "label": "비공개" }
+            ],
+            "span": 1
+          },
+          {
+            "key": "category", "label": "기본 카테고리", "type": "text", "span": 2
+          },
+          {
+            "key": "prompt",
+            "label": "이 사이트의 글쓰기 지침",
+            "type": "textarea",
+            "placeholder": "예) 30~40대 직장인 대상 재테크 블로그. 존댓말, 소제목 3~5개, 1200자 내외. 단정적 수익 예측 금지, 마지막에 한 줄 요약.",
+            "span": 3
+          }
+        ]
+      }
+    }
+  ],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["sites", "publish", "posts", "categories", "selftest"],
+        "description": "sites = 등록된 사이트와 각 사이트의 글쓰기 지침 / publish = 글 발행 / posts = 최근 글 목록 / categories = 그 사이트의 카테고리"
+      },
+      "site": {
+        "type": "string",
+        "description": "[publish|posts|categories] 사이트 id — sites 가 돌려준 것. 하나만 등록돼 있으면 생략 가능하다.",
+        "source": "sites",
+        "collection": "sites"
+      },
+      "title": {
+        "type": "string",
+        "description": "[publish] 글 제목"
+      },
+      "blocks": {
+        "type": "array",
+        "description": "[publish] 본문을 렌더 블록 배열로. 각 항목은 `{type, props}` — 채팅에 그리는 것과 같은 어휘이고, 워드프레스에서는 구텐베르크 블록으로 옮겨진다. `search_components` 의 팔레트를 쓰되 워드프레스에 대응 블록이 있는 것만 옮겨지고, 나머지는 옮기지 않은 목록으로 응답에 보고된다.",
+        "items": { "type": "object" }
+      },
+      "html": {
+        "type": "string",
+        "description": "[publish] blocks 대신 쓰는 탈출구. 통째로 하나의 커스텀 HTML 블록이 되어 워드프레스 편집기에서 문단 단위로 고칠 수 없게 되므로, 표나 문단으로 쪼갤 수 있는 글은 blocks 를 쓴다."
+      },
+      "thumbnail": {
+        "type": "string",
+        "description": "[publish] 대표 이미지(썸네일)로 올릴 파일. /user/media/... 경로 또는 http(s) 주소. image_gen 이 돌려준 url 을 그대로 넣으면 된다."
+      },
+      "images": {
+        "type": "array",
+        "description": "[publish] 본문에 넣을 이미지들. 각 항목은 `{src, alt?, caption?, after?}` — src 는 /user/media 경로나 http(s) 주소, after 는 몇 번째 블록 뒤에 넣을지(0 = 맨 앞, 생략하면 끝). 워드프레스 미디어로 먼저 올라간 뒤 그 주소로 박힌다.",
+        "items": { "type": "object" }
+      },
+      "status": {
+        "type": "string",
+        "enum": ["publish", "draft", "pending", "private"],
+        "description": "[publish] 이 글만 다르게. 생략하면 사이트 설정의 발행 상태를 따른다."
+      },
+      "categories": {
+        "type": "array",
+        "description": "[publish] 카테고리 이름들. 그 사이트에 없는 이름은 새로 만들어진다.",
+        "items": { "type": "string" }
+      },
+      "tags": {
+        "type": "array",
+        "description": "[publish] 태그 이름들. 없는 것은 새로 만들어진다.",
+        "items": { "type": "string" }
+      },
+      "excerpt": {
+        "type": "string",
+        "description": "[publish] 목록에 보이는 요약. 생략하면 워드프레스가 본문 앞부분을 쓴다."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "description": "[posts] 가져올 글 수 (기본 10)"
+      }
+    }
+  },
+  "actionCatalog": [
+    {
+      "id": "sites",
+      "name": "사이트와 글쓰기 지침",
+      "description": "등록된 워드프레스 사이트 목록과, 사이트마다 운영자가 적어 둔 글쓰기 지침을 돌려준다. 자격증명은 돌려주지 않는다.",
+      "params": [],
+      "required": [],
+      "tags": ["사이트 목록", "글쓰기 지침", "블로그 성격"],
+      "aliases": ["blogs", "list-sites"]
+    },
+    {
+      "id": "publish",
+      "name": "글 발행",
+      "description": "제목과 본문을 그 사이트에 올린다. 본문 블록은 구텐베르크 블록으로 옮겨지고, 이미지는 워드프레스 미디어로 먼저 올라간다. 응답은 글 주소와 어느 사이트의 어느 지침으로 썼는지를 돌려준다.",
+      "params": ["site", "title", "blocks", "html", "thumbnail", "images", "status", "categories", "tags", "excerpt"],
+      "required": ["title"],
+      "tags": ["발행", "포스팅", "글 올리기"],
+      "aliases": ["post", "create-post"],
+      "needs": ["wordpress:sites"],
+      "approval": true
+    },
+    {
+      "id": "posts",
+      "name": "최근 글",
+      "description": "그 사이트에 최근 올라간 글의 제목·주소·상태·시각을 돌려준다.",
+      "params": ["site", "limit"],
+      "required": [],
+      "tags": ["글 목록", "발행 이력"]
+    },
+    {
+      "id": "categories",
+      "name": "카테고리 목록",
+      "description": "그 사이트에 있는 카테고리 이름과 글 수를 돌려준다.",
+      "params": ["site"],
+      "required": [],
+      "tags": ["카테고리", "분류"]
+    },
+    {
+      "id": "selftest",
+      "name": "자체 점검",
+      "description": "블록 번역과 사이트 선택을 워드프레스에 닿지 않고 점검한다.",
+      "params": [],
+      "required": [],
+      "hidden": true
+    }
+  ]
+}
