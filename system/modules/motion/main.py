@@ -2130,10 +2130,8 @@ class Scene:
             act = next(iter(sheets))
         sh = sheets[act]
         cells = sh["cells"]
-        order = sh.get("order") or list(range(len(cells)))
-        i = int((t - t0) * sh["fps"])
-        if not sh["loop"] and i >= len(order):
-            i = len(order) - 1
+        order = _sheet_order(sh)
+        i = _frame_index(sh, t, t0)
         cell_i = order[i % len(order)]
         x0, y0, x1, y1 = cells[cell_i]
         src = self._sheet_image(_sheet_file(sh, cell_i))
@@ -2190,10 +2188,10 @@ class Scene:
         # travel: let the stride decide the speed. Two steps per cycle, each one
         # stride long, so the ground passes at exactly the rate the legs are walking
         # and nothing skates. dir -1 walks back the way the drawing faces.
+        # `i` and not `t`: the position steps with the drawing (see _travel_x).
         if travel and sh.get("stride"):
             per_cycle = 2.0 * sh["stride"] * (tall * scale)
-            cycles = (t - t0) * sh["fps"] / float(len(cells))
-            x = x + per_cycle * cycles * (1.0 if travel > 0 else -1.0)
+            x = x + _travel_x(sh, i, per_cycle, travel)
         px = int(x - w / 2)
         # A contact shadow is what sets a character ON the ground rather than in front
         # of it — the same reason it does more for a photoreal render than any amount
@@ -2771,6 +2769,55 @@ def action_sticker(inp):
                      "_mediaImport": {"path": _out(path), "contentType": "image/png",
                                       "filenameHint": f"clip-{name}",
                                       "source": "clipart"}}}
+
+def _sheet_order(sh):
+    """The play order: which drawing is on screen for each frame of the cycle.
+
+    A frames list can hold or repeat a drawing, so the cycle is often longer than
+    the sheet -- the canonical eight-frame walk is seven drawings played
+    [1,2,3,4,5,6,3,7]. Anything that counts frames counts these, not the cells.
+    """
+    return sh.get("order") or list(range(len(sh["cells"])))
+
+
+def _frame_index(sh, t, t0):
+    """Which frame of the cycle is on screen at `t`.
+
+    Flooring is what holds one drawing for a whole beat when the sheet's fps is
+    below the video's, and a non-looping action stops on its last drawing instead
+    of running off the end of the order.
+    """
+    i = int((t - t0) * sh["fps"])
+    n = len(_sheet_order(sh))
+    if not sh["loop"] and i >= n:
+        i = n - 1
+    return i
+
+
+def _travel_x(sh, frame_i, per_cycle, direction):
+    """How far a walking sheet has carried itself by the time frame `frame_i`
+    is on screen.
+
+    The position moves on the DRAWING's beat, not on the video's. A sheet drawn
+    at 8fps inside a 24fps video holds each picture for three video frames, and
+    sliding the sprite under a frozen picture drags the planted foot along and
+    snaps it back when the next drawing lands. Measured on the shipped walk
+    (2026-09-01): the picture is provably frozen across the hold (98.3% IoU once
+    the box shift is undone) while the sprite slides 14.8px a frame, so the
+    planted foot saws 44px back and forth eight times a second -- 9.4% of the
+    figure's height. Stepping the position with the drawing costs nothing, since
+    the drawing is already held, and leaves only the drawings' own error: on the
+    transitions where both sides show two separate feet, the held foot moves a
+    median of 9px (1.8% of height), which is the sheet's business, not the
+    clock's.
+
+    The cycle is the order's length, not the sheet's. A frames list that repeats
+    or holds a drawing has more frames than drawings, and dividing the ground
+    speed by the drawings walks that character 14% too fast.
+    """
+    return (per_cycle * (frame_i / float(len(_sheet_order(sh))))
+            * (1.0 if direction > 0 else -1.0))
+
 
 def _sheet_file(sh, cell_i):
     """Which sheet file frame `cell_i` of this action was drawn on.
@@ -3359,7 +3406,7 @@ def action_save_asset(inp):
     thumb.save(tp)
     return {"success": True,
             "data": {"asset": name, "parts": len(parts), "replaced": replaced,
-                     **({"sheets": {k: {"frames": len(v.get("order") or v["cells"]),
+                     **({"sheets": {k: {"frames": len(_sheet_order(v)),
                                         "anchor": v.get("anchor", "feet"),
                                         "stride": v.get("stride", 0),
                                         # Only when it did something. Like stride and cells,
@@ -3617,7 +3664,13 @@ def action_assets(_inp):
                       "never blended. travel lets the STRIDE set the speed — the sheet's own foot "
                       "separation is measured at save time, so the ground passes at exactly the "
                       "rate the legs walk and nothing skates; moving a walker with a hand-written "
-                      "move act is what makes it look like race walking. A sheet whose feet "
+                      "move act is what makes it look like race walking. It advances on the "
+                      "DRAWING's beat, not the video's, so fps is the whole of how smooth the "
+                      "travel looks: at 8 on a 24fps video the character steps forward three "
+                      "video frames at a time, which is what a held drawing does and what keeps "
+                      "the planted foot still — sliding a frozen picture instead drags that foot "
+                      "44px forward and snaps it back eight times a second (measured 2026-09-01, "
+                      "9.4% of the figure's height). A sheet whose feet "
                       "never separate has no stride and travel does nothing for it — a "
                       "bird or a rolling ball crosses the screen with a move act, which "
                       "works on drawn characters exactly as it does on rigs. anchor says what `at` "
@@ -4319,6 +4372,48 @@ def action_selftest():
         mv_note = f"{type(e).__name__}: {e}"
     ck("a move act carries a sprite whether it is drawn frames or a rig",
        "0.6 of the width", mv_note, mv_ok)
+
+    # Travel is on the drawing's beat, not the clock's. Both directions: a sheet
+    # slower than the video must not move between its drawings, and a sheet at the
+    # video's own rate must come out exactly where the old continuous travel put it.
+    tv_note, tv_ok = "", False
+    try:
+        PER, VF = 480.0, 24.0
+        slow = {"fps": 8, "loop": True, "cells": [None] * 8}
+        held = {round(_travel_x(slow, _frame_index(slow, f / VF, 0.0), PER, 1), 6)
+                for f in (3, 4, 5)}          # the three video frames of one beat
+        nxt = _travel_x(slow, _frame_index(slow, 6 / VF, 0.0), PER, 1)
+        beat = (nxt - next(iter(held)))
+        fast = {"fps": VF, "loop": True, "cells": [None] * 8}
+        same = all(abs(_travel_x(fast, f, PER, 1) - PER * f / 8.0) < 1e-9
+                   for f in range(8))
+        tv_note = (f"one beat holds {sorted(held)}, next beat +{beat:.1f}px, "
+                   f"a drawing per video frame matches continuous travel: {same}")
+        tv_ok = len(held) == 1 and abs(beat - PER / 8.0) < 1e-9 and same
+    except Exception as e:  # noqa: BLE001
+        tv_note = f"{type(e).__name__}: {e}"
+    ck("travel steps with the drawing, and is unchanged when they run at one rate",
+       "one value per beat, +60px at the beat, fps=video identical", tv_note, tv_ok)
+
+    # The ground speed is divided by the FRAMES, not the drawings. The canonical
+    # walk is seven drawings played as eight frames; counting the drawings walks
+    # that character 8/7 too fast, which is the skate the stride was measured to
+    # avoid. Both directions: an order that is just the cells is unaffected.
+    cy_note, cy_ok = "", False
+    try:
+        PER = 480.0
+        seven = {"fps": 8, "loop": True, "cells": [None] * 7,
+                 "order": [0, 1, 2, 3, 4, 5, 2, 6]}
+        plain = {"fps": 8, "loop": True, "cells": [None] * 8}
+        a = _travel_x(seven, 8, PER, 1)      # one full cycle of the frames list
+        b = _travel_x(plain, 8, PER, 1)
+        cy_note = (f"7 drawings / 8 frames: one cycle covers {a:.1f}px; "
+                   f"8 drawings / 8 frames: {b:.1f}px")
+        cy_ok = abs(a - PER) < 1e-9 and abs(b - PER) < 1e-9
+    except Exception as e:  # noqa: BLE001
+        cy_note = f"{type(e).__name__}: {e}"
+    ck("one cycle covers one cycle of ground however the frames list is written",
+       "both 480.0px", cy_note, cy_ok)
 
     # What `at` pins. Two frames with the body at the same height but very different
     # box heights: pinned by the feet they sit 100px apart, pinned by the body they
