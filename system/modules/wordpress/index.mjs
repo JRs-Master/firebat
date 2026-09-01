@@ -267,8 +267,17 @@ export function blocksToGutenberg(blocks) {
 
 function imageBlock({ src, alt, caption, id }) {
   if (!src) return '';
+  // `wp-element-caption`, not `wp-block-image__caption`. The old name is pre-6.2 and no longer
+  // what the image block's save() produces, so a post carrying it fails the editor's validation
+  // the moment someone opens it — and the resolution the editor picks is to convert the block to
+  // custom HTML. The post still LOOKS right, which is why this was reported as "the image came in
+  // as custom HTML" rather than as an error. Measured on the live site 2026-09-02: 23 captions,
+  // all `wp-element-caption`, none of the old name. Re-serialising also stamped defaults onto the
+  // other blocks (`hasFixedLayout` on tables) — that stamp is the fingerprint of what happened,
+  // and it doubles as the audit: every other block survived as its own type, so only this one
+  // was failing validation.
   const cap = caption
-    ? `<figcaption class="wp-block-image__caption">${esc(caption)}</figcaption>` : '';
+    ? `<figcaption class="wp-element-caption">${esc(caption)}</figcaption>` : '';
   const cls = id ? ` class="wp-image-${id}"` : '';
   return wrap('image', id ? { id, sizeSlug: 'large' } : null,
     `<figure class="wp-block-image size-large">`
@@ -566,6 +575,20 @@ function selftest() {
   ck('옮길 수 없는 블록은 이름이 보고된다', 'StockChart',
     u.unsupported.join(',') || '(없음)',
     u.unsupported.includes('StockChart') && u.html.includes('<!-- wp:paragraph'));
+
+  // The block markup has to match what the CURRENT block's save() produces, or the editor calls
+  // the post invalid and quietly converts the block to custom HTML — the page still renders, so
+  // nothing complains except a person opening the editor. The caption class is the one name in
+  // this file that WordPress has renamed (`wp-block-image__caption` -> `wp-element-caption`, 6.2),
+  // so it is the one worth pinning.
+  const img = imageBlock({ src: 'https://x/y.png', alt: 'a', caption: '캡션', id: 7 });
+  ck('이미지 블록이 지금 워드프레스의 캡션 클래스를 쓴다',
+    'wp-element-caption, 옛 이름 없음',
+    (img.match(/figcaption class="[^"]*"/) || ['(캡션 없음)'])[0],
+    img.includes('class="wp-element-caption"') && !img.includes('wp-block-image__caption'));
+  ck('이미지는 wp:image 로 나간다 (wp:html 이 아니라)', '<!-- wp:image',
+    img.slice(0, img.indexOf('\n')),
+    img.startsWith('<!-- wp:image ') && !img.includes('wp:html'));
 
   // https is not a preference: WordPress will not issue an application password without it.
   const bad = siteFault({ id: 'x', url: 'http://a.com', user: 'u', appPassword: 'p' });
