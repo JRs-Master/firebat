@@ -3359,13 +3359,33 @@ def action_save_asset(inp):
             # A knee raised high is always offset sideways, which is why THIS direction
             # is safe to name.
             if hi >= 0.25:
-                worst = [i + 1 for i, v in enumerate(lifts) if v >= 0.25]
-                sheet_notes.append(
-                    f"'{_a}' frame(s) {', '.join(str(v) for v in worst)} lift a foot to "
-                    f"{round(hi * 100)}% of leg length. Walking skims: at mid-swing the toe "
-                    "passes a finger's width above the floor, directly under the hip, with "
-                    "the thigh near vertical. A knee raised this far reads as a march. Ask "
-                    "for that frame again with the foot skimming, not the knee lifted.")
+                worst = [(i + 1, v) for i, v in enumerate(lifts) if v >= 0.25]
+                # Each frame's OWN number. Reporting only the highest flattened two
+                # different faults into one: heungbu's passings measure 27% and 45%,
+                # and the note said "frames 4, 7 lift a foot to 45%", which reads as
+                # one fault in two places. It is two, and the second one is worse.
+                note = (f"'{_a}' frame(s) "
+                        + ', '.join(f"{i} ({round(v * 100)}%)" for i, v in worst)
+                        + " lift a foot that far off the ground, as a share of leg "
+                        "length. Walking skims: at mid-swing the toe passes a finger's "
+                        "width above the floor, directly under the hip, with the thigh "
+                        "near vertical. A knee raised this far reads as a march. Ask for "
+                        "those frames again with the foot skimming, not the knee lifted.")
+                lo = min(v for _, v in worst)
+                # Unequal passings are a second fault on top of the march, and the one a
+                # viewer names first -- the two halves of the cycle swing through at
+                # different heights and it reads as a limp. Two thirds is set below the
+                # one pair measured (27/45 = 0.60) with room to spare; this only decides
+                # whether a sentence is printed, so erring loud costs a sentence.
+                if len(worst) > 1 and lo < hi * (2.0 / 3.0):
+                    note += (" They also do not match each other, so the two halves of "
+                             "the cycle swing through at different heights -- that is "
+                             "what a viewer calls a limp, and it is usually noticed "
+                             "before the march is. Until the drawings are redone, naming "
+                             "the lower one twice in `frames` makes the cycle even: one "
+                             "passing drawing may serve both halves, since at passing the "
+                             "legs are together and the silhouette is the same either way.")
+                sheet_notes.append(note)
     # A sheet-only character carries no shape parts: its drawings ARE the asset.
     if sheets and inp.get("parts") is None:
         parts = []
@@ -4715,6 +4735,45 @@ def action_selftest():
         gt_note = f"{type(e).__name__}: {e}"
     ck("a knee-high passing frame is named a march; a skimming one is not",
        "skim silent, march flagged", gt_note, gt_ok)
+
+    # Two passing frames that lift by DIFFERENT amounts is a second fault on top of
+    # the march, and the one a viewer names first -- heungbu's 27% and 45% were called
+    # "one leg bends the knee and the other does not" before anyone mentioned marching.
+    # Both ways again: an even pair must be called a march and NOT a limp.
+    lm_note, lm_ok = "", False
+    try:
+        def pair_note(a_px, b_px):
+            """A 4-frame walk whose two passing frames lift a_px and b_px."""
+            lp = os.path.join(OUT_DIR, "selftest-limp.png")
+            im6 = Image.new("RGBA", (880, 300), (0, 0, 0, 0))
+            g6 = ImageDraw.Draw(im6)
+            ups = (0, a_px, 0, b_px)
+            for k, cx in enumerate((110, 330, 550, 770)):
+                g6.ellipse([cx - 34, 40, cx + 34, 150], fill=(40, 60, 120, 255))
+                spread = 46 if not ups[k] else 22
+                for si, s_ in enumerate((-spread, spread)):
+                    up = ups[k] if si == 0 else 0
+                    g6.polygon([(cx - 7, 145), (cx + 7, 145),
+                                (cx + s_ + 11, 280 - up), (cx + s_ - 11, 280 - up)],
+                               fill=(40, 60, 120, 255))
+            im6.save(lp)
+            sv = action_save_asset({"action": "save_asset", "name": "selftest-limp",
+                                    "sheets": {"walk": {"media": lp, "fps": 4}}})
+            notes = " ".join((sv.get("data") or {}).get("notes") or []) or str(
+                (sv.get("data") or {}).get("note") or "")
+            action_delete_asset({"name": "selftest-limp"})
+            os.remove(lp)
+            return notes.lower()
+
+        even, odd = pair_note(90, 90), pair_note(50, 100)
+        lm_note = (f"even: march={'march' in even} limp={'limp' in even} | "
+                   f"uneven: march={'march' in odd} limp={'limp' in odd}")
+        lm_ok = ("march" in even and "limp" not in even
+                 and "march" in odd and "limp" in odd)
+    except Exception as e:  # noqa: BLE001
+        lm_note = f"{type(e).__name__}: {e}"
+    ck("two passings that lift by different amounts are named a limp; an even pair is not",
+       "even = march only, uneven = march + limp", lm_note, lm_ok)
 
     m3_note, m3_ok = "", False
     try:
