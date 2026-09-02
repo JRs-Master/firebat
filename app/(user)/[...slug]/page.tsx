@@ -451,9 +451,10 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      {/* 일반 본문 레이아웃 — Html 단일 블록도 동일 패턴 (이전 풀스크린 srcDoc 분기 제거).
-       *  사유: srcDoc 안엔 AdSense ad script·SEO 인덱싱 모두 차단되어 광고 수익·검색 노출 0.
-       *  render_iframe 단독 사용은 cron-agent 프롬프트에서 차단 (반드시 render_* 분리 사용).
+      {/* Body layout — a lone Html block renders here too (the old fullscreen srcDoc branch is gone).
+       *  Why: inside a srcDoc both AdSense scripts and search indexing are blocked, so ad revenue and
+       *  search visibility are zero. "Compose a document out of separate blocks" is stated on
+       *  save_page's own schema, where the model reads it — no prompt enforces it any more.
        *  firebat-cms-content — Design Tokens 기반 max-width/padding/font.
        *  data-h*-style — heading style 6 옵션 (CSS 분기). */}
       {/* 프로젝트별 customCss — Phase 3. 글로벌 head/body 스크립트 위에 추가 적용. */}

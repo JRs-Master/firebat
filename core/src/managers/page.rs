@@ -226,7 +226,7 @@ impl PageManager {
             "properties": {
                 "head": {
                     "type": "object",
-                    "description": "Page metadata. Extra keys are kept as-is; these are the ones the renderer and the feeds read.",
+                    "description": "Page metadata. Extra keys are kept as-is; these are the ones the renderer and the feeds read. `title` and `description` become the tab title, the search snippet, the feed entry and the link preview — leaving them out is not an error, the page just falls back to its slug and an empty description.",
                     "additionalProperties": true,
                     "properties": {
                         "title": {"type": "string"},
@@ -245,7 +245,7 @@ impl PageManager {
                 },
                 "body": {
                     "type": "array",
-                    "description": "Components in render order. NEVER a string — HTML goes in a block: [{type:\"Html\", props:{content:\"…\"}}].",
+                    "description": "Components in render order. NEVER a string — HTML goes in a block: [{type:\"Html\", props:{content:\"…\"}}]. Compose a document as separate blocks rather than one Html block holding the whole page: a single blob cannot be edited block by block, and if that HTML carries a `<script>` or `dependencies` the block is isolated in an iframe where ad scripts and search indexing never run. Html is for a section that needs bespoke markup.",
                     "items": {
                         "type": "object",
                         "required": ["type"],

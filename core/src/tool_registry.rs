@@ -1855,7 +1855,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     //  사이드바 SSE 갱신 hook 만 유지. Recall events = 의미 있는 happening 만, 루틴 운영 제외.)
     tools.register(ToolDefinition {
         name: "save_page".to_string(),
-        description: "페이지 spec 저장 (upsert). slug + spec 필수. status / project / visibility / password 옵션. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 을 선언한 모듈만)을 실행해 결과 블록을 _baked 로 채움 — 정기 갱신 페이지용(rebake 크론과 짝). props 의 dataCacheKey 도 저장 시 실제 데이터로 구워짐(1회 스냅샷 — 갱신은 안 됨, 갱신 페이지는 module 블록).".to_string(),
+        description: "Save a PageSpec. `slug` + `spec` required; status / project / visibility / password optional. **An existing slug is overwritten in place** — this tool has no collision suffix, so a job that publishes on a schedule must put the period in the slug to keep the earlier pages. A `module` block in spec.body ({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}}) is run at save time — only for modules declaring `pageBinding` — and its result blocks land in `_baked`; that block plus a cron `targetPath` of 'rebake:<slug>' is how a page refreshes itself. A `dataCacheKey` prop is baked to real data at save time too (one snapshot, never refreshed — use a module block for a page that must stay current).".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
