@@ -150,8 +150,9 @@
         "description": "[sticker|save_asset|delete_asset] Asset name. sticker exports any clip-art declaration — the seeds shipped with the module (firebat, heart, star, moon, balloon) or one saved with save_asset; save_asset names the new declaration (1-24 chars, letters/digits/한글/-/_)."
       },
       "media": {
-        "type": "string",
-        "description": "[duration|trim] Media-store path (/user/media/...) — duration: an audio file, trim: an mp4."
+        "type": ["string", "array"],
+        "items": {"type": "string"},
+        "description": "[duration|trim|concat] Media-store path (/user/media/...) — duration: an audio file, trim: an mp4, concat: a LIST of 2..12 mp4 paths in play order. Declared as one-or-many because concat is the action that takes many; a lone string reaches the other two unchanged."
       },
       "from": {
         "type": "number",
