@@ -62,6 +62,12 @@
         "params": ["media", "from", "to", "segments"]
       },
       {
+        "id": "concat",
+        "name": "클립 이어붙이기",
+        "desc": "Join 2..12 finished mp4 clips into one, in the order given — ffmpeg stream copy, no re-encode, seconds not minutes. {media:['<mp4>', ...]}. This is how a video longer than one 90s scene is made: render the parts and join them, so fixing one part costs that part instead of the whole bake. Every part must share size, fps and quality.",
+        "params": ["media"]
+      },
+      {
         "id": "model_info",
         "name": "3D 모델 정보",
         "desc": "Inspect a rigged .glb: clip names and durations, triangle count, height. Call before using a model3d scene layer.",
