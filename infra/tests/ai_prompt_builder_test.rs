@@ -8,8 +8,8 @@
 //! - **Machine tests** (substitution, prepend order, vault → prompt) assert only on values the test
 //!   itself supplies. The prompts can be reworded freely; these cannot notice, and must not.
 //! - **Discipline tests** — `base_prompt_carries_the_contracts_the_code_parses` and
-//!   `the_prompt_guides_by_consequence_rather_than_prohibition` — are ABOUT the text and are meant
-//!   to go red on a bad edit. They take the delayed-blame cost knowingly; each says what it pins.
+//!   `the_prompts_direct_rather_than_prohibit` — are ABOUT the text and are meant to go red on a
+//!   bad edit. They take the delayed-blame cost knowingly; each says what it pins.
 //!
 //! Putting a wording assertion inside a machine test spends that cost where nobody agreed to it.
 //! (Known gap, stated in ci-rust.yml: `system/**` is deliberately outside `paths:` because adding
@@ -77,24 +77,30 @@ fn base_prompt_carries_the_contracts_the_code_parses() {
     assert!(prompt.contains("get_action_schema"), "ladder step two");
 }
 
-/// The system prompt guides by stating consequences, not by issuing bans (user's call, 2026-08-14).
+/// The system prompts tell the model what to do, rather than what it may not (user's call,
+/// 2026-08-14; reason restated 2026-09-02: **an LLM follows "do it this way" more reliably than
+/// "don't do that"**).
 ///
-/// "Calling without the form returns a refusal and spends a round" carries the same instruction as
-/// "never call without the form", and it stays true on the turns where the model is doing nothing
-/// wrong — so it reads as information rather than as suspicion. The sweep that converted ~85 lines
-/// is easy to undo one edit at a time, which is what this test is for.
+/// So this is about efficacy, not tone — which is why stating the consequence works ("calling
+/// without the form returns a refusal and spends a round" carries the same instruction as "never
+/// call without the form", and stays true on the turns where the model is complying), and why a
+/// plain positive directive works just as well. The sweep that converted ~85 lines is easy to undo
+/// one edit at a time, which is what this test is for.
 ///
 /// Descriptive negations are untouched and belong here: "the user never receives it" and "props you
 /// don't know exactly" state facts. What the list below catches is the imperative forms.
+///
+/// Scans the RAW templates rather than a built prompt, for two reasons: `cron_agent.md` is only
+/// prepended when a cron context is passed, so the built default never covered it (it had never
+/// been under this rule at all until 2026-09-02), and a built prompt can carry the operator's own
+/// `USER_INSTRUCTIONS`, which are theirs to phrase however they like.
 #[test]
-fn the_prompt_guides_by_consequence_rather_than_prohibition() {
-    let (v, _dir) = vault();
-    let pb = pb(v);
-    let prompt = pb.build(None, None, None);
+fn the_prompts_direct_rather_than_prohibit() {
+    init_once();
 
     // Sentence- or bullet-initial imperatives, plus the loud markers. Matched case-sensitively
     // where capitalization is what makes it imperative, so "…and do not" inside a clause survives.
-    for banned in [
+    const BANNED: [&str; 14] = [
         "Do not ",
         "Do NOT ",
         "do **NOT**",
@@ -109,13 +115,20 @@ fn the_prompt_guides_by_consequence_rather_than_prohibition() {
         "Prohibitions",
         "not allowed",
         "prohibited",
-    ] {
-        assert!(
-            !prompt.contains(banned),
-            "system prompt reverted to prohibition phrasing: {banned:?}\n\
-             State what happens instead — the consequence says the same thing and stays true when \
-             the model is complying."
-        );
+    ];
+
+    for name in ["tool_system", "cron_agent"] {
+        let text = firebat_core::prompt_store::get(name);
+        assert!(!text.is_empty(), "system/prompts/{name}.md loaded");
+        for banned in BANNED {
+            assert!(
+                !text.contains(banned),
+                "system/prompts/{name}.md reverted to prohibition phrasing: {banned:?}\n\
+                 Say what to do instead — the model follows a directive more reliably than a ban, \
+                 and the consequence (\"a forced length fills itself with invention\") carries the \
+                 same instruction while staying true when the model is complying."
+            );
+        }
     }
 }
 
