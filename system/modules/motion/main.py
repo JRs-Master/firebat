@@ -2085,7 +2085,12 @@ class Scene:
         if cache is None:
             cache = self._img_cache = {}
         if key not in cache:
-            cache[key] = Image.open(L["_path"]).convert("RGB")
+            # RGBA, not RGB: convert("RGB") drops the alpha channel and leaves
+            # whatever the transparent pixels happened to store — for a PNG written
+            # with a transparent background that is white, so a chalk-white formula
+            # on a blackboard came out white-on-white and unreadable (measured
+            # 2026-09-03). A picture's own transparency is part of the picture.
+            cache[key] = Image.open(L["_path"]).convert("RGBA")
         src = cache[key]
         w = SW * float(L.get("w", 0.8))
         h = w * src.height / src.width
@@ -2103,7 +2108,12 @@ class Scene:
                 fill=int(255 * a))
         else:
             mask = Image.new("L", im.size, int(255 * a))
-        self._frame_img.paste(im, (int(cx - wz / 2 + panx), int(cy - hz / 2)), mask)
+        # the layer's fade and corner rounding MULTIPLY the picture's own alpha —
+        # a transparent PNG lands as ink on whatever is behind it, and an opaque one
+        # behaves exactly as it did before (its alpha is 255 everywhere).
+        mask = ImageChops.multiply(mask, im.getchannel("A"))
+        self._frame_img.paste(im.convert("RGB"),
+                              (int(cx - wz / 2 + panx), int(cy - hz / 2)), mask)
 
     def _draw_sheet_sprite(self, t, a, L, sheets):
         """Play a saved character's drawn frames.
@@ -3614,7 +3624,10 @@ def action_assets(_inp):
             "list": "{rows:[{lead, text, dots?:[[r,g,b]..], highlight?, tag?}], at?, w?} "
                     "staggered time-table rows; highlight = amber emphasis + tag badge",
             "image": "{media, at?, w?, rounded?, kenburns?:{zoom, panx}} a picture from "
-                     "the media store with optional Ken Burns drift",
+                     "the media store with optional Ken Burns drift. A PNG's own "
+                     "transparency is kept, so a cut-out or a formula drops onto the "
+                     "scene as ink rather than as a rectangle — rounded:false when the "
+                     "picture already carries its own edge",
             "spritesheet": "{media, grid:[cols,rows], count?, fps?, at?, w?, loop?} "
                            "an animated frame-grid image — cells advance "
                            "left-to-right, top-to-bottom at fps (default 12) and "
