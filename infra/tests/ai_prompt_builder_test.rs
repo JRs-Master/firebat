@@ -1,9 +1,19 @@
 //! Integration tests for `core::managers::ai::prompt_builder::PromptBuilder`.
-//! Phase B-post audit E4 — inline tests 이관 (private const 정리 후).
 //!
-//! 2026-05-16: 옛 `IPromptLoaderPort` / `FilePromptLoader` 폐기 후 — `firebat_core::i18n`
-//! 통합 다국어 loader 가 `system/prompts/{name}/lang/{lang}.md` 자동 scan. 매 prompt build 시점
-//! `i18n::prompt(name, None)` lookup. 본 test 의 setup = workspace root 기준 `i18n::init` 1회 호출.
+//! These load the REAL `system/prompts/*.md`. Those ship on the pull channel, while this workflow
+//! runs only on `core/**` · `infra/**` · `proto/**` — so a prompt edit triggers no CI, and whatever
+//! goes red because of it surfaces days later on somebody else's Rust commit, blaming their change.
+//! The two kinds of test here are therefore kept apart on purpose:
+//!
+//! - **Machine tests** (substitution, prepend order, vault → prompt) assert only on values the test
+//!   itself supplies. The prompts can be reworded freely; these cannot notice, and must not.
+//! - **Discipline tests** — `base_prompt_carries_the_contracts_the_code_parses` and
+//!   `the_prompt_guides_by_consequence_rather_than_prohibition` — are ABOUT the text and are meant
+//!   to go red on a bad edit. They take the delayed-blame cost knowingly; each says what it pins.
+//!
+//! Putting a wording assertion inside a machine test spends that cost where nobody agreed to it.
+//! (Known gap, stated in ci-rust.yml: `system/**` is deliberately outside `paths:` because adding
+//! it would mean a ~10min rebuild per module edit.)
 
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
@@ -165,27 +175,37 @@ fn extra_context_replaces_system_context_placeholder() {
     assert!(!prompt.contains("{system_context}"));
 }
 
+/// Both anchors are values this test supplies, so the two prompt files can be reworded freely.
+///
+/// It used to anchor on prose from the files — "Cron Agent mode", "while the user is away", and
+/// the base prompt's opening line. Those live on the pull channel, where an edit does not run this
+/// workflow at all (`paths:` is core/infra/proto), so a reword went red days later on somebody
+/// else's Rust commit, pointing at their change instead of the edit. The 2026-09-02 rewrite of
+/// `cron_agent.md` only survived because those two phrases happened to be kept.
+///
+/// Nothing is lost by dropping them: `{job_id}` is substituted ONLY into the prelude and
+/// `{system_context}` ONLY into the base (prompt_builder.rs), so finding each one proves its half
+/// is present, and their order proves the prepend. A prose assertion on top of that caught
+/// rewording — which is not a defect.
 #[test]
 fn cron_agent_prelude_prepended() {
     let (v, _dir) = vault();
     let pb = pb(v);
     let prompt = pb.build(
-        None,
+        Some("SYSTEM-CONTEXT-MARKER"),
         Some(&CronAgentContext {
             job_id: "job-2026-04-25-stock-weekly".to_string(),
             title: Some("주간 증시 일정".to_string()),
         }),
         None,
     );
-    assert!(prompt.contains("Cron Agent mode"));
-    assert!(prompt.contains("job-2026-04-25-stock-weekly"));
-    assert!(prompt.contains("주간 증시 일정"));
-    assert!(prompt.contains("while the user is away"));
-    // Anchored on the base prompt's opening line rather than a section heading: headings are
-    // prose and were all rewritten by the 2026-08-15 diet, which turned this ordering check into
-    // a panic on `unwrap`.
-    let prelude_idx = prompt.find("Cron Agent mode").unwrap();
-    let base_idx = prompt.find("Firebat is an AI agent").expect("base prompt present");
+    let prelude_idx = prompt
+        .find("job-2026-04-25-stock-weekly")
+        .expect("the prelude is present — {job_id} is substituted nowhere else");
+    assert!(prompt.contains("주간 증시 일정"), "{{job_title_line}} carries the title");
+    let base_idx = prompt
+        .find("SYSTEM-CONTEXT-MARKER")
+        .expect("the base prompt is present — {system_context} is substituted nowhere else");
     assert!(prelude_idx < base_idx, "the prelude goes before the base prompt");
 }
 
