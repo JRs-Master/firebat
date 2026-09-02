@@ -43,6 +43,29 @@ TEXT_MAX = 200
 STICKER_MIN, STICKER_MAX = 200, 2048
 OUT_DIR = os.path.join("data", "motion")
 JOB_DIR = os.path.join("data", "motion", "jobs")
+# Review stills go here: under the served media root so a browser can show them,
+# but with no media-store row, so the gallery only ever holds finished work.
+SCRATCH_DIR = os.path.join("user", "media", "_scratch")
+
+
+def _sweep_scratch(keep_sec=86400, keep_n=150):
+    """Iteration stills are inputs, not deliverables — keep a day's worth."""
+    try:
+        files = []
+        for n in os.listdir(SCRATCH_DIR):
+            p = os.path.join(SCRATCH_DIR, n)
+            if os.path.isfile(p):
+                files.append((os.path.getmtime(p), p))
+        files.sort(reverse=True)
+        now = time.time()
+        for i, (mt, p) in enumerate(files):
+            if i >= keep_n or now - mt > keep_sec:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+    except OSError:
+        pass
 
 # ── palette ──────────────────────────────────────────────────────────────────
 INK, DIM = (236, 240, 248), (148, 163, 184)
@@ -2650,19 +2673,26 @@ def action_render(inp):
     if stills:
         if not isinstance(stills, list) or len(stills) > 8:
             return {"success": False, "error": "stills must be a list of at most 8 timestamps"}
-        imports = []
+        # Stills are an iteration aid, so they do NOT enter the media gallery: they
+        # are written where the web server can show them and swept after a day.
+        # Importing them made one review pass leave 148 permanent rows behind
+        # (measured 2026-09-03) — the video is the deliverable, its contact sheets
+        # are not. A scene can still point at one: media_path accepts user/media/**.
+        os.makedirs(SCRATCH_DIR, exist_ok=True)
+        urls = []
         for i, ts in enumerate(stills):
             ts = max(0.0, min(scene.dur, float(ts)))
-            path = os.path.join(OUT_DIR, f"still-{tag}-{i}.png")
-            Image.fromarray(scene.draw_frame(ts)).save(path)
-            imports.append({"path": _out(path), "contentType": "image/png",
-                            "filenameHint": f"motion-still-{i}"})
+            name = f"still-{tag}-{i}.png"
+            Image.fromarray(scene.draw_frame(ts)).save(os.path.join(SCRATCH_DIR, name))
+            urls.append("/user/media/_scratch/" + name)
+        _sweep_scratch()
         return {"success": True,
-                "data": {"stills": len(imports), "duration": scene.dur,
-                         "note": "stills only — drop the stills field for the full video",
+                "data": {"stills": len(urls), "duration": scene.dur, "urls": urls,
+                         "note": "stills only — served for review, swept after 24h, and "
+                                 "kept out of the media gallery. Drop the stills field "
+                                 "for the full video",
                          **({"layoutFixes": scene.layout_fixes} if scene.layout_fixes
-                            else {}),
-                         "_mediaImport": imports if len(imports) > 1 else imports[0]}}
+                            else {})}}
     try:
         import imageio_ffmpeg
     except ImportError as e:
@@ -3920,7 +3950,11 @@ def action_assets(_inp):
                       "marks: write words (맑음, 비, 눈) or use colored dots, "
                       "never emoji",
         "iteration": "pass stills:[t1,t2,...] to get PNG frames in seconds instead of "
-                     "a minutes-long video render — inspect, adjust, then render for real",
+                     "a minutes-long video render — inspect, adjust, then render for "
+                     "real. They come back as `urls` under /user/media/_scratch/, "
+                     "viewable but NOT in the media gallery, and swept after a day: "
+                     "a review pass is worth dozens of frames and none of them is the "
+                     "deliverable",
         "longRenders": "renders longer than ~20s can outlive the tool roundtrip — "
                        "pass async:true to get a jobId immediately, then poll "
                        "{action:'job', id} (running: progress + etaSec); the poll "
