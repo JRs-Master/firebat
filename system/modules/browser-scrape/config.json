@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Playwright-based JS-rendering web scraper. Use for any page that cannot be fetched with static requests — dynamic JS pages, search engine results, etc.",
+  "description": "Headless Chromium: reads a page that static requests cannot (JS-rendered, search results), and photographs a page or inline HTML into a PNG — the HTML-to-image path, so a KaTeX formula, a chart or a styled card becomes an image for a video, a document or a page.",
   "tags": [
     "웹스크래핑",
     "스크래핑",
@@ -14,12 +14,20 @@
     "검색결과수집",
     "playwright",
     "헤드리스브라우저",
-    "페이지캡처"
+    "페이지캡처",
+    "스크린샷",
+    "HTML을이미지로",
+    "수식이미지",
+    "LaTeX",
+    "KaTeX",
+    "수식렌더링"
   ],
   "aliases": [
     "브라우저",
     "스크래핑",
-    "크롤링"
+    "크롤링",
+    "스크린샷",
+    "수식이미지"
   ],
   "runtime": "python",
   "capability": "web-scrape",
@@ -53,18 +61,40 @@
   ],
   "input": {
     "type": "object",
-    "required": [
-      "url"
-    ],
+    "required": [],
     "properties": {
       "url": {
         "type": "string",
         "format": "uri",
-        "description": "URL to scrape"
+        "description": "Page to open. Required for the text path; for a screenshot, either this or `html`"
+      },
+      "html": {
+        "type": "string",
+        "description": "Inline HTML to render instead of fetching a url — the browser has network, so a CDN <link>/<script> in it loads (KaTeX for a formula, ECharts for a plot). Pair with screenshot:true to get the picture back"
+      },
+      "screenshot": {
+        "type": "boolean",
+        "description": "true = return a PNG of the page (or of `selector`) in the media store instead of its text. This is the HTML-to-image path: whatever a browser can draw becomes an image usable in a video layer, a document or a page"
+      },
+      "viewport": {
+        "type": "string",
+        "description": "'WxH' render size, 16..4096 per side (default 1280x720). For a formula or a card, size it to the content and let the shot crop to `selector`"
+      },
+      "scale": {
+        "type": "number",
+        "description": "Device pixel ratio 1..4 (default 2) — 2 keeps text crisp when the image is scaled up in a video"
+      },
+      "fullPage": {
+        "type": "boolean",
+        "description": "true = the whole scrollable page rather than the viewport. Ignored when `selector` picks one element"
+      },
+      "transparent": {
+        "type": "boolean",
+        "description": "true = do not paint a page background, so the PNG carries alpha. The page's own CSS background still paints — leave it unset for a chalkboard panel, set it to drop a formula onto one"
       },
       "selector": {
         "type": "string",
-        "description": "CSS selector. If provided, returns only the matching element"
+        "description": "CSS selector. Narrows the text path to that element, and the screenshot path to its bounding box"
       },
       "waitFor": {
         "type": "string",
@@ -91,8 +121,7 @@
     "type": "object",
     "required": [
       "url",
-      "title",
-      "text"
+      "title"
     ],
     "properties": {
       "url": {
@@ -145,9 +174,13 @@
         "additionalProperties": false,
         "description": "First external link"
       },
-      "screenshot": {
+      "viewport": {
         "type": "string",
-        "description": "Screenshot base64 data (when screenshot=true)"
+        "description": "screenshot path — the render size actually used"
+      },
+      "scale": {
+        "type": "number",
+        "description": "screenshot path — the device pixel ratio actually used"
       }
     },
     "additionalProperties": false

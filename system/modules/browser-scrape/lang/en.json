@@ -1,6 +1,8 @@
 {
   "error": {
     "url_required": "data.url field is required.",
+    "target_required": "A screenshot needs either a url or inline html.",
+    "selector_not_found": "No element matches the selector: {{selector}}",
     "runtime": "{{message}}"
   },
   "settings": {

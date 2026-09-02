@@ -1,6 +1,8 @@
 {
   "error": {
     "url_required": "data.url 필드가 필요합니다.",
+    "target_required": "화면을 찍으려면 url 또는 html 중 하나가 필요합니다.",
+    "selector_not_found": "선택자에 해당하는 요소가 없습니다: {{selector}}",
     "runtime": "{{message}}"
   },
   "settings": {
