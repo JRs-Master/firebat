@@ -49,6 +49,80 @@ INK, DIM = (236, 240, 248), (148, 163, 184)
 CYAN, BLUE, AMBER = (34, 211, 238), (59, 130, 246), (255, 190, 70)
 NAMED = {"ink": INK, "dim": DIM, "cyan": CYAN, "blue": BLUE, "amber": AMBER}
 
+# ── maths typesetting ────────────────────────────────────────────────────────
+# The scene writes the formula as a string and this turns it into ink. The
+# alternative — render it in a browser, screenshot it, crop it, upload the file
+# and reference it — is four moving parts to say one equation, and this server
+# has no browser at all.
+_MATH_CACHE = {}
+
+
+def _split_math(text):
+    """'교점 = $S(x)=m$ 의 해' -> [(False,'교점 = '), (True,'S(x)=m'), (False,' 의 해')].
+
+    An unpaired `$` stays literal instead of swallowing the rest of the line — a
+    caption that mentions a price should not silently become maths.
+    """
+    out, buf, i, n = [], "", 0, len(text)
+    while i < n:
+        if text[i] == "$":
+            j = text.find("$", i + 1)
+            if j < 0:
+                buf += text[i:]
+                break
+            if buf:
+                out.append((False, buf))
+                buf = ""
+            out.append((True, text[i + 1:j]))
+            i = j + 1
+            continue
+        buf += text[i]
+        i += 1
+    if buf:
+        out.append((False, buf))
+    return out or [(False, "")]
+
+
+def _mathtext_rgba(tex, rgb, px_h):
+    """TeX-ish maths -> a transparent RGBA image, typeset in this process.
+
+    Cached per (tex, colour, height): one formula usually sits on screen for
+    hundreds of frames and the layout is the expensive half.
+    """
+    key = (tex, tuple(rgb), int(px_h))
+    hit = _MATH_CACHE.get(key)
+    if hit is not None:
+        return hit
+    import io as _io
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+    except ImportError as e:
+        raise SceneError(
+            "maths needs matplotlib (declared in this module's packages) — %s" % e)
+    matplotlib.rcParams["mathtext.fontset"] = "cm"   # the Computer Modern look
+    fig = Figure(figsize=(0.01, 0.01), dpi=220)
+    FigureCanvasAgg(fig)
+    fig.text(0, 0, "$" + tex + "$", fontsize=36,
+             color=(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0))
+    buf = _io.BytesIO()
+    try:
+        fig.savefig(buf, format="png", transparent=True,
+                    bbox_inches="tight", pad_inches=0.02)
+    except Exception as e:
+        raise SceneError("cannot typeset %r — %s" % (tex[:60], e))
+    buf.seek(0)
+    im = Image.open(buf).convert("RGBA")
+    if im.height != px_h and im.height > 0:
+        im = im.resize((max(1, round(im.width * px_h / im.height)), int(px_h)),
+                       Image.LANCZOS)
+    if len(_MATH_CACHE) > 120:
+        _MATH_CACHE.clear()
+    _MATH_CACHE[key] = im
+    return im
+
 # ── easing ───────────────────────────────────────────────────────────────────
 def clamp01(x):
     return max(0.0, min(1.0, x))
@@ -1295,7 +1369,8 @@ class Scene:
             kind = L["kind"]
             if kind not in ("sprite", "bubble", "title", "caption", "card", "list",
                             "image", "fireworks", "hearts", "confetti", "model3d",
-                            "spark", "shake", "speedlines", "hpbar", "spritesheet"):
+                            "spark", "shake", "speedlines", "hpbar", "spritesheet",
+                            "math"):
                 raise SceneError(
                     f"layers[{i}].kind {kind!r} is unknown — the assets action lists "
                     "every kind and its fields")
@@ -1308,6 +1383,15 @@ class Scene:
                 if key in L and len(str(L[key])) > TEXT_MAX:
                     raise SceneError(f"layers[{i}].{key} exceeds {TEXT_MAX} chars")
             texts += self._texts_of(L)
+            if kind == "math":
+                tex = str(L.get("tex") or "").strip()
+                if not tex:
+                    raise SceneError(
+                        f"layers[{i}]: a math layer needs `tex` — the formula itself, "
+                        "e.g. tex: \"f^{-1}(x)=\\\\frac{5x-x^3}{2}\"")
+                if len(tex) > TEXT_MAX:
+                    raise SceneError(f"layers[{i}].tex exceeds {TEXT_MAX} chars")
+                L["tex"] = tex
             if kind == "image":
                 L["_path"] = media_path(L.get("media"))
             if kind == "spritesheet":
@@ -1993,15 +2077,73 @@ class Scene:
         ss = self.ss
         f = self.fonts.get(38)
         txt = str(L.get("text") or "")
+        segs = _split_math(txt)
         cx, y = self._at(L, [0.5, 0.855])
-        tw = d.textlength(txt, font=f)
+        mh = int(f.size * 0.92)
+        parts, tw = [], 0.0
+        for is_math, s in segs:
+            if is_math:
+                im = _mathtext_rgba(s, INK, mh)
+                parts.append((True, im, im.width))
+                tw += im.width
+            else:
+                w = d.textlength(s, font=f)
+                parts.append((False, s, w))
+                tw += w
         d.rounded_rectangle([cx - tw / 2 - 26 * ss + 3 * ss, y - 14 * ss + 8 * ss,
                              cx + tw / 2 + 26 * ss + 3 * ss, y + f.size + 14 * ss + 8 * ss],
                             radius=26 * ss, fill=(4, 6, 14, int(55 * a)))
         d.rounded_rectangle([cx - tw / 2 - 26 * ss, y - 14 * ss,
                              cx + tw / 2 + 26 * ss, y + f.size + 14 * ss],
                             radius=26 * ss, fill=(8, 10, 20, int(150 * a)))
-        d.text((cx - tw / 2, y), txt, font=f, fill=(*INK, int(255 * a)))
+        x = cx - tw / 2
+        for is_math, val, w in parts:
+            if is_math:
+                if self._frame_img is not None:
+                    m = val.getchannel("A")
+                    if a < 1:
+                        m = m.point(lambda v, _a=a: int(v * _a))
+                    self._frame_img.paste(val.convert("RGB"),
+                                          (int(x), int(y + (f.size - val.height) / 2 + f.size * 0.12)), m)
+            else:
+                d.text((x, y), val, font=f, fill=(*INK, int(255 * a)))
+            x += w
+
+    def _draw_math(self, d, g, t, a, L):
+        """A formula written straight onto the board from the scene's own `tex` string.
+
+        No browser, no screenshot, no image file: the scene says what the maths IS and
+        the module typesets it. `write` reveals it left to right over that many seconds,
+        which is what reads as a hand writing on a blackboard.
+        """
+        if self._frame_img is None:
+            return
+        px_h = max(8, int(self.SH * float(L.get("h", 0.075))))
+        im = _mathtext_rgba(str(L.get("tex") or ""),
+                            self._color(L.get("color"), INK), px_h)
+        cx, cy = self._at(L, [0.5, 0.45])
+        mask = im.getchannel("A")
+        if a < 1:
+            mask = mask.point(lambda v, _a=a: int(v * _a))
+        write = float(L.get("write", 0) or 0)
+        if write > 0:
+            p = clamp01((t - L["from"]) / write)
+            edge = max(2.0, im.width * 0.035)          # a soft nib, not a hard wipe
+            lead = p * (im.width + edge)
+            ramp = Image.linear_gradient("L").resize((max(2, int(edge)), 1))
+            band = Image.new("L", im.size, 0)
+            solid = int(lead - edge)
+            if solid > 0:
+                band.paste(255, (0, 0, min(solid, im.width), im.height))
+            if 0 < lead <= im.width + edge:
+                x0 = max(0, int(lead - edge))
+                wid = min(im.width - x0, int(edge))
+                if wid > 0:
+                    band.paste(ramp.transpose(Image.FLIP_LEFT_RIGHT).resize((wid, im.height)),
+                               (x0, 0))
+            mask = ImageChops.multiply(mask, band)
+        self._frame_img.paste(im.convert("RGB"),
+                              (int(cx - im.width / 2), int(cy - im.height / 2)), mask)
 
     def _draw_card(self, d, g, t, a, L):
         ss, SW = self.ss, self.SW
@@ -3623,6 +3765,14 @@ def action_assets(_inp):
             "card": "{rows:[{label, value}], at?, w?, accent?} info card, slides in",
             "list": "{rows:[{lead, text, dots?:[[r,g,b]..], highlight?, tag?}], at?, w?} "
                     "staggered time-table rows; highlight = amber emphasis + tag badge",
+            "math": "{tex, at?, h?, color?, write?} a formula the scene states as a "
+                    "STRING and the module typesets — tex is TeX-ish source "
+                    "(\\frac, ^{}, \\sqrt, |...|, \\ln, \\Longleftrightarrow), h is the "
+                    "height as a fraction of the frame (default 0.075), write is how "
+                    "many seconds it takes to appear left-to-right, which is what "
+                    "reads as a hand writing on a board (0 = all at once). No image "
+                    "file, no browser, no screenshot. `$...$` inside a caption's text "
+                    "is typeset the same way, so Korean prose and maths share one line",
             "image": "{media, at?, w?, rounded?, kenburns?:{zoom, panx}} a picture from "
                      "the media store with optional Ken Burns drift. A PNG's own "
                      "transparency is kept, so a cut-out or a formula drops onto the "
