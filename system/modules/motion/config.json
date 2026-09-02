@@ -64,8 +64,8 @@
       {
         "id": "concat",
         "name": "클립 이어붙이기",
-        "desc": "Join 2..12 finished mp4 clips into one, in the order given — ffmpeg stream copy, no re-encode, seconds not minutes. {media:['<mp4>', ...]}. This is how a video longer than one 90s scene is made: render the parts and join them, so fixing one part costs that part instead of the whole bake. Every part must share size, fps and quality.",
-        "params": ["media"]
+        "desc": "Join 2..12 finished mp4 clips into one, in the order given — ffmpeg stream copy, no re-encode, seconds not minutes. {clips:['<mp4>', '<mp4>', ...]}. This is how a video longer than one 90s scene is made: render the parts and join them, so fixing one part costs that part instead of the whole bake. Every part must share size, fps and quality.",
+        "params": ["clips"]
       },
       {
         "id": "model_info",
@@ -150,9 +150,13 @@
         "description": "[sticker|save_asset|delete_asset] Asset name. sticker exports any clip-art declaration — the seeds shipped with the module (firebat, heart, star, moon, balloon) or one saved with save_asset; save_asset names the new declaration (1-24 chars, letters/digits/한글/-/_)."
       },
       "media": {
-        "type": ["string", "array"],
+        "type": "string",
+        "description": "[duration|trim] Media-store path (/user/media/...) — duration: an audio file, trim: an mp4."
+      },
+      "clips": {
+        "type": "array",
         "items": {"type": "string"},
-        "description": "[duration|trim|concat] Media-store path (/user/media/...) — duration: an audio file, trim: an mp4, concat: a LIST of 2..12 mp4 paths in play order. Declared as one-or-many because concat is the action that takes many; a lone string reaches the other two unchanged."
+        "description": "[concat] 2..12 finished mp4 paths in the order they should play. Its own field rather than a list-shaped `media`: one field carries one meaning, and a union type resolves to the string branch, which silently flattens the list."
       },
       "from": {
         "type": "number",

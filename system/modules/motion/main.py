@@ -3934,7 +3934,7 @@ def action_assets(_inp):
                       "Playback fps is the "
                       "animation cadence, not the video's: 8 is anime's usual 3s, 12 is 2s. Sheets "
                       "and shape parts are alternatives: a drawn character needs no parts",
-    "concat": "concat {media:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
+    "concat": "concat {clips:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
               "in order, ffmpeg stream copy, no re-encode. This is how a video "
               "longer than one scene is made: a 10s 1080p draft costs ~53s of "
               "render, so five minutes is ~30min whichever way it is cut - as one "
@@ -4030,10 +4030,15 @@ def action_concat(inp):
     When they do not, ffmpeg's own complaint is reported rather than a guess.
     """
     import imageio_ffmpeg
-    media = inp.get("media")
+    # `clips`, not `media`: media is declared a string for duration and trim, and a
+    # union type resolves to that branch, so a list handed in as `media` arrived
+    # flattened and this action refused every call (2026-09-03).
+    media = inp.get("clips")
+    if media is None and isinstance(inp.get("media"), list):
+        media = inp.get("media")          # a caller that already had the list shape
     if not isinstance(media, list) or not 2 <= len(media) <= 12:
         return {"success": False,
-                "error": "concat needs {media:[<mp4>, <mp4>, ...]} - 2 to 12 clips "
+                "error": "concat needs {clips:[<mp4>, <mp4>, ...]} - 2 to 12 clips "
                          "in the order they should play"}
     paths = []
     for i, m in enumerate(media):
