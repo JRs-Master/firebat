@@ -27,7 +27,7 @@
         "name": "영상 렌더",
         "description": "씬 선언을 mp4 로 굽는다 — 캐릭터·텍스트·불꽃·이미지 층을 타임라인에 얹고, BGM·음성을 먹싱한다. stills 를 주면 영상 대신 지정 시각의 정지 PNG 만 뽑는다(수정 반복용 싼 검수 경로). 씬 문법·에셋 목록은 assets 액션이 전부 말한다.",
         "domain": "제작",
-        "params": ["duration", "size", "fps", "background", "layers", "audio", "camera", "stills", "quality", "async"],
+        "params": ["duration", "size", "fps", "background", "layers", "audio", "camera", "stills", "quality", "async", "part"],
         "tags": ["영상", "쇼츠", "렌더", "동영상 제작"],
         "aliases": ["make-video"],
         "needs": ["motion:assets"]
@@ -177,6 +177,10 @@
       "async": {
         "type": "boolean",
         "description": "[render] true = validate, return a jobId immediately, and render in the background — REQUIRED for renders longer than ~20s (they outlive the tool roundtrip). Poll with the job action; the poll that sees it finished imports the video."
+      },
+      "part": {
+        "type": "boolean",
+        "description": "[render] true = this clip is a PART of a longer video, not the deliverable. It lands in the scratch area and its url is what concat takes; it is NOT imported into the media store, so a six-part lecture leaves one file there instead of seven. Swept after 24h — join the parts the same day."
       },
       "id": {
         "type": "string",

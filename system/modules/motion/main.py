@@ -1803,6 +1803,25 @@ class Scene:
     # the border and it leaves nothing for the encoder's ringing to spend, so a
     # rescued layer gets a little air. Detection still triggers on contact alone.
     PROBE_MARGIN = 10.0
+    # A readable layer has to land inside a MARGIN, not merely inside the bitmap. A
+    # formula flush to the frame edge is eaten by the player's own chrome, by
+    # overscan and by any thumbnail crop; one that reaches BOTH edges is not a
+    # full-bleed design, it is wider than the frame. Decoration legitimately spans
+    # the canvas, so the inset applies only to the kinds whose content is read.
+    # Measured 2026-09-04 on a finished lecture: four of seven formulas ran past the
+    # frame — one 2252px wide on a 1920px canvas — and the canvas-edge test said
+    # nothing about any of them, because each touched both sides at once and that is
+    # the shape the code below reads as "on purpose".
+    SAFE_INSET = 0.045          # of the shorter axis, each side
+    READABLE = frozenset(("math", "title", "caption", "card", "list", "bubble", "hpbar"))
+
+    def _bounds(self, kind):
+        """The rectangle this kind has to land inside: the bitmap for decoration, an
+        inset one for anything meant to be read."""
+        if kind not in self.READABLE:
+            return 0.0, 0.0, float(self.W), float(self.H)
+        m = min(self.W, self.H) * self.SAFE_INSET
+        return m, m, self.W - m, self.H - m
 
     def _ink_box(self, L, t):
         """Where layer L's own ink lands at time t, in output pixels.
@@ -1824,11 +1843,12 @@ class Scene:
         return (float(cols[0]), float(rows[0]),
                 float(cols[-1] + 1), float(rows[-1] + 1))
 
-    def _touching(self, box, margin=0.0):
-        """Which canvas edges this ink reaches: (left, right, top, bottom)."""
+    def _touching(self, box, kind, margin=0.0):
+        """Which of this kind's bounds the ink reaches: (left, right, top, bottom)."""
         x0, y0, x1, y1 = box
+        bx0, by0, bx1, by1 = self._bounds(kind)
         e = self.PROBE_EPS + margin
-        return (x0 <= e, x1 >= self.W - e, y0 <= e, y1 >= self.H - e)
+        return (x0 <= bx0 + e, x1 >= bx1 - e, y0 <= by0 + e, y1 >= by1 - e)
 
     def _search_clear(self, L, t, vertical, sign, limit):
         """Least shift in `sign`'s direction that lifts the ink off that edge.
@@ -1852,7 +1872,7 @@ class Scene:
             box = self._ink_box(L, t)
             if box is None:
                 return True
-            left, right, top, bottom = self._touching(box, self.PROBE_MARGIN)
+            left, right, top, bottom = self._touching(box, L["kind"], self.PROBE_MARGIN)
             return not ((bottom if sign < 0 else top) if vertical
                         else (right if sign < 0 else left))
         try:
@@ -1915,7 +1935,22 @@ class Scene:
             self.ss, self.SW, self.SH, self.fonts, self._frame_img = keep
 
     def _fit_ink(self, i, L, box, moving, t):
-        left, right, top, bottom = self._touching(box)
+        left, right, top, bottom = self._touching(box, L["kind"])
+        # Both edges of an axis is the case the edge test used to pass over in
+        # silence. For decoration that silence is right — a confetti burst spans the
+        # frame on purpose. For something meant to be read it means the layer is
+        # bigger than the space it has, which no shift can fix; saying so is the only
+        # thing left to do about it.
+        if L["kind"] in self.READABLE and not moving:
+            over = [n for c, n in ((left and right, "wider"),
+                                   (top and bottom, "taller")) if c]
+            if over:
+                self.layout_fixes.append(
+                    f"layers[{i}] ({L['kind']}) is {' and '.join(over)} than the "
+                    "readable area, so no move can rescue it — give it less to draw "
+                    "(a smaller `h` on a math layer, fewer rows, shorter lines) or "
+                    "split it across two layers. Measured by drawing it, not from a "
+                    "declared size.")
         # Reaching BOTH edges of an axis is a layer that spans it on purpose —
         # confetti, a full-bleed image. Only one edge with room on the other side
         # is content falling off, and that is the case this can prove.
@@ -2904,11 +2939,32 @@ def action_render(inp):
         return _job_submit(inp, scene)
     data = _encode_video(scene, tag)
     out = data.pop("_out_path")
-    data["_mediaImport"] = {"path": _out(out), "contentType": "video/mp4",
-                            "filenameHint": f"motion-{tag}"}
+    if inp.get("part"):
+        data.update(_as_part(out, tag))
+    else:
+        data["_mediaImport"] = {"path": _out(out), "contentType": "video/mp4",
+                                "filenameHint": f"motion-{tag}"}
     if scene.layout_fixes:
         data["layoutFixes"] = scene.layout_fixes
     return {"success": True, "data": data}
+
+
+def _as_part(out, tag):
+    """A clip that exists only to be joined is not the deliverable, so it does not
+    enter the media store — the same call `stills` already makes.
+
+    Measured 2026-09-04: a six-part lecture left thirteen intermediate videos sitting
+    in the media panel beside the one file anyone wanted. `stills` got a scratch home
+    in 8da4b9b5 and concat parts never did, so half the problem stayed fixed.
+    """
+    os.makedirs(SCRATCH_DIR, exist_ok=True)
+    name = f"part-{tag}.mp4"
+    shutil.move(out, os.path.join(SCRATCH_DIR, name))
+    _sweep_scratch()
+    return {"url": "/user/media/_scratch/" + name,
+            "note": "a part, not the deliverable — kept out of the media store and "
+                    "swept after 24h. Hand this url to concat; the joined file is the "
+                    "one that lands in media"}
 
 
 def _encode_video(scene, tag, on_frame=None):
@@ -3088,9 +3144,20 @@ def action_job(inp):
     _job_write(os.path.join(JOB_DIR, job_id), prog)
     result = dict(prog.get("result") or {})
     result.update({"jobId": job_id, "state": "done",
-                   "renderSec": int(prog.get("finished", 0) - prog.get("t0", 0)),
-                   "_mediaImport": {"path": _out(path), "contentType": "video/mp4",
-                                    "filenameHint": f"motion-{job_id.split('-')[0]}"}})
+                   "renderSec": int(prog.get("finished", 0) - prog.get("t0", 0))})
+    # The submitted spec is the only thing that remembers this was a part: the job
+    # record carries progress, not intent.
+    spec = {}
+    try:
+        with open(os.path.join(JOB_DIR, job_id, "scene.json"), encoding="utf-8") as f:
+            spec = json.load(f)
+    except (OSError, ValueError):
+        pass
+    if spec.get("part"):
+        result.update(_as_part(path, job_id.split("-")[0]))
+    else:
+        result["_mediaImport"] = {"path": _out(path), "contentType": "video/mp4",
+                                  "filenameHint": f"motion-{job_id.split('-')[0]}"}
     return {"success": True, "data": result}
 
 def _color_of(pose, default):
@@ -3906,9 +3973,17 @@ def action_assets(_inp):
                        "growing kind past the edge — a 3-row list wants y <= 0.55, a "
                        "4-row card y <= 0.42, a 3-line title y <= 0.35 to sit "
                        "centred. You do not have to get this exactly right: before "
-                       "rendering, every layer is drawn alone and its ink measured, "
-                       "and anything that settles off the canvas is moved back on by "
-                       "exactly the overflow and reported in layoutFixes. A layer "
+                       "rendering, every layer is drawn alone and its ink measured. "
+                       "Decoration must stay inside the canvas; anything MEANT TO BE "
+                       "READ (math, title, caption, card, list, bubble, hpbar) must "
+                       "stay inside an inset SAFE AREA — 4.5% of the shorter side on "
+                       "each edge — because the player's own controls, overscan and "
+                       "thumbnail crops all eat the rim. Whatever settles outside is "
+                       "moved back in by exactly the overflow and reported in "
+                       "layoutFixes; a readable layer that is simply BIGGER than the "
+                       "safe area (reaching both edges of an axis) cannot be rescued "
+                       "by moving, so it is reported and left alone — make it smaller "
+                       "or split it in two. A layer "
                        "that MOVES during the scene is reported but never moved, "
                        "because travelling out of frame is usually the point. "
                        "Placing it yourself is what controls the spacing",
@@ -4144,7 +4219,9 @@ def action_assets(_inp):
               "render, so five minutes is ~30min whichever way it is cut - as one "
               "bake, fixing one line costs that again; as clips it costs the one "
               "clip plus a join measured in seconds. Every part must share size, "
-              "fps and quality",
+              "fps and quality. Render the parts with part:true so they land in "
+              "the scratch area instead of the media store — otherwise a six-part "
+              "video leaves seven files in media and only one is the deliverable",
     "trim": "trim {media:'<mp4 in the media store or data/motion>', from?, to} "
                 "or {media, segments:[{from,to}..up to 6]} — ffmpeg stream copy, "
                 "no re-render: splitting a finished video is seconds, not minutes. "
@@ -4377,6 +4454,30 @@ def action_selftest():
     ck("a title that fits is not moved",
        (None, 0), (tok.layers[0].get("_nudge"), len(tok.layout_fixes)),
        tok.layers[0].get("_nudge") is None and not tok.layout_fixes)
+
+    # The case the canvas-edge test passed over in silence, and the one that reached
+    # a finished lecture: a formula WIDER than the frame touches left and right at
+    # once, which reads exactly like a full-bleed backdrop. Measured 2026-09-04 —
+    # four of seven formulas in a shipped video were past the readable area and
+    # layoutFixes was empty for all four. Nothing can move it back, so the whole of
+    # the fix is saying so.
+    fat = Scene({**wide, "layers": [{"kind": "math", "from": 0, "to": 2,
+                                     "at": [0.5, 0.5], "h": 0.30,
+                                     "tex": r"E(X)=19200\cdot\frac{a+4}{32}=600(a+4)=4800"}]})
+    ck("a formula wider than the readable area is reported, not silently cropped",
+       "no nudge + one note", (fat.layers[0].get("_nudge"), len(fat.layout_fixes)),
+       fat.layers[0].get("_nudge") is None and len(fat.layout_fixes) == 1
+       and "wider" in fat.layout_fixes[0])
+    # ...and the other direction, because a rule that fires on everything is not a
+    # rule: decoration spans the canvas on purpose and must stay silent.
+    deco = Scene({**wide, "layers": [{"kind": "confetti", "from": 0, "to": 2}]})
+    ck("decoration spanning the frame is not a fault", 0, len(deco.layout_fixes),
+       not deco.layout_fixes)
+    ck("readable kinds are held to an inset, decoration to the bitmap",
+       "inset > 0 and full frame", (Scene(wide)._bounds("math"),
+                                    Scene(wide)._bounds("confetti")),
+       Scene(wide)._bounds("math")[0] > 0
+       and Scene(wide)._bounds("confetti") == (0.0, 0.0, 1920.0, 1080.0))
 
     # A missing glyph is refused before the render, not shipped as a hollow box.
     # U+2212 MINUS SIGN is absent from NanumGothicBold — measured 2026-09-03 after
