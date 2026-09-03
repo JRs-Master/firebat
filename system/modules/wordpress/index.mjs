@@ -251,14 +251,30 @@ const NO_WP_BLOCK = {
 };
 
 /** blocks → { html, unsupported[] }. What could not be translated is named, never dropped. */
+/** One spelling for a block name, whichever spelling arrived.
+
+    A component has two published names: components.json declares `componentType: "Header"`
+    and `name: "header"`, and `search_components` — which the `blocks` parameter tells the
+    caller to use — hands over the lowercase one. The table below is keyed on the Pascal one,
+    so a caller that followed that instruction had every block dropped. Measured 2026-09-03:
+    a cron turn wrote a six-section article, obeyed the site's writing instruction, and
+    published a post with an empty body — reported as `success: true`, with the loss visible
+    only in `unsupported: ["header","text"]`.
+
+    Folding case and separators means neither spelling is the right one; both resolve. It is
+    a rule rather than a second list, so a component added tomorrow is covered. */
+const canon = t => String(t || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+const TO_WP_BY_CANON = new Map(Object.entries(TO_WP).map(([k, v]) => [canon(k), v]));
+const CANON_TO_TYPE = new Map(Object.keys(TO_WP).map(k => [canon(k), k]));
+
 export function blocksToGutenberg(blocks) {
   const unsupported = [];
   const walk = list => (Array.isArray(list) ? list : []).map(b => {
     if (!b || typeof b !== 'object') return '';
     const t = String(b.type || '');
     const p = b.props || {};
-    if (t === 'Html') return wrap('html', null, String(p.content ?? ''));
-    const fn = TO_WP[t];
+    if (canon(t) === 'html') return wrap('html', null, String(p.content ?? ''));
+    const fn = TO_WP_BY_CANON.get(canon(t));
     if (!fn) { unsupported.push(t || '(이름 없는 블록)'); return ''; }
     return fn(p, walk);
   }).filter(Boolean).join('\n\n');
@@ -426,6 +442,19 @@ async function composeBody(site, d) {
   } else {
     return { none: true };
   }
+  // Every block dropped means an empty post, and an empty post that reports success is worse
+  // than a refusal: the caller has already spent the composing, the id is issued, and the loss
+  // shows up only to whoever reads `unsupported`. Measured 2026-09-03 — a full article landed
+  // as a blank draft this way. A refusal costs one round and says which names to use.
+  if (!body.trim()) {
+    return {
+      error: `본문이 비었습니다 — 준 블록 ${unsupported.length}개가 모두 워드프레스로 옮겨지지 `
+        + `않았습니다 (${[...new Set(unsupported)].join(', ')}). \`type\` 은 컴포넌트 이름이고 `
+        + `대소문자·밑줄은 가리지 않습니다(\`header\` = \`Header\`). 옮길 수 있는 것 = `
+        + `${Object.keys(TO_WP).join(', ')}, Html. 대응 블록이 없는 컴포넌트는 \`html\` 로 `
+        + `직접 넘기세요.`,
+    };
+  }
 
   // Images go into the site's own library first: a post that points at our media store would
   // break the moment that file moves, and WordPress cannot make it a thumbnail from outside.
@@ -458,6 +487,7 @@ async function actionPublish(site, d) {
 
   const made = await composeBody(site, d);
   if (made.none) return out(false, NO_BODY);
+  if (made.error) return out(false, made.error);
   const { body, unsupported, uploaded } = made;
 
   let featured = null;
@@ -511,6 +541,7 @@ async function actionUpdate(site, d) {
   if (typeof d.excerpt === 'string') patch.excerpt = String(d.excerpt);
 
   const made = await composeBody(site, d);
+  if (made.error) return out(false, made.error);
   let uploaded = [];
   let unsupported = [];
   if (!made.none) {
@@ -587,7 +618,10 @@ async function actionTrash(site, d) {
 
 /** componentType (Pascal) → the components.json name (snake), for the reason table. */
 function wpName(componentType) {
-  return String(componentType).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  // The reason table is keyed on components.json's `name`, and the caller may have used
+  // either spelling — resolve back to the declared componentType first so it is found.
+  const declared = CANON_TO_TYPE.get(canon(componentType)) || String(componentType);
+  return declared.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 }
 
 async function actionPosts(site, d) {
@@ -645,7 +679,7 @@ async function actionCategories(site) {
 
 /* ─────────────────────────── selftest ─────────────────────────── */
 
-function selftest() {
+async function selftest() {
   const checks = [];
   const ck = (name, want, got, ok) => checks.push({ name, want, got: String(got), ok: !!ok });
 
@@ -734,6 +768,45 @@ function selftest() {
     + `오타=${wrong.error ? '거부' : '통과'}`,
     !one.error && one.id === 'a' && !!many.error && many.error.includes('a, b') && !!wrong.error);
 
+  // Both spellings of a block name resolve. The lowercase one is what search_components
+  // hands over and what the `blocks` parameter tells the caller to use, so it was the one
+  // that had to work — and it was the one that silently dropped every block.
+  const lower = blocksToGutenberg([
+    { type: 'header', props: { text: '제목', level: 2 } },
+    { type: 'text', props: { content: '본문' } },
+  ]);
+  const pascal = blocksToGutenberg([
+    { type: 'Header', props: { text: '제목', level: 2 } },
+    { type: 'Text', props: { content: '본문' } },
+  ]);
+  ck('소문자 이름(search_components 가 주는 것)도 파스칼과 같게 옮겨진다',
+    '두 철자 동일 · unsupported 0',
+    `lower=${lower.unsupported.length} pascal=${pascal.unsupported.length} `
+    + `같은결과=${lower.html === pascal.html}`,
+    lower.unsupported.length === 0 && pascal.unsupported.length === 0
+      && lower.html === pascal.html && lower.html.includes('wp:heading'));
+  const snake = blocksToGutenberg([{ type: 'stock_chart', props: {} }]);
+  const camel = blocksToGutenberg([{ type: 'StockChart', props: {} }]);
+  ck('옮길 수 없는 것은 두 철자 모두에서 이름이 보고된다', '양쪽 다 1건',
+    `snake=${snake.unsupported.join(',')} camel=${camel.unsupported.join(',')}`,
+    snake.unsupported.length === 1 && camel.unsupported.length === 1);
+
+  // A post whose blocks all fell through is empty. Refusing costs a round; succeeding costs
+  // an article and a person noticing later.
+  // composeBody is async (it uploads images), so this check has to be awaited — a `.then`
+  // here would resolve after the checks array is already serialised, and a canary that
+  // reports nothing is indistinguishable from one that passes.
+  const allDropped = await composeBody(
+    { id: 'x', url: 'https://a.com', user: 'u', appPassword: 'p' },
+    { blocks: [{ type: 'StockChart', props: {} }] });
+  const kept = await composeBody(
+    { id: 'x', url: 'https://a.com', user: 'u', appPassword: 'p' },
+    { blocks: [{ type: 'text', props: { content: 'ok' } }] });
+  ck('블록이 전부 안 옮겨지면 빈 글을 올리지 않고 거부한다 (하나라도 남으면 통과)',
+    '전부드롭=거부(이름 댐) / 하나남음=통과',
+    `전부드롭=${allDropped.error ? '거부' : '통과'} 하나남음=${kept.error ? '거부' : '통과'}`,
+    !!allDropped.error && allDropped.error.includes('StockChart') && !kept.error);
+
   // The status ladder, both ways. A guard canaried only on the blocked case looks just as green
   // as one that blocks everything — and blocking everything would mean a person can never publish
   // a draft, which is the whole point of the action.
@@ -794,7 +867,7 @@ async function main() {
   const d = input.data ?? {};
   const action = String(d.action || '');
 
-  if (action === 'selftest') return selftest();
+  if (action === 'selftest') return await selftest();
 
   const sites = loadSites();
   if (sites === null) {
