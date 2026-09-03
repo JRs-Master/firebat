@@ -217,6 +217,41 @@ def resolve_fonts():
 def has_hangul(s):
     return any("\uac00" <= ch <= "\ud7a3" or "\u3131" <= ch <= "\u318e" for ch in str(s))
 
+# \u2500\u2500 characters the font cannot draw \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+# A character with no glyph is drawn as .notdef \u2014 a hollow box \u2014 and PIL raises
+# nothing. Measured 2026-09-03: NanumGothicBold has no U+2212 MINUS SIGN, so
+# `x^2(x^2-5)^2` written with a real minus went out as a box in a finished
+# six-minute video, and the only detector was a human watching it.
+#
+# Reading the cmap would need fontTools; asking the font what it draws needs
+# nothing. Three scripts no UI font ships with must all draw the SAME thing \u2014
+# that thing is this font's .notdef. If they disagree the font has one of them
+# and the test cannot speak, so it stays silent rather than guessing.
+#
+# All three must be plain spacing LETTERS. A combining mark was the first pick and
+# it broke the agreement on its own (Balinese U+1B00 measured 38x36 against the
+# 38x32 the other two drew) \u2014 the layout engine composes marks differently, so the
+# canary disagreed with itself and switched the whole check off in silence.
+# Verified 2026-09-03 against both fonts we can resolve to: all three draw .notdef
+# in NanumGothicBold and in DejaVuSans-Bold, and DejaVu draws a REAL minus, so the
+# check stays quiet on the font that has the character.
+_GLYPH_CANARIES = ("\u2c00", "\ua6a0", "\ua500")  # Glagolitic, Bamum, Vai
+
+def _glyph_sig(font, ch):
+    m = font.getmask(ch, mode="L")
+    if not m.size[0] or not m.size[1]:
+        return ("blank",)
+    return (m.size, np.asarray(m).tobytes())
+
+def notdef_signature(font):
+    sigs = {_glyph_sig(font, ch) for ch in _GLYPH_CANARIES}
+    return sigs.pop() if len(sigs) == 1 else None
+
+def missing_glyphs(font, text, notdef):
+    """Unique characters of `text` this font has no glyph for, in order."""
+    return [ch for ch in dict.fromkeys(str(text))
+            if not ch.isspace() and _glyph_sig(font, ch) == notdef]
+
 class Fonts:
     """Sized on demand against the supersampled canvas."""
     def __init__(self, ss):
@@ -1405,7 +1440,7 @@ class Scene:
             for key in ("text",):
                 if key in L and len(str(L[key])) > TEXT_MAX:
                     raise SceneError(f"layers[{i}].{key} exceeds {TEXT_MAX} chars")
-            texts += self._texts_of(L)
+            texts += [(i, s) for s in self._texts_of(L)]
             if kind == "math":
                 tex = str(L.get("tex") or "").strip()
                 if not tex:
@@ -1487,8 +1522,6 @@ class Scene:
                 L["_lines"] = [(rng.random(), rng.uniform(0.14, 0.42),
                                 rng.uniform(2.0, 5.0), rng.random())
                                for _ in range(14)]
-            if kind in ("list", "card"):
-                self._fit_rows(i, L)
             self.layers.append(L)
         bg = inp.get("background") or {"kind": "night"}
         if not isinstance(bg, dict) or bg.get("kind") not in ("night", "gradient",
@@ -1543,13 +1576,38 @@ class Scene:
         # said about it — the duration cap going 20s -> 90s made that the common case.
         self.bgm_loop = bool(audio.get("bgmLoop", True))
         self.voice_env = None  # filled by prepare_audio
-        korean = any(has_hangul(s) for s in texts)
+        korean = any(has_hangul(s) for _, s in texts)
         if korean and not self.fonts.korean:
             raise SceneError(
                 "the scene contains Korean text but no Korean-capable font was found — "
                 "install one (Debian/Ubuntu: `apt install fonts-nanum`) or set the "
                 "module's fontPath setting")
+        # Refusing here costs a second; the box goes to video otherwise and costs a
+        # whole render plus somebody noticing. `$...$` spans are typeset by the math
+        # font, not this one, so they are not this font's problem.
+        probe_font = self.fonts.get(40)
+        notdef = notdef_signature(probe_font)
+        if notdef is not None:
+            gone = {}
+            for i, s in texts:
+                plain = "".join(seg for is_math, seg in _split_math(s) if not is_math)
+                for ch in missing_glyphs(probe_font, plain, notdef):
+                    gone.setdefault(ch, i)
+            if gone:
+                named = ", ".join(f"{ch!r} (U+{ord(ch):04X}) in layers[{i}]"
+                                  for ch, i in gone.items())
+                raise SceneError(
+                    f"the text font has no glyph for {named} — each would render as a "
+                    "hollow box in the finished video with nothing said about it. Swap "
+                    "in a character it does have (minus U+2212 -> hyphen '-', U+2219 "
+                    "-> '.', superscript zero U+2070 and subscript zero U+2080 have no "
+                    "substitute even though the other digits do), drop emoji, or move "
+                    "the expression into a math layer or a $...$ span inside a caption "
+                    "— those are typeset by a math font that has the full set.")
         self._bg_cache = None
+        self._probe_fonts = None
+        self._frame_img = None      # image/math layers paste onto the live frame
+        self._probe_layout()
 
     @staticmethod
     def _texts_of(L):
@@ -1724,49 +1782,187 @@ class Scene:
                      state[2] + (cy - state[2]) * f)
         return state
 
-    # Row heights the two growing kinds draw with — kept beside the fitter so the
-    # arithmetic here and in _draw_list/_draw_card cannot drift apart.
-    LIST_ROW, LIST_TALL, LIST_PLAIN = 158, 150, 128
-    CARD_PAD, CARD_ROW, CARD_SHADOW = 50, 130, 12
+    # ── did we draw off the canvas? ──────────────────────────────────────────
+    # Answered by looking at the pixels, never by predicting them.
+    #
+    # What this replaced re-derived each kind's box height from constants kept
+    # beside the drawing code. Three things were wrong with that and each one is a
+    # reason the same "the last row is missing" report came back on 2026-08-29 and
+    # again on 2026-09-03: it covered 2 of the 18 kinds, so title/caption/math were
+    # never in the net at all; it was a second copy of geometry the draw code
+    # already owns, and sitting next to the original is not deriving from it; and
+    # running BEFORE the draw it could not see real text metrics, a substituted
+    # glyph or a typeset formula's height even in principle.
+    #
+    # "Will this kind's predicted height fit?" has a different answer per kind and
+    # no answer at all before drawing. "Did this layer's ink land outside?" has one
+    # answer for every kind — including kinds nobody has written yet.
+    PROBE_EPS = 2.0     # output px; antialiasing on a flush edge is not an overflow
+    PROBE_INK = 10      # 0..255 max channel; below this is a drop shadow, not content
+    # Clearing the edge by one pixel is not cropped, but it reads as jammed against
+    # the border and it leaves nothing for the encoder's ringing to spend, so a
+    # rescued layer gets a little air. Detection still triggers on contact alone.
+    PROBE_MARGIN = 10.0
 
-    def _fit_rows(self, i, L):
-        """Keep a list/card inside the canvas.
+    def _ink_box(self, L, t):
+        """Where layer L's own ink lands at time t, in output pixels.
 
-        `at` is the TOP of these two kinds and they grow downward one row at a time, so a
-        y that looks like the middle of the frame puts the last row past the bottom edge.
-        Measured 2026-08-29: at [0.36, 0.59] with three rows ended at 1081px of a 1080px
-        canvas and row `03` was gone from the finished video with nothing said about it.
-
-        Cropping in silence is the one outcome worth spending code to avoid — a render is
-        minutes long and the author sees the loss only after it finishes. Refusing would
-        cost that same round, so the box is moved up to fit and the move is reported.
+        Drawn by the same _draw_* the render calls — alone, on black, with alpha
+        forced opaque so a fade cannot hide the extent. The caller holds base scale,
+        so what comes back is already in output coordinates.
         """
-        rows = L.get("rows") or []
-        if not rows:
+        img = Image.new("RGB", (self.SW, self.SH), (0, 0, 0))
+        glow = Image.new("RGB", (self.SW, self.SH), (0, 0, 0))
+        self._frame_img = img
+        getattr(self, "_draw_" + L["kind"])(
+            ImageDraw.Draw(img, "RGBA"), ImageDraw.Draw(glow, "RGBA"), t, 1.0, L)
+        ink = np.maximum(np.asarray(img).max(2), np.asarray(glow).max(2))
+        rows = np.nonzero(ink.max(1) >= self.PROBE_INK)[0]
+        if not len(rows):
+            return None
+        cols = np.nonzero(ink.max(0) >= self.PROBE_INK)[0]
+        return (float(cols[0]), float(rows[0]),
+                float(cols[-1] + 1), float(rows[-1] + 1))
+
+    def _touching(self, box, margin=0.0):
+        """Which canvas edges this ink reaches: (left, right, top, bottom)."""
+        x0, y0, x1, y1 = box
+        e = self.PROBE_EPS + margin
+        return (x0 <= e, x1 >= self.W - e, y0 <= e, y1 >= self.H - e)
+
+    def _search_clear(self, L, t, vertical, sign, limit):
+        """Least shift in `sign`'s direction that lifts the ink off that edge.
+
+        Found by moving the layer and looking again, because HOW FAR a layer runs
+        past the border is the one thing a canvas-sized probe cannot see — PIL
+        clips the drawing at the bitmap, so everything beyond reads as "touching
+        the last row". Discovering the distance keeps the promise the constants
+        broke: nothing here knows any kind's geometry.
+
+        None means no shift within the canvas frees the edge — the layer spans that
+        axis (confetti, a full-bleed image), which is not a fault to report.
+        """
+        had, base = "_nudge" in L, list(L.get("_nudge") or (0.0, 0.0))
+        idx = 1 if vertical else 0
+
+        def free(d):
+            n = list(base)
+            n[idx] = base[idx] + sign * d
+            L["_nudge"] = tuple(n)
+            box = self._ink_box(L, t)
+            if box is None:
+                return True
+            left, right, top, bottom = self._touching(box, self.PROBE_MARGIN)
+            return not ((bottom if sign < 0 else top) if vertical
+                        else (right if sign < 0 else left))
+        try:
+            lo, hi = 0.0, 8.0
+            while not free(hi):
+                lo, hi = hi, hi * 2
+                if hi > limit:
+                    return None
+            while hi - lo > 1.0:                     # bisect to the nearest pixel
+                mid = (lo + hi) / 2
+                if free(mid):
+                    hi = mid
+                else:
+                    lo = mid
+            return sign * math.ceil(hi)
+        finally:
+            if had:
+                L["_nudge"] = tuple(base)
+            else:
+                L.pop("_nudge", None)
+
+    def _probe_layout(self):
+        """Move anything that settles off the canvas back on, and say so.
+
+        Every layer is drawn twice, at two settled times. Identical ink both times
+        means furniture: hanging off an edge shows nothing on screen that says a row
+        is missing, so it is moved in by exactly the measured overflow. Ink that
+        differs means the layer is travelling, and walking out of frame is usually
+        the point, so that one is reported and left where it was put.
+
+        The probe runs at base scale — the draw code scales every offset and the
+        canvas by `ss` together, so the geometry is the same picture 1.5x smaller,
+        and the measurement costs a sixteenth of a real frame.
+
+        It never raises. A render that would have worked must not fail because the
+        measurement did.
+        """
+        if not self.layers:
             return
-        if L["kind"] == "list":
-            last_tall = bool((rows[-1] or {}).get("highlight"))
-            h = (len(rows) - 1) * self.LIST_ROW + (self.LIST_TALL if last_tall
-                                                   else self.LIST_PLAIN)
-        else:
-            h = self.CARD_PAD + self.CARD_ROW * len(rows) + self.CARD_SHADOW
-        # ss cancels: the draw code scales both the offsets and the canvas by it.
-        hn = h / float(self.H)
-        top = (L.get("at") or [0.5, 0.30 if L["kind"] == "list" else 0.10])[1]
-        if top + hn <= 1.0:
+        keep = (self.ss, self.SW, self.SH, self.fonts, self._frame_img)
+        self.ss, self.SW, self.SH = 1.0, self.W, self.H
+        if self._probe_fonts is None:
+            self._probe_fonts = Fonts(1.0)
+        self.fonts = self._probe_fonts
+        try:
+            for i, L in enumerate(self.layers):
+                a, b = L["from"], L["to"]
+                try:
+                    settled = self._ink_box(L, max(a + 0.01, b - 0.05))
+                    earlier = self._ink_box(L, a + (b - a) * 0.6)
+                except Exception as e:
+                    self.layout_fixes.append(
+                        f"layers[{i}] ({L['kind']}) could not be measured: {e}")
+                    continue
+                if settled is None or earlier is None:
+                    continue
+                moving = max(abs(p - q) for p, q in zip(settled, earlier)) > 1.5
+                self._fit_ink(i, L, settled, moving, max(a + 0.01, b - 0.05))
+        finally:
+            self.ss, self.SW, self.SH, self.fonts, self._frame_img = keep
+
+    def _fit_ink(self, i, L, box, moving, t):
+        left, right, top, bottom = self._touching(box)
+        # Reaching BOTH edges of an axis is a layer that spans it on purpose —
+        # confetti, a full-bleed image. Only one edge with room on the other side
+        # is content falling off, and that is the case this can prove.
+        want = []
+        if bottom and not top:
+            want.append((True, -1, "bottom"))
+        elif top and not bottom:
+            want.append((True, 1, "top"))
+        if right and not left:
+            want.append((False, -1, "right"))
+        elif left and not right:
+            want.append((False, 1, "left"))
+        if not want:
             return
-        fitted = max(0.0, 1.0 - hn)
-        at = list(L.get("at") or [0.5, top])
-        at[1] = fitted
-        L["at"] = at
+        if moving:
+            self.layout_fixes.append(
+                f"layers[{i}] ({L['kind']}) reaches the "
+                f"{' and '.join(w[2] for w in want)} edge, but its position changes "
+                "during the scene, so it was left where it was put — travelling out of "
+                "frame is usually the point. Place it inside if it is not.")
+            return
+        dx = dy = 0.0
+        told = []
+        for vertical, sign, name in want:
+            shift = self._search_clear(L, t, vertical, sign,
+                                       self.H if vertical else self.W)
+            if shift is None:
+                continue
+            if vertical:
+                dy += shift
+            else:
+                dx += shift
+            told.append(f"{abs(int(shift))}px off the {name}")
+        if not told:
+            return
+        nx, ny = L.get("_nudge") or (0.0, 0.0)
+        L["_nudge"] = (nx + dx, ny + dy)
         self.layout_fixes.append(
-            f"layers[{i}] ({L['kind']}, {len(rows)} rows) reached y={top + hn:.2f} — "
-            f"`at` is this kind's TOP, so it was moved up to {fitted:.2f} to stay on "
-            f"the canvas. Place it yourself at or above that to control the spacing.")
+            f"layers[{i}] ({L['kind']}) settled against the canvas edge and was moved "
+            f"{', '.join(told)} to get clear — the distance was found by moving it and "
+            "looking, not from any declared size. Place `at` yourself for different "
+            "spacing; the assets action says what `at` pins for this kind.")
 
     def _at(self, L, default):
         at = L.get("at") or default
-        return at[0] * self.SW, at[1] * self.SH
+        nx, ny = L.get("_nudge") or (0.0, 0.0)
+        return at[0] * self.SW + nx * self.ss, at[1] * self.SH + ny * self.ss
 
     def _move_acts(self, L, t, x, y):
         """Where a sprite's move acts have carried it by time `t`, in pixels.
@@ -3699,15 +3895,23 @@ def action_assets(_inp):
         "coordinates": "positions are normalized [x, y], 0..1, y grows downward; "
                        "times are seconds; every layer has from/to (fade windows "
                        "fadeIn/fadeOut, default 0.4s). WHAT `at` PINS DIFFERS BY "
-                       "KIND: for card and list it is the TOP-CENTRE and the box "
-                       "grows DOWNWARD one row at a time (list 158px/row at 1080 "
-                       "base, card 130px + 50 padding), so a y that reads like the "
-                       "middle of the frame puts the last row off the bottom — a "
-                       "3-row list wants y <= 0.55, a 4-row card y <= 0.42. For "
-                       "every other kind it is the centre. A box that would fall "
-                       "off is moved up to fit and the render reports it in "
-                       "layoutFixes, but placing it yourself is what controls the "
-                       "spacing",
+                       "KIND. TOP-CENTRE, growing DOWNWARD: card (50 + 130px per row "
+                       "at 1080 base), list (158px per row), title (the FIRST LINE's "
+                       "top — the stack grows down by 1.28x each line's size, so a "
+                       "three-line title with an xl line is ~275px tall), caption "
+                       "(the pill's text top), hpbar. CENTRE: math, image, bubble, "
+                       "spark, hearts, confetti. THE FEET, i.e. the ground line: "
+                       "sprite, model3d, spritesheet (default y 0.9). So a y that "
+                       "reads like the middle of the frame puts the bottom of a "
+                       "growing kind past the edge — a 3-row list wants y <= 0.55, a "
+                       "4-row card y <= 0.42, a 3-line title y <= 0.35 to sit "
+                       "centred. You do not have to get this exactly right: before "
+                       "rendering, every layer is drawn alone and its ink measured, "
+                       "and anything that settles off the canvas is moved back on by "
+                       "exactly the overflow and reported in layoutFixes. A layer "
+                       "that MOVES during the scene is reported but never moved, "
+                       "because travelling out of frame is usually the point. "
+                       "Placing it yourself is what controls the spacing",
         "sizes": sorted(SIZES), "durationMax": DUR_MAX, "fpsRange": [FPS_MIN, FPS_MAX],
         "backgrounds": {
             "night": "built-in starry night — moon, hills, stars (default)",
@@ -4125,24 +4329,85 @@ def action_selftest():
     ck("night background carries off-column features (moon, stars, hills)",
        True, varied, bg.shape == (sc.SH, sc.SW, 3) and varied)
 
-    # The canary is two-way on purpose: a fitter that moved everything would look
-    # just as green as one that moved nothing if only the overflowing case were checked.
+    # The ink probe. Every canary here is two-way on purpose: a probe that moved
+    # everything looks as green as one that moved nothing if only the overflowing
+    # case is checked. And the kinds are chosen to prove the net is not per-kind —
+    # `title` was outside the old fitter entirely, which is why the same crop came
+    # back a second time on a different kind.
+    def ink_bottom(scene, t=1.5):
+        """Lowest row the finished frame actually has ink in — the render's own
+        pixels, so a probe that lied would still be caught here."""
+        fr = scene.draw_frame(t).astype(int)
+        rows = np.nonzero((np.abs(fr - fr[:1]).max(2) > 12).any(1))[0]
+        return int(rows.max()) if len(rows) else -1
+
     rows3 = [{"lead": "01", "text": "a"}, {"lead": "02", "text": "b"},
              {"lead": "03", "text": "c"}]
-    over = Scene({**base, "size": "1920x1080",
-                  "layers": [{"kind": "list", "from": 0, "to": 2, "at": [0.36, 0.59],
-                              "rows": rows3}]})
-    fitted_y = over.layers[0]["at"][1]
+    wide = {**base, "size": "1920x1080", "background": {"kind": "gradient",
+                                                        "top": [0, 0, 0],
+                                                        "bottom": [0, 0, 0]}}
+    over = Scene({**wide, "layers": [{"kind": "list", "from": 0, "to": 2,
+                                      "at": [0.36, 0.59], "rows": rows3}]})
     ck("a 3-row list placed past the bottom is moved up, and says so",
-       "y<0.59 + one note", (round(fitted_y, 3), len(over.layout_fixes)),
-       fitted_y < 0.59 and len(over.layout_fixes) == 1
-       and fitted_y + (2 * Scene.LIST_ROW + Scene.LIST_PLAIN) / 1080.0 <= 1.0001)
-    ok_scene = Scene({**base, "size": "1920x1080",
-                      "layers": [{"kind": "list", "from": 0, "to": 2, "at": [0.36, 0.30],
-                                  "rows": rows3}]})
+       "nudge<0 + one note", (over.layers[0].get("_nudge"), len(over.layout_fixes)),
+       (over.layers[0].get("_nudge") or (0, 0))[1] < 0
+       and len(over.layout_fixes) == 1 and ink_bottom(over) <= 1079)
+    # x=0.5, not the 0.36 the vertical-only fitter used to be canaried with: a
+    # 0.86-wide box centred at 0.36 hangs 134px off the LEFT, which the old fitter
+    # could not see because it only ever asked about height. The probe asks about
+    # ink, so it sees both axes without being told there are two.
+    fits = Scene({**wide, "layers": [{"kind": "list", "from": 0, "to": 2,
+                                      "at": [0.5, 0.30], "rows": rows3}]})
     ck("a list that already fits is left exactly where it was asked for",
-       (0.30, 0), (ok_scene.layers[0]["at"][1], len(ok_scene.layout_fixes)),
-       ok_scene.layers[0]["at"][1] == 0.30 and not ok_scene.layout_fixes)
+       (None, 0), (fits.layers[0].get("_nudge"), len(fits.layout_fixes)),
+       fits.layers[0].get("_nudge") is None and not fits.layout_fixes)
+
+    # The kind the old per-kind fitter never covered. `at` is the FIRST LINE's top,
+    # so 0.44 with three lines runs off the bottom of a 1080 canvas.
+    tlines = [{"text": "aa", "size": "sm"}, {"text": "bb", "size": "lg"},
+              {"text": "cc", "size": "xl"}]
+    tover = Scene({**wide, "layers": [{"kind": "title", "from": 0, "to": 2,
+                                       "at": [0.5, 0.93], "lines": tlines}]})
+    ck("a title running off the bottom is caught too — the net is not per-kind",
+       "nudge<0 + one note", (tover.layers[0].get("_nudge"), len(tover.layout_fixes)),
+       (tover.layers[0].get("_nudge") or (0, 0))[1] < 0
+       and len(tover.layout_fixes) == 1 and ink_bottom(tover) <= 1079)
+    tok = Scene({**wide, "layers": [{"kind": "title", "from": 0, "to": 2,
+                                     "at": [0.5, 0.10], "lines": tlines}]})
+    ck("a title that fits is not moved",
+       (None, 0), (tok.layers[0].get("_nudge"), len(tok.layout_fixes)),
+       tok.layers[0].get("_nudge") is None and not tok.layout_fixes)
+
+    # A missing glyph is refused before the render, not shipped as a hollow box.
+    # U+2212 MINUS SIGN is absent from NanumGothicBold — measured 2026-09-03 after
+    # it reached a finished six-minute video.
+    _probe_f = Fonts(1.0).get(40)
+    _nd = notdef_signature(_probe_f)
+    ck("the notdef canary agrees across three absent scripts",
+       "a signature", "none" if _nd is None else "a signature", _nd is not None)
+    if _nd is not None:
+        miss = missing_glyphs(_probe_f, "ab − cd", _nd)
+        hit = missing_glyphs(_probe_f, "abc-123 가", _nd)
+        ck("a character the font lacks is named, and one it has is not",
+           (["−"], []), (miss, hit), miss == ["−"] and hit == [])
+        try:
+            Scene({**wide, "layers": [{"kind": "title", "from": 0, "to": 2,
+                                       "at": [0.5, 0.1],
+                                       "lines": [{"text": "x − 5"}]}]})
+            ck("a scene with an undrawable character is refused", "SceneError",
+               "accepted", False)
+        except SceneError as e:
+            ck("a scene with an undrawable character is refused, naming it",
+               "names U+2212", "U+2212" in str(e), "U+2212" in str(e))
+        # ...and the same character inside $...$ is the math font's job, not this one.
+        try:
+            Scene({**wide, "layers": [{"kind": "caption", "from": 0, "to": 2,
+                                       "text": "값은 $x − 5$ 입니다"}]})
+            ck("the same character inside $...$ is left to the math font", "accepted",
+               "accepted", True)
+        except SceneError as e:
+            ck("the same character inside $...$ is left to the math font", "accepted",
+               f"refused: {e}", False)
 
     # Expression variants: the declaration keeps them, and a malformed one is
     # refused at save time rather than at the first frame of a paid render.
