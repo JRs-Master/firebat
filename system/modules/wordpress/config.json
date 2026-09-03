@@ -174,7 +174,7 @@
       "id": "publish",
       "name": "글 발행",
       "description": "제목과 본문을 그 사이트에 올린다. 본문 블록은 구텐베르크 블록으로 옮겨지고, 이미지는 워드프레스 미디어로 먼저 올라간다. 응답은 글 주소와 어느 사이트의 어느 지침으로 썼는지를 돌려준다.",
-      "params": ["site", "title", "blocks", "html", "thumbnail", "images", "status", "categories", "tags", "excerpt"],
+      "params": ["site", "title", "blocks", "html", "thumbnail", "images", "categories", "tags", "excerpt"],
       "required": ["title"],
       "tags": ["발행", "포스팅", "글 올리기"],
       "aliases": ["post", "create-post"],
