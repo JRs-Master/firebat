@@ -2416,16 +2416,26 @@ class Scene:
                             fill=(9, 12, 24, int(196 * a)),
                             outline=(*accent, int(160 * a)), width=int(2.5 * ss))
         fl, fv = self.fonts.get(30), self.fonts.get(42)
+        # The rows are a block `rh * n` tall inside a box `50 + rh * n` tall, so the 120
+        # of slack belongs half above and half below. It used to start at 40, which put
+        # 40 over the first row and 80 under the last — measured 2026-09-04 on a finished
+        # lecture, where it reads as the box sagging.
+        # And the value starts at a COLUMN, not beside whatever the label happens to be:
+        # rows whose labels differ in length had their values in ragged columns. Same
+        # reason `list` puts its text at cw * 0.44 instead of after the lead. A label long
+        # enough to reach the column pushes past it rather than being overwritten, so the
+        # column is a floor and not a clamp.
+        vx = x0 + cw * 0.42
         for k, row in enumerate(rows):
             row = row or {}
-            yy = y0 + 40 * ss + k * rh
+            yy = y0 + 60 * ss + k * rh
             lbl = str(row.get("label") or "")
             lw = d.textlength(lbl, font=fl) + 44 * ss
             d.rounded_rectangle([x0 + 44 * ss, yy, x0 + 44 * ss + lw, yy + 60 * ss],
                                 radius=16 * ss, fill=(*CYAN, int(50 * a)),
                                 outline=(*CYAN, int(200 * a)), width=int(2 * ss))
             d.text((x0 + 66 * ss, yy + 10 * ss), lbl, font=fl, fill=(*CYAN, int(255 * a)))
-            d.text((x0 + 80 * ss + lw, yy + 3 * ss), str(row.get("value") or ""),
+            d.text((max(vx, x0 + 80 * ss + lw), yy + 3 * ss), str(row.get("value") or ""),
                    font=fv, fill=(*INK, int(255 * a)))
 
     def _draw_list(self, d, g, t, a, L):
@@ -3994,8 +4004,12 @@ def action_assets(_inp):
                       "floor line, made for caster / info videos (top/bottom "
                       "colors overridable)",
             "gradient": "{kind:'gradient', top:[r,g,b], bottom:[r,g,b]}",
-            "image": "{kind:'image', media:'/user/media/<file>'} cover-cropped; "
-                     "generate one with image_gen first for photoreal scenes",
+            "image": "{kind:'image', media:'/user/media/<file>'} cover-cropped, so a "
+                     "picture whose aspect differs from the canvas loses the overflowing "
+                     "edges — measured 2026-09-04, a 1536x1024 board on a 1920x1080 frame "
+                     "is scaled 1.25x and 100px comes off the top and the bottom, taking "
+                     "the drawn wooden border with it. Ask image_gen for the canvas aspect "
+                     "when the picture has edges worth keeping",
             "vignette": "any background takes vignette: 0..0.6 edge darkening "
                         "(defaults: night .22, studio .16, gradient .15, image .25; "
                         "0 disables)",
@@ -4478,6 +4492,34 @@ def action_selftest():
                                     Scene(wide)._bounds("confetti")),
        Scene(wide)._bounds("math")[0] > 0
        and Scene(wide)._bounds("confetti") == (0.0, 0.0, 1920.0, 1080.0))
+
+    # A card's rows are a block inside a taller box and the slack belongs half above,
+    # half below. It was 40 over the first row and 80 under the last — measured
+    # 2026-09-04 on a finished lecture, where it reads as the box sagging. Measured on
+    # the drawn pixels, not on the arithmetic that produced them.
+    cardsc = Scene({**wide, "layers": [{"kind": "card", "from": 0, "to": 2,
+                                        "at": [0.5, 0.20], "w": 0.5,
+                                        # the SAME value text in both rows: different
+                                        # glyphs have different left bearings and the
+                                        # 2px of that is not what this is asking about
+                                        "rows": [{"label": "가", "value": "88"},
+                                                 {"label": "나다라마", "value": "88"}]}]})
+    cf = cardsc.draw_frame(1.0).astype(int)      # not near `to`: the fade-out empties it
+    boxr = np.nonzero((cf.max(2) > 25).any(1))[0]
+    inr = np.nonzero((((cf[:, :, 2] - cf[:, :, 0]) > 40)
+                      | (cf.min(2) > 140)).any(1))[0]
+    cgap = (int(inr.min() - boxr.min()), int(boxr.max() - inr.max()))
+    ck("a card's rows sit centred in it, not sagging to the bottom",
+       "equal gaps", cgap, abs(cgap[0] - cgap[1]) <= 4)
+    # ...and the value starts at a column, so labels of unequal length (as here) do not
+    # leave the values ragged.
+    vxs = []
+    for k in range(2):
+        yv = int(0.20 * 1080) + 60 + 130 * k
+        cc = np.nonzero((cf[yv:yv + 60].min(2) > 140).any(0))[0]
+        vxs.append(int(cc[0]) if len(cc) else -1)
+    ck("card values line up even when the labels differ in length",
+       "one column", tuple(vxs), vxs[0] > 0 and vxs[0] == vxs[1])
 
     # A missing glyph is refused before the render, not shipped as a hollow box.
     # U+2212 MINUS SIGN is absent from NanumGothicBold — measured 2026-09-03 after
