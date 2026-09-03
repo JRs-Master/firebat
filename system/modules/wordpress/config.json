@@ -90,8 +90,7 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["sites", "publish", "update", "trash", "posts", "media", "categories", "selftest"],
-        "description": "sites = 등록된 사이트와 각 사이트의 글쓰기 지침 / publish = 새 글 발행 / update = 이미 올라간 글 고치기(상태 전환 포함) / trash = 글 내리기 / posts = 최근 글 목록 / media = 그 사이트 미디어 라이브러리의 그림 / categories = 그 사이트의 카테고리"
+        "description": "무엇을 할지. 어떤 액션이 있고 각각 무엇을 받는지는 search_module_actions / get_action_schema 가 말한다 — 그 행들이 원본이다."
       },
       "site": {
         "type": "string",
