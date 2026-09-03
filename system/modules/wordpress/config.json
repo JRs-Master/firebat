@@ -90,8 +90,8 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["sites", "publish", "posts", "media", "categories", "selftest"],
-        "description": "sites = 등록된 사이트와 각 사이트의 글쓰기 지침 / publish = 글 발행 / posts = 최근 글 목록 / media = 그 사이트 미디어 라이브러리의 그림 / categories = 그 사이트의 카테고리"
+        "enum": ["sites", "publish", "update", "trash", "posts", "media", "categories", "selftest"],
+        "description": "sites = 등록된 사이트와 각 사이트의 글쓰기 지침 / publish = 새 글 발행 / update = 이미 올라간 글 고치기(상태 전환 포함) / trash = 글 내리기 / posts = 최근 글 목록 / media = 그 사이트 미디어 라이브러리의 그림 / categories = 그 사이트의 카테고리"
       },
       "site": {
         "type": "string",
@@ -101,51 +101,55 @@
       },
       "title": {
         "type": "string",
-        "description": "[publish] 글 제목"
+        "description": "[publish|update] 글 제목"
       },
       "blocks": {
         "type": "array",
-        "description": "[publish] 본문을 렌더 블록 배열로. 각 항목은 `{type, props}` — 채팅에 그리는 것과 같은 어휘이고, 워드프레스에서는 구텐베르크 블록으로 옮겨진다. `search_components` 의 팔레트를 쓰되 워드프레스에 대응 블록이 있는 것만 옮겨지고, 나머지는 옮기지 않은 목록으로 응답에 보고된다.",
+        "description": "[publish|update] 본문을 렌더 블록 배열로. 각 항목은 `{type, props}` — 채팅에 그리는 것과 같은 어휘이고, 워드프레스에서는 구텐베르크 블록으로 옮겨진다. `search_components` 의 팔레트를 쓰되 워드프레스에 대응 블록이 있는 것만 옮겨지고, 나머지는 옮기지 않은 목록으로 응답에 보고된다.",
         "items": { "type": "object" }
       },
       "html": {
         "type": "string",
-        "description": "[publish] blocks 대신 쓰는 탈출구. 통째로 하나의 커스텀 HTML 블록이 되어 워드프레스 편집기에서 문단 단위로 고칠 수 없게 되므로, 표나 문단으로 쪼갤 수 있는 글은 blocks 를 쓴다."
+        "description": "[publish|update] blocks 대신 쓰는 탈출구. 통째로 하나의 커스텀 HTML 블록이 되어 워드프레스 편집기에서 문단 단위로 고칠 수 없게 되므로, 표나 문단으로 쪼갤 수 있는 글은 blocks 를 쓴다."
       },
       "thumbnail": {
         "type": "string",
-        "description": "[publish] 대표 이미지(썸네일). 셋 중 하나다 — 이미 그 사이트 미디어에 있는 그림의 id 숫자(media 액션이 돌려준다), /user/media/... 경로, http(s) 주소. id 를 주면 그 그림이 그대로 쓰이고 사본이 생기지 않는다. 사이트 자기 주소를 주면 라이브러리에서 그 그림을 찾아 쓴다."
+        "description": "[publish|update] 대표 이미지(썸네일). 셋 중 하나다 — 이미 그 사이트 미디어에 있는 그림의 id 숫자(media 액션이 돌려준다), /user/media/... 경로, http(s) 주소. id 를 주면 그 그림이 그대로 쓰이고 사본이 생기지 않는다. 사이트 자기 주소를 주면 라이브러리에서 그 그림을 찾아 쓴다."
       },
       "images": {
         "type": "array",
-        "description": "[publish] 본문에 넣을 이미지들. 각 항목은 `{src, alt?, caption?, after?}` — src 는 미디어 id 숫자, /user/media 경로, http(s) 주소 중 하나이고, after 는 몇 번째 블록 뒤에 넣을지(0 = 맨 앞, 생략하면 끝). 워드프레스 미디어로 먼저 올라간 뒤 그 주소로 박힌다.",
+        "description": "[publish|update] 본문에 넣을 이미지들. 각 항목은 `{src, alt?, caption?, after?}` — src 는 미디어 id 숫자, /user/media 경로, http(s) 주소 중 하나이고, after 는 몇 번째 블록 뒤에 넣을지(0 = 맨 앞, 생략하면 끝). 워드프레스 미디어로 먼저 올라간 뒤 그 주소로 박힌다.",
         "items": { "type": "object" }
       },
       "status": {
         "type": "string",
         "enum": ["publish", "draft", "pending", "private"],
-        "description": "[publish] 이 글만 다르게. 생략하면 사이트 설정의 발행 상태를 따른다."
+        "description": "[update] 이미 올라간 글의 공개 상태를 바꾼다 — \"이거 발행으로 바꿔줘\" 가 이 칸이다. 새 글의 상태는 사이트 설정이 정하고 publish 는 이 칸을 아예 받지 않는다. 예약 실행(크론)은 사이트 설정보다 더 공개로는 못 올린다 — 사람이 부르면 승인 카드가 뜨지만 예약 실행은 그 카드를 건너뛰기 때문이다."
       },
       "categories": {
         "type": "array",
-        "description": "[publish] 카테고리 이름들. 그 사이트에 없는 이름은 새로 만들어진다.",
+        "description": "[publish|update] 카테고리 이름들. 그 사이트에 없는 이름은 새로 만들어진다.",
         "items": { "type": "string" }
       },
       "tags": {
         "type": "array",
-        "description": "[publish] 태그 이름들. 없는 것은 새로 만들어진다.",
+        "description": "[publish|update] 태그 이름들. 없는 것은 새로 만들어진다.",
         "items": { "type": "string" }
       },
       "excerpt": {
         "type": "string",
-        "description": "[publish] 목록에 보이는 요약. 생략하면 워드프레스가 본문 앞부분을 쓴다."
+        "description": "[publish|update] 목록에 보이는 요약. 생략하면 워드프레스가 본문 앞부분을 쓴다."
       },
       "id": {
         "type": "integer",
-        "description": "[posts] 이 글 하나만 — 저장된 블록 마크업(content)까지 그대로 돌려준다. 편집기가 블록 오류를 낼 때 실제로 뭐가 들어갔는지 보는 자리다.",
+        "description": "[posts|update|trash] 글 id. posts 가 목록에서 돌려준다. posts 에서는 이 글 하나만 — 저장된 블록 마크업(content)까지 그대로 돌려준다. 편집기가 블록 오류를 낼 때 실제로 뭐가 들어갔는지 보는 자리다.",
         "source": "posts or publish"
       },
-      "query": {
+      "force": {
+      "type": "boolean",
+      "description": "[trash] true 면 휴지통을 건너뛰고 완전히 지운다 — 되돌릴 수 없다. 생략하면 휴지통으로만 보내고 워드프레스에서 복구할 수 있다."
+    },
+    "query": {
         "type": "string",
         "description": "[media] 파일명·제목으로 좁히기. 생략하면 최근 것부터."
       },
@@ -177,6 +181,26 @@
       "aliases": ["post", "create-post"],
       "needs": ["wordpress:sites"],
       "approval": true
+    },
+    {
+      "id": "update",
+      "name": "글 고치기",
+      "description": "이미 올라간 글을 id 로 찾아 고친다. 공개 상태 전환(초안 -> 발행)도 여기서 한다 — publish 는 새 글만 만든다. 준 칸만 바뀌고 나머지는 그대로이며, 응답이 바뀌기 전 상태와 바뀐 칸 목록을 돌려준다.",
+      "params": ["site", "id", "status", "title", "blocks", "html", "thumbnail", "images", "categories", "tags", "excerpt"],
+      "required": ["id"],
+      "approval": true,
+      "tags": ["글 수정", "발행으로 바꾸기", "초안 공개", "상태 변경", "글 내용 고치기"],
+      "aliases": ["edit", "revise", "set-status"]
+    },
+    {
+      "id": "trash",
+      "name": "글 내리기",
+      "description": "글을 휴지통으로 보낸다. force 를 주면 완전히 지운다(되돌릴 수 없다). 잘못 올라간 글을 되돌리는 자리다.",
+      "params": ["site", "id", "force"],
+      "required": ["id"],
+      "approval": true,
+      "tags": ["글 삭제", "글 내리기", "휴지통", "발행 취소"],
+      "aliases": ["delete", "remove", "unpublish"]
     },
     {
       "id": "posts",

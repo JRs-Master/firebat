@@ -380,12 +380,41 @@ async function termIds(site, kind, names) {
   return ids;
 }
 
-/* ─────────────────────────── actions ─────────────────────────── */
 
-async function actionPublish(site, d) {
-  const title = String(d.title || '').trim();
-  if (!title) return out(false, '제목(`title`)이 필요합니다.');
+/* ─────────────────────────── status is the operator's, not the caller's ───────────────────────────
+   The site row says what a NEW post is. That is the operator's decision, so nothing a caller passes
+   at creation time can raise it — `publish` no longer reads a status at all.
 
+   Changing a post that already exists is a different question, and it lives in `update`. There the
+   guard is that a run with nobody watching cannot lift a post above what the site declared.
+   Measured 2026-09-03: a cron turn wrote status:"publish" into a draft-locked site and the post
+   went live. `publish` IS declared approval-gated, so a person would have seen the card — but cron
+   bypasses that gate by design, which is exactly the path with nobody there to look. */
+const STATUS_RANK = { draft: 0, pending: 1, private: 2, publish: 3 };
+const STATUSES = Object.keys(STATUS_RANK);
+
+/** True when this run has no human in front of it (the framework sets this for cron). */
+function unattended() {
+  return String(process.env.FIREBAT_UNATTENDED || '') === '1';
+}
+
+/** The status an update may set, or an error saying why not. */
+function allowedStatus(site, want) {
+  const s = String(want);
+  if (!(s in STATUS_RANK)) {
+    return { error: `\`status\` 는 ${STATUSES.join(' / ')} 중 하나입니다 — 받은 값: \`${s}\`` };
+  }
+  const ceiling = site.status || 'draft';
+  if (unattended() && STATUS_RANK[s] > STATUS_RANK[ceiling]) {
+    return { error: `예약 실행은 글을 사이트 설정(\`${ceiling}\`)보다 더 공개로 올릴 수 없습니다. `
+      + `\`${s}\` 로 바꾸려면 사람이 보는 자리에서 부르거나, 모듈 설정에서 이 사이트의 발행 `
+      + `상태를 바꾸세요. 사람이 부르면 승인 카드가 뜨지만 예약 실행은 그 카드를 건너뜁니다.` };
+  }
+  return { status: s };
+}
+
+/** blocks|html (+ inline images) → Gutenberg body. Shared so publish and update cannot drift. */
+async function composeBody(site, d) {
   let body = '';
   let unsupported = [];
   if (Array.isArray(d.blocks) && d.blocks.length) {
@@ -395,16 +424,13 @@ async function actionPublish(site, d) {
   } else if (typeof d.html === 'string' && d.html.trim()) {
     body = wrap('html', null, d.html);
   } else {
-    return out(false, '본문이 없습니다 — `blocks`(권장) 또는 `html` 중 하나를 주세요. '
-      + 'blocks 는 워드프레스 편집기에서 문단 단위로 고칠 수 있는 글이 되고, html 은 통째로 '
-      + '커스텀 HTML 블록 하나가 됩니다.');
+    return { none: true };
   }
 
   // Images go into the site's own library first: a post that points at our media store would
   // break the moment that file moves, and WordPress cannot make it a thumbnail from outside.
   const uploaded = [];
-  const inline = Array.isArray(d.images) ? d.images : [];
-  for (const im of inline) {
+  for (const im of (Array.isArray(d.images) ? d.images : [])) {
     const got = await uploadMedia(site, im?.src, im?.alt);
     uploaded.push({ ...got, alt: im?.alt, caption: im?.caption, after: im?.after });
   }
@@ -418,21 +444,31 @@ async function actionPublish(site, d) {
     }
     body = [...parts, ...tail].join('\n\n');
   }
+  return { body, unsupported, uploaded };
+}
+
+const NO_BODY = '본문이 없습니다 — `blocks`(권장) 또는 `html` 중 하나를 주세요. blocks 는 워드프레스 '
+  + '편집기에서 문단 단위로 고칠 수 있는 글이 되고, html 은 통째로 커스텀 HTML 블록 하나가 됩니다.';
+
+/* ─────────────────────────── actions ─────────────────────────── */
+
+async function actionPublish(site, d) {
+  const title = String(d.title || '').trim();
+  if (!title) return out(false, '제목(`title`)이 필요합니다.');
+
+  const made = await composeBody(site, d);
+  if (made.none) return out(false, NO_BODY);
+  const { body, unsupported, uploaded } = made;
 
   let featured = null;
   if (d.thumbnail) featured = await uploadMedia(site, d.thumbnail, title);
 
   const cats = [...(d.categories || []), ...(site.category ? [site.category] : [])];
-  // Where the status came from, said out loud. Publishing live or filing a draft is the operator's
-  // decision and it lives on the site row; a caller can override it for one post, and when that
-  // happens the answer has to show it — otherwise "why did that go out as a draft" has no visible
-  // cause and the site setting looks broken.
-  const statusFrom = d.status ? 'call' : (site.status ? 'site' : 'default');
-  const post = {
-    title,
-    content: body,
-    status: d.status || site.status || 'publish',
-  };
+  // The status of a new post is the site row's, full stop — see the note above STATUS_RANK.
+  // A site row that never said anything files a draft: nobody declared "publish this live", and
+  // absence is not consent on the one field that decides who can read it.
+  const status = site.status || 'draft';
+  const post = { title, content: body, status };
   if (d.excerpt) post.excerpt = String(d.excerpt);
   if (featured?.id) post.featured_media = featured.id;
   const catIds = await termIds(site, 'categories', cats);
@@ -450,9 +486,9 @@ async function actionPublish(site, d) {
     url: created?.link,
     id: created?.id,
     status: created?.status,
-    statusFrom: statusFrom === 'call'
-      ? `이 호출이 \`${d.status}\` 로 지정 — 사이트 설정(${site.status || 'publish'})을 덮었습니다`
-      : statusFrom === 'site' ? `사이트 설정 (${site.status})` : '기본값 (publish)',
+    statusFrom: site.status ? `사이트 설정 (${site.status})`
+      : '사이트에 발행 상태가 없어 초안으로 넣었습니다 — 모듈 설정에서 정하세요',
+    changeStatus: '이 글의 상태를 바꾸려면 `update {id, status}` 를 쓰세요. `publish` 는 새 글만 만들고, 상태는 사이트 설정이 정합니다.',
     thumbnail: featured ? featured.url : null,
     images: uploaded.map(u => u.url),
     categories: cats,
@@ -462,6 +498,90 @@ async function actionPublish(site, d) {
       unsupportedNote: unsupported.map(t =>
         `${t}: ${NO_WP_BLOCK[wpName(t)] || '워드프레스에 대응 블록이 없어 본문에서 빠졌습니다'}`),
     } : {}),
+  });
+}
+
+async function actionUpdate(site, d) {
+  const id = String(d.id ?? '').trim();
+  if (!id) {
+    return out(false, '고칠 글의 `id` 가 필요합니다 — `posts` 로 목록을 받아 그 id 를 쓰세요.');
+  }
+  const patch = {};
+  if (typeof d.title === 'string' && d.title.trim()) patch.title = d.title.trim();
+  if (typeof d.excerpt === 'string') patch.excerpt = String(d.excerpt);
+
+  const made = await composeBody(site, d);
+  let uploaded = [];
+  let unsupported = [];
+  if (!made.none) {
+    patch.content = made.body;
+    uploaded = made.uploaded;
+    unsupported = made.unsupported;
+  }
+  if (d.thumbnail) {
+    const featured = await uploadMedia(site, d.thumbnail, patch.title || id);
+    if (featured?.id) patch.featured_media = featured.id;
+  }
+  if (Array.isArray(d.categories) && d.categories.length) {
+    const ids = await termIds(site, 'categories', d.categories);
+    if (ids.length) patch.categories = ids;
+  }
+  if (Array.isArray(d.tags) && d.tags.length) {
+    const ids = await termIds(site, 'tags', d.tags);
+    if (ids.length) patch.tags = ids;
+  }
+  if (d.status) {
+    const ok = allowedStatus(site, d.status);
+    if (ok.error) return out(false, ok.error);
+    patch.status = ok.status;
+  }
+  if (!Object.keys(patch).length) {
+    return out(false, '바꿀 것이 없습니다 — status / title / blocks / html / excerpt / thumbnail / '
+      + 'categories / tags 중 최소 하나를 주세요.');
+  }
+
+  // Read first, so the answer can say what actually moved. An update that reports only the new
+  // value cannot be told apart from one that changed nothing.
+  const before = await wp(site, `/posts/${encodeURIComponent(id)}?context=edit`);
+  const after = await wp(site, `/posts/${encodeURIComponent(id)}`, { method: 'POST', json: patch });
+  return out(true, {
+    identity: `${site.id} = ${site.url}`,
+    id: after?.id,
+    url: after?.link,
+    status: after?.status,
+    statusWas: before?.status,
+    changed: Object.keys(patch),
+    title: after?.title?.raw ?? after?.title?.rendered,
+    images: uploaded.map(u => u.url),
+    ...(unsupported.length ? {
+      unsupported,
+      unsupportedNote: unsupported.map(t =>
+        `${t}: ${NO_WP_BLOCK[wpName(t)] || '워드프레스에 대응 블록이 없어 본문에서 빠졌습니다'}`),
+    } : {}),
+  });
+}
+
+async function actionTrash(site, d) {
+  const id = String(d.id ?? '').trim();
+  if (!id) {
+    return out(false, '지울 글의 `id` 가 필요합니다 — `posts` 로 목록을 받아 그 id 를 쓰세요.');
+  }
+  // Trash by default: WordPress keeps it and a person can put it back. `force` skips the bin and
+  // the post is gone for good, which is why it is opt-in rather than the default.
+  const force = d.force === true;
+  const before = await wp(site, `/posts/${encodeURIComponent(id)}?context=edit`);
+  const gone = await wp(site, `/posts/${encodeURIComponent(id)}${force ? '?force=true' : ''}`,
+    { method: 'DELETE' });
+  return out(true, {
+    identity: `${site.id} = ${site.url}`,
+    id: before?.id,
+    title: before?.title?.raw ?? before?.title?.rendered,
+    was: before?.status,
+    now: force ? 'deleted' : (gone?.status || 'trash'),
+    permanent: force,
+    note: force
+      ? '완전히 지웠습니다 — 되돌릴 수 없습니다.'
+      : '휴지통으로 보냈습니다. 워드프레스 [글 → 휴지통]에서 복구할 수 있습니다.',
   });
 }
 
@@ -614,6 +734,53 @@ function selftest() {
     + `오타=${wrong.error ? '거부' : '통과'}`,
     !one.error && one.id === 'a' && !!many.error && many.error.includes('a, b') && !!wrong.error);
 
+  // The status ladder, both ways. A guard canaried only on the blocked case looks just as green
+  // as one that blocks everything — and blocking everything would mean a person can never publish
+  // a draft, which is the whole point of the action.
+  const site = { id: 'x', url: 'https://a.com', user: 'u', appPassword: 'p', status: 'draft' };
+  const was = process.env.FIREBAT_UNATTENDED;
+  process.env.FIREBAT_UNATTENDED = '1';
+  const cronUp = allowedStatus(site, 'publish');
+  const cronDown = allowedStatus(site, 'draft');
+  process.env.FIREBAT_UNATTENDED = '0';
+  const humanUp = allowedStatus(site, 'publish');
+  const open = allowedStatus({ ...site, status: 'publish' }, 'publish');
+  const bogus = allowedStatus(site, 'live');
+  if (was === undefined) delete process.env.FIREBAT_UNATTENDED;
+  else process.env.FIREBAT_UNATTENDED = was;
+  ck('초안 잠금 사이트: 예약 실행은 못 올리고, 사람은 올린다',
+    '크론↑거부 / 크론↓통과 / 사람↑통과',
+    `크론↑=${cronUp.error ? '거부' : '통과'} 크론↓=${cronDown.error ? '거부' : '통과'} `
+    + `사람↑=${humanUp.error ? '거부' : '통과'}`,
+    !!cronUp.error && !cronDown.error && !humanUp.error);
+  ck('사이트가 이미 공개면 예약 실행도 공개로 둘 수 있다', '통과',
+    open.error ? '거부' : '통과', !open.error);
+  ck('없는 상태 이름은 거부된다', 'live 거부',
+    bogus.error ? '거부' : '통과', !!bogus.error);
+
+  // `publish` must not read a status at all any more: the argument's only possible effect was to
+  // raise the operator's default at creation time, and cron proved it does exactly that.
+  const pubSrc = actionPublish.toString();
+  ck('publish 는 호출 인자의 status 를 읽지 않는다', 'd.status 없음',
+    /d\.status/.test(pubSrc) ? 'd.status 를 읽고 있음' : '안 읽음', !/d\.status/.test(pubSrc));
+  ck('상태를 안 적은 사이트는 초안으로 들어간다 (공개 아님)', "site.status || 'draft'",
+    /site\.status \|\| 'draft'/.test(pubSrc) ? "|| 'draft'" : '(못 찾음)',
+    /site\.status \|\| 'draft'/.test(pubSrc));
+
+  // A post that can be made but never changed or removed is what sent a measurement post live
+  // with no way back. The lifecycle is the capability, not the create call.
+  const upd = actionUpdate.toString();
+  const trs = actionTrash.toString();
+  ck('글은 만들기만 하는 게 아니라 고치고 지울 수 있다',
+    'update=POST /posts/<id> · trash=DELETE',
+    `update=${/method: 'POST'/.test(upd) ? 'POST' : '?'} trash=`
+    + `${/method: 'DELETE'/.test(trs) ? 'DELETE' : '?'}`,
+    /posts\/\$\{encodeURIComponent\(id\)\}/.test(upd) && /method: 'POST'/.test(upd)
+      && /method: 'DELETE'/.test(trs));
+  ck('지우기는 기본이 휴지통이고 완전 삭제는 명시해야 한다', "force === true 일 때만 force=true",
+    /d\.force === true/.test(trs) && /\?force=true/.test(trs) ? '휴지통 기본' : '(못 찾음)',
+    /d\.force === true/.test(trs) && /\?force=true/.test(trs));
+
   const passed = checks.filter(c => c.ok).length;
   return out(true, { passed, total: checks.length, checks });
 }
@@ -665,10 +832,12 @@ async function main() {
 
   try {
     if (action === 'publish') return await actionPublish(site, d);
+    if (action === 'update') return await actionUpdate(site, d);
+    if (action === 'trash') return await actionTrash(site, d);
     if (action === 'posts') return await actionPosts(site, d);
     if (action === 'media') return await actionMedia(site, d);
     if (action === 'categories') return await actionCategories(site);
-    return out(false, `알 수 없는 액션 \`${action}\` — sites / publish / posts / media / categories`);
+    return out(false, `알 수 없는 액션 \`${action}\` — sites / publish / update / trash / posts / media / categories`);
   } catch (e) {
     return out(false, e?.message || String(e));
   }
