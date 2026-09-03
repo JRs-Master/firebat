@@ -58,6 +58,17 @@ export function ActiveJobsIndicator() {
     [jobsList],
   );
 
+  // Hiding is not closing. The `return null` below drops the subtree while this component — and
+  // `open` with it — stays mounted, so a dropdown left open when the list emptied came back open
+  // the next time a job arrived, with nobody having clicked. Worse here than in PendingApprovals:
+  // the coords effect keys on `open` alone, so `coords` is never recomputed either and the panel
+  // returns anchored to where the button used to be. The list does empty — the store's retention
+  // sweep clears finished rows — so 992a126c was wrong to call this component exempt.
+  const idle = activeJobs.length === 0 && finishedJobs.length === 0;
+  useEffect(() => {
+    if (idle) { setOpen(false); setCoords(null); }
+  }, [idle]);
+
   // 경과 시간 실시간 갱신 — 드롭다운 열림 + 진행 중 작업 있으면 1초마다 리렌더(JobRow elapsed tick).
   // cron 은 진행 중 중간 이벤트가 없어(started/completed 2발뿐) 안 그러면 경과 시간이 멈춰 보임.
   const [, tick] = useState(0);
@@ -68,7 +79,7 @@ export function ActiveJobsIndicator() {
   }, [open, activeJobs.length]);
 
   // 활성·종료 모두 0 = 인디케이터 자체 숨김
-  if (activeJobs.length === 0 && finishedJobs.length === 0) return null;
+  if (idle) return null;
 
   // dropdown — 입력창 overflow-hidden 회피 위해 Portal 로 document.body 직접 마운트.
   // fixed position + getBoundingClientRect 로 버튼 위에 정확히 anchoring.
