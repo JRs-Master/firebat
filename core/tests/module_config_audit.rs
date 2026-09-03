@@ -369,6 +369,30 @@ fn every_module_declaration_names_something_that_exists() {
                         }
                     }
                 }
+                // ...and the keys that mode silently drops. `overlay_annotations` copies
+                // name/description/approval/uiOnly/needs/tags/aliases onto the DERIVED entry;
+                // `params`, `required` and `example` are not in that list, because the derived
+                // path computes params itself. So a row can declare them, the config parses, the
+                // audit passes, and nothing happens — which is how wordpress shipped
+                // `publish: required ["title"]` inert from its first day (2026-09-03: the schema
+                // answered `required: ["action"]`, so a model read it, called without the param
+                // and spent a round on a refusal the declaration already knew about).
+                for row in &rows {
+                    let Some(id) = row.get("id").and_then(|v| v.as_str()) else { continue };
+                    for dropped in ["params", "required", "example"] {
+                        let declared = row.get(dropped).is_some_and(|v| match v {
+                            Value::Array(a) => !a.is_empty(),
+                            Value::Object(o) => !o.is_empty(),
+                            Value::Null => false,
+                            _ => true,
+                        });
+                        if declared {
+                            say(format!(
+                                "row `{id}` declares `{dropped}`, but this module is in merge mode                                  (an action enum is present) and merge mode drops it — the row                                  would do nothing. Delete `input.properties.action.enum` so the                                  rows become the original of the action set (the runtime derives                                  the validation enum from their ids), or drop the key"
+                            ));
+                        }
+                    }
+                }
             }
             // Same rule one level down: a row param whose prose is a verbatim copy of the input
             // schema's description is the drift seed the list form exists to prevent — declare
