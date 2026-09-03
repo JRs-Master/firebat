@@ -93,6 +93,12 @@ export function PendingApprovals() {
   useEvents(['plan:pending'], load);
 
   useEffect(() => {
+    // An empty list hides the badge but does not close it. `if (!cards.length) return null` drops
+    // the subtree while this component — and `open` with it — stays mounted, so approving the last
+    // card left `open` true and the next card to arrive re-rendered the popover beside the badge
+    // with nobody having clicked. Measured 2026-09-04: the first card of a session waits for a
+    // click, every card after it opened itself. A hidden badge is not an open one.
+    if (!cards.length) { setOpen(false); setCoords(null); return; }
     if (!open) { setCoords(null); return; }
     const r = btnRef.current?.getBoundingClientRect();
     if (r) {
