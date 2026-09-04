@@ -1428,7 +1428,7 @@ class Scene:
             if kind not in ("sprite", "bubble", "title", "caption", "card", "list",
                             "image", "fireworks", "hearts", "confetti", "model3d",
                             "spark", "shake", "speedlines", "hpbar", "spritesheet",
-                            "math"):
+                            "math", "panel"):
                 raise SceneError(
                     f"layers[{i}].kind {kind!r} is unknown — the assets action lists "
                     "every kind and its fields")
@@ -1611,9 +1611,14 @@ class Scene:
 
     @staticmethod
     def _texts_of(L):
-        out = [str(L.get("text") or ""), str(L.get("label") or "")]
+        out = [str(L.get("text") or ""), str(L.get("label") or ""),
+               str(L.get("title") or "")]
+        # `lines` is {text,...} on a title and a bare string on a panel. Reading it as
+        # one shape crashed the glyph check the moment the second shape existed, and a
+        # crash here takes the whole render with it — the check has to survive every
+        # kind, including the next one somebody adds.
         for row in L.get("lines") or []:
-            out.append(str((row or {}).get("text") or ""))
+            out.append(str(row.get("text") or "") if isinstance(row, dict) else str(row))
         for row in L.get("rows") or []:
             row = row or {}
             out += [str(row.get(k) or "") for k in ("label", "value", "lead", "text", "tag")]
@@ -1813,7 +1818,8 @@ class Scene:
     # nothing about any of them, because each touched both sides at once and that is
     # the shape the code below reads as "on purpose".
     SAFE_INSET = 0.045          # of the shorter axis, each side
-    READABLE = frozenset(("math", "title", "caption", "card", "list", "bubble", "hpbar"))
+    READABLE = frozenset(("math", "title", "caption", "card", "list", "bubble",
+                          "hpbar", "panel"))
 
     def _bounds(self, kind):
         """The rectangle this kind has to land inside: the bitmap for decoration, an
@@ -2399,6 +2405,44 @@ class Scene:
         self._frame_img.paste(im.convert("RGB"),
                               (int(cx - im.width / 2), int(cy - im.height / 2)), mask)
 
+    def _draw_panel(self, d, g, t, a, L):
+        """A bordered block of LEFT-ALIGNED lines — a page of a document.
+
+        `title` centres every line and `list` wraps each one in its own pill, so a
+        quoted passage — an exam question's 자료, a statute, a letter — had nowhere
+        to live and came out as centred prose floating on the background. Asked for
+        twice before this existed, and both times answered by faking it with a title
+        stack, which is the thing that was being rejected. A passage is read, not
+        declaimed: it wants a left margin, a frame, and a heading of its own.
+        """
+        ss, SW = self.ss, self.SW
+        lines = [str(x) for x in (L.get("lines") or [])]
+        px = {"sm": 34, "md": 42, "lg": 52}.get(str(L.get("size") or "md"), 42)
+        f = self.fonts.get(px)
+        lh = px * 1.55 * ss
+        pad = 46 * ss
+        cw = SW * float(L.get("w", 0.72))
+        head = str(L.get("title") or "")
+        fh = self.fonts.get(int(px * 0.88)) if head else None
+        hh = (px * 1.75 * ss) if head else 0.0
+        chh = pad * 2 + hh + lh * len(lines)
+        cx, y0 = self._at(L, [0.5, 0.20])
+        y0 += (1 - eob(clamp01((t - L["from"]) / 0.6))) * 40 * ss
+        x0 = cx - cw / 2
+        d.rounded_rectangle([x0 + 4 * ss, y0 + 10 * ss,
+                             x0 + cw + 4 * ss, y0 + chh + 10 * ss],
+                            radius=26 * ss, fill=(4, 6, 14, int(60 * a)))
+        d.rounded_rectangle([x0, y0, x0 + cw, y0 + chh], radius=26 * ss,
+                            fill=(9, 12, 24, int(140 * a)),
+                            outline=(190, 200, 214, int(150 * a)), width=int(2 * ss))
+        ty = y0 + pad
+        if head:
+            d.text((x0 + pad, ty), head, font=fh, fill=(*CYAN, int(255 * a)))
+            ty += hh
+        for ln in lines:
+            d.text((x0 + pad, ty), ln, font=f, fill=(*INK, int(255 * a)))
+            ty += lh
+
     def _draw_card(self, d, g, t, a, L):
         ss, SW = self.ss, self.SW
         rows = L.get("rows") or []
@@ -2421,11 +2465,16 @@ class Scene:
         # 40 over the first row and 80 under the last — measured 2026-09-04 on a finished
         # lecture, where it reads as the box sagging.
         # And the value starts at a COLUMN, not beside whatever the label happens to be:
-        # rows whose labels differ in length had their values in ragged columns. Same
-        # reason `list` puts its text at cw * 0.44 instead of after the lead. A label long
-        # enough to reach the column pushes past it rather than being overwritten, so the
-        # column is a floor and not a clamp.
-        vx = x0 + cw * 0.42
+        # rows whose labels differ in length had their values in ragged columns. The
+        # column is DERIVED from the widest label, not set to a fraction of the width —
+        # cw * 0.42, borrowed from `list`, works there because a list row is full width
+        # with a dots column ahead of the lead, and on a 0.62-wide card it left 370px of
+        # nothing between a label and its value (measured 2026-09-04). Just past the
+        # longest pill is the only place that both lines the values up and keeps them
+        # next to what they belong to.
+        vx = x0 + 80 * ss + max(
+            [d.textlength(str((r or {}).get("label") or ""), font=fl) + 44 * ss
+             for r in rows] or [0.0])
         for k, row in enumerate(rows):
             row = row or {}
             yy = y0 + 60 * ss + k * rh
@@ -2451,7 +2500,13 @@ class Scene:
                 continue
             hot = bool(row.get("highlight"))
             slide = (1 - eob(clamp01((t - t0r) / 0.6))) * SW * 0.22
-            rh = 150 * ss if hot else 128 * ss
+            # One height for every row. The pitch is a fixed 158, so a taller
+            # highlighted box does not push its neighbours away — it eats the gap
+            # under itself: measured 2026-09-04, 29px above and 7px below the hot
+            # row while every other gap was 29. Emphasis is already carried by the
+            # amber fill, the thicker border, the amber text and the tag badge;
+            # the extra 22px bought nothing and cost the rhythm.
+            rh = 128 * ss
             x0 = cx - cw / 2 + slide
             y0 = y_base + k * 158 * ss
             d.rounded_rectangle(
@@ -4086,8 +4141,17 @@ def action_assets(_inp):
                        "before it: default caption + a 3-row list is y 0.80 of room, "
                        "and content generally wants to stay inside y 0.08..0.92",
             "card": "{rows:[{label, value}], at?, w?, accent?} info card, slides in",
+            "panel": "{lines:[<string>..], at?, w?, size?:'sm'|'md'|'lg', title?} a "
+                     "bordered block of LEFT-ALIGNED lines — a page of a document. "
+                     "`title` centres every line and `list` wraps each one in its own "
+                     "pill, so a quoted passage (an exam question's 자료, a statute, a "
+                     "letter) has no home in either: this is where it goes. `at` is the "
+                     "box's TOP-CENTRE and the height follows the line count "
+                     "(2*46 + 1.55*size per line, plus 1.75*size for a title). Break the "
+                     "lines yourself — nothing wraps for you, and the safe-area probe "
+                     "reports a line too long to fit",
             "list": "{rows:[{lead, text, dots?:[[r,g,b]..], highlight?, tag?}], at?, w?} "
-                    "staggered time-table rows; highlight = amber emphasis + tag badge",
+                    "staggered time-table rows, one pitch for every row; highlight = amber fill, thicker border, amber text and a tag badge — NOT a taller box, because the pitch is fixed and a taller box would eat the gap under itself",
             "math": "{tex, at?, h?, color?, write?} a formula the scene states as a "
                     "STRING and the module typesets — tex is TeX-ish source "
                     "(\\frac, ^{}, \\sqrt, |...|, \\ln, \\Longleftrightarrow), h is the "
@@ -4520,6 +4584,55 @@ def action_selftest():
         vxs.append(int(cc[0]) if len(cc) else -1)
     ck("card values line up even when the labels differ in length",
        "one column", tuple(vxs), vxs[0] > 0 and vxs[0] == vxs[1])
+
+    def _bands(fr, thresh=20, minh=20):
+        """Vertical runs of ink — the boxes a stacked layer drew, in order."""
+        prof = (fr.max(2) > thresh).any(1)
+        out, st = [], None
+        for y, v in enumerate(prof):
+            if v and st is None:
+                st = y
+            if not v and st is not None:
+                out.append((st, y - 1))
+                st = None
+        if st is not None:
+            out.append((st, len(prof) - 1))
+        return [b for b in out if b[1] - b[0] > minh]
+
+    # A highlighted row used to be 150 tall in a 158 pitch while the others were 128,
+    # so it ate the gap beneath it: measured 2026-09-04, 29px above the hot row and
+    # 7px below while every other gap was 29. The pitch is what carries the rhythm, so
+    # the box height has to be the same for every row.
+    hotl = Scene({**wide, "layers": [{"kind": "list", "from": 0, "to": 2,
+                                      "at": [0.5, 0.12], "w": 0.8,
+                                      "rows": [{"lead": "1", "text": "가"},
+                                               {"lead": "2", "text": "나",
+                                                "highlight": True, "tag": "여기"},
+                                               {"lead": "3", "text": "다"}]}]})
+    hb = _bands(hotl.draw_frame(1.0).astype(int))
+    hh = [b - a + 1 for a, b in hb]
+    hg = [hb[i + 1][0] - hb[i][1] - 1 for i in range(len(hb) - 1)]
+    ck("a highlighted list row keeps the rhythm — same height, same gaps",
+       "3 equal heights, equal gaps", (hh, hg),
+       len(hh) == 3 and len(set(hh)) == 1 and len(set(hg)) == 1)
+
+    # `panel` exists because neither `title` (centres every line) nor `list` (a pill per
+    # line) can draw a quoted passage, and faking it with a title stack is what an exam
+    # question's 자료 kept coming out as. Left alignment IS the layer.
+    pan = Scene({**wide, "layers": [{"kind": "panel", "from": 0, "to": 2,
+                                     "at": [0.5, 0.20], "w": 0.7, "size": "sm",
+                                     "title": "[자료]",
+                                     "lines": ["짧은 줄",
+                                               "이 줄은 훨씬 더 길게 늘어놓은 문장이다",
+                                               "중간"]}]})
+    pf = pan.draw_frame(1.0).astype(int)
+    ptx = pf.min(2) > 150
+    pstarts = [int(np.nonzero(ptx[a:b + 1].any(0))[0][0])
+               for a, b in _bands(pf, 150, 12)
+               if ptx[a:b + 1].any()]
+    ck("a panel's lines are left-aligned, not centred like a title",
+       "one left margin", pstarts,
+       len(pstarts) >= 3 and max(pstarts) - min(pstarts) <= 3)
 
     # A missing glyph is refused before the render, not shipped as a hollow box.
     # U+2212 MINUS SIGN is absent from NanumGothicBold — measured 2026-09-03 after
