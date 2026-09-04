@@ -1468,6 +1468,13 @@ class Scene:
                 L["_fps"] = _num(L.get("fps", 12), f"layers[{i}].fps", 1, 60)
             if kind == "fireworks":
                 L["_launches"] = self._launches(i, L)
+            if kind == "sprite":
+                # The two life knobs. Both are POSITION: the 8/31 measurement that
+                # started all this is that a character whose drawn SIZE changes between
+                # frames reads as a defect, not as a walk, and cellScale exists to end
+                # it. Putting the bob back as a size would undo that work.
+                L["_bob"] = _num(L.get("bob", 0.0), f"layers[{i}].bob", 0.0, 0.08)
+                L["_lean"] = _num(L.get("lean", 0.0), f"layers[{i}].lean", -8.0, 8.0)
             if kind == "sprite" and L.get("clip"):
                 cd = L["clip"]
                 if not isinstance(cd, dict):
@@ -2044,6 +2051,13 @@ class Scene:
         # they are shown one after another, which is what animation is.
         if saved.get("sheets"):
             return self._draw_sheet_sprite(t, a, L, saved["sheets"])
+        if L.get("_bob") or L.get("_lean"):
+            # A rig is posed, not played: it has bones, a jump act and squash, and its
+            # feet are wherever the pose put them. Silently ignoring the field would
+            # look exactly like a bob too small to see.
+            raise SceneError(
+                f"sprite {name!r} is a shape rig, and bob/lean belong to drawn sheets — "
+                "a rig gets its life from acts (jump, pose squash, anim)")
         custom = saved["parts"]
         SW, SH, ss = self.SW, self.SH, self.ss
         x, y = self._at(L, [0.5, 0.9])
@@ -2652,6 +2666,39 @@ class Scene:
             if cw_ > 0:
                 piece.alpha_composite(
                     hd.crop((sx, 0, sx + cw_, min(hd.height, piece.height))), (dx, 0))
+        # What in the piece goes to `at`. Feet-pinned that is the bottom of the box,
+        # centred; lean and the body anchor move it, so it is carried rather than
+        # recomputed at the paste — three readers of "where the middle is" is how a
+        # shadow ends up beside the character instead of under him.
+        anchor_x, anchor_y = w / 2.0, float(h)
+        lean = float(L.get("_lean") or 0.0)
+        if lean and sh.get("anchor") == "body":
+            # There is nothing to turn about. An airborne action is pinned by its body,
+            # and the bottom of its box is a wingtip or a trailing heel — rotating there
+            # would swing the character, which is the opposite of a lean.
+            raise SceneError(
+                f"sprite {name!r} action {act!r} is anchored by the body, and lean turns "
+                "about the feet — a flying or jumping action tilts with the drawing, not "
+                "with the layer")
+        if lean:
+            # Tip into the direction of travel about the FEET, which is the one point
+            # actually planted. Rotating about the middle swings the feet instead, and
+            # a walker whose feet swing is a walker sliding on ice.
+            rad = math.radians(abs(lean))
+            pad = int(math.ceil(max(w, h) * math.sin(rad))) + 2
+            box = Image.new("RGBA", (w + pad * 2, h + pad), (0, 0, 0, 0))
+            box.paste(piece, (pad, 0))
+            box = box.rotate(-lean * (travel or 1), resample=Image.BICUBIC,
+                             center=(pad + w / 2.0, float(h)))
+            bb = box.getbbox()
+            if bb:
+                # Re-tighten so every downstream reading of the piece still means the
+                # ink. The pivot maps to itself under the rotation, so it is still the
+                # feet — carry it across the crop rather than trusting the new centre.
+                anchor_x = pad + w / 2.0 - bb[0]
+                anchor_y = float(h) - bb[1]
+                piece = box.crop(bb)
+                w, h = piece.size
         alpha = piece.getchannel("A")
         if a < 0.999:
             alpha = alpha.point(lambda v: int(v * a))
@@ -2663,26 +2710,44 @@ class Scene:
         if travel and sh.get("stride"):
             per_cycle = 2.0 * sh["stride"] * (tall * scale)
             x = x + _travel_x(sh, i, per_cycle, travel)
-        px = int(x - w / 2)
+        px = int(x - anchor_x)
         # A contact shadow is what sets a character ON the ground rather than in front
         # of it — the same reason it does more for a photoreal render than any amount
         # of reflection. It is derived, not declared twice: `anchor` already says
         # whether this action stands on anything, so a flying sheet casts none.
         # Its width comes from the drawing's own feet, so it spreads as the legs part.
         if sh.get("anchor") != "body" and L.get("shadow", True) is not False:
-            self._foot_shadow(piece, px, int(y), w, h,
+            # The shadow marks the GROUND, so it stays on the ground line while the bob
+            # lifts the character off it. That is what a shadow does when a foot comes
+            # up — and it is the honest cost of putting the bob back as position: the
+            # planted foot leaves its shadow by the bob's own height at the passings.
+            self._foot_shadow(piece, int(x - anchor_x), int(y), w, h,
                               a * float(L.get("shadow", 1.0) if isinstance(
-                                  L.get("shadow"), (int, float)) else 1.0))
+                                  L.get("shadow"), (int, float)) else 1.0),
+                              cx=int(x))
         if sh.get("anchor") == "body" and sh.get("bodyY"):
             # `at` is the body. Aligning bottoms would swing an airborne character by
             # the difference in frame heights, which for a bird is the wingspan.
-            py = int(y - h * float(sh["bodyY"][cell_i]))
-        else:
-            py = int(y - h)                 # `at` is the feet
+            anchor_y = h * float(sh["bodyY"][cell_i])
+        bob = float(L.get("_bob") or 0.0)
+        if bob:
+            ph = sh.get("bobPhase")
+            if not ph:
+                raise SceneError(
+                    f"sprite {name!r} action {act!r} cannot carry `bob` — its cycle has "
+                    "no even rise and fall to hang it on (the two passing frames have to "
+                    "sit half a cycle apart). Re-save the asset if it predates this "
+                    "reading; if the answer does not change, the frames list is uneven "
+                    "and that is the thing to fix first.")
+            # Upward only, and zero at contact: the feet are on the ground at the moment
+            # both of them are down, which is the moment the eye reads contact. Biasing
+            # the other way would push them THROUGH the ground there.
+            anchor_y += bob * (tall * scale) * float(ph[i % len(ph)])
+        py = int(y - anchor_y)
         # The frame buffer is RGB, so composite the way the image layer does.
         self._frame_img.paste(piece, (px, py), alpha)
 
-    def _foot_shadow(self, piece, px, feet_y, w, h, a):
+    def _foot_shadow(self, piece, px, feet_y, w, h, a, cx=None):
         """The shadow of whatever is touching the ground, squashed flat under it.
 
         Not an oval: an oval is a pool the character floats over, because the dark is
@@ -2704,7 +2769,9 @@ class Scene:
         sh_img.paste(flat.point(lambda v: int(v * 0.62 * max(0.0, min(1.0, a)))),
                      (pad, pad))
         sh_img = sh_img.filter(ImageFilter.GaussianBlur(max(1.5, shh * 0.5)))
-        cx = px + w // 2
+        # Where the character is standing, which is not the middle of his box once he
+        # leans — the box grows on the side he tips toward.
+        cx = px + w // 2 if cx is None else cx
         # Straddling the ground line: the near half is behind the feet, which is what
         # makes it read as contact instead of as something lying further away.
         self._frame_img.paste((22, 20, 18),
@@ -3447,6 +3514,82 @@ def _sheet_face(face_spec, medias, all_cells, all_cell_of, used_cells, used_mask
     }
 
 
+def _split_row(m):
+    """The row where the silhouette first parts into two, from the top of the frame.
+
+    NOT the crotch — when the legs are together the figure stays one blob down to the
+    ankles, and that is exactly what makes this reading useful: it dives at the passing
+    frames and sits flat everywhere else. Measured 2026-09-04 on heungbu8, as a share
+    of frame height: 0.81 and 0.72 at the two passings against 0.49..0.55 at the other
+    six. Two things read it — `_sheet_foot_lift` calls the gap below it the leg, and
+    `_sheet_bob_phase` calls it the cycle's clock — so it lives in one place and they
+    cannot drift apart. None means the legs never part at all (a bow, a bird).
+    """
+    h = m.shape[0]
+    for yy in range(int(h * 0.45), int(h * 0.92)):
+        runs, prev = 0, False
+        for v in m[yy]:
+            if v and not prev:
+                runs += 1
+            prev = v
+        if runs >= 2:
+            return yy
+    return None
+
+
+def _sheet_bob_phase(masks, order):
+    """How high the body rides at each frame of the cycle: 0 at contact, 1 at passing.
+
+    Why this has to exist. `cellScale` puts every frame on one height, so a feet-pinned
+    character's head sits at exactly the same y in all of them and he glides along like
+    a chess piece. Measured 2026-09-04 on heungbu8: the drawn heights scatter 8.2% and
+    come out **0.004%** apart afterwards. A walk's rise and fall is 2.6% of stature
+    (46mm over 1.75m) — INSIDE the generator's own size lottery — so the normaliser
+    cannot tell the two apart and removes both. What it removed has to go back as
+    position, which is what this profile is for.
+
+    Phase off the drawings, depth off a cosine. The phase is where the drawings say the
+    passings are, and `_split_row` names those loudly. The depth is deliberately NOT
+    taken from the drawings: heungbu8's two contacts measure 0.331 and 0.390 apart, an
+    18% difference that is the generator drawing the two halves differently, and feeding
+    that in would add a second limp on top of the one the save note already reports.
+    A cosine cannot limp.
+
+    None when this is not an even cycle — the two passings have to sit half a cycle
+    apart. Of the eight sheets on hand three pass (heungbu8, heungbu8sym, hb8height)
+    and five do not, and each of those five has an order whose halves really are uneven.
+    """
+    n = len(order)
+    if n < 4:
+        return None
+    split = []
+    for c in order:
+        m = masks[c]
+        r = _split_row(m)
+        # Legs that never part are as together as a passing frame gets.
+        split.append(1.0 if r is None else r / float(max(1, m.shape[0])))
+    k0 = max(range(n), key=lambda k: split[k])
+    far = max(1, n // 4)
+    cand = [k for k in range(n) if min((k - k0) % n, (k0 - k) % n) >= far]
+    if not cand:
+        return None
+    k1 = max(cand, key=lambda k: split[k])
+    if abs(min((k1 - k0) % n, (k0 - k1) % n) - n / 2.0) > 0.5:
+        return None
+    # Both passings have to stand clear of the rest, or there is no rhythm here and the
+    # frame that happens to read highest is noise. A four-frame walk whose split row
+    # barely moves (nongbu: 0.453..0.502) is refused by this line, not by the spacing.
+    # The LOWER median. On a four-frame cycle half the frames ARE passings, so the
+    # upper one lands on a passing and the pair has to clear itself — two passings a
+    # hair apart then fail a test they define. Taking the lower one asks what it means
+    # to ask: do these two stand clear of the frames that are not passings.
+    mid = sorted(split)[(n - 1) // 2]
+    if min(split[k0], split[k1]) < mid + 0.5 * (max(split) - mid):
+        return None
+    return [round((1.0 + math.cos(2.0 * math.pi * 2.0 * (k - k0) / n)) / 2.0, 4)
+            for k in range(n)]
+
+
 def _sheet_foot_lift(masks):
     """How far each frame lifts a foot off the ground, as a fraction of leg length.
 
@@ -3473,16 +3616,7 @@ def _sheet_foot_lift(masks):
         for x in cols:
             y[x] = np.where(m[:, x])[0].max()
         ground = float(y.max())
-        cy = None
-        for yy in range(int(h * 0.45), int(h * 0.92)):
-            runs, prev = 0, False
-            for v in m[yy]:
-                if v and not prev:
-                    runs += 1
-                prev = v
-            if runs >= 2:
-                cy = yy
-                break
+        cy = _split_row(m)
         leg = (ground - cy) if cy else h * 0.45
         if leg < 8:
             out.append(0.0)
@@ -3824,6 +3958,11 @@ def validate_sheets(sheets):
             # An airborne action has no stride by definition: the feet separating on a
             # flying bird is the tail and a wingtip, not a step.
             "stride": _sheet_stride(masks) if anchor == "feet" else 0.0,
+            # The cycle's rise and fall, read off the drawings here for the same reason
+            # the stride is: it belongs to the artwork, and a scene that had to type it
+            # would be guessing at the phase of someone else's pictures.
+            "bobPhase": (_sheet_bob_phase(masks, order or list(range(len(norm))))
+                         if anchor == "feet" else None),
             "anchor": anchor,
             # Where the body sits in each cell, for the 'body' anchor. Read off the
             # drawing at save time like the cells and the stride, so a scene never
@@ -3885,6 +4024,41 @@ def action_save_asset(inp):
                 f"'{_a}' frames run {min(hs)}..{max(hs)}px tall and are pinned by the feet, "
                 "so the character will rise and fall once per cycle. If this action is not "
                 f"standing on the ground, save it with sheets.{_a}.anchor='body'.")
+        # A drawing that runs off the edge of its own sheet is already cut, and nothing
+        # downstream puts the foot back: scaling makes the stump bigger and anchoring
+        # stands it on the stump. The knowledge was here as prose — "12 frames a sheet
+        # comes back with the bottom row cut off at the edge", measured 2026-08-30 — and
+        # nothing checked it, so the loss was found in the finished video. Naming the
+        # frame and the edge is what makes the next ask specific.
+        _sizes, _clipped = {}, []
+        _co = _v.get("cellOf") or [0] * len(_v["cells"])
+        for _j, (_x0, _y0, _x1, _y1) in enumerate(_v["cells"]):
+            _fi = _co[_j]
+            if _fi not in _sizes:
+                with Image.open(media_path(_v["media"][_fi])) as _im:
+                    _sizes[_fi] = _im.size
+            _W, _H = _sizes[_fi]
+            _hit = [_n for _n, _near in (("left", _x0 <= 2), ("top", _y0 <= 2),
+                                         ("right", _x1 >= _W - 3),
+                                         ("bottom", _y1 >= _H - 3)) if _near]
+            if _hit:
+                _clipped.append(f"{_j + 1} ({'/'.join(_hit)})")
+        if _clipped:
+            sheet_notes.append(
+                f"'{_a}' drawing(s) " + ", ".join(_clipped) + " reach the edge of the "
+                "sheet they were drawn on, so the generator ran out of canvas and those "
+                "frames are already cut. Do not correct this one — ask for the sheet "
+                "again with fewer frames on it (6 to a 1536x1024 canvas leaves each "
+                "figure room) or with the figures drawn smaller, and keep a margin.")
+        # A walk that cannot carry the life layer says so here. Silence would read as
+        # "bob is off", and the author would find out at render time instead — which on
+        # a cycle whose halves are uneven is the second sentence of the same finding.
+        if _v.get("anchor") == "feet" and _v.get("stride") and not _v.get("bobPhase"):
+            sheet_notes.append(
+                f"'{_a}' cannot carry `bob` (the sprite layer's life knob): the two "
+                "passing frames have to sit half a cycle apart and in this frames list "
+                "they do not, so there is no even rhythm to hang it on. That is worth "
+                "looking at on its own — an uneven cycle already limps.")
         # How a walk is told from a march, read off the drawings. Mid-swing in real
         # walking clears the floor by a centimetre or two — one or two percent of leg
         # length, the toe skimming under the hip. A generated cycle came back with its
@@ -3971,6 +4145,11 @@ def action_save_asset(inp):
                      **({"sheets": {k: {"frames": len(_sheet_order(v)),
                                         "anchor": v.get("anchor", "feet"),
                                         "stride": v.get("stride", 0),
+                                        # Whether this action can take the sprite
+                                        # layer's `bob`. A capability, so it is said in
+                                        # the answer rather than left to be discovered
+                                        # by a render that refuses.
+                                        **({"bob": True} if v.get("bobPhase") else {}),
                                         # Only when it did something. Like stride and cells,
                                         # this is measured here, not passed in — so the answer
                                         # is the only place an author can see it happened.
@@ -4275,7 +4454,24 @@ def action_assets(_inp):
                       "9.4% of the figure's height). A sheet whose feet "
                       "never separate has no stride and travel does nothing for it — a "
                       "bird or a rolling ball crosses the screen with a move act, which "
-                      "works on drawn characters exactly as it does on rigs. anchor says what `at` "
+                      "works on drawn characters exactly as it does on rigs. "
+                      "bob and lean are the layer's two life knobs, and both are POSITION — "
+                      "bob: 0.026 raises the character by that share of his height at the "
+                      "passings and puts him back down at the contacts, which is the rise and "
+                      "fall a walk has and the drawings do NOT: cellScale puts every frame on "
+                      "one height, so a feet-pinned character's head sits at exactly the same y "
+                      "in all of them and he glides (measured 2026-09-04 on heungbu8 — heads 0px "
+                      "apart with it off, 12px with it at 0.026). 0.026 is the adult figure "
+                      "(46mm over 1.75m); it costs a planted foot leaving its shadow by the same "
+                      "12px at the passings, so on a visible floor start around 0.013 and read "
+                      "the two against each other. It needs an EVEN cycle — the sheet's two "
+                      "passing frames half a cycle apart — and save_asset answers bob:true when "
+                      "the action has one. "
+                      "lean: 2 tips the figure that many degrees into the direction of travel, "
+                      "about the FEET rather than the middle, so nothing slides. "
+                      "Neither is a size: a character whose drawn size changes between frames "
+                      "reads as a defect, which is the whole reason cellScale exists. "
+                      "anchor says what `at` "
                       "pins — 'feet' (default) lines up the bottoms, which is standing on the "
                       "ground; 'body' pins whatever every frame of the action has in common "
                       "(overlay them: the part that lands on itself is the character, "
@@ -5530,6 +5726,169 @@ def action_selftest():
     ck("two passings that lift by different amounts are named a limp; an even pair is not",
        "even = march only, uneven = march + limp", lm_note, lm_ok)
 
+    # A frame that ran off its sheet is cut, and correcting a cut frame only makes a
+    # bigger stump. Both ways, because a detector that shouts at every sheet is the
+    # same as one that shouts at none: the drawings must clear the edge to stay silent.
+    cl_note, cl_ok = "", False
+    try:
+        def edge_note(bottom_px):
+            """A 3-frame sheet whose middle figure reaches `bottom_px` on a 240 canvas."""
+            cp = os.path.join(OUT_DIR, "selftest-clip.png")
+            im7 = Image.new("RGBA", (600, 240), (0, 0, 0, 0))
+            g7 = ImageDraw.Draw(im7)
+            for k, cx in enumerate((110, 310, 500)):
+                g7.ellipse([cx - 30, 30, cx + 30, 120], fill=(40, 60, 120, 255))
+                bot = bottom_px if k == 1 else 200
+                for s_ in (-30, 30):
+                    g7.polygon([(cx - 6, 115), (cx + 6, 115), (cx + s_ + 10, bot),
+                                (cx + s_ - 10, bot)], fill=(40, 60, 120, 255))
+            im7.save(cp)
+            sv = action_save_asset({"action": "save_asset", "name": "selftest-clip",
+                                    "sheets": {"walk": {"media": cp, "fps": 3}}})
+            n = str((sv.get("data") or {}).get("note") or "")
+            action_delete_asset({"name": "selftest-clip"})
+            os.remove(cp)
+            return n
+
+        clear_, cut_ = edge_note(200), edge_note(239)
+        cl_note = (f"clear-of-edge flagged={'reach the edge' in clear_} | "
+                   f"runs-off flagged={'reach the edge' in cut_} "
+                   f"names={'2 (bottom)' in cut_}")
+        cl_ok = ("reach the edge" not in clear_ and "reach the edge" in cut_
+                 and "2 (bottom)" in cut_)
+    except Exception as e:  # noqa: BLE001
+        cl_note = f"{type(e).__name__}: {e}"
+    ck("a drawing that runs off its sheet is named, with the frame and the edge",
+       "clear = silent, cut = flagged and named", cl_note, cl_ok)
+
+    # ── the life layer: bob and lean ───────────────────────────────────────────────
+    # A walk sheet whose contacts are deliberately UNEVEN (46 against 62), because that
+    # is what a generated one is: heungbu8's two halves came back 18% apart. The phase
+    # has to come off these drawings and the depth must not.
+    def _walk_sheet(path, spreads, w_=880):
+        """A four-frame walk: contact, passing, contact, passing."""
+        im_ = Image.new("RGBA", (w_, 300), (0, 0, 0, 0))
+        g_ = ImageDraw.Draw(im_)
+        for k, cx in enumerate((110, 330, 550, 770)):
+            g_.ellipse([cx - 34, 40, cx + 34, 150], fill=(40, 60, 120, 255))
+            for s_ in (-spreads[k], spreads[k]):
+                g_.polygon([(cx - 7, 145), (cx + 7, 145), (cx + s_ + 11, 280),
+                            (cx + s_ - 11, 280)], fill=(40, 60, 120, 255))
+        im_.save(path)
+
+    bp_note, bp_ok = "", False
+    try:
+        bpp = os.path.join(OUT_DIR, "selftest-bob.png")
+        _walk_sheet(bpp, (46, 12, 62, 12))          # contacts 46 and 62 — uneven on purpose
+        sv = action_save_asset({"action": "save_asset", "name": "selftest-bob",
+                                "sheets": {"walk": {"media": bpp, "fps": 4}}})
+        decl = json.load(open(_asset_path("selftest-bob"), encoding="utf-8"))
+        ph = decl["sheets"]["walk"].get("bobPhase")
+        _walk_sheet(bpp, (46, 12, 12, 46))          # the two passings side by side
+        action_save_asset({"action": "save_asset", "name": "selftest-bob2",
+                           "sheets": {"walk": {"media": bpp, "fps": 4}}})
+        ph_bad = json.load(open(_asset_path("selftest-bob2"),
+                                encoding="utf-8"))["sheets"]["walk"].get("bobPhase")
+        # Says so, rather than leaving `bob` to fail at render time.
+        told = "cannot carry `bob`" in str((sv.get("data") or {}).get("note", ""))
+        told_bad = "cannot carry `bob`" in str(
+            (action_save_asset({"action": "save_asset", "name": "selftest-bob2",
+                                "sheets": {"walk": {"media": bpp, "fps": 4}}})
+             .get("data") or {}).get("note", ""))
+        bp_note = (f"uneven-contacts phase={ph} (silent note={not told}) | "
+                   f"passings adjacent phase={ph_bad} (told={told_bad})")
+        # Phase off the drawings: high where the legs are together, low where they are
+        # apart. Depth NOT off the drawings: the two halves are identical although the
+        # two contacts are 46 and 62 — a cosine cannot import the drawing's limp.
+        bp_ok = (ph is not None and len(ph) == 4 and ph[:2] == ph[2:]
+                 and ph[1] > 0.9 and ph[3] > 0.9 and ph[0] < 0.1 and ph[2] < 0.1
+                 and not told and ph_bad is None and told_bad)
+        os.remove(bpp)
+        action_delete_asset({"name": "selftest-bob"})
+        action_delete_asset({"name": "selftest-bob2"})
+    except Exception as e:  # noqa: BLE001
+        bp_note = f"{type(e).__name__}: {e}"
+    ck("the bob profile takes its phase from the drawings and its depth from a cosine",
+       "halves identical though the contacts are not; an uneven cycle gets none and is told",
+       bp_note, bp_ok)
+
+    # What bob and lean actually do to the pixels. Both directions: off has to be
+    # off. The `off` half is the one that matters most here — before this layer
+    # existed the head did not move AT ALL, and a knob that quietly did nothing
+    # would look exactly like the bug it was written to fix.
+    bl_note, bl_ok = "", False
+    try:
+        blp = os.path.join(OUT_DIR, "selftest-bl.png")
+        _walk_sheet(blp, (46, 12, 46, 12))
+        action_save_asset({"action": "save_asset", "name": "selftest-bl",
+                           "sheets": {"walk": {"media": blp, "fps": 4}}})
+
+        GY_F, SEEN = 0.86, []
+
+        def ink(bob_, lean_, k_):
+            """(top row, bottom row, leftmost column) of the character at frame k.
+
+            Sampled a whole second in, at the middle of the drawing's own beat: inside
+            the fade the sprite is faint enough to find nothing, and a frame that finds
+            nothing reports row 0, which would look exactly like a head that flew.
+            """
+            scn = Scene({"action": "render", "size": "1920x1080", "duration": 4.0,
+                         "quality": "draft", "fps": 24,
+                         "background": {"kind": "gradient",
+                                        "top": [255, 255, 255],
+                                        "bottom": [255, 255, 255], "vignette": 0},
+                         "layers": [{"kind": "sprite", "name": "selftest-bl",
+                                     "from": 0, "to": 4, "at": [0.5, GY_F],
+                                     "shadow": False, "bob": bob_, "lean": lean_,
+                                     "plays": [{"action": "walk", "at": 0}]}]})
+            fr = scn.draw_frame(1.0 + (k_ + 0.5) / 4.0).astype(int).sum(2)
+            SEEN.append(fr.shape[0])
+            m_ = fr < fr.max() - 90
+            ys_ = np.where(m_.any(1))[0]
+            if not len(ys_):
+                raise SceneError("the character was not found in the frame")
+            t_, b_ = int(ys_.min()), int(ys_.max())
+
+            def band_cx(y0_, y1_):
+                sub = m_[y0_:y1_ + 1]
+                xs_ = np.where(sub.any(0))[0]
+                return float(xs_.mean()) if len(xs_) else 0.0
+            # Head and feet separately. The leftmost column of the WHOLE figure is a
+            # foot at a contact, so it barely moves under a lean and says nothing —
+            # the first version of this check asserted on it and read 852 -> 852.
+            span = b_ - t_
+            return (t_, b_, band_cx(t_, t_ + int(span * 0.20)),
+                    band_cx(b_ - int(span * 0.05), b_))
+
+        gy = int(GY_F * 1080)
+        off = [ink(0.0, 0.0, k) for k in range(4)]
+        on = [ink(0.04, 0.0, k) for k in range(4)]
+        lean0, lean6 = ink(0.0, 0.0, 0), ink(0.0, 6.0, 0)
+        head_off = max(r[0] for r in off) - min(r[0] for r in off)
+        head_on = max(r[0] for r in on) - min(r[0] for r in on)
+        # Contacts are frames 0 and 2: the feet must be on the ground there even with
+        # bob on, because biasing the other way would drive them through it.
+        feet_at_contact = [gy - on[k][1] for k in (0, 2)]
+        feet_at_passing = [gy - on[k][1] for k in (1, 3)]
+        d_head, d_feet = lean6[2] - lean0[2], lean6[3] - lean0[3]
+        bl_note = (f"head travel off={head_off}px on={head_on}px | feet above ground "
+                   f"at contact={feet_at_contact} at passing={feet_at_passing} | "
+                   f"lean 0 vs 6 shifts head {d_head:+.0f}px and feet {d_feet:+.0f}px")
+        bl_ok = (head_off <= 1 and head_on >= 12
+                 and all(abs(v) <= 2 for v in feet_at_contact)
+                 and all(v > 4 for v in feet_at_passing)
+                 # A lean about the feet carries the head sideways and leaves the soles
+                 # where they were. Pinning the middle instead swings the feet, which is
+                 # the whole thing it must not do, and the ratio is what tells them apart.
+                 and abs(d_head) >= 20 and abs(d_feet) <= 4)
+        os.remove(blp)
+        action_delete_asset({"name": "selftest-bl"})
+    except Exception as e:  # noqa: BLE001
+        bl_note = f"{type(e).__name__}: {e}"
+    ck("bob raises the head only at the passings and lean turns about the feet",
+       "head 0px off / >=12px on, feet down at the contacts, lean moves the top not the sole",
+       bl_note, bl_ok)
+
     # A drawing that came back three times the size of the others is put on one scale,
     # so it must change neither the stride nor the anchor advice. Both were read off raw
     # pixels and both were wrong the moment a passing frame arrived on its own canvas:
@@ -5582,7 +5941,10 @@ def action_selftest():
         a_even, a_big = scaled([wide, near_small]), scaled([wide, near_big])
         for p in (wide, near_small, near_big):
             os.remove(p)
-        rise = "rise and fall" in big_msg.lower()
+        # The sentence, not the phrase. "rise and fall" alone matches any note that
+        # merely mentions the idea — a later one about the sprite layer's bob did, and
+        # this check went red for a message that says nothing about frame heights.
+        rise = "rise and fall once per cycle" in big_msg.lower()
         flat = (max(a_big) - min(a_big)) / (sum(a_big) / len(a_big))
         bg_note = (f"stride even {even_stride} vs one sheet 3x {big_stride}; "
                    f"drawn height {max(a_even):.0f} vs {max(a_big):.0f}; "
