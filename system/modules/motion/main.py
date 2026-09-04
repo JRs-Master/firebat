@@ -3579,12 +3579,18 @@ def _sheet_bob_phase(masks, order):
     # Both passings have to stand clear of the rest, or there is no rhythm here and the
     # frame that happens to read highest is noise. A four-frame walk whose split row
     # barely moves (nongbu: 0.453..0.502) is refused by this line, not by the spacing.
-    # The LOWER median. On a four-frame cycle half the frames ARE passings, so the
-    # upper one lands on a passing and the pair has to clear itself — two passings a
-    # hair apart then fail a test they define. Taking the lower one asks what it means
-    # to ask: do these two stand clear of the frames that are not passings.
+    # Both passings have to stand clear of the frames that are not passings, by an
+    # ABSOLUTE margin rather than by a share of the range. A share of the range lets
+    # the biggest reading set the bar, and the biggest reading here can be the
+    # sentinel: a frame whose legs never part at all scores 1.0, which is not a
+    # measurement. Measured 2026-09-05 on the regenerated pair — one passing merged
+    # completely (1.0) and the other split at 0.647, the bar came out at 0.761, and a
+    # cycle with two perfectly good passings was refused. A sentinel must not go in
+    # the same column as the values it is compared with.
+    # The LOWER median, because on a four-frame cycle half the frames ARE passings and
+    # the upper one lands on one of them.
     mid = sorted(split)[(n - 1) // 2]
-    if min(split[k0], split[k1]) < mid + 0.5 * (max(split) - mid):
+    if min(split[k0], split[k1]) < mid + 0.06:
         return None
     return [round((1.0 + math.cos(2.0 * math.pi * 2.0 * (k - k0) / n)) / 2.0, 4)
             for k in range(n)]
@@ -3789,9 +3795,20 @@ def _sheet_cell_scale(cells, cell_of, n_files):
     different, and on screen that reads as his height dropping mid-stride. Telling them apart
     by anatomy needs a body part the pose does not move, and no general one was found —
     a colour-keyed torso works for one character, silhouette-overlap fitting scored 33% on a
-    sheet already flat to 0.9%, and an invariant-band search made two sheets worse. What does
-    separate them is SIZE: the two populations sit an order of magnitude apart (see
-    CELL_SIZE_GATE), so the scatter itself says which one this is.
+    sheet already flat to 0.9%, an invariant-band search made two sheets worse, and
+    neck-to-`_split_row` — the obvious "torso" — scatters 94.5%, because when the legs are
+    together the silhouette stays one blob down to the ankles and the reading lands there
+    instead of at the crotch. What does separate them is SIZE: the two populations sit an
+    order of magnitude apart (see CELL_SIZE_GATE), so the scatter itself says which one
+    this is.
+
+    ⛔ And the flattening cannot be dropped for a sheet that was generated with the scale
+    locked, which is the obvious next idea. Measured 2026-09-05: asking for the cycle again
+    with "identical camera distance, the body stays fixed, only the arms and legs change"
+    cut the height scatter from 8.2% to 2.2% — a real win — but what is left does NOT track
+    the walk. Against the bob phase it correlates at r=+0.105 and swings 0.22% where gait
+    swings 2.6%. Keeping that residue would be calling 2% of noise a walk. The rise and
+    fall goes back as the sprite layer's `bob`, not by loosening this.
 
     Scatter under the gate: put every cell on the median height, across sheets and within
     one alike. Over it: leave the drawings alone and only put separate CANVASES on one scale,
@@ -4058,7 +4075,8 @@ def action_save_asset(inp):
                 f"'{_a}' cannot carry `bob` (the sprite layer's life knob): the two "
                 "passing frames have to sit half a cycle apart and in this frames list "
                 "they do not, so there is no even rhythm to hang it on. That is worth "
-                "looking at on its own — an uneven cycle already limps.")
+                "looking at on its own: halves of unequal length are a fault by "
+                "themselves.")
         # How a walk is told from a march, read off the drawings. Mid-swing in real
         # walking clears the floor by a centimetre or two — one or two percent of leg
         # length, the toe skimming under the hip. A generated cycle came back with its
@@ -5716,11 +5734,17 @@ def action_selftest():
             os.remove(lp)
             return notes.lower()
 
+        # The sentence, not the word. These checks read one bag of notes, so any note
+        # added later that merely mentions a limp flips them — twice in one afternoon,
+        # here and on "rise and fall". Anchor on the phrase only the limp note says.
+        def limps(s):
+            return "calls a limp" in s
+
         even, odd = pair_note(90, 90), pair_note(50, 100)
-        lm_note = (f"even: march={'march' in even} limp={'limp' in even} | "
-                   f"uneven: march={'march' in odd} limp={'limp' in odd}")
-        lm_ok = ("march" in even and "limp" not in even
-                 and "march" in odd and "limp" in odd)
+        lm_note = (f"even: march={'march' in even} limp={limps(even)} | "
+                   f"uneven: march={'march' in odd} limp={limps(odd)}")
+        lm_ok = ("march" in even and not limps(even)
+                 and "march" in odd and limps(odd))
     except Exception as e:  # noqa: BLE001
         lm_note = f"{type(e).__name__}: {e}"
     ck("two passings that lift by different amounts are named a limp; an even pair is not",
@@ -5795,21 +5819,34 @@ def action_selftest():
             (action_save_asset({"action": "save_asset", "name": "selftest-bob2",
                                 "sheets": {"walk": {"media": bpp, "fps": 4}}})
              .get("data") or {}).get("note", ""))
+        # One passing whose legs merge COMPLETELY and one that still parts. The merged
+        # frame has no split row to report and scores the sentinel, and a bar built as
+        # a share of the range then sits above the passing that DID part — measured on
+        # a real regenerated pair, which this cycle stands in for.
+        _walk_sheet(bpp, (46, 0, 50, 14))
+        action_save_asset({"action": "save_asset", "name": "selftest-bob3",
+                           "sheets": {"walk": {"media": bpp, "fps": 4}}})
+        ph_merge = json.load(open(_asset_path("selftest-bob3"),
+                                  encoding="utf-8"))["sheets"]["walk"].get("bobPhase")
+        action_delete_asset({"name": "selftest-bob3"})
         bp_note = (f"uneven-contacts phase={ph} (silent note={not told}) | "
-                   f"passings adjacent phase={ph_bad} (told={told_bad})")
+                   f"passings adjacent phase={ph_bad} (told={told_bad}) | "
+                   f"one passing fully merged phase={ph_merge}")
         # Phase off the drawings: high where the legs are together, low where they are
         # apart. Depth NOT off the drawings: the two halves are identical although the
         # two contacts are 46 and 62 — a cosine cannot import the drawing's limp.
         bp_ok = (ph is not None and len(ph) == 4 and ph[:2] == ph[2:]
                  and ph[1] > 0.9 and ph[3] > 0.9 and ph[0] < 0.1 and ph[2] < 0.1
-                 and not told and ph_bad is None and told_bad)
+                 and not told and ph_bad is None and told_bad
+                 and ph_merge is not None and ph_merge[:2] == ph_merge[2:])
         os.remove(bpp)
         action_delete_asset({"name": "selftest-bob"})
         action_delete_asset({"name": "selftest-bob2"})
     except Exception as e:  # noqa: BLE001
         bp_note = f"{type(e).__name__}: {e}"
     ck("the bob profile takes its phase from the drawings and its depth from a cosine",
-       "halves identical though the contacts are not; an uneven cycle gets none and is told",
+       "halves identical though the contacts are not; an uneven cycle gets none and is "
+       "told; a passing whose legs merge completely is still a passing",
        bp_note, bp_ok)
 
     # What bob and lean actually do to the pixels. Both directions: off has to be
