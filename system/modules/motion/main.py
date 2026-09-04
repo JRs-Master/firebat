@@ -3612,14 +3612,36 @@ def _sheet_flat_soles(masks, order, touch=0.02, noise=2.0):
     `noise` is the RULER's resolution, not a norm — a sole drawn flat reads 0.0 in the
     canary, so anything inside +-2 degrees is called flat rather than signed.
 
-    Only frames with exactly two feet down are judged. At a passing the legs are
-    together and the silhouette gives one run, and one run cannot show a pair.
+    Only CONTACT frames are judged — two feet down and the feet near their widest for
+    this sheet. A frame with one foot down is a passing and one run cannot show a pair;
+    a frame with both down but the feet closing is weight transfer, where the leading
+    sole IS flat on the floor and the trailing foot alone is still angled. Judging that
+    one flagged every honest cycle (measured 2026-09-05, `+1 / -41` on a loading frame
+    that was drawn exactly as asked).
+
     Returns [(frame number, higher angle, lower angle)].
     """
+    feet = [[d for d, l in _sole_angles(masks[c]) if l <= touch] for c in order]
+    # Foot separation per frame, from the same bottom-band runs the stride reads.
+    spans = []
+    for c in order:
+        h = masks[c].shape[0]
+        on = masks[c][int(h * 0.90):].any(0)
+        runs, st = [], None
+        for i in range(len(on)):
+            if on[i] and st is None:
+                st = i
+            elif not on[i] and st is not None:
+                runs.append((st, i - 1))
+                st = None
+        if st is not None:
+            runs.append((st, len(on) - 1))
+        spans.append(((runs[-1][0] + runs[-1][1]) - (runs[0][0] + runs[0][1])) / 2.0 / h
+                     if len(runs) > 1 else 0.0)
+    widest = max(spans) if spans else 0.0
     out = []
-    for k, c in enumerate(order):
-        down = [d for d, lift in _sole_angles(masks[c]) if lift <= touch]
-        if len(down) != 2:
+    for k, (down, span) in enumerate(zip(feet, spans)):
+        if len(down) != 2 or widest <= 0 or span < 0.8 * widest:
             continue
         hi, lo = max(down), min(down)
         if not (hi > noise and lo < -noise):
