@@ -3674,35 +3674,46 @@ def _sheet_bob_phase(masks, order):
     n = len(order)
     if n < 4:
         return None
-    split = []
+    # The FEET, not `_split_row`. The row where the silhouette parts is a good passing
+    # detector on some sheets and flat on others — measured 2026-09-05, a cycle whose
+    # passing frame has its feet touching still parted at knee height and read 0.519
+    # against 0.501..0.523 everywhere else, so the passing did not stand out at all.
+    # Foot separation has no such trouble: at a passing it is exactly 0, on every sheet
+    # on hand, and "the two feet are one run" needs no sentinel because that IS zero.
+    gap = []
     for c in order:
         m = masks[c]
-        r = _split_row(m)
-        # Legs that never part are as together as a passing frame gets.
-        split.append(1.0 if r is None else r / float(max(1, m.shape[0])))
-    k0 = max(range(n), key=lambda k: split[k])
+        h = m.shape[0]
+        on = m[int(h * 0.90):].any(0)
+        runs, st = [], None
+        for i in range(len(on)):
+            if on[i] and st is None:
+                st = i
+            elif not on[i] and st is not None:
+                runs.append((st, i - 1))
+                st = None
+        if st is not None:
+            runs.append((st, len(on) - 1))
+        gap.append(0.0 if len(runs) < 2 else max(0.0, (
+            (runs[-1][0] + runs[-1][1]) - (runs[0][0] + runs[0][1])) / 2.0 / h))
+    k0 = min(range(n), key=lambda k: gap[k])
     far = max(1, n // 4)
     cand = [k for k in range(n) if min((k - k0) % n, (k0 - k) % n) >= far]
     if not cand:
         return None
-    k1 = max(cand, key=lambda k: split[k])
+    k1 = min(cand, key=lambda k: gap[k])
     if abs(min((k1 - k0) % n, (k0 - k1) % n) - n / 2.0) > 0.5:
         return None
     # Both passings have to stand clear of the rest, or there is no rhythm here and the
     # frame that happens to read highest is noise. A four-frame walk whose split row
     # barely moves (nongbu: 0.453..0.502) is refused by this line, not by the spacing.
     # Both passings have to stand clear of the frames that are not passings, by an
-    # ABSOLUTE margin rather than by a share of the range. A share of the range lets
-    # the biggest reading set the bar, and the biggest reading here can be the
-    # sentinel: a frame whose legs never part at all scores 1.0, which is not a
-    # measurement. Measured 2026-09-05 on the regenerated pair — one passing merged
-    # completely (1.0) and the other split at 0.647, the bar came out at 0.761, and a
-    # cycle with two perfectly good passings was refused. A sentinel must not go in
-    # the same column as the values it is compared with.
-    # The LOWER median, because on a four-frame cycle half the frames ARE passings and
-    # the upper one lands on one of them.
-    mid = sorted(split)[(n - 1) // 2]
-    if min(split[k0], split[k1]) < mid + 0.06:
+    # ABSOLUTE margin rather than by a share of the range — a share lets one extreme
+    # reading set the bar for everyone else.
+    # The UPPER median, because on a four-frame cycle half the frames ARE passings and
+    # the lower one lands on one of them.
+    mid = sorted(gap)[n // 2]
+    if max(gap[k0], gap[k1]) > mid - 0.06:
         return None
     return [round((1.0 + math.cos(2.0 * math.pi * 2.0 * (k - k0) / n)) / 2.0, 4)
             for k in range(n)]
