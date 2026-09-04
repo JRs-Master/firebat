@@ -3537,6 +3537,96 @@ def _split_row(m):
     return None
 
 
+def _sole_angles(m, band=0.10):
+    """Each foot ON THE GROUND and the angle its sole makes with it, in degrees.
+
+    0 is laid flat, + is heel down with the toes lifted (a heel strike), - is heel up
+    with the toes down (pushing off). Returns [(degrees, lift)] where lift is how far
+    that foot's lowest point sits above the frame's lowest, as a share of frame height
+    — a foot in the air is reported, not silently dropped, so the caller decides what
+    counts as touching.
+
+    Read as the drop across the sole, front third against back third. Two other ways
+    were tried and are not worth trying again: a least-squares line through the foot's
+    bottom profile measures the shoe's two vertical END WALLS more than its sole, and
+    "what share of the foot's width sits at its lowest level" needs a tolerance, which
+    squashed a 12%-contact shoe and a 70% one into 0.55 and 0.81. Thirds need no
+    tolerance and have no walls in them.
+
+    Canaried on shoes drawn with a KNOWN contact length before being pointed at any
+    drawing: flat reads 0.0 degrees, and 70/45/25/12% contact read 4.5/8.0/12.9/20.0,
+    the same either way up, and a lifted foot yields nothing.
+    """
+    h, w = m.shape
+    cols = np.where(m.any(0))[0]
+    if len(cols) < 8:
+        return []
+    prof = np.full(w, np.nan)
+    for x in cols:
+        prof[x] = np.where(m[:, x])[0].max()
+    ground = float(np.nanmax(prof))
+    # Feet are the runs in the bottom band — the same band `_sheet_stride` reads, so
+    # the two cannot disagree about which runs are feet.
+    on = m[int(h * (1.0 - band)):].any(0)
+    runs, st = [], None
+    for i in range(len(on)):
+        if on[i] and st is None:
+            st = i
+        elif not on[i] and st is not None:
+            runs.append((st, i - 1))
+            st = None
+    if st is not None:
+        runs.append((st, len(on) - 1))
+    out = []
+    for x0, x1 in runs:
+        n = x1 - x0 + 1
+        if n < max(6, int(w * 0.02)):
+            continue
+        seg = prof[x0:x1 + 1]
+        if np.isnan(seg).all():
+            continue
+        k = max(2, n // 3)
+        back, front = np.nanmedian(seg[:k]), np.nanmedian(seg[-k:])
+        if np.isnan(back) or np.isnan(front):
+            continue
+        out.append((round(math.degrees(
+            math.atan2(back - front, max(1.0, n * (2.0 / 3.0)))), 1),
+            round((ground - float(np.nanmax(seg))) / h, 3)))
+    return out
+
+
+def _sheet_flat_soles(masks, order, touch=0.02, noise=2.0):
+    """Frames where both feet are down and the two soles do not tilt opposite ways.
+
+    DIRECTION ONLY, on purpose. A step lands on a HEEL and leaves from a TOE, so while
+    both feet are down the two soles tilt opposite ways — that much is close to the
+    definition of walking and needs no reference figure. HOW STEEP each one should be
+    is a number we do not have: the sole's angle is the ankle angle plus the shin's
+    lean, and a walker's ankle stays near NEUTRAL at contact (the toes look lifted
+    because the leg is oblique, not because the ankle is cocked). Asking a generator
+    for "toes lifted 5 degrees" therefore asks for the wrong thing, and judging a
+    drawing against it would be judging against a figure nobody here has checked —
+    the same mistake as targeting hip flexion with a step-length norm (8/31).
+    So: no magnitude gate until there is a reference to check one against.
+
+    `noise` is the RULER's resolution, not a norm — a sole drawn flat reads 0.0 in the
+    canary, so anything inside +-2 degrees is called flat rather than signed.
+
+    Only frames with exactly two feet down are judged. At a passing the legs are
+    together and the silhouette gives one run, and one run cannot show a pair.
+    Returns [(frame number, higher angle, lower angle)].
+    """
+    out = []
+    for k, c in enumerate(order):
+        down = [d for d, lift in _sole_angles(masks[c]) if lift <= touch]
+        if len(down) != 2:
+            continue
+        hi, lo = max(down), min(down)
+        if not (hi > noise and lo < -noise):
+            out.append((k + 1, hi, lo))
+    return out
+
+
 def _sheet_bob_phase(masks, order):
     """How high the body rides at each frame of the cycle: 0 at contact, 1 at passing.
 
@@ -4067,6 +4157,26 @@ def action_save_asset(inp):
                 "frames are already cut. Do not correct this one — ask for the sheet "
                 "again with fewer frames on it (6 to a 1536x1024 canvas leaves each "
                 "figure room) or with the figures drawn smaller, and keep a margin.")
+        # How a step is told from a pose, read off the ankles. Nothing said this until
+        # a ruler existed: the shipped cycle's leading foot pointed its TOE down at
+        # every contact — the opposite of a step — and the note for it used to read
+        # "the soles are all flat", which was the less accurate summary of the two.
+        if _v.get("anchor") == "feet" and _v.get("stride"):
+            _fs = _sheet_flat_soles(_sheet_masks(
+                _v["media"], _v["cells"],
+                _v.get("cellOf") or [0] * len(_v["cells"])), _sheet_order(_v))
+            if _fs:
+                sheet_notes.append(
+                    f"'{_a}' frame(s) "
+                    + ", ".join("%d (%+.0f / %+.0f deg)" % f for f in _fs)
+                    + " have both feet on the ground with the soles tilting the SAME "
+                    "way (+ is heel down, - is toes down, 0 is flat). A step lands on "
+                    "a heel and leaves from a toe, so while both feet are down the two "
+                    "soles tilt opposite ways; the same way, or both flat, is a stance "
+                    "held in place. Ask for the leading foot to touch heel-first and "
+                    "the trailing one to leave toe-last — and do NOT name an angle: a "
+                    "walker's ankle stays neutral, and the sole's slope comes from the "
+                    "leg being oblique, not from the ankle being cocked.")
         # A walk that cannot carry the life layer says so here. Silence would read as
         # "bob is off", and the author would find out at render time instead — which on
         # a cycle whose halves are uneven is the second sentence of the same finding.
@@ -5784,6 +5894,67 @@ def action_selftest():
         cl_note = f"{type(e).__name__}: {e}"
     ck("a drawing that runs off its sheet is named, with the frame and the edge",
        "clear = silent, cut = flagged and named", cl_note, cl_ok)
+
+    # Heel-first and toe-last, or a stance held in place. Both ways: soles that tilt
+    # opposite ways have to pass in silence, or this is just a detector that shouts at
+    # every walk sheet. Only the DIRECTION is judged — see `_sheet_flat_soles` for why
+    # there is no angle to judge against.
+    so_note, so_ok = "", False
+    try:
+        def sole_note(opposite):
+            """Two contact frames whose two soles either oppose each other or do not."""
+            sp = os.path.join(OUT_DIR, "selftest-sole.png")
+            im8 = Image.new("RGBA", (760, 320), (0, 0, 0, 0))
+            g8 = ImageDraw.Draw(im8)
+            ink = (40, 60, 120, 255)
+            gy_, ln = 300, 52
+            for cx in (190, 570):
+                g8.ellipse([cx - 36, 40, cx + 36, 150], fill=ink)
+                for fwd, sx in ((True, 62), (False, -62)):
+                    ax = cx + sx
+                    g8.polygon([(cx - 8, 145), (cx + 8, 145),
+                                (ax + 9, gy_ - 26), (ax - 9, gy_ - 26)], fill=ink)
+                    if not opposite:                       # both soles laid flat
+                        # Tall enough to REACH the leg. At 15 it stopped 11px short,
+                        # the shoes came away as their own blobs, the cell held only
+                        # the body and legs, and the reading was the leg's slope — the
+                        # ruler looked broken when the shape was. Twice now.
+                        pts = [(ax - ln // 2, gy_), (ax + ln // 2, gy_),
+                               (ax + ln // 2, gy_ - 30), (ax - ln // 2, gy_ - 30)]
+                    elif fwd:                              # leading foot: heel down
+                        pts = [(ax - ln // 2, gy_), (ax - ln // 2 + 16, gy_),
+                               (ax + ln // 2, gy_ - 20), (ax + ln // 2, gy_ - 33),
+                               (ax - ln // 2, gy_ - 15)]
+                    else:                                  # trailing foot: toes down
+                        pts = [(ax + ln // 2, gy_), (ax + ln // 2 - 16, gy_),
+                               (ax - ln // 2, gy_ - 20), (ax - ln // 2, gy_ - 33),
+                               (ax + ln // 2, gy_ - 15)]
+                    g8.polygon(pts, fill=ink)
+            im8.save(sp)
+            sv = action_save_asset({"action": "save_asset", "name": "selftest-sole",
+                                    "sheets": {"walk": {"media": sp, "fps": 2}}})
+            n = str((sv.get("data") or {}).get("note") or "")
+            # The same figure with different shoes, so the frame box has to come out
+            # the same height. It did not once — a shoe that failed to reach the leg
+            # left the shoes out of the cell entirely — and the ruler was then reading
+            # something else without saying so. Fail loudly instead.
+            tall = json.load(open(_asset_path("selftest-sole"),
+                                 encoding="utf-8"))["sheets"]["walk"]["cells"][0]
+            action_delete_asset({"name": "selftest-sole"})
+            os.remove(sp)
+            return n, tall[3] - tall[1] + 1
+
+        (step, h_step), (pose, h_pose) = sole_note(True), sole_note(False)
+        key = "tilting the SAME"
+        so_note = (f"heel-first/toe-last flagged={key in step} | "
+                   f"both flat flagged={key in pose} names={'1 (+0 / +0 deg)' in pose} | "
+                   f"figure height {h_step} vs {h_pose}")
+        so_ok = (key not in step and key in pose and "1 (+0 / +0 deg)" in pose
+                 and h_step == h_pose)
+    except Exception as e:  # noqa: BLE001
+        so_note = f"{type(e).__name__}: {e}"
+    ck("a stance whose two soles tilt the same way is named; a real step is not",
+       "opposite = silent, both flat = flagged and named", so_note, so_ok)
 
     # ── the life layer: bob and lean ───────────────────────────────────────────────
     # A walk sheet whose contacts are deliberately UNEVEN (46 against 62), because that
