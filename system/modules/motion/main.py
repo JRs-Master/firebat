@@ -3750,7 +3750,17 @@ def _sheet_foot_lift(masks):
 
 
 def _sheet_stride(masks):
-    """Widest foot separation across the frames, as a fraction of frame height.
+    """The widest STEP the drawings take — foot to foot, centre to centre — as a
+    fraction of frame height. This is how far the body travels in one step.
+
+    ⛔ It used to be the GAP between the two feet, which is a different segment and
+    a smaller number: the gap leaves out a whole foot. Travel spends it as a step
+    ("Two steps per cycle, each one stride long") so the character covered
+    0.390 where the drawings asked for 0.529 — measured 2026-09-05 on heungbu8 —
+    and dragged his planted foot forward for the missing 26%. The comment said step
+    and the code said gap. Centre to centre rather than heel to heel because a
+    silhouette does not say which end is the heel, and it is the same number when
+    the two feet are drawn the same length.
 
     Measured in the bottom tenth of each cell — that band is feet. Returns 0 when
     the action never separates them (a bird, a bow), which means "does not walk".
@@ -3780,7 +3790,9 @@ def _sheet_stride(masks):
         if st is not None:
             runs.append((st, len(on) - 1))
         if len(runs) > 1:
-            widest = max(widest, (runs[-1][0] - runs[0][1]) / float(tall))
+            back = (runs[0][0] + runs[0][1]) / 2.0
+            front = (runs[-1][0] + runs[-1][1]) / 2.0
+            widest = max(widest, (front - back) / float(tall))
     return round(widest, 4)
 
 
@@ -4157,6 +4169,21 @@ def action_save_asset(inp):
                 "frames are already cut. Do not correct this one — ask for the sheet "
                 "again with fewer frames on it (6 to a 1536x1024 canvas leaves each "
                 "figure room) or with the figures drawn smaller, and keep a margin.")
+        # Over-striding, against the one norm that measures the same segment we do.
+        # A walking step is 0.41..0.45 of stature heel to heel; the shipped cycle
+        # takes 0.53 (measured 2026-09-05). This became sayable only once `stride`
+        # stopped being the gap between the feet — the old number was a different
+        # segment and comparing it to the norm was the error it looks like.
+        if _v.get("anchor") == "feet" and (_v.get("stride") or 0) > 0.45:
+            sheet_notes.append(
+                f"'{_a}' takes a step of {_v['stride']:.2f} x the figure's height at its "
+                "widest. A walking step is 0.41..0.45 of stature, foot to foot, so this "
+                f"cycle covers about {_v['stride'] / 0.43:.0%} of one and reads as a "
+                "lunge rather than a stride. Do NOT ask for a smaller step — nine "
+                "generations measured that step size is the one thing a generator "
+                "ignores. Ask for the THIGHS: the leading thigh 24 degrees forward of "
+                "vertical and the trailing thigh 24 degrees behind it, which is the "
+                "angle that produces the norm.")
         # How a step is told from a pose, read off the ankles. Nothing said this until
         # a ruler existed: the shipped cycle's leading foot pointed its TOE down at
         # every contact — the opposite of a step — and the note for it used to read
@@ -5773,6 +5800,40 @@ def action_selftest():
         fb_note = f"{type(e).__name__}: {e}"
     ck("`face` puts one head on every frame; without it the sizes differ",
        "face-on ratio < 1.12, face-off > 1.5", fb_note, fb_ok)
+
+    # The stride is the STEP, not the gap between the feet. Two feet of known length
+    # at known centres: the reading has to be the centre-to-centre distance, and has
+    # to be visibly NOT the gap — which is what travel used to spend as a step, so a
+    # walker covered three quarters of the ground his legs were walking.
+    st_note, st_ok = "", False
+    try:
+        stp = os.path.join(OUT_DIR, "selftest-stride.png")
+        im9 = Image.new("RGBA", (420, 320), (0, 0, 0, 0))
+        g9 = ImageDraw.Draw(im9)
+        ink, cx, gy2, half, fw = (40, 60, 120, 255), 210, 300, 55, 60
+        g9.ellipse([cx - 36, 40, cx + 36, 150], fill=ink)
+        for sx in (-half, half):
+            # The foot overlaps the leg on purpose: a foot that only touches becomes
+            # its own blob and the cell then holds no feet at all.
+            g9.polygon([(cx - 8, 145), (cx + 8, 145),
+                        (cx + sx + 9, gy2 - 20), (cx + sx - 9, gy2 - 20)], fill=ink)
+            g9.rectangle([cx + sx - fw // 2, gy2 - 30, cx + sx + fw // 2, gy2], fill=ink)
+        im9.save(stp)
+        cs9 = find_sheet_cells(stp)
+        m9 = _sheet_masks([stp], cs9, [0] * len(cs9))
+        tall9 = cs9[0][3] - cs9[0][1] + 1
+        got = _sheet_stride(m9)
+        step_should = (2 * half) / float(tall9)
+        gap_should = (2 * half - fw) / float(tall9)
+        st_note = (f"feet {2 * half}px apart centre to centre, {2 * half - fw}px of gap, "
+                   f"figure {tall9}px tall -> stride {got} (step {step_should:.3f}, "
+                   f"gap {gap_should:.3f})")
+        st_ok = abs(got - step_should) < 0.012 and got > gap_should + 0.15
+        os.remove(stp)
+    except Exception as e:  # noqa: BLE001
+        st_note = f"{type(e).__name__}: {e}"
+    ck("the stride is the step the drawings take, not the gap between the feet",
+       "centre to centre, and clear of the gap", st_note, st_ok)
 
     # Walk vs march, both ways: a cycle whose swing foot skims must pass silently,
     # and one that lifts the knee must be named. Checking only the bad direction
