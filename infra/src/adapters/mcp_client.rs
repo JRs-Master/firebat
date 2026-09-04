@@ -3,8 +3,10 @@
 //! 두 transport 지원 (옛 TS `infra/mcp-client/index.ts` 동등):
 //!  - **stdio** — 자식 process spawn + stdin/stdout JSON-RPC 2.0 line frames.
 //!    Claude Code / Cursor / 로컬 MCP 도구 (`@modelcontextprotocol/server-*` 등) 호환.
-//!  - **HTTP+SSE** — `endpoint` event 로 POST URL 받고 `message` event 로 JSON-RPC response 받음.
-//!    원격 호스팅 MCP 서버 (Gmail / Slack / 외부 SaaS) 호환.
+//!  - **HTTP+SSE** (`sse`) — `endpoint` event 로 POST URL 받고 `message` event 로 response 받음.
+//!    MCP `2024-11-05` 의 전송이고 스펙에서 폐기됐다. 이미 이 설정으로 등록된 서버 때문에 남는다.
+//!  - **Streamable HTTP** (`http`) — 메시지 하나 = POST 하나, 응답은 그 POST 의 본문.
+//!    `2025-03-26` 이후의 전송이라 **요즘 서버는 이쪽만 여는 경우가 많고**, 우리엔 이 경로가 없었다.
 //!
 //! 영속:
 //!  - 서버 설정 = `data/mcp-servers.json` (옛 TS 와 동일 포맷)
@@ -82,6 +84,10 @@ const JSONRPC_VERSION: &str = "2.0";
 /// 옛 `2024-11-05` → 신 서버 (Gmail/Slack/Notion latest) 와 핸드셰이크 시 downgrade·거부 위험.
 /// spec 변경 시 갱신.
 const PROTOCOL_VERSION: &str = "2025-11-25";
+/// Streamable HTTP 는 본문의 버전을 헤더로도 요구한다(2025-06-18 부터).
+const MCP_PROTOCOL_HEADER: &str = "MCP-Protocol-Version";
+/// 세션을 쓰는 서버가 발급하고, 이후 요청이 되돌려주는 헤더.
+const MCP_SESSION_HEADER: &str = "Mcp-Session-Id";
 const CLIENT_NAME: &str = "firebat";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -655,6 +661,240 @@ impl Connection for SseConnection {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Streamable HTTP transport (MCP spec 2025-03-26 이후)
+// ──────────────────────────────────────────────────────────────────────────
+//
+// 위 HTTP+SSE 와 같은 HTTP 인데 **모양이 첫 수부터 다르다** — 여는 GET 도, `endpoint` 이벤트도,
+// 상시 스트림도 없다. 메시지 하나가 POST 하나이고 응답은 그 POST 자신의 본문으로 온다:
+//
+//   Content-Type: application/json   → JSON-RPC 응답 한 개
+//   Content-Type: text/event-stream  → 그 요청에 딸린 알림이 흐르고 **마지막에** 응답, 그리고 닫힘
+//
+// 세션을 쓰는 서버는 `Mcp-Session-Id` 헤더로 발급하고, 클라이언트는 이후 요청마다 그 값을
+// 되돌려준다(2025-03-26~2025-11-25. `2026-07-28` 에서 세션 자체가 삭제됐다).
+//
+// ⚠️ 이 경로가 없어서 **Streamable HTTP 만 여는 서버엔 붙을 방법이 아예 없었다**(2026-09-04 판독).
+// 옛 `Sse` 는 그대로 둔다 — 이미 그 설정으로 등록된 서버가 무엇인지 여기서 알 수 없고, 두 전송은
+// 첫 수부터 갈려서 한쪽을 고쳐도 다른 쪽이 안 따라온다.
+
+struct StreamableHttpConnection {
+    url: String,
+    next_id: AtomicU64,
+    http: reqwest::Client,
+    /// 서버가 발급한 세션 id. 주는 서버에만 생기고, 생긴 뒤로는 매 요청에 실어 되돌려준다.
+    session_id: Mutex<Option<String>>,
+    server_name: String,
+}
+
+impl StreamableHttpConnection {
+    async fn connect(config: &McpServerConfig) -> InfraResult<Arc<Self>> {
+        let url = config
+            .url
+            .as_ref()
+            .ok_or_else(|| format!("MCP {} http transport url 누락", config.name))?
+            .clone();
+
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60 * 5))
+            .build()
+            .map_err(|e| format!("reqwest 빌드 실패: {e}"))?;
+
+        // 여는 왕복이 없다 — 첫 POST(`initialize`)가 곧 첫 접촉이라 여기서 할 I/O 가 없다.
+        Ok(Arc::new(Self {
+            url,
+            next_id: AtomicU64::new(1),
+            http,
+            session_id: Mutex::new(None),
+            server_name: config.name.clone(),
+        }))
+    }
+
+    /// 요청·알림 공통 POST. 세션이 있으면 싣고, 응답 헤더로 세션이 오면 받아 둔다.
+    async fn post(&self, body: &serde_json::Value) -> InfraResult<reqwest::Response> {
+        let mut req = self
+            .http
+            .post(&self.url)
+            // 스펙이 둘 다 받으라고 요구한다 — 서버가 요청마다 어느 쪽으로 답할지 고른다.
+            .header("Accept", "application/json, text/event-stream")
+            .header(MCP_PROTOCOL_HEADER, PROTOCOL_VERSION)
+            .json(body);
+
+        if let Some(sid) = self.session_id.lock().await.clone() {
+            req = req.header(MCP_SESSION_HEADER, sid);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("MCP {} POST 실패: {e}", self.server_name))?;
+
+        if let Some(sid) = resp
+            .headers()
+            .get(MCP_SESSION_HEADER)
+            .and_then(|v| v.to_str().ok())
+        {
+            *self.session_id.lock().await = Some(sid.to_string());
+        }
+        Ok(resp)
+    }
+}
+
+/// Streamable HTTP 의 SSE 응답 본문에서 **그 요청의** JSON-RPC 응답을 꺼낸다.
+///
+/// 스트림에는 그 요청에 딸린 알림(`notifications/progress`·`notifications/message`)이 먼저 흐르고
+/// **마지막에** 응답이 온다. 그래서 첫 `data:` 를 답으로 읽으면 알림을 결과로 착각한다 — id 가 맞는
+/// 것을 찾아야 하고, 그게 이 함수가 따로 있는 이유다.
+fn rpc_from_sse_body(body: &str, id: u64) -> Option<JsonRpcResponse> {
+    let mut data = String::new();
+    let mut out: Option<JsonRpcResponse> = None;
+
+    // 마지막 이벤트가 빈 줄로 안 끝나고 스트림이 닫힐 수 있다 — 빈 줄 하나를 덧대 흘려보낸다.
+    for raw in body.lines().chain(std::iter::once("")) {
+        let line = raw.trim_end_matches('\r');
+        if line.is_empty() {
+            if !data.is_empty() {
+                if let Ok(r) = serde_json::from_str::<JsonRpcResponse>(data.trim()) {
+                    if r.id == Some(id) {
+                        out = Some(r);
+                    }
+                }
+                data.clear();
+            }
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("data:") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(value.trim_start());
+        }
+        // `event:` / `id:` / `:` 주석 — 이 경로가 쓸 일이 없다.
+    }
+    out
+}
+
+#[async_trait]
+impl Connection for StreamableHttpConnection {
+    async fn send_request(
+        &self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> InfraResult<serde_json::Value> {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let req = JsonRpcRequest {
+            jsonrpc: JSONRPC_VERSION,
+            id,
+            method,
+            params,
+        };
+        let body = serde_json::to_value(&req)
+            .map_err(|e| format!("MCP {} 요청 직렬화 실패: {e}", self.server_name))?;
+
+        let resp = match timeout(CALL_TIMEOUT, self.post(&body)).await {
+            Ok(r) => r?,
+            Err(_) => {
+                return Err(format!(
+                    "MCP {} {} timeout ({}s)",
+                    self.server_name,
+                    method,
+                    CALL_TIMEOUT.as_secs()
+                ));
+            }
+        };
+
+        let status = resp.status();
+        let is_sse = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.starts_with("text/event-stream"))
+            .unwrap_or(false);
+
+        let text = match timeout(CALL_TIMEOUT, resp.text()).await {
+            Ok(t) => t.map_err(|e| format!("MCP {} 응답 읽기 실패: {e}", self.server_name))?,
+            Err(_) => {
+                return Err(format!(
+                    "MCP {} {} 응답 본문 timeout ({}s)",
+                    self.server_name,
+                    method,
+                    CALL_TIMEOUT.as_secs()
+                ));
+            }
+        };
+
+        if !status.is_success() {
+            // 본문을 같이 싣는다 — 신판 서버는 여기에 왜 거절했는지를 JSON-RPC 에러로 적는다.
+            return Err(format!(
+                "MCP {} POST HTTP {} — body: {}",
+                self.server_name, status, text
+            ));
+        }
+
+        let rpc: JsonRpcResponse = if is_sse {
+            rpc_from_sse_body(&text, id).ok_or_else(|| {
+                format!(
+                    "MCP {} {} — SSE 스트림이 id {} 의 응답 없이 끝났다",
+                    self.server_name, method, id
+                )
+            })?
+        } else {
+            serde_json::from_str(&text)
+                .map_err(|e| format!("MCP {} {} 응답 파싱 실패: {e}", self.server_name, method))?
+        };
+
+        if let Some(err) = rpc.error {
+            return Err(format!(
+                "MCP {} {} 에러 (code {}): {}",
+                self.server_name, method, err.code, err.message
+            ));
+        }
+        Ok(rpc.result.unwrap_or(serde_json::Value::Null))
+    }
+
+    async fn send_notification(
+        &self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> InfraResult<()> {
+        let notif = JsonRpcNotification {
+            jsonrpc: JSONRPC_VERSION,
+            method,
+            params,
+        };
+        let body = serde_json::to_value(&notif)
+            .map_err(|e| format!("MCP {} 알림 직렬화 실패: {e}", self.server_name))?;
+
+        let resp = match timeout(CALL_TIMEOUT, self.post(&body)).await {
+            Ok(r) => r?,
+            Err(_) => return Err(format!("MCP {} notification timeout", self.server_name)),
+        };
+        if !resp.status().is_success() {
+            return Err(format!(
+                "MCP {} notification HTTP {}",
+                self.server_name,
+                resp.status()
+            ));
+        }
+        Ok(())
+    }
+
+    async fn shutdown(&self) {
+        // 세션을 발급한 서버에겐 DELETE 가 종료 신호다. 안 준 서버면 보낼 것이 없다 — 무상태라
+        // 끊는 것 자체가 아무 상태도 안 남긴다.
+        let sid = self.session_id.lock().await.take();
+        if let Some(sid) = sid {
+            let _ = self
+                .http
+                .delete(&self.url)
+                .header(MCP_PROTOCOL_HEADER, PROTOCOL_VERSION)
+                .header(MCP_SESSION_HEADER, sid)
+                .send()
+                .await;
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // MCP initialize handshake
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -745,6 +985,10 @@ impl McpClientFileAdapter {
             }
             McpTransport::Sse => {
                 let conn = SseConnection::connect(&config).await?;
+                conn as Arc<dyn Connection>
+            }
+            McpTransport::Http => {
+                let conn = StreamableHttpConnection::connect(&config).await?;
                 conn as Arc<dyn Connection>
             }
         };
@@ -935,6 +1179,73 @@ mod tests {
 
         adapter.remove_server("gmail").await.unwrap();
         assert!(adapter.list_servers().is_empty());
+    }
+
+    /// Streamable HTTP 의 스트림 응답에서 답을 고르는 규칙 — **마지막 것도 첫 것도 아니고 id 가 맞는 것**.
+    ///
+    /// 그 요청에 딸린 알림이 먼저 흐르므로 첫 `data:` 를 답으로 읽으면 진행률을 결과로 착각한다.
+    #[test]
+    fn sse_body_picks_the_reply_not_the_notification_before_it() {
+        let body = concat!(
+            "event: message
+",
+            "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{}}
+",
+            "
+",
+            "event: message
+",
+            "data: {\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"tools\":[]}}
+",
+            "
+",
+        );
+        let got = rpc_from_sse_body(body, 7).expect("id 7 의 응답이 있어야 한다");
+        assert_eq!(got.id, Some(7));
+        assert!(got.result.is_some());
+    }
+
+    /// 알림만 흐르고 끝난 스트림은 "답 없음"이다 — 알림을 답으로 승격시키면 안 된다.
+    #[test]
+    fn sse_body_without_a_matching_id_is_no_answer() {
+        let body = "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\"}
+
+";
+        assert!(rpc_from_sse_body(body, 1).is_none());
+        // 다른 요청의 응답이 섞여 들어와도 내 것이 아니다.
+        let other = "data: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}
+
+";
+        assert!(rpc_from_sse_body(other, 1).is_none());
+    }
+
+    /// CRLF 로 오고 마지막 이벤트가 빈 줄 없이 닫혀도 읽어야 한다 — 둘 다 실물에서 온다.
+    #[test]
+    fn sse_body_survives_crlf_and_an_unterminated_last_event() {
+        let body = "event: message
+data: {\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"ok\":true}}";
+        let got = rpc_from_sse_body(body, 3).expect("빈 줄 없이 끝나도 읽혀야 한다");
+        assert_eq!(got.id, Some(3));
+    }
+
+    /// 여러 줄로 쪼개진 `data:` 는 개행으로 이어 붙인 뒤에야 JSON 이 된다.
+    #[test]
+    fn sse_body_joins_a_multiline_data_field() {
+        let body = "data: {\"jsonrpc\":\"2.0\",
+ data: \"id\":4,
+ data: \"result\":{}}
+
+";
+        // 위는 `data:` 접두만 벗기면 세 조각이 한 JSON 이 된다.
+        let joined = rpc_from_sse_body(
+            "data: {\"jsonrpc\": \"2.0\",
+data: \"id\": 4,
+data: \"result\": {}}
+
+",
+            4,
+        );
+        assert!(joined.is_some(), "여러 줄 data 를 못 이었다: {body}");
     }
 
     #[tokio::test]

@@ -89,6 +89,7 @@ impl McpService for McpServiceImpl {
         let transport = match args.transport.as_str() {
             "stdio" => crate::ports::McpTransport::Stdio,
             "sse" => crate::ports::McpTransport::Sse,
+            "http" => crate::ports::McpTransport::Http,
             other => {
                 return Err(TonicStatus::invalid_argument(format!(
                     "unknown transport: {other}"

@@ -397,7 +397,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpLoading, setMcpLoading] = useState(false);
   const [mcpNewName, setMcpNewName] = useState('');
-  const [mcpNewTransport, setMcpNewTransport] = useState<'stdio' | 'sse'>('stdio');
+  const [mcpNewTransport, setMcpNewTransport] = useState<'stdio' | 'sse' | 'http'>('stdio');
   const [mcpNewCommand, setMcpNewCommand] = useState('');
   const [mcpNewArgs, setMcpNewArgs] = useState('');
   const [mcpNewUrl, setMcpNewUrl] = useState('');
@@ -2303,6 +2303,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${mcpNewTransport === 'sse' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
                   >
                     {t('settings_modal.mcp_transport_sse')}
+                  </button>
+                  <button
+                    onClick={() => setMcpNewTransport('http')}
+                    className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${mcpNewTransport === 'http' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
+                  >
+                    {t('settings_modal.mcp_transport_http')}
                   </button>
                 </div>
                 {mcpNewTransport === 'stdio' ? (

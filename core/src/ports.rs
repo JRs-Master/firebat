@@ -2304,7 +2304,7 @@ pub trait ILlmPort: Send + Sync {
 // MCP Client — 외부 MCP 서버 (Gmail, Slack, 카톡 등) 등록·연결·도구 호출
 // ──────────────────────────────────────────────────────────────────────────
 
-/// 옛 TS McpServerConfig Rust 재현. 전송 방식 stdio / sse 두 가지.
+/// 옛 TS McpServerConfig Rust 재현. 전송 방식 stdio / sse / http.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
@@ -2325,7 +2325,18 @@ pub struct McpServerConfig {
 #[serde(rename_all = "lowercase")]
 pub enum McpTransport {
     Stdio,
+    /// HTTP+SSE, the transport of MCP `2024-11-05`: open a GET stream, wait for an `endpoint`
+    /// event to learn the POST URL, then read replies off that stream. Deprecated by the spec
+    /// since `2025-03-26` and formally Deprecated under the feature-lifecycle policy in
+    /// `2026-07-28`, where it also carries the shortest removal clock of any deprecated feature.
+    /// Kept because it is what the servers we already talk to were configured with; new servers
+    /// should be registered as `Http`.
     Sse,
+    /// Streamable HTTP, the transport from `2025-03-26` onward: one POST per message, the reply
+    /// arriving in that POST's own response. It has no opening GET and no `endpoint` event, so a
+    /// server that offers only this one is unreachable over `Sse` — which is the whole reason this
+    /// variant exists (measured 2026-09-04: our client had no such path at all).
+    Http,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

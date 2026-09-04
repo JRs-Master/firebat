@@ -26,8 +26,8 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!name || typeof name !== 'string') {
     return NextResponse.json({ success: false, error: 'name 필수' }, { status: 400 });
   }
-  if (!transport || !['stdio', 'sse'].includes(transport)) {
-    return NextResponse.json({ success: false, error: 'transport는 stdio 또는 sse' }, { status: 400 });
+  if (!transport || !['stdio', 'sse', 'http'].includes(transport)) {
+    return NextResponse.json({ success: false, error: 'transport는 stdio · sse · http 중 하나' }, { status: 400 });
   }
 
   const res = await addMcpServer({
