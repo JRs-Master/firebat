@@ -772,7 +772,7 @@
     "mcp_oauth_popup_closed": "인증 창이 닫혔습니다. 다시 시도해 주세요.",
     "mcp_server_add_label": "서버 추가",
     "mcp_transport_stdio": "stdio (로컬)",
-    "mcp_transport_sse": "SSE (원격·구판)",
+    "mcp_transport_sse": "SSE (원격·구버전)",
     "mcp_transport_http": "HTTP (원격)",
     "mcp_sse_url_placeholder": "SSE 서버 URL (예: http://localhost:3001/sse)",
     "mcp_sse_url_aria": "MCP SSE URL",
