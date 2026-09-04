@@ -428,6 +428,10 @@ async fn handle_rpc(
                 });
             }
             drop(tools);
+            // 스펙이 SHOULD 로 요구하는 결정적 순서(2026-07-28). 이유가 우리 것이다 —
+            // 목록이 매번 같아야 클라이언트가 캐시하고 프롬프트 프리픽스 캐시가 산다.
+            // HashMap 순회는 프로세스마다 시드가 달라 재시작하면 순서가 바뀐다.
+            items.sort_by(|a, b| a.name.cmp(&b.name));
             rpc_success(id, serde_json::json!({ "tools": items }))
         }
         "tools/call" => {
@@ -2881,6 +2885,10 @@ async fn dispatch_method(
                 });
             }
             drop(tools);
+            // 스펙이 SHOULD 로 요구하는 결정적 순서(2026-07-28). 이유가 우리 것이다 —
+            // 목록이 매번 같아야 클라이언트가 캐시하고 프롬프트 프리픽스 캐시가 산다.
+            // HashMap 순회는 프로세스마다 시드가 달라 재시작하면 순서가 바뀐다.
+            items.sort_by(|a, b| a.name.cmp(&b.name));
             Ok(Some(serde_json::json!({ "tools": items })))
         }
         "tools/call" => {
