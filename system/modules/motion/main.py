@@ -4228,6 +4228,38 @@ def validate_sheets(sheets):
     return out
 
 
+def validate_refs(spec):
+    """The pictures this character is drawn FROM, kept by name on the character.
+
+    A generated sheet inherits its values from the picture it was drawn against, not from
+    the words in the prompt -- measured 2026-09-07, an anchor whose rear sole sat at -28.7
+    degrees produced cells at -28.4 and -29.0, while the SAME prompt against a different
+    picture sat at -18.1 and -20.0. So a reference is not a convenience, it is where the
+    numbers live, and the ones a person made by hand are the expensive part of a character.
+    Leaving them loose in the media store means hunting slugs the next time this character
+    has to do anything, which is how a good anchor gets replaced by a worse one.
+
+    Labels are free-form. Which views and which anchors a character needs is the author's
+    business -- a fixed turnaround would be a hand-list that the next character disagrees
+    with, and the labels are what the author will search for anyway.
+    """
+    if not spec:
+        return {}
+    if not isinstance(spec, dict):
+        raise SceneError(
+            "refs must be {label: '/user/media/<file>.png'} -- the pictures this character "
+            "is drawn from, named however you will look for them "
+            "(e.g. {'right': ..., 'front': ..., 'walk-right-lead': ...})")
+    out = {}
+    for label, ref in spec.items():
+        lb = str(label).strip()
+        if not lb or len(lb) > 40:
+            raise SceneError(f"refs label {label!r} must be 1..40 characters")
+        media_path(str(ref or "").strip())   # fail here, not when someone reaches for it
+        out[lb] = str(ref).strip()
+    return out
+
+
 def action_save_asset(inp):
     name = str(inp.get("name") or "").strip()
     try:
@@ -4392,8 +4424,16 @@ def action_save_asset(inp):
                              "passing drawing may serve both halves, since at passing the "
                              "legs are together and the silhouette is the same either way.")
                 sheet_notes.append(note)
-    # A sheet-only character carries no shape parts: its drawings ARE the asset.
-    if sheets and inp.get("parts") is None:
+    try:
+        refs = validate_refs(inp.get("refs"))
+    except SceneError as e:
+        return {"success": False, "error": str(e)}
+    # A sheet-only character carries no shape parts: its drawings ARE the asset. Nor does
+    # a character that so far is only the pictures it will be drawn FROM -- under the
+    # agreed division of labour (the person makes the views and the anchors, the module
+    # draws the sheets from them) that is the FIRST state a character is in, and refusing
+    # it would send the expensive hand-made pictures back to the media store to be lost.
+    if (sheets or refs) and inp.get("parts") is None:
         parts = []
     else:
         try:
@@ -4408,6 +4448,26 @@ def action_save_asset(inp):
                 media_path(q["media"])  # fail at save time, not first draw
     except SceneError as e:
         return {"success": False, "error": str(e)}
+
+    # What each stored reference will hand to anything drawn against it. Read with the
+    # same ruler the standalone action uses, so the two cannot disagree about a picture.
+    ref_report = {}
+    for _lb, _p in refs.items():
+        got = action_measure({"media": _p})
+        if not got.get("success"):
+            ref_report[_lb] = {"media": _p}
+            continue
+        gd = got["data"]
+        st = gd.get("step")
+        ref_report[_lb] = {"media": _p, "poses": gd["cells"],
+                           **({"step": st["longest"], "inBand": st["inBand"]} if st else {}),
+                           **({"feet": gd["frames"][0]["feet"]} if gd["cells"] == 1 else {})}
+        if st and not st["inBand"]:
+            sheet_notes.append(
+                f"reference '{_lb}' steps {st['longest']} of the figure's height, and a "
+                "walker's step is 0.41 to 0.45. Whatever is drawn against this picture "
+                "inherits that number, so the picture is what gets redrawn -- asking a "
+                "sheet for a different stride does not work.")
     os.makedirs(ASSET_DIR, exist_ok=True)
     replaced = os.path.isfile(_asset_path(name))
     with open(_asset_path(name), "w", encoding="utf-8") as fh:
@@ -4416,6 +4476,8 @@ def action_save_asset(inp):
             decl["bones"] = bones
         if sheets:
             decl["sheets"] = sheets
+        if refs:
+            decl["refs"] = refs
         json.dump(decl, fh, ensure_ascii=False, indent=1)
     # The browsable face: a thumbnail lands in the media store as clip art. The
     # declaration stays the original — consumers re-render from it, never from this PNG.
@@ -4425,6 +4487,10 @@ def action_save_asset(inp):
         first = next(iter(sheets.values()))
         x0, y0, x1, y1 = first["cells"][0]
         thumb = load_sheet(_sheet_file(first, 0)).crop((x0, y0, x1 + 1, y1 + 1))
+        thumb.thumbnail((480, 480), Image.LANCZOS)
+    elif refs and not parts:
+        # Nothing drawn yet: the face is the first picture he is going to be drawn from.
+        thumb = load_sheet(next(iter(refs.values())))
         thumb.thumbnail((480, 480), Image.LANCZOS)
     else:
         thumb = _custom_sticker_png({"parts": parts, "bones": bones or None}, 480, {})
@@ -4448,6 +4514,7 @@ def action_save_asset(inp):
                                            - min(v.get("cellScale") or [1.0]) > 0.001 else {})}
                                     for k, v in sheets.items()}}
                         if sheets else {}),
+                     **({"refs": ref_report} if ref_report else {}),
                      **({"note": " ".join(sheet_notes)} if sheet_notes else {}),
                      "next": "reference it as a sprite layer {kind:'sprite', name: '"
                              + name + "'} or export sizes with the sticker action",
@@ -4516,6 +4583,12 @@ def action_measure(inp):
                     .format(a, b))
     return {"success": True,
             "data": {"media": media, "cells": len(cells), "frames": frames,
+                     # The verdict as a value as well as a sentence. A caller that acts on
+                     # it -- the save, reporting a character's stored references -- must not
+                     # have to grep this module's own prose: reword the note once and the
+                     # decision flips silently.
+                     "step": ({"longest": step, "cell": widest["cell"],
+                               "inBand": bool(0.41 <= step <= 0.45)} if step > 0 else None),
                      "note": " ".join(notes)}}
 
 
@@ -4551,7 +4624,34 @@ def action_duration(inp):
             "data": {"media": inp.get("media"), "seconds": round(info.frames / info.samplerate, 3),
                      "sampleRate": info.samplerate}}
 
-def action_assets(_inp):
+def action_assets(inp=None):
+    """The grammar dictionary, and -- given a name -- what one saved character actually holds.
+
+    Listing names was half a ladder: `saved.names` said which characters exist and nothing
+    said what was inside one, so an author who wanted the anchor a character was built from
+    had to go back through the media store and guess by slug. The references are the
+    expensive, hand-made part of a character (they carry the values every later sheet
+    inherits), and a shelf you cannot read from is a shelf nobody puts anything on.
+    """
+    want = str((inp or {}).get("name") or "").strip()
+    if want:
+        saved = load_custom_asset(want)
+        if saved is None:
+            return {"success": False,
+                    "error": f"no saved asset named {want!r} -- call assets with no name "
+                             "for the list, or save_asset to make one"}
+        return {"success": True, "data": {
+            "asset": want,
+            "parts": len(saved.get("parts") or []),
+            "sheets": {k: {"frames": len(_sheet_order(v)),
+                           "anchor": v.get("anchor", "feet"),
+                           "stride": v.get("stride", 0),
+                           "media": v.get("media"),
+                           **({"bob": True} if v.get("bobPhase") else {})}
+                       for k, v in (saved.get("sheets") or {}).items()},
+            "refs": saved.get("refs") or {},
+            "next": "draw a new action for this character against one of `refs` "
+                    "(image_gen referenceImage), or play a sheet as a sprite layer"}}
     return {"success": True, "data": {
         "envelope": {"render": "{action:'render', duration, size?, fps?, background?, "
                                "layers:[...], audio?, stills?, quality?, async?}",
@@ -4746,6 +4846,9 @@ def action_assets(_inp):
                     "the name and redraw the vector at any size",
             "seeds": list_seed_assets(),
             "names": list_custom_assets(),
+            "one": "assets {name} opens a saved one: its actions, and `refs` -- the "
+                   "pictures it was drawn from, which is what a new action for that "
+                   "character is drawn against",
             "grammar": "save_asset {name, parts:[{shape: ellipse|rect|polygon|capsule|"
                        "heart|star, at:[x,y], size:[w,h] | points:[[x,y]..] | "
                        "ends:[[x,y],[x,y]]+width, fill:[r,g,b], outline:[r,g,b]?, "
@@ -5723,6 +5826,56 @@ def action_selftest():
         me_note = f"{type(e).__name__}: {e}"
     ck("measure reads one drawing's step and only complains when it leaves the walking band",
        "in-band silent, out-of-band flagged as over", me_note, me_ok)
+
+    # A character keeps the pictures it is drawn FROM, and says what they will hand on.
+    # Both ways, because a shelf that never speaks is the same as no shelf and one that
+    # always speaks is noise: a reference inside the walking band is stored quietly, one
+    # outside it is named at save. And a character can be nothing BUT references -- that
+    # is the state it is in before anything has been drawn for it.
+    rf_note, rf_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+
+        def _stance(path, lx, rx):
+            im = Image.new("RGB", (520, 400), (250, 250, 250))
+            d3 = ImageDraw.Draw(im)
+            mid = (lx + rx) // 2
+            d3.rectangle([lx, 200, rx + 25, 240], fill=(40, 50, 90))
+            d3.rectangle([mid - 20, 40, mid + 45, 210], fill=(40, 50, 90))
+            d3.rectangle([lx, 230, lx + 25, 310], fill=(40, 50, 90))
+            d3.rectangle([rx, 230, rx + 25, 310], fill=(40, 50, 90))
+            im.save(path)
+            return path
+
+        okp = _stance(os.path.join(OUT_DIR, "selftest-ref-ok.png"), 150, 266)
+        widep = _stance(os.path.join(OUT_DIR, "selftest-ref-wide.png"), 120, 310)
+        sv = action_save_asset({"name": "selftest-refs",
+                                "refs": {"anchor-ok": okp, "anchor-wide": widep}})
+        sd = sv.get("data") or {}
+        rep, rnote = sd.get("refs") or {}, sd.get("note", "")
+        back = (action_assets({"name": "selftest-refs"}).get("data") or {}).get("refs") or {}
+        missing = action_save_asset({"name": "selftest-refs-bad",
+                                     "refs": {"nope": "/user/media/no-such-picture.png"}})
+        action_delete_asset({"name": "selftest-refs"})
+        os.remove(okp)
+        os.remove(widep)
+        rf_note = ("saved refs-only=%s stored=%s in-band=%s wide-in-band=%s "
+                   "named: wide=%s ok=%s | missing path refused=%s"
+                   % (sv.get("success"), sorted(back),
+                      rep.get("anchor-ok", {}).get("inBand"),
+                      rep.get("anchor-wide", {}).get("inBand"),
+                      "anchor-wide" in rnote, "anchor-ok" in rnote,
+                      not missing.get("success")))
+        rf_ok = (sv.get("success") and sorted(back) == ["anchor-ok", "anchor-wide"]
+                 and rep.get("anchor-ok", {}).get("inBand") is True
+                 and rep.get("anchor-wide", {}).get("inBand") is False
+                 and "anchor-wide" in rnote and "anchor-ok" not in rnote
+                 and not missing.get("success"))
+    except Exception as e:  # noqa: BLE001
+        rf_note = f"{type(e).__name__}: {e}"
+    ck("a character keeps its references, measured, and reads them back",
+       "refs-only save works, out-of-band one named, missing path refused",
+       rf_note, rf_ok)
 
     # Frames drawn on separate canvases, both ways. Two sheets whose figures came back at
     # different sizes are put on one; a single sheet is left exactly as drawn, because there
