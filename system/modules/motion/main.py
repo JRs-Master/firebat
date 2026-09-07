@@ -991,89 +991,6 @@ def _label_blobs(mask):
     return flat[lab]
 
 
-def _far_leg_masks(piece):
-    """The rear and the front leg of one drawn frame, or None when they are together.
-
-    A side view drawn without far-side shading gives both legs the same colour, so the
-    only thing saying which one is nearer is which is drawn on top where they cross --
-    and that is the SAME leg in every frame this generator makes. Eight ways of asking
-    for the other half came back as the same half (2026-09-07), so the cue is supplied
-    here instead, and swapping which leg gets it between the two passes turns one set
-    of drawings into both halves of the cycle.
-
-    Parted from the FEET UPWARD, not by labelling the region below the crotch: the two
-    trouser legs go on touching well below the point where the silhouette first parts,
-    so a connected-component read returns one blob and a crumb (measured on the shipped
-    sheet: 49,229 px against 996). The soles are two separate runs -- that is the one
-    place the drawing always separates them -- so they seed the walk up, and a row where
-    the legs touch is cut between the two columns being tracked.
-
-    The figure faces right, so the rear leg is the one whose sole sits further left. At
-    a passing the feet are one run and there is nothing to part -- which is also the
-    moment depth does not read -- so the frame comes back None and is left alone.
-    """
-    a = np.asarray(piece.convert("RGBA"))
-    m = a[:, :, 3] > 128
-    h, w = m.shape
-    if h < 8 or w < 4:
-        return None
-    crotch = None
-    for y in range(int(h * 0.45), int(h * 0.92)):
-        if len(_row_runs(m[y])) >= 2:
-            crotch = y
-            break
-    if crotch is None:
-        return None
-    sole = None
-    for y in range(h - 1, crotch, -1):
-        if len(_row_runs(m[y])) >= 2:
-            sole = y
-            break
-    if sole is None:
-        return None
-    runs = _row_runs(m[sole])
-    cx = [(runs[0][0] + runs[0][1]) / 2.0, (runs[-1][0] + runs[-1][1]) / 2.0]
-    rear = np.zeros((h, w), bool)
-    front = np.zeros((h, w), bool)
-    for y in range(sole, crotch - 1, -1):
-        rr = _row_runs(m[y])
-        if not rr:
-            continue
-        if len(rr) >= 2:
-            # nearest run to each tracked column; the same run may serve both only
-            # if one leg has genuinely vanished behind the other, which is a passing
-            near = [min(rr, key=lambda r: abs((r[0] + r[1]) / 2.0 - c)) for c in cx]
-            if near[0] == near[1]:
-                rr = [near[0]]
-            else:
-                for k, (p0, p1) in enumerate(near):
-                    (rear if k == 0 else front)[y, p0:p1 + 1] = True
-                    cx[k] = (p0 + p1) / 2.0
-                continue
-        p0, p1 = rr[0]
-        cut = int(round(min(max(sum(cx) / 2.0, p0 + 1), p1)))
-        rear[y, p0:cut] = True
-        front[y, cut:p1 + 1] = True
-        cx = [(p0 + cut - 1) / 2.0, (cut + p1) / 2.0]
-    if rear.sum() < 0.002 * h * w or front.sum() < 0.002 * h * w:
-        return None
-    return rear, front
-
-
-def _row_runs(row):
-    """The runs of set pixels in one scanline, as [(start, end)] inclusive."""
-    out, st = [], None
-    for i, v in enumerate(row):
-        if v and st is None:
-            st = i
-        elif not v and st is not None:
-            out.append((st, i - 1))
-            st = None
-    if st is not None:
-        out.append((st, len(row) - 1))
-    return out
-
-
 # Chebyshev distance from the backdrop colour: at or under _KEY_NEAR is
 # background, at or over _KEY_FAR is drawing, between the two is the
 # anti-aliased edge and gets partial alpha.
@@ -2791,38 +2708,6 @@ class Scene:
             piece.putalpha(ImageChops.multiply(
                 piece.getchannel("A"),
                 Image.fromarray(own.astype(np.uint8) * 255, "L")))
-        if sh.get("halfCycle"):
-            # Second pass, other leg. The masks are read once per cell and kept: the
-            # same drawing comes back every cycle, and labelling it per video frame
-            # would cost more than the render.
-            lcache = getattr(self, "_legs_cache", None)
-            if lcache is None:
-                lcache = self._legs_cache = {}
-            key = (id(sh), cell_i)
-            if key not in lcache:
-                lcache[key] = _far_leg_masks(piece)
-            legs = lcache[key]
-            if legs is not None:
-                pass_i = (i // len(order)) % 2
-                far, near = legs[pass_i], legs[1 - pass_i]
-                arr = np.asarray(piece.convert("RGBA")).astype(np.float32)
-                # EVEN THEM UP FIRST. The drawing already shades by pose -- whatever
-                # is behind him goes a little darker -- so darkening the far leg on
-                # top of that leaves the second pass with two dark legs and no cue at
-                # all. Lift the dimmer leg to the brighter one, then the only reason
-                # either is dark is this.
-                fa = arr[..., :3][far]
-                ne = arr[..., :3][near]
-                if fa.size and ne.size:
-                    lo, hi = fa.mean(), ne.mean()
-                    dim, bright = (far, hi / max(1.0, lo)) if lo < hi else (
-                        near, lo / max(1.0, hi))
-                    arr[..., :3] = np.where(dim[..., None],
-                                            arr[..., :3] * min(bright, 1.35),
-                                            arr[..., :3])
-                k = float(sh.get("farShade") or 0.8)
-                arr[..., :3] = np.where(far[..., None], arr[..., :3] * k, arr[..., :3])
-                piece = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGBA")
         # Frames drawn on separate canvases come back at separate sizes; cellScale puts them
         # back on one. It is 1.0 for every cell of a single-sheet action, where a height
         # difference is the pose and has to survive.
@@ -4319,7 +4204,6 @@ def validate_sheets(sheets):
             # half-cycle sheet walks at double speed and steps out with the same leg
             # every time.
             "halfCycle": bool(spec.get("halfCycle", False)),
-            "farShade": _num(spec.get("farShade", 0.8), f"sheets[{a}].farShade", 0.5, 1.0),
             # How far the feet travel across this action, measured off the drawings.
             # A walker whose translation is guessed by hand skates: the ground moves at
             # one speed and the legs at another, and the eye reads it instantly as a
@@ -6240,61 +6124,6 @@ def action_selftest():
     ck("the stride is the step the drawings take, not the gap between the feet",
        "centre to centre, and clear of the gap", st_note, st_ok)
 
-    # A half-cycle sheet has to come out of the player as a WHOLE cycle: the far leg
-    # shaded, the two passes shading opposite legs, and the ground advancing one stride
-    # a pass. Both directions are checked -- a frame whose legs are together must be
-    # left alone, or the "far leg" would be whatever the labeller happened to find.
-    hc_note, hc_ok = "", False
-    try:
-        hp = os.path.join(OUT_DIR, "selftest-half.png")
-        imh = Image.new("RGBA", (660, 320), (0, 0, 0, 0))
-        gh = ImageDraw.Draw(imh)
-        for k, cx in enumerate((110, 330, 550)):
-            gh.ellipse([cx - 34, 30, cx + 34, 150], fill=(90, 110, 170, 255))
-            spread = 46 if k != 1 else 0          # middle frame = a passing
-            for s_ in ((-spread, spread) if spread else (0,)):
-                gh.polygon([(cx - 8, 145), (cx + 8, 145),
-                            (cx + s_ + 12, 300), (cx + s_ - 12, 300)],
-                           fill=(90, 110, 170, 255))
-        imh.save(hp)
-        sv = action_save_asset({"action": "save_asset", "name": "selftest-half",
-                                "sheets": {"walk": {"media": hp, "fps": 4,
-                                                    "halfCycle": True}}})
-        decl = json.load(open(_asset_path("selftest-half"), encoding="utf-8"))
-        shh = decl["sheets"]["walk"]
-        # the parting frames give two legs, the passing frame gives none
-        src = load_sheet(_sheet_file(shh, 0))
-        c0 = shh["cells"][0]
-        legs = _far_leg_masks(src.crop((c0[0], c0[1], c0[2] + 1, c0[3] + 1)))
-        c1 = shh["cells"][1]
-        together = _far_leg_masks(src.crop((c1[0], c1[1], c1[2] + 1, c1[3] + 1)))
-        rear_x = float(np.where(legs[0].any(0))[0].mean())
-        front_x = float(np.where(legs[1].any(0))[0].mean())
-        # the player darkens a different leg on each pass
-        sc = Scene({"duration": 1.6, "fps": 12, "size": "1080x1080",
-                    "background": {"kind": "gradient", "top": [255, 255, 255],
-                                   "bottom": [255, 255, 255]},
-                    "layers": [{"kind": "sprite", "name": "selftest-half",
-                                "at": [0.5, 0.9], "from": 0, "to": 1.6,
-                                "fadeIn": 0, "fadeOut": 0,
-                                "plays": [{"action": "walk", "at": 0, "for": 1.6}]}]})
-        # cell 2 on each pass: three drawings at 4fps, so the second pass starts at 0.75
-        f_a = np.asarray(sc.draw_frame(0.50))[:, :, :3].astype(int)
-        f_b = np.asarray(sc.draw_frame(1.25))[:, :, :3].astype(int)
-        half_w = f_a.shape[1] // 2
-        da = f_a[:, :half_w].sum() - f_a[:, half_w:].sum()
-        db = f_b[:, :half_w].sum() - f_b[:, half_w:].sum()
-        action_delete_asset({"name": "selftest-half"})
-        hc_ok = (together is None and rear_x < front_x
-                 and shh["halfCycle"] is True and (da > 0) != (db > 0))
-        hc_note = ("passing untouched=%s rear %.0f < front %.0f | darker side flips %s -> %s"
-                   % (together is None, rear_x, front_x,
-                      "left" if da < 0 else "right", "left" if db < 0 else "right"))
-    except Exception as e:                                   # pragma: no cover
-        hc_note = "%s: %s" % (type(e).__name__, e)
-    ck("half a cycle played twice comes out as a whole one, the far leg swapping",
-       "passing left alone, and the shaded leg on the other side second time round",
-       hc_note, hc_ok)
 
     # And the ground has to slow to match: one pass of a half-cycle list is one step.
     tv_note, tv_ok = "", False
