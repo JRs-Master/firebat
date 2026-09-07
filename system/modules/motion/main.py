@@ -4571,6 +4571,70 @@ def action_save_asset(inp):
                                       "filenameHint": f"clip-{name}",
                                       "source": "clipart"}}}
 
+def action_measure(inp):
+    """Read one drawn picture with the rulers the save uses, before anything is built on it.
+
+    An anchor decides the values every later frame inherits -- measured 2026-09-07, an
+    anchor drawn with the rear sole at -28.7 degrees produced a sheet whose cells came
+    back at -28.4 and -29.0, while a sheet drawn from a different anchor to the SAME
+    prompt sat at -18.1 and -20.0. The prompt does not set these numbers; the picture
+    does. Until this action there was no way to read one except by building the whole
+    sheet and saving it, so a bad anchor cost a generation round to find out.
+
+    Takes any drawn picture -- a one-pose anchor or a finished sheet -- because the
+    rulers do not care how many cells there are.
+    """
+    media = str(inp.get("media") or "").strip()
+    if not media:
+        return {"success": False,
+                "error": "measure needs {media: '/user/media/<file>.png'} -- the picture to read"}
+    try:
+        cells = find_sheet_cells(media)
+        masks = _sheet_masks([media], cells, [0] * len(cells))
+    except SceneError as e:
+        return {"success": False, "error": str(e)}
+
+    frames, notes = [], []
+    for i, (m, box) in enumerate(zip(masks, cells), 1):
+        frames.append({
+            "cell": i,
+            "height": int(box[3] - box[1] + 1),
+            "stride": _sheet_stride([m]),
+            "feet": [{"sole": round(float(d), 1), "lift": round(float(l), 3)}
+                     for d, l in _sole_angles(m)],
+        })
+
+    widest = max(frames, key=lambda f: f["stride"])
+    step = widest["stride"]
+    if step <= 0.0:
+        notes.append(
+            "No cell separates the feet, so this picture cannot say how long a step is. "
+            "A walk anchor is drawn at contact, with one foot forward and one behind.")
+    else:
+        # Step length is 0.41 to 0.45 of stature, heel to heel. Ours is centre to centre,
+        # which is the same number when both feet are drawn the same length.
+        notes.append(
+            "Longest step is {0} of the figure's height (cell {1}). Walking is 0.41 to 0.45."
+            .format(step, widest["cell"])
+            + ("" if 0.41 <= step <= 0.45 else
+               " This one is {0}% {1} that band -- redraw the anchor rather than asking the"
+               " sheet for a different stride, because the sheet inherits this number."
+               .format(abs(round((step / 0.43 - 1) * 100)),
+                       "over" if step > 0.43 else "under")))
+        down = [f for f in widest["feet"] if f["lift"] <= 0.02]
+        if len(down) == 2:
+            a, b = down[0]["sole"], down[1]["sole"]
+            if a * b > 0:
+                notes.append(
+                    "At full stride both soles tilt the same way ({0} and {1} degrees). "
+                    "Contact is the opposite of that: the back foot is pushing off with its"
+                    " heel up (negative) while the front foot lands heel first (positive)."
+                    .format(a, b))
+    return {"success": True,
+            "data": {"media": media, "cells": len(cells), "frames": frames,
+                     "note": " ".join(notes)}}
+
+
 def action_delete_asset(inp):
     name = str(inp.get("name") or "").strip()
     if not _ASSET_NAME_RE.match(name):
@@ -5741,6 +5805,40 @@ def action_selftest():
        "overlap=True foreign>50->0 own-detached-kept=True untouched-none=True",
        ow_note, ow_ok)
 
+    # Reading an anchor before anything is built on it, both ways: a step inside the
+    # walking band says so and stops, one outside says how far out and which way.
+    me_note, me_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+
+        def _stand(path, lx, rx):
+            im = Image.new("RGB", (520, 400), (250, 250, 250))
+            d2 = ImageDraw.Draw(im)
+            mid = (lx + rx) // 2
+            d2.rectangle([lx, 200, rx + 25, 240], fill=(40, 50, 90))     # hips join the legs
+            d2.rectangle([mid - 20, 40, mid + 45, 210], fill=(40, 50, 90))
+            d2.rectangle([lx, 230, lx + 25, 310], fill=(40, 50, 90))
+            d2.rectangle([rx, 230, rx + 25, 310], fill=(40, 50, 90))
+            im.save(path)
+            return action_measure({"media": path})
+
+        ip = os.path.join(OUT_DIR, "selftest-anchor-in.png")
+        op2 = os.path.join(OUT_DIR, "selftest-anchor-out.png")
+        r_in = _stand(ip, 150, 266)
+        r_out = _stand(op2, 120, 310)
+        s_in = r_in["data"]["frames"][0]["stride"]
+        s_out = r_out["data"]["frames"][0]["stride"]
+        quiet = "that band" not in r_in["data"]["note"]
+        loud = "over that band" in r_out["data"]["note"]
+        me_note = (f"in-band stride={s_in} silent={quiet} / "
+                   f"out-of-band stride={s_out} flagged={loud}")
+        me_ok = (0.41 <= s_in <= 0.45 and quiet and s_out > 0.45 and loud)
+        os.remove(ip)
+        os.remove(op2)
+    except Exception as e:  # noqa: BLE001
+        me_note = f"{type(e).__name__}: {e}"
+    ck("measure reads one drawing's step and only complains when it leaves the walking band",
+       "in-band silent, out-of-band flagged as over", me_note, me_ok)
 
     # Frames drawn on separate canvases, both ways. Two sheets whose figures came back at
     # different sizes are put on one; a single sheet is left exactly as drawn, because there
@@ -6722,6 +6820,8 @@ def main():
             out = action_assets(inp)
         elif action == "duration":
             out = action_duration(inp)
+        elif action == "measure":
+            out = action_measure(inp)
         elif action == "model_info":
             out = action_model_info(inp)
         elif action == "trim":

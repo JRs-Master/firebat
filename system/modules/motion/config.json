@@ -82,6 +82,21 @@
         "tags": ["오디오 길이", "대사 싱크", "타임라인"]
       },
       {
+        "id": "measure",
+        "name": "그림 재기",
+        "description": "그린 그림 한 장을 저장 때 쓰는 자로 재서 칸마다 보폭(키 대비)과 발마다 밑창 각도·들림을 돌려준다 — 보폭이 걷기 규준(0.41~0.45) 밖이면 얼마나 벗어났는지 같이 말한다.",
+        "domain": "제작",
+        "params": [
+          "media"
+        ],
+        "tags": [
+          "보폭 측정",
+          "발 각도",
+          "앵커 검사",
+          "걷기 규준"
+        ]
+      },
+      {
         "id": "job",
         "name": "렌더 잡 상태",
         "description": "async:true 로 접수한 렌더의 진행률을 조회한다 — 돌고 있으면 진행률·남은 시간, 끝났으면 그 응답으로 영상을 미디어 창고에 반입한다.",
@@ -151,7 +166,7 @@
       },
       "media": {
         "type": "string",
-        "description": "[duration|trim] Media-store path (/user/media/...) — duration: an audio file, trim: an mp4."
+        "description": "[duration|trim|measure] Media-store path (/user/media/...) — duration: an audio file, trim: an mp4, measure: a drawn picture (png)."
       },
       "clips": {
         "type": "array",
