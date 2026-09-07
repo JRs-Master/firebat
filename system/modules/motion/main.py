@@ -1217,6 +1217,10 @@ def find_sheet_cells(path, min_frac=0.004):
     finished video. Separate pixels are what a blob finds, and overlapping boxes
     do not fool it. Reading order is row-major, the order a sheet is drawn in.
 
+    Overlapping boxes do not fool the FINDING. Cropping one is still a rectangle and
+    carries the neighbour's ink along, which is `cell_own_mask`'s job; every reader
+    of a cell goes through it.
+
     Rows are found by vertical OVERLAP, never by quantised bands. Figures stand
     bottom-anchored on a shared ground line, so a frame the generator drew a few
     percent short STARTS LOWER, and with fixed bands (y0 // 18% of sheet height)
@@ -1258,6 +1262,84 @@ def find_sheet_cells(path, min_frac=0.004):
             rows.append({"y0": b[1], "y1": b[3], "boxes": [b]})
     rows.sort(key=lambda r: r["y0"])
     return [b for r in rows for b in sorted(r["boxes"], key=lambda b: b[0])]
+
+
+_CELL_OWN_CACHE = {}
+
+
+def cell_own_mask(path, cells, cell):
+    """Which pixels of `cell`'s box are THIS cell's drawing, with a neighbour's ink dropped.
+
+    Cells are blob bounding boxes and neighbouring boxes overlap: at full stride one
+    figure's front foot reaches past the next figure's rear foot. Finding them by blob is
+    right -- a blob is not fooled by overlap -- but the box is then cropped as a rectangle,
+    and the rectangle brings the neighbour's toe with it. `find_sheet_cells` said
+    overlapping boxes do not fool it, which was only ever true of FINDING them; its own
+    note from 2026-08-30 records a frame that "lost its front foot", and the same symptom
+    came back on 2026-09-07.
+
+    Measured that day on a wide-strided half: cell 1 carried 406 px of cell 2 and cell 2
+    carried 221 px of cell 1. In the video the stowaway read two ways -- a fragment
+    floating beside one frame, and in the next a sandal sliced flat by the crop edge --
+    so "the feet are cut" and "there is a speck" were one defect.
+
+    Ownership is per BLOB, not per pixel in the box: a blob belongs to whichever cell holds
+    most of it. Keeping only the biggest blob would delete a part of THIS figure that is
+    genuinely detached -- a headband tail, a loose strap -- so the only thing dropped is ink
+    another cell owns. The drop is grown by two pixels, because a keyed edge fades below the
+    labelling threshold and would otherwise leave a faint ghost of the toe; the growth is
+    held out of this cell's own blobs so it can never nibble the figure.
+
+    Returns None when nothing foreign reaches into the box, which is every ordinary sheet --
+    the caller crops as before and pays nothing.
+    """
+    key = (path, tuple(tuple(int(v) for v in c) for c in cells))
+    table = _CELL_OWN_CACHE.get(key)
+    if table is None:
+        if len(_CELL_OWN_CACHE) > 8:
+            _CELL_OWN_CACHE.clear()
+        lab = _label_blobs(np.asarray(load_sheet(path))[:, :, 3] > 16)
+        boxes = [tuple(int(v) for v in c) for c in cells]
+        owner = {}
+        for bid in np.unique(lab):
+            if bid == 0:
+                continue
+            m = lab == bid
+            best, best_n = None, 0
+            for j, (x0, y0, x1, y1) in enumerate(boxes):
+                n = int(m[y0:y1 + 1, x0:x1 + 1].sum())
+                if n > best_n:
+                    best, best_n = j, n
+            if best is not None:
+                owner[int(bid)] = best
+        table = {}
+        for j, (x0, y0, x1, y1) in enumerate(boxes):
+            sub = lab[y0:y1 + 1, x0:x1 + 1]
+            alien = np.zeros(sub.shape, bool)
+            mine = np.zeros(sub.shape, bool)
+            for bid, own in owner.items():
+                (alien if own != j else mine)[sub == bid] = True
+            if not alien.any():
+                table[boxes[j]] = None
+                continue
+            for _ in range(2):
+                grown = alien.copy()
+                grown[1:] |= alien[:-1]
+                grown[:-1] |= alien[1:]
+                grown[:, 1:] |= alien[:, :-1]
+                grown[:, :-1] |= alien[:, 1:]
+                alien = grown & ~mine
+            table[boxes[j]] = ~alien
+        _CELL_OWN_CACHE[key] = table
+    return table.get(tuple(int(v) for v in cell))
+
+
+def sheet_cell_own_mask(sh, cell_i):
+    """`cell_own_mask` for frame `cell_i` of a saved sheet, whichever file it was drawn on."""
+    of = sh.get("cellOf") or [0] * len(sh["cells"])
+    idx = of[cell_i] if cell_i < len(of) else 0
+    same = [c for c, o in zip(sh["cells"], of) if o == idx]
+    return cell_own_mask(_sheet_file(sh, cell_i), same, sh["cells"][cell_i])
 
 
 def _cutout_piece(q, crop=None):
@@ -2704,6 +2786,11 @@ class Scene:
         x0, y0, x1, y1 = cells[cell_i]
         src = self._sheet_image(_sheet_file(sh, cell_i))
         piece = src.crop((x0, y0, x1 + 1, y1 + 1))
+        own = sheet_cell_own_mask(sh, cell_i)
+        if own is not None:
+            piece.putalpha(ImageChops.multiply(
+                piece.getchannel("A"),
+                Image.fromarray(own.astype(np.uint8) * 255, "L")))
         if sh.get("halfCycle"):
             # Second pass, other leg. The masks are read once per cell and kept: the
             # same drawing comes back every cycle, and labelling it per video frame
@@ -3538,7 +3625,13 @@ def _sheet_masks(medias, cells, cell_of):
     for idx, (x0, y0, x1, y1) in zip(cell_of, cells):
         if idx not in loaded:
             loaded[idx] = np.asarray(load_sheet(medias[idx]))[:, :, 3] > 16
-        out.append(loaded[idx][y0:y1 + 1, x0:x1 + 1])
+        m = loaded[idx][y0:y1 + 1, x0:x1 + 1]
+        # A ruler reads a cell the way the render draws it, or a neighbour's toe inside
+        # this box becomes this frame's widest foot and the stride reads long.
+        own = cell_own_mask(medias[idx],
+                            [c for c, o in zip(cells, cell_of) if o == idx],
+                            (x0, y0, x1, y1))
+        out.append(m & own if own is not None else m)
     return out
 
 
@@ -5592,6 +5685,62 @@ def action_selftest():
         key_note = f"{type(e).__name__}: {e}"
     ck("a flat backdrop is keyed to alpha; a big enclosed area is kept, a tiny one is not",
        "keyed cells=2 belly>240 pocket<40 gradient-untouched=True", key_note, key_ok)
+
+    # Two cells whose boxes overlap, both ways. The neighbour's ink is dropped from this
+    # cell, and a part of THIS figure that is genuinely detached is kept -- keeping only
+    # the biggest blob would pass the first half and delete a headband tail.
+    ow_note, ow_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        op = os.path.join(OUT_DIR, "selftest-overlap.png")
+        ov = Image.new("RGB", (500, 200), (250, 250, 250))
+        od = ImageDraw.Draw(ov)
+        # Figure 1 with a front foot reaching right at mid height (a swing leg)...
+        od.ellipse([60, 40, 160, 150], fill=(40, 50, 90))
+        od.rectangle([150, 96, 270, 112], fill=(40, 50, 90))
+        od.ellipse([180, 50, 200, 64], fill=(40, 50, 90))      # detached, and his own
+        # ...and figure 2 whose planted rear foot starts further left than that reaches.
+        od.ellipse([300, 40, 400, 150], fill=(40, 50, 90))
+        od.rectangle([258, 140, 310, 152], fill=(40, 50, 90))
+        ov.save(op)
+        ov_cells = find_sheet_cells(op)
+        ov_lab = _label_blobs(np.asarray(load_sheet(op))[:, :, 3] > 16)
+        x0, y0, x1, y1 = ov_cells[0]
+        own1 = cell_own_mask(op, ov_cells, ov_cells[0])
+        sub = ov_lab[y0:y1 + 1, x0:x1 + 1]
+        # Foreign means "owned by the OTHER CELL", not "not the biggest blob here" -- the
+        # first canary written said the latter and counted his own detached tail as a
+        # stowaway, which is the very thing the second half of this check defends.
+        b2 = ov_cells[1]
+        sub2 = ov_lab[b2[1]:b2[3] + 1, b2[0]:b2[2] + 1]
+        ids2, cnt2 = np.unique(sub2[sub2 > 0], return_counts=True)
+        other_id = int(ids2[int(np.argmax(cnt2))])
+        boxes_overlap = ov_cells[1][0] <= ov_cells[0][2]
+        alien_before = int((sub == other_id).sum())
+        alien_after = int(((sub == other_id) & own1).sum()) if own1 is not None else -1
+        # The tail is a blob of his own inside his own box: it has to survive.
+        tail_kept = bool(own1[57 - y0, 190 - x0]) if own1 is not None else False
+        # And a sheet whose boxes do not overlap pays nothing at all.
+        sp = os.path.join(OUT_DIR, "selftest-nooverlap.png")
+        sep = Image.new("RGB", (500, 200), (250, 250, 250))
+        sd = ImageDraw.Draw(sep)
+        for cx in (110, 380):
+            sd.ellipse([cx - 50, 40, cx + 50, 150], fill=(40, 50, 90))
+        sep.save(sp)
+        sep_cells = find_sheet_cells(sp)
+        sep_none = cell_own_mask(sp, sep_cells, sep_cells[0]) is None
+        ow_note = (f"boxes-overlap={boxes_overlap} foreign {alien_before}->{alien_after} "
+                   f"own-detached-kept={tail_kept} untouched-sheet-none={sep_none}")
+        ow_ok = (boxes_overlap and alien_before > 50 and alien_after == 0
+                 and tail_kept and sep_none)
+        os.remove(op)
+        os.remove(sp)
+    except Exception as e:  # noqa: BLE001
+        ow_note = f"{type(e).__name__}: {e}"
+    ck("an overlapping cell box drops the neighbour's ink and keeps its own detached parts",
+       "overlap=True foreign>50->0 own-detached-kept=True untouched-none=True",
+       ow_note, ow_ok)
+
 
     # Frames drawn on separate canvases, both ways. Two sheets whose figures came back at
     # different sizes are put on one; a single sheet is left exactly as drawn, because there
