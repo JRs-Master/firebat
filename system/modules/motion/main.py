@@ -994,50 +994,84 @@ def _label_blobs(mask):
 def _far_leg_masks(piece):
     """The rear and the front leg of one drawn frame, or None when they are together.
 
-    A side view drawn without far-side shading gives both legs the same colour, so
-    the only thing saying which leg is nearer is which one is drawn on top where they
-    cross -- and that is the SAME leg in every frame this generator makes. Half a
-    cycle played twice therefore reads as one leg stepping out every time (observed
-    2026-09-07 on the shipped walk). The cue the drawing lacks is supplied here, and
-    swapping which leg gets it between the two passes is what turns one set of
-    drawings into both halves of the cycle.
+    A side view drawn without far-side shading gives both legs the same colour, so the
+    only thing saying which one is nearer is which is drawn on top where they cross --
+    and that is the SAME leg in every frame this generator makes. Eight ways of asking
+    for the other half came back as the same half (2026-09-07), so the cue is supplied
+    here instead, and swapping which leg gets it between the two passes turns one set
+    of drawings into both halves of the cycle.
 
-    The figure faces right, so the rear leg is the one whose sole sits further left.
-    At a passing the legs are one blob and there is nothing to part -- which is also
-    the moment depth does not read -- so that frame is returned as None and left alone.
+    Parted from the FEET UPWARD, not by labelling the region below the crotch: the two
+    trouser legs go on touching well below the point where the silhouette first parts,
+    so a connected-component read returns one blob and a crumb (measured on the shipped
+    sheet: 49,229 px against 996). The soles are two separate runs -- that is the one
+    place the drawing always separates them -- so they seed the walk up, and a row where
+    the legs touch is cut between the two columns being tracked.
+
+    The figure faces right, so the rear leg is the one whose sole sits further left. At
+    a passing the feet are one run and there is nothing to part -- which is also the
+    moment depth does not read -- so the frame comes back None and is left alone.
     """
     a = np.asarray(piece.convert("RGBA"))
     m = a[:, :, 3] > 128
     h, w = m.shape
-    split = None
+    if h < 8 or w < 4:
+        return None
+    crotch = None
     for y in range(int(h * 0.45), int(h * 0.92)):
-        runs, prev = 0, False
-        for v in m[y]:
-            if v and not prev:
-                runs += 1
-            prev = v
-        if runs >= 2:
-            split = y
+        if len(_row_runs(m[y])) >= 2:
+            crotch = y
             break
-    if split is None:
+    if crotch is None:
         return None
-    lab = _label_blobs(m[split:])
-    ids = [int(k) for k in np.unique(lab) if k and (lab == k).sum() >= 0.004 * h * w]
-    if len(ids) < 2:
+    sole = None
+    for y in range(h - 1, crotch, -1):
+        if len(_row_runs(m[y])) >= 2:
+            sole = y
+            break
+    if sole is None:
         return None
-    ids.sort(key=lambda k: -int((lab == k).sum()))
-    feet = []
-    for k in ids[:2]:
-        ys, xs = np.where(lab == k)
-        sole = ys.max()
-        feet.append((float(xs[ys >= sole - max(2, int(h * 0.02))].mean()), k))
-    feet.sort()
-    out = []
-    for _, k in feet:
-        full = np.zeros((h, w), bool)
-        full[split:] = (lab == k)
-        out.append(full)
-    return out[0], out[1]
+    runs = _row_runs(m[sole])
+    cx = [(runs[0][0] + runs[0][1]) / 2.0, (runs[-1][0] + runs[-1][1]) / 2.0]
+    rear = np.zeros((h, w), bool)
+    front = np.zeros((h, w), bool)
+    for y in range(sole, crotch - 1, -1):
+        rr = _row_runs(m[y])
+        if not rr:
+            continue
+        if len(rr) >= 2:
+            # nearest run to each tracked column; the same run may serve both only
+            # if one leg has genuinely vanished behind the other, which is a passing
+            near = [min(rr, key=lambda r: abs((r[0] + r[1]) / 2.0 - c)) for c in cx]
+            if near[0] == near[1]:
+                rr = [near[0]]
+            else:
+                for k, (p0, p1) in enumerate(near):
+                    (rear if k == 0 else front)[y, p0:p1 + 1] = True
+                    cx[k] = (p0 + p1) / 2.0
+                continue
+        p0, p1 = rr[0]
+        cut = int(round(min(max(sum(cx) / 2.0, p0 + 1), p1)))
+        rear[y, p0:cut] = True
+        front[y, cut:p1 + 1] = True
+        cx = [(p0 + cut - 1) / 2.0, (cut + p1) / 2.0]
+    if rear.sum() < 0.002 * h * w or front.sum() < 0.002 * h * w:
+        return None
+    return rear, front
+
+
+def _row_runs(row):
+    """The runs of set pixels in one scanline, as [(start, end)] inclusive."""
+    out, st = [], None
+    for i, v in enumerate(row):
+        if v and st is None:
+            st = i
+        elif not v and st is not None:
+            out.append((st, i - 1))
+            st = None
+    if st is not None:
+        out.append((st, len(row) - 1))
+    return out
 
 
 # Chebyshev distance from the backdrop colour: at or under _KEY_NEAR is
@@ -2682,12 +2716,25 @@ class Scene:
                 lcache[key] = _far_leg_masks(piece)
             legs = lcache[key]
             if legs is not None:
-                far = legs[(i // len(order)) % 2]
-                arr = np.asarray(piece.convert("RGBA")).astype(np.int16)
+                pass_i = (i // len(order)) % 2
+                far, near = legs[pass_i], legs[1 - pass_i]
+                arr = np.asarray(piece.convert("RGBA")).astype(np.float32)
+                # EVEN THEM UP FIRST. The drawing already shades by pose -- whatever
+                # is behind him goes a little darker -- so darkening the far leg on
+                # top of that leaves the second pass with two dark legs and no cue at
+                # all. Lift the dimmer leg to the brighter one, then the only reason
+                # either is dark is this.
+                fa = arr[..., :3][far]
+                ne = arr[..., :3][near]
+                if fa.size and ne.size:
+                    lo, hi = fa.mean(), ne.mean()
+                    dim, bright = (far, hi / max(1.0, lo)) if lo < hi else (
+                        near, lo / max(1.0, hi))
+                    arr[..., :3] = np.where(dim[..., None],
+                                            arr[..., :3] * min(bright, 1.35),
+                                            arr[..., :3])
                 k = float(sh.get("farShade") or 0.8)
-                arr[..., :3] = np.where(far[..., None],
-                                        (arr[..., :3] * k).astype(np.int16),
-                                        arr[..., :3])
+                arr[..., :3] = np.where(far[..., None], arr[..., :3] * k, arr[..., :3])
                 piece = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGBA")
         # Frames drawn on separate canvases come back at separate sizes; cellScale puts them
         # back on one. It is 1.0 for every cell of a single-sheet action, where a height
