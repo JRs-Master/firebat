@@ -991,6 +991,55 @@ def _label_blobs(mask):
     return flat[lab]
 
 
+def _far_leg_masks(piece):
+    """The rear and the front leg of one drawn frame, or None when they are together.
+
+    A side view drawn without far-side shading gives both legs the same colour, so
+    the only thing saying which leg is nearer is which one is drawn on top where they
+    cross -- and that is the SAME leg in every frame this generator makes. Half a
+    cycle played twice therefore reads as one leg stepping out every time (observed
+    2026-09-07 on the shipped walk). The cue the drawing lacks is supplied here, and
+    swapping which leg gets it between the two passes is what turns one set of
+    drawings into both halves of the cycle.
+
+    The figure faces right, so the rear leg is the one whose sole sits further left.
+    At a passing the legs are one blob and there is nothing to part -- which is also
+    the moment depth does not read -- so that frame is returned as None and left alone.
+    """
+    a = np.asarray(piece.convert("RGBA"))
+    m = a[:, :, 3] > 128
+    h, w = m.shape
+    split = None
+    for y in range(int(h * 0.45), int(h * 0.92)):
+        runs, prev = 0, False
+        for v in m[y]:
+            if v and not prev:
+                runs += 1
+            prev = v
+        if runs >= 2:
+            split = y
+            break
+    if split is None:
+        return None
+    lab = _label_blobs(m[split:])
+    ids = [int(k) for k in np.unique(lab) if k and (lab == k).sum() >= 0.004 * h * w]
+    if len(ids) < 2:
+        return None
+    ids.sort(key=lambda k: -int((lab == k).sum()))
+    feet = []
+    for k in ids[:2]:
+        ys, xs = np.where(lab == k)
+        sole = ys.max()
+        feet.append((float(xs[ys >= sole - max(2, int(h * 0.02))].mean()), k))
+    feet.sort()
+    out = []
+    for _, k in feet:
+        full = np.zeros((h, w), bool)
+        full[split:] = (lab == k)
+        out.append(full)
+    return out[0], out[1]
+
+
 # Chebyshev distance from the backdrop colour: at or under _KEY_NEAR is
 # background, at or over _KEY_FAR is drawing, between the two is the
 # anti-aliased edge and gets partial alpha.
@@ -2621,6 +2670,25 @@ class Scene:
         x0, y0, x1, y1 = cells[cell_i]
         src = self._sheet_image(_sheet_file(sh, cell_i))
         piece = src.crop((x0, y0, x1 + 1, y1 + 1))
+        if sh.get("halfCycle"):
+            # Second pass, other leg. The masks are read once per cell and kept: the
+            # same drawing comes back every cycle, and labelling it per video frame
+            # would cost more than the render.
+            lcache = getattr(self, "_legs_cache", None)
+            if lcache is None:
+                lcache = self._legs_cache = {}
+            key = (id(sh), cell_i)
+            if key not in lcache:
+                lcache[key] = _far_leg_masks(piece)
+            legs = lcache[key]
+            if legs is not None:
+                far = legs[(i // len(order)) % 2]
+                arr = np.asarray(piece.convert("RGBA")).astype(np.int16)
+                k = float(sh.get("farShade") or 0.8)
+                arr[..., :3] = np.where(far[..., None],
+                                        (arr[..., :3] * k).astype(np.int16),
+                                        arr[..., :3])
+                piece = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGBA")
         # Frames drawn on separate canvases come back at separate sizes; cellScale puts them
         # back on one. It is 1.0 for every cell of a single-sheet action, where a height
         # difference is the pose and has to survive.
@@ -2708,7 +2776,10 @@ class Scene:
         # and nothing skates. dir -1 walks back the way the drawing faces.
         # `i` and not `t`: the position steps with the drawing (see _travel_x).
         if travel and sh.get("stride"):
-            per_cycle = 2.0 * sh["stride"] * (tall * scale)
+            # One pass of the frames list covers one step when the list is half a
+            # cycle, and two when it is the whole one.
+            per_cycle = ((1.0 if sh.get("halfCycle") else 2.0)
+                         * sh["stride"] * (tall * scale))
             x = x + _travel_x(sh, i, per_cycle, travel)
         px = int(x - anchor_x)
         # A contact shadow is what sets a character ON the ground rather than in front
@@ -4102,6 +4173,13 @@ def validate_sheets(sheets):
             "order": order,
             "fps": _num(spec.get("fps", 12), f"sheets[{a}].fps", 1, 30),
             "loop": bool(spec.get("loop", True)),
+            # The frames list is one STEP, not a cycle. Played twice it becomes the
+            # cycle: the far leg is shaded and the two passes shade opposite legs, and
+            # the ground advances one stride a pass instead of two. Without it a
+            # half-cycle sheet walks at double speed and steps out with the same leg
+            # every time.
+            "halfCycle": bool(spec.get("halfCycle", False)),
+            "farShade": _num(spec.get("farShade", 0.8), f"sheets[{a}].farShade", 0.5, 1.0),
             # How far the feet travel across this action, measured off the drawings.
             # A walker whose translation is guessed by hand skates: the ground moves at
             # one speed and the legs at another, and the eye reads it instantly as a
@@ -5867,6 +5945,81 @@ def action_selftest():
         st_note = f"{type(e).__name__}: {e}"
     ck("the stride is the step the drawings take, not the gap between the feet",
        "centre to centre, and clear of the gap", st_note, st_ok)
+
+    # A half-cycle sheet has to come out of the player as a WHOLE cycle: the far leg
+    # shaded, the two passes shading opposite legs, and the ground advancing one stride
+    # a pass. Both directions are checked -- a frame whose legs are together must be
+    # left alone, or the "far leg" would be whatever the labeller happened to find.
+    hc_note, hc_ok = "", False
+    try:
+        hp = os.path.join(OUT_DIR, "selftest-half.png")
+        imh = Image.new("RGBA", (660, 320), (0, 0, 0, 0))
+        gh = ImageDraw.Draw(imh)
+        for k, cx in enumerate((110, 330, 550)):
+            gh.ellipse([cx - 34, 30, cx + 34, 150], fill=(90, 110, 170, 255))
+            spread = 46 if k != 1 else 0          # middle frame = a passing
+            for s_ in ((-spread, spread) if spread else (0,)):
+                gh.polygon([(cx - 8, 145), (cx + 8, 145),
+                            (cx + s_ + 12, 300), (cx + s_ - 12, 300)],
+                           fill=(90, 110, 170, 255))
+        imh.save(hp)
+        sv = action_save_asset({"action": "save_asset", "name": "selftest-half",
+                                "sheets": {"walk": {"media": hp, "fps": 4,
+                                                    "halfCycle": True}}})
+        decl = json.load(open(_asset_path("selftest-half"), encoding="utf-8"))
+        shh = decl["sheets"]["walk"]
+        # the parting frames give two legs, the passing frame gives none
+        src = load_sheet(_sheet_file(shh, 0))
+        c0 = shh["cells"][0]
+        legs = _far_leg_masks(src.crop((c0[0], c0[1], c0[2] + 1, c0[3] + 1)))
+        c1 = shh["cells"][1]
+        together = _far_leg_masks(src.crop((c1[0], c1[1], c1[2] + 1, c1[3] + 1)))
+        rear_x = float(np.where(legs[0].any(0))[0].mean())
+        front_x = float(np.where(legs[1].any(0))[0].mean())
+        # the player darkens a different leg on each pass
+        sc = Scene({"duration": 1.6, "fps": 12, "size": "1080x1080",
+                    "background": {"kind": "gradient", "top": [255, 255, 255],
+                                   "bottom": [255, 255, 255]},
+                    "layers": [{"kind": "sprite", "name": "selftest-half",
+                                "at": [0.5, 0.9], "from": 0, "to": 1.6,
+                                "fadeIn": 0, "fadeOut": 0,
+                                "plays": [{"action": "walk", "at": 0, "for": 1.6}]}]})
+        # cell 2 on each pass: three drawings at 4fps, so the second pass starts at 0.75
+        f_a = np.asarray(sc.draw_frame(0.50))[:, :, :3].astype(int)
+        f_b = np.asarray(sc.draw_frame(1.25))[:, :, :3].astype(int)
+        half_w = f_a.shape[1] // 2
+        da = f_a[:, :half_w].sum() - f_a[:, half_w:].sum()
+        db = f_b[:, :half_w].sum() - f_b[:, half_w:].sum()
+        action_delete_asset({"name": "selftest-half"})
+        hc_ok = (together is None and rear_x < front_x
+                 and shh["halfCycle"] is True and (da > 0) != (db > 0))
+        hc_note = ("passing untouched=%s rear %.0f < front %.0f | darker side flips %s -> %s"
+                   % (together is None, rear_x, front_x,
+                      "left" if da < 0 else "right", "left" if db < 0 else "right"))
+    except Exception as e:                                   # pragma: no cover
+        hc_note = "%s: %s" % (type(e).__name__, e)
+    ck("half a cycle played twice comes out as a whole one, the far leg swapping",
+       "passing left alone, and the shaded leg on the other side second time round",
+       hc_note, hc_ok)
+
+    # And the ground has to slow to match: one pass of a half-cycle list is one step.
+    tv_note, tv_ok = "", False
+    try:
+        base = {"cells": [(0, 0, 9, 9)] * 4, "order": [0, 1, 2, 3], "stride": 0.4,
+                "fps": 8, "loop": True}
+        whole = dict(base)
+        halfs = dict(base, halfCycle=True)
+        per_whole = 2.0 * whole["stride"] * 500.0
+        per_half = (1.0 if halfs.get("halfCycle") else 2.0) * halfs["stride"] * 500.0
+        adv_whole = _travel_x(whole, 4, per_whole, 1)
+        adv_half = _travel_x(halfs, 4, per_half, 1)
+        tv_ok = abs(adv_whole - 400.0) < 1e-6 and abs(adv_half - 200.0) < 1e-6
+        tv_note = "one pass: whole-cycle list %.0fpx, half-cycle list %.0fpx" % (
+            adv_whole, adv_half)
+    except Exception as e:                                   # pragma: no cover
+        tv_note = "%s: %s" % (type(e).__name__, e)
+    ck("a half-cycle list covers one step of ground a pass, not two",
+       "half the travel of a whole-cycle list", tv_note, tv_ok)
 
     # Walk vs march, both ways: a cycle whose swing foot skims must pass silently,
     # and one that lifts the knee must be named. Checking only the bad direction
