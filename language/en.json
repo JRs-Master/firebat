@@ -977,6 +977,7 @@
     "copied": "Copied",
     "copy_failed": "Copy failed — please select and copy manually",
     "delete": "Delete",
+    "deleting": "Deleting…",
     "kind_all": "All",
     "kind_image": "Images",
     "kind_video": "Video",
@@ -1001,7 +1002,7 @@
     "kind_score": "Score",
     "kind_lyrics": "Lyrics",
     "score_listen": "Listen",
-    "score_rendering": "Rendering to audio… only the first time",
+    "score_rendering": "Making the audio… only the first time",
     "score_no_browser": "A browser cannot play a score on its own"
   },
   "module_settings": {

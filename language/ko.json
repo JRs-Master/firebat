@@ -977,6 +977,7 @@
     "copied": "복사됨",
     "copy_failed": "복사 실패 — 직접 선택해 복사해 주세요",
     "delete": "삭제",
+    "deleting": "삭제 중…",
     "kind_all": "전체",
     "kind_image": "이미지",
     "kind_video": "영상",
@@ -1001,7 +1002,7 @@
     "kind_score": "악보",
     "kind_lyrics": "가사",
     "score_listen": "들어보기",
-    "score_rendering": "소리로 굽는 중… 처음 한 번만 걸립니다",
+    "score_rendering": "소리 만드는 중… 처음 한 번만 걸립니다",
     "score_no_browser": "브라우저는 악보를 직접 재생하지 못합니다"
   },
   "module_settings": {

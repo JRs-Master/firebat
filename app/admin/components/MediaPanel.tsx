@@ -358,13 +358,21 @@ export function MediaPanel({
   });
   const selectedUsage = usageData?.success ? (usageData.data ?? []) : [];
 
+  // The box swaps under load and a delete can take ten seconds, so the button gets pressed
+  // twice. That second press is what produced the two different failure dialogs (measured
+  // 2026-09-08): the delete had already worked, but neither answer said so, so the card stayed
+  // and it got pressed again. The adapter now treats absence as the goal state; this keeps the
+  // second request from being sent at all, and says out loud that the first one is still going.
+  const [deleting, setDeleting] = useState<string | null>(null);
   const handleDelete = async (slug: string) => {
+    if (deleting) return;
     // Usage-aware confirm — an image set on pages gets the red warning plus the page list.
     const usage = selectedUsage;
     const msg = usage.length > 0
       ? t('media.delete_in_use', { count: usage.length, pages: usage.map(u => `  • /${u.pageSlug}`).join('\n') })
       : t('media.delete_confirm');
     if (!await confirmDialog({ title: t('media.delete_title'), message: msg, danger: true, okLabel: t('media.delete_ok') })) return;
+    setDeleting(slug);
     try {
       const data = await backend.remove(slug);
       if (data.success) {
@@ -379,6 +387,8 @@ export function MediaPanel({
       }
     } catch (err: any) {
       await alertDialog({ title: t('media.delete_failed'), message: err.message, danger: true });
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -606,6 +616,7 @@ export function MediaPanel({
           onNext={() => setSelectedIndex(i => (i !== null && i < items.length - 1 ? i + 1 : i))}
           onClose={() => setSelectedIndex(null)}
           onDelete={() => handleDelete(selected.slug)}
+          deleting={deleting === selected.slug}
           onRegenerate={() => handleRegenerate(selected.slug)}
           regenerating={regenerating}
           usage={selectedUsage}
@@ -616,7 +627,7 @@ export function MediaPanel({
 }
 
 function MediaDetailModal({
-  item, index, total, hasPrev, hasNext, onPrev, onNext, onClose, onDelete, onRegenerate, regenerating, usage,
+  item, index, total, hasPrev, hasNext, onPrev, onNext, onClose, onDelete, deleting, onRegenerate, regenerating, usage,
 }: {
   item: MediaItem;
   index: number;
@@ -627,6 +638,7 @@ function MediaDetailModal({
   onNext: () => void;
   onClose: () => void;
   onDelete: () => void;
+  deleting: boolean;
   onRegenerate: () => void;
   regenerating: boolean;
   /** Pages using this media — empty shows the not-used label. Auto-refreshed from the PageManager index. */
@@ -920,9 +932,12 @@ function MediaDetailModal({
               )}
               <button
                 onClick={onDelete}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors"
+                disabled={deleting}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors disabled:opacity-50"
               >
-                <Trash2 size={12} /> {t('media.delete')}
+                {deleting
+                  ? <><Loader2 size={12} className="animate-spin" /> {t('media.deleting')}</>
+                  : <><Trash2 size={12} /> {t('media.delete')}</>}
               </button>
             </div>
           </div>

@@ -25,6 +25,12 @@ use firebat_core::ports::{
 };
 use firebat_core::utils::timezone::resolve_tz;
 
+/// One sentence for "the record is not there", wherever the panel can reach it. The slug in the
+/// old message named a thing that by definition does not exist, and the reader is a person
+/// looking at a card, not someone who can act on a slug. Delete itself no longer reports this
+/// at all — reaching absence is what it was asked to do.
+const MEDIA_GONE: &str = "파일이 존재하지 않거나 이미 삭제되었습니다";
+
 pub struct LocalMediaAdapter {
     root: PathBuf,
     /// Slug dates are a calendar concept, so they resolve in the configured zone — without this
@@ -209,6 +215,45 @@ impl LocalMediaAdapter {
             format!("{date}-{rand4:04x}")
         } else {
             format!("{date}-{hint}-{rand4:04x}")
+        }
+    }
+
+    /// The derivative files this record declares as its own — the thumbnail and every
+    /// variant — as bare filenames.
+    ///
+    /// A record only ever owns names that begin with its own slug, so the guard is a rule and
+    /// not a suffix list: a malformed (or crafted) url cannot aim the unlink at a neighbour's
+    /// file or out of the directory. `read_declared_variant` already serves from this same
+    /// declaration — deleting from it keeps the two ends reading one source.
+    fn declared_derivatives(slug: &str, record: &MediaFileRecord) -> Vec<String> {
+        let prefix = format!("{slug}-");
+        let mut names: Vec<String> = Vec::new();
+        for url in record
+            .thumbnail_url
+            .iter()
+            .map(String::as_str)
+            .chain(record.variants.iter().map(|v| v.url.as_str()))
+        {
+            let Some(name) = url.rsplit('/').next() else {
+                continue;
+            };
+            if !name.starts_with(&prefix) || name.contains("..") {
+                continue;
+            }
+            if !names.iter().any(|n| n == name) {
+                names.push(name.to_string());
+            }
+        }
+        names
+    }
+
+    /// The meta file IS the record's existence, so unlinking one that is already gone landed on
+    /// the outcome we asked for. Every other error still surfaces.
+    async fn unlink_meta(path: &Path) -> InfraResult<()> {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("media meta 삭제 실패: {e}")),
         }
     }
 
@@ -481,18 +526,24 @@ impl IMediaPort for LocalMediaAdapter {
         Ok(self.find_record(slug).await.map(|(_, r)| r))
     }
 
+    /// Deleting is idempotent — absence is the state the caller asked for, so arriving at it
+    /// twice is not a failure.
+    ///
+    /// The panel double-fires when the box is slow, and the second call used to land in one of
+    /// two windows: after the first finished (no record → "미존재") or between the lookup and
+    /// the meta unlink (ENOENT → "media meta 삭제 실패"). Two sentences for one delete that had
+    /// already succeeded, and neither was a success, so the card stayed and the user clicked
+    /// again. Both windows close here.
     async fn remove(&self, slug: &str) -> InfraResult<()> {
         let Some((scope, record)) = self.find_record(slug).await else {
-            return Err(format!("media slug={} 미존재", slug));
+            return Ok(());
         };
-        let bin_path = self.binary_path(scope, slug, &record.ext);
-        let _ = tokio::fs::remove_file(&bin_path).await;
-        let meta_path = self.meta_path(scope, slug);
-        tokio::fs::remove_file(&meta_path)
-            .await
-            .map_err(|e| format!("media meta 삭제 실패: {e}"))?;
-        // variants 파일도 정리 — Phase B-15+ variant suffix 설정된 후 강화
-        Ok(())
+        let dir = self.scope_dir(scope);
+        let _ = tokio::fs::remove_file(dir.join(format!("{slug}.{}", record.ext))).await;
+        for name in Self::declared_derivatives(slug, &record) {
+            let _ = tokio::fs::remove_file(dir.join(name)).await;
+        }
+        Self::unlink_meta(&self.meta_path(scope, slug)).await
     }
 
     async fn stat_owned(&self, slug: &str, hub_owner: &str) -> InfraResult<Option<MediaFileRecord>> {
@@ -506,10 +557,10 @@ impl IMediaPort for LocalMediaAdapter {
         };
         let dir = self.effective_dir(MediaScope::User, Some(hub_owner));
         let _ = tokio::fs::remove_file(dir.join(format!("{slug}.{}", record.ext))).await;
-        tokio::fs::remove_file(dir.join(format!("{slug}.meta.json")))
-            .await
-            .map_err(|e| format!("media meta 삭제 실패: {e}"))?;
-        Ok(())
+        for name in Self::declared_derivatives(slug, &record) {
+            let _ = tokio::fs::remove_file(dir.join(name)).await;
+        }
+        Self::unlink_meta(&dir.join(format!("{slug}.meta.json"))).await
     }
 
     async fn list(&self, opts: &MediaListOpts) -> InfraResult<MediaListResult> {
@@ -596,7 +647,7 @@ impl IMediaPort for LocalMediaAdapter {
 
     async fn update_meta(&self, slug: &str, patch: &serde_json::Value) -> InfraResult<()> {
         let Some((scope, record)) = self.find_record(slug).await else {
-            return Err(format!("media slug={} 미존재", slug));
+            return Err(MEDIA_GONE.to_string());
         };
         // record JSON 으로 변환 → patch 머지 → 다시 record (typed serde 보존)
         let mut record_value = serde_json::to_value(&record)
@@ -629,7 +680,7 @@ impl IMediaPort for LocalMediaAdapter {
 
         // 기존 record 로드 — meta 설정되어 있어야 finalize 가능 (placeholder 가 설정한 상태)
         let Some((found_scope, mut record)) = self.find_record(slug).await else {
-            return Err(format!("finalize_base: media slug={} 미존재", slug));
+            return Err(format!("finalize_base: {MEDIA_GONE}"));
         };
         if found_scope != scope_enum {
             return Err(format!(
