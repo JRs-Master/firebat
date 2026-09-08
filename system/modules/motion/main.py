@@ -2576,24 +2576,31 @@ class Scene:
             cur, curw = [], 0.0
 
         for ci, ch in enumerate(chunks):
+            # Off `flow`, a span OWNS its lines: the break before and after it is the
+            # grammatical boundary. Putting that rule only on the fits-whole branch
+            # left the wrapping branch packing the next span onto the tail of this one
+            # -- measured on a lesson where three of five spans were wide enough to
+            # wrap, and two lines came out holding half of one span and half of
+            # another, which is the boundary this layer exists to make visible.
+            if cur and not flow:
+                flush()
             whole = d.textlength(ch["text"], font=f)
             if whole <= cw:
-                # A grammatical span belongs on one line. If it will not fit on this
-                # one it starts the next, rather than breaking where the box happens
-                # to end -- a boundary the reader would mistake for the grammar.
-                if cur and (not flow or curw + space + whole > cw):
+                if cur and curw + space + whole > cw:
                     flush()
                 cur.append((ci, ch["text"], whole))
                 curw += whole if len(cur) == 1 else space + whole
-                continue
-            for wd in str(ch["text"]).split():        # wider than the box: wrap it
-                ww = d.textlength(wd, font=f)
-                adv = ww if not cur else space + ww
-                if cur and curw + adv > cw:
-                    flush()
-                    adv = ww
-                cur.append((ci, wd, ww))
-                curw += adv
+            else:
+                for wd in str(ch["text"]).split():    # wider than the box: wrap it
+                    ww = d.textlength(wd, font=f)
+                    adv = ww if not cur else space + ww
+                    if cur and curw + adv > cw:
+                        flush()
+                        adv = ww
+                    cur.append((ci, wd, ww))
+                    curw += adv
+            if not flow:
+                flush()
         flush()
 
         # A wrapped span is labelled once, under the LAST line it reaches -- that is
@@ -5557,6 +5564,20 @@ def action_selftest():
     ck("a wrapped span is labelled once, not once per line it crosses",
        "exactly one labelled row", nlab_rows,
        len(wl) > 1 and sum(nlab_rows) == 1 and nlab_rows[-1] == 1)
+
+    # Off `flow` a span owns its lines even when it has to wrap -- otherwise the
+    # next span lands on the tail of this one and the line break stops meaning
+    # anything. Every span here is wider than the narrow box, so all of them wrap.
+    owned = Scene({**wide, "layers": [
+        {"kind": "syntax", "from": 0, "to": 2, "at": [0.5, 0.15], "w": 0.30,
+         "size": "sm", "chunks": [
+             {"text": "the first span is long enough to wrap here", "role": "one"},
+             {"text": "the second span is also far too long", "role": "two"},
+             {"text": "and a third one that also wraps", "role": "three"}]}]})
+    olay = owned._syntax_layout(_sd, owned.layers[0])[0]
+    mixed = [len({c for c, _s, _x in sg}) for _y, _n, _r, sg, *_ in olay]
+    ck("off `flow`, no line mixes two spans -- not even one that had to wrap",
+       "1 span per line", mixed, len(olay) > 3 and all(m == 1 for m in mixed))
 
     ck("a syntax layer is read, so it lands inside the safe inset like the rest",
        "inset > 0", Scene(wide)._bounds("syntax")[0],
