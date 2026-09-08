@@ -2660,10 +2660,14 @@ class Scene:
         if not chunks:
             return
         lines, f, fl, llh, ss, bx0, bcw = self._syntax_layout(d, L)
-        rise = (1 - eob(clamp01((t - L["from"]) / 0.5))) * 26 * ss
+        # No entry rise. Every other text kind drops in, and this one must not: a
+        # lesson is several of these layers with different `active`, they cross-fade,
+        # and an arriving copy 26px above a settled one is the same sentence printed
+        # twice -- measured 2026-09-09 in a finished clip, every line ghosted for the
+        # 0.4s of each hand-off. The layer promises the text does not move; animating
+        # its own arrival is that promise breaking against itself.
         active = L.get("_active")
         for y, _nlab, runs, segs, labels in lines:
-            y += rise
             for ci, rx0, rx1 in runs:                 # marks, under the text
                 ch = chunks[ci]
                 if (active is not None and ci not in active) or ch["mark"] == "none":
@@ -5578,6 +5582,14 @@ def action_selftest():
     mixed = [len({c for c, _s, _x in sg}) for _y, _n, _r, sg, *_ in olay]
     ck("off `flow`, no line mixes two spans -- not even one that had to wrap",
        "1 span per line", mixed, len(olay) > 3 and all(m == 1 for m in mixed))
+
+    still = Scene({**wide, "layers": [
+        {"kind": "syntax", "from": 0, "to": 2, "at": [0.5, 0.2], "w": 0.7, "size": "sm",
+         "chunks": [{"text": "the subject", "role": "S"},
+                    {"text": "does not move", "role": "V"}]}]})
+    boxes = [still._ink_box(still.layers[0], t) for t in (0.12, 1.0, 1.95)]
+    ck("a syntax layer's ink is in the same place at every time in its window",
+       "one box", boxes, all(b is not None for b in boxes) and len(set(boxes)) == 1)
 
     ck("a syntax layer is read, so it lands inside the safe inset like the rest",
        "inset > 0", Scene(wide)._bounds("syntax")[0],
