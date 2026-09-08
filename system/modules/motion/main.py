@@ -2545,8 +2545,11 @@ class Scene:
         """Where every span of a syntax layer lands.
 
         Returns (lines, f, fl, llh, ss, x0, cw) where a line is
-        (y, nlab, runs=[(ci, x0, x1)..], segs=[(ci, text, x)..]); x0 and cw are the
-        block's own left edge and width, which is what a label is clamped to.
+        (y, nlab, runs=[(ci, x0, x1)..], segs=[(ci, text, x)..], labels) and `labels`
+        is the subset of runs that carries the span's role/note -- a span that wrapped
+        has a run on every line it crosses, and printing the label under each of them
+        says the same thing twice. x0 and cw are the block's own left edge and width,
+        which is what a label is clamped to.
 
         Split out of the drawing so the reveal test and the render read ONE layout: a
         test that re-derived the packing would go green on a broken renderer.
@@ -2593,9 +2596,16 @@ class Scene:
                 curw += adv
         flush()
 
+        # A wrapped span is labelled once, under the LAST line it reaches -- that is
+        # where the span ends, so the label reads as belonging to the whole of it.
+        last = {}
+        for li, ln in enumerate(packed):
+            for ci, _s, _w in ln:
+                last[ci] = li
+
         cx, y = self._at(L, [0.5, 0.20])
         x0, out = cx - cw / 2, []
-        for ln in packed:
+        for li, ln in enumerate(packed):
             runs, segs, x = [], [], x0
             for ci, seg, w in ln:
                 segs.append((ci, seg, x))
@@ -2609,11 +2619,16 @@ class Scene:
             # Label height is reserved for every span that DECLARES one, whether or
             # not it is the active one -- otherwise the sentence re-flows each time
             # the spotlight moves, which is the drift this layer exists to stop.
-            nlab = 0
-            for ci, _s, _w in ln:
+            labels, nlab = [], 0
+            for ci, rx0, rx1 in runs:
+                if last[ci] != li:
+                    continue
                 ch = chunks[ci]
+                if not (ch.get("role") or ch.get("note")):
+                    continue
+                labels.append((ci, rx0, rx1))
                 nlab = max(nlab, bool(ch.get("role")) + bool(ch.get("note")))
-            out.append((y, nlab, runs, segs))
+            out.append((y, nlab, runs, segs, labels))
             y += lh + nlab * llh
         return out, f, fl, llh, self.ss, x0, cw
 
@@ -2640,7 +2655,7 @@ class Scene:
         lines, f, fl, llh, ss, bx0, bcw = self._syntax_layout(d, L)
         rise = (1 - eob(clamp01((t - L["from"]) / 0.5))) * 26 * ss
         active = L.get("_active")
-        for y, _nlab, runs, segs in lines:
+        for y, _nlab, runs, segs, labels in lines:
             y += rise
             for ci, rx0, rx1 in runs:                 # marks, under the text
                 ch = chunks[ci]
@@ -2661,7 +2676,7 @@ class Scene:
                 col = self._color(ch.get("color"), INK) if on else DIM
                 self._shadow_text(d, (xx, y), seg, f, col, a)
             ly = y + f.size * 1.26
-            for ci, rx0, rx1 in runs:                 # role / note under the run
+            for ci, rx0, rx1 in labels:               # role / note under the run
                 ch = chunks[ci]
                 if active is not None and ci not in active:
                     continue
@@ -5504,7 +5519,7 @@ def action_selftest():
     def sx_geom(sc):
         lay = sc._syntax_layout(_sd, sc.layers[0])[0]
         return [(round(y, 1), n, [(c, round(x0, 1), round(x1, 1)) for c, x0, x1 in r])
-                for y, n, r, _s in lay]
+                for y, n, r, *_ in lay]
 
     sx0, sx2 = sx_scene(0), sx_scene(2)
     ck("moving a syntax layer's `active` does not move one word of the sentence",
@@ -5516,7 +5531,7 @@ def action_selftest():
     # share a line, and that is what the first cut of this check confused.
     sx_all = sx_scene(None)
     sx_lay = sx_all._syntax_layout(_sd, sx_all.layers[0])[0]
-    sx_pairs = [(len(r), len({c for c, _s, _x in sg})) for _y, _n, r, sg in sx_lay]
+    sx_pairs = [(len(r), len({c for c, _s, _x in sg})) for _y, _n, r, sg, *_ in sx_lay]
     ck("a span's words are ONE run, so its underline is not dashed at the spaces",
        "runs == spans on every line", sx_pairs,
        bool(sx_pairs) and all(a == b for a, b in sx_pairs))
@@ -5526,8 +5541,23 @@ def action_selftest():
                                            "box so it has to wrap across lines"}]}]})
     wlay = wrapped._syntax_layout(_sd, wrapped.layers[0])[0]
     ck("a span wider than the box wraps, and every line of it carries its own mark",
-       ">1 line, each with a run", [len(r) for _y, _n, r, _s in wlay],
-       len(wlay) > 1 and all(len(r) == 1 for _y, _n, r, _s in wlay))
+       ">1 line, each with a run", [len(r) for _y, _n, r, *_ in wlay],
+       len(wlay) > 1 and all(len(r) == 1 for _y, _n, r, *_ in wlay))
+    # A span that wrapped has a run on every line it crosses. Labelling each of them
+    # prints the role two or three times down the block, which is the bug that only
+    # shows up on a span long enough to wrap -- and the spans short enough to fit are
+    # the ones a first look at this layer uses.
+    wrapl = Scene({**wide, "layers": [
+        {"kind": "syntax", "from": 0, "to": 2, "at": [0.5, 0.3], "w": 0.32,
+         "size": "sm", "chunks": [{"text": "one span far too wide for this narrow "
+                                           "box so it has to wrap across lines",
+                                   "role": "the role", "note": "the note"}]}]})
+    wl = wrapl._syntax_layout(_sd, wrapl.layers[0])[0]
+    nlab_rows = [len(lab) for _y, _n, _r, _s, lab in wl]
+    ck("a wrapped span is labelled once, not once per line it crosses",
+       "exactly one labelled row", nlab_rows,
+       len(wl) > 1 and sum(nlab_rows) == 1 and nlab_rows[-1] == 1)
+
     ck("a syntax layer is read, so it lands inside the safe inset like the rest",
        "inset > 0", Scene(wide)._bounds("syntax")[0],
        Scene(wide)._bounds("syntax")[0] > 0)
