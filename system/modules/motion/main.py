@@ -1510,7 +1510,7 @@ class Scene:
             if kind not in ("sprite", "bubble", "title", "caption", "card", "list",
                             "image", "fireworks", "hearts", "confetti", "model3d",
                             "spark", "shake", "speedlines", "hpbar", "spritesheet",
-                            "math", "panel"):
+                            "math", "panel", "syntax"):
                 raise SceneError(
                     f"layers[{i}].kind {kind!r} is unknown — the assets action lists "
                     "every kind and its fields")
@@ -1532,6 +1532,43 @@ class Scene:
                 if len(tex) > TEXT_MAX:
                     raise SceneError(f"layers[{i}].tex exceeds {TEXT_MAX} chars")
                 L["tex"] = tex
+            if kind == "syntax":
+                chunks = L.get("chunks")
+                if not isinstance(chunks, list) or not chunks:
+                    raise SceneError(
+                        f"layers[{i}]: a syntax layer needs `chunks` -- the sentence "
+                        "cut into spans, e.g. chunks:[{text:'ties', role:'subject'}]")
+                if len(chunks) > 24:
+                    raise SceneError(f"layers[{i}].chunks must be at most 24")
+                cut = []
+                for j, ch in enumerate(chunks):
+                    if not isinstance(ch, dict):
+                        raise SceneError(
+                            f"layers[{i}].chunks[{j}] must be an object with `text`")
+                    txt = str(ch.get("text") or "").strip()
+                    if not txt:
+                        raise SceneError(f"layers[{i}].chunks[{j}] needs `text`")
+                    if len(txt) > TEXT_MAX:
+                        raise SceneError(
+                            f"layers[{i}].chunks[{j}].text exceeds {TEXT_MAX} chars")
+                    mark = str(ch.get("mark") or "underline")
+                    if mark not in ("underline", "fill", "none"):
+                        raise SceneError(
+                            f"layers[{i}].chunks[{j}].mark must be underline, fill "
+                            "or none")
+                    cut.append({"text": txt, "mark": mark,
+                                "role": str(ch.get("role") or ""),
+                                "note": str(ch.get("note") or ""),
+                                "color": ch.get("color")})
+                L["_chunks"] = cut
+                L["_w"] = _num(L.get("w", 0.86), f"layers[{i}].w", 0.3, 0.98)
+                act = L.get("active")
+                if act is None:
+                    L["_active"] = None
+                else:
+                    seq = act if isinstance(act, (list, tuple)) else [act]
+                    L["_active"] = {int(_num(v, f"layers[{i}].active", 0,
+                                             len(cut) - 1)) for v in seq}
             if kind == "image":
                 L["_path"] = media_path(L.get("media"))
             if kind == "spritesheet":
@@ -1711,6 +1748,9 @@ class Scene:
         for row in L.get("rows") or []:
             row = row or {}
             out += [str(row.get(k) or "") for k in ("label", "value", "lead", "text", "tag")]
+        for ch in L.get("chunks") or []:
+            if isinstance(ch, dict):
+                out += [str(ch.get(k) or "") for k in ("text", "role", "note")]
         return out
 
     def _launches(self, idx, L):
@@ -1908,7 +1948,7 @@ class Scene:
     # the shape the code below reads as "on purpose".
     SAFE_INSET = 0.045          # of the shorter axis, each side
     READABLE = frozenset(("math", "title", "caption", "card", "list", "bubble",
-                          "hpbar", "panel"))
+                          "hpbar", "panel", "syntax"))
 
     def _bounds(self, kind):
         """The rectangle this kind has to land inside: the bitmap for decoration, an
@@ -2500,6 +2540,144 @@ class Scene:
             mask = ImageChops.multiply(mask, band)
         self._frame_img.paste(im.convert("RGB"),
                               (int(cx - im.width / 2), int(cy - im.height / 2)), mask)
+
+    def _syntax_layout(self, d, L):
+        """Where every span of a syntax layer lands.
+
+        Returns (lines, f, fl, llh, ss, x0, cw) where a line is
+        (y, nlab, runs=[(ci, x0, x1)..], segs=[(ci, text, x)..]); x0 and cw are the
+        block's own left edge and width, which is what a label is clamped to.
+
+        Split out of the drawing so the reveal test and the render read ONE layout: a
+        test that re-derived the packing would go green on a broken renderer.
+        """
+        chunks = L.get("_chunks") or []
+        px = {"sm": 36, "md": 48, "lg": 62}.get(str(L.get("size") or "md"), 48)
+        f = self.fonts.get(px)
+        fl = self.fonts.get(max(12, int(px * 0.52)))
+        cw = self.SW * float(L.get("_w", 0.86))
+        space = d.textlength(" ", font=f)
+        lh, llh = f.size * 1.42, fl.size * 1.22
+
+        # A structure is read down a column: one span, one line, so the grammatical
+        # boundary is where the line ends. Packing spans onto a shared line is what
+        # the first cut did, and it put the subject at the tail of the clause before
+        # it -- exactly the boundary the lesson is trying to show. `flow: true` asks
+        # for running text instead, which is what a wide canvas wants.
+        flow = bool(L.get("flow"))
+        packed, cur, curw = [], [], 0.0
+        def flush():
+            nonlocal cur, curw
+            if cur:
+                packed.append(cur)
+            cur, curw = [], 0.0
+
+        for ci, ch in enumerate(chunks):
+            whole = d.textlength(ch["text"], font=f)
+            if whole <= cw:
+                # A grammatical span belongs on one line. If it will not fit on this
+                # one it starts the next, rather than breaking where the box happens
+                # to end -- a boundary the reader would mistake for the grammar.
+                if cur and (not flow or curw + space + whole > cw):
+                    flush()
+                cur.append((ci, ch["text"], whole))
+                curw += whole if len(cur) == 1 else space + whole
+                continue
+            for wd in str(ch["text"]).split():        # wider than the box: wrap it
+                ww = d.textlength(wd, font=f)
+                adv = ww if not cur else space + ww
+                if cur and curw + adv > cw:
+                    flush()
+                    adv = ww
+                cur.append((ci, wd, ww))
+                curw += adv
+        flush()
+
+        cx, y = self._at(L, [0.5, 0.20])
+        x0, out = cx - cw / 2, []
+        for ln in packed:
+            runs, segs, x = [], [], x0
+            for ci, seg, w in ln:
+                segs.append((ci, seg, x))
+                # Neighbouring words of the SAME span are one run, so an underline
+                # runs through its spaces instead of coming out dashed word by word.
+                if runs and runs[-1][0] == ci:
+                    runs[-1][2] = x + w
+                else:
+                    runs.append([ci, x, x + w])
+                x += w + space
+            # Label height is reserved for every span that DECLARES one, whether or
+            # not it is the active one -- otherwise the sentence re-flows each time
+            # the spotlight moves, which is the drift this layer exists to stop.
+            nlab = 0
+            for ci, _s, _w in ln:
+                ch = chunks[ci]
+                nlab = max(nlab, bool(ch.get("role")) + bool(ch.get("note")))
+            out.append((y, nlab, runs, segs))
+            y += lh + nlab * llh
+        return out, f, fl, llh, self.ss, x0, cw
+
+    def _draw_syntax(self, d, g, t, a, L):
+        """A sentence annotated IN PLACE -- each span underlined, its role named
+        directly beneath it.
+
+        Every other text kind here is a block: title colours whole LINES, panel and
+        card own the whole box. So "underline the subject and write the role under
+        it" had nowhere to live, and both ways of faking it fail for the same reason.
+        Colouring a whole line moves the grammatical boundary to wherever the line
+        happened to break -- measured 2026-09-08, a syntax lesson cut that way had to
+        put `ties` on a line of its own to make the subject visible, which is not
+        where the sentence breaks. Drawing the bar from the scene instead needs glyph
+        widths, and this module is the only thing that has them.
+
+        The reveal is declarative like every other layer: `active` names the span
+        being talked about and the rest go dim, so a lesson is several of these with
+        different `active` across the timeline and the text never moves between them.
+        """
+        chunks = L.get("_chunks") or []
+        if not chunks:
+            return
+        lines, f, fl, llh, ss, bx0, bcw = self._syntax_layout(d, L)
+        rise = (1 - eob(clamp01((t - L["from"]) / 0.5))) * 26 * ss
+        active = L.get("_active")
+        for y, _nlab, runs, segs in lines:
+            y += rise
+            for ci, rx0, rx1 in runs:                 # marks, under the text
+                ch = chunks[ci]
+                if (active is not None and ci not in active) or ch["mark"] == "none":
+                    continue
+                col = self._color(ch.get("color"), AMBER)
+                if ch["mark"] == "fill":
+                    d.rounded_rectangle([rx0 - 9 * ss, y - 5 * ss,
+                                         rx1 + 9 * ss, y + f.size + 7 * ss],
+                                        radius=11 * ss, fill=(*col, int(48 * a)))
+                else:
+                    uy = y + f.size * 1.11
+                    d.line([(rx0, uy), (rx1, uy)], fill=(*col, int(235 * a)),
+                           width=max(1, int(4 * ss)))
+            for ci, seg, xx in segs:
+                ch = chunks[ci]
+                on = active is None or ci in active
+                col = self._color(ch.get("color"), INK) if on else DIM
+                self._shadow_text(d, (xx, y), seg, f, col, a)
+            ly = y + f.size * 1.26
+            for ci, rx0, rx1 in runs:                 # role / note under the run
+                ch = chunks[ci]
+                if active is not None and ci not in active:
+                    continue
+                col = self._color(ch.get("color"), AMBER)
+                yy = ly
+                for txt, c in ((ch.get("role"), col), (ch.get("note"), DIM)):
+                    if not txt:
+                        continue
+                    tw = d.textlength(txt, font=fl)
+                    # A note can be wider than the span it names. Centred blindly it
+                    # hangs off the block, and the safe-area probe then moves the
+                    # whole SENTENCE to rescue a label -- measured 22px on the first
+                    # cut. The label gives way instead: it stays inside the box.
+                    lx = min(max((rx0 + rx1) / 2 - tw / 2, bx0), bx0 + bcw - tw)
+                    d.text((lx, yy), txt, font=fl, fill=(*c, int(255 * a)))
+                    yy += llh
 
     def _draw_panel(self, d, g, t, a, L):
         """A bordered block of LEFT-ALIGNED lines — a page of a document.
@@ -4664,7 +4842,9 @@ def action_assets(inp=None):
                        "at 1080 base), list (158px per row), title (the FIRST LINE's "
                        "top — the stack grows down by 1.28x each line's size, so a "
                        "three-line title with an xl line is ~275px tall), caption "
-                       "(the pill's text top), hpbar. CENTRE: math, image, bubble, "
+                       "(the pill's text top), hpbar, syntax (the first line's text "
+                       "top; the box is `w` wide, centred on at[0], and the text is "
+                       "LEFT-aligned inside it). CENTRE: math, image, bubble, "
                        "spark, hearts, confetti. THE FEET, i.e. the ground line: "
                        "sprite, model3d, spritesheet (default y 0.9). So a y that "
                        "reads like the middle of the frame puts the bottom of a "
@@ -4774,6 +4954,21 @@ def action_assets(inp=None):
                        "before it: default caption + a 3-row list is y 0.80 of room, "
                        "and content generally wants to stay inside y 0.08..0.92",
             "card": "{rows:[{label, value}], at?, w?, accent?} info card, slides in",
+            "syntax": "{chunks:[{text, role?, note?, mark?:'underline'|'fill'|'none', "
+                      "color?}..], at?, w?, size?:'sm'|'md'|'lg', active?, flow?} a "
+                      "sentence annotated IN PLACE — each span underlined for exactly "
+                      "its own width, with `role` (the part of speech / clause role) "
+                      "named directly under it and `note` (a meaning, a grammar point) "
+                      "on a second small line. THIS is how a sentence is taken apart: "
+                      "title colours whole LINES, so the boundary lands wherever the "
+                      "line broke rather than where the grammar does. One span per "
+                      "line by default, which reads as a column; flow:true packs them "
+                      "as running text. `active` is the index (or list of indices) "
+                      "being talked about — the rest go dim and lose their marks, so a "
+                      "lesson is several of these layers with different `active` and "
+                      "the text does not move between them, because label height is "
+                      "reserved for every span that declares one. A span wider than "
+                      "the box wraps and each of its lines keeps its own mark",
             "panel": "{lines:[<string>..], at?, w?, size?:'sm'|'md'|'lg', title?} a "
                      "bordered block of LEFT-ALIGNED lines — a page of a document. "
                      "`title` centres every line and `list` wraps each one in its own "
@@ -5287,6 +5482,56 @@ def action_selftest():
        "one left margin", pstarts,
        len(pstarts) >= 3 and max(pstarts) - min(pstarts) <= 3)
 
+    # `syntax` annotates a sentence in place: the span underlined, its role named
+    # under it. What has to hold is that the SENTENCE DOES NOT MOVE as the spotlight
+    # walks along it -- label height is reserved for every span that declares one,
+    # active or not. Colouring whole lines (the thing this replaces) could not hold
+    # that, because the boundary was wherever the line happened to break.
+    _sd = ImageDraw.Draw(Image.new("RGB", (8, 8)), "RGBA")
+    sx_chunks = [{"text": "As work becomes ever more standardised,",
+                  "role": "background"},
+                 {"text": "ties between service work and places",
+                  "role": "subject", "note": "a connection"},
+                 {"text": "can be disconnected.", "role": "verb"}]
+
+    def sx_scene(active, **kw):
+        L = {"kind": "syntax", "from": 0, "to": 2, "at": [0.5, 0.25], "w": 0.8,
+             "size": "sm", "chunks": sx_chunks}
+        if active is not None:
+            L["active"] = active
+        return Scene({**wide, "layers": [dict(L, **kw)]})
+
+    def sx_geom(sc):
+        lay = sc._syntax_layout(_sd, sc.layers[0])[0]
+        return [(round(y, 1), n, [(c, round(x0, 1), round(x1, 1)) for c, x0, x1 in r])
+                for y, n, r, _s in lay]
+
+    sx0, sx2 = sx_scene(0), sx_scene(2)
+    ck("moving a syntax layer's `active` does not move one word of the sentence",
+       "identical geometry, nothing nudged", (len(sx_geom(sx0)),
+                                              sx_geom(sx0) == sx_geom(sx2)),
+       len(sx_geom(sx0)) >= 2 and sx_geom(sx0) == sx_geom(sx2)
+       and not sx0.layers[0].get("_nudge") and not sx2.layers[0].get("_nudge"))
+    # One run per SPAN per line -- not one run per line: two spans legitimately
+    # share a line, and that is what the first cut of this check confused.
+    sx_all = sx_scene(None)
+    sx_lay = sx_all._syntax_layout(_sd, sx_all.layers[0])[0]
+    sx_pairs = [(len(r), len({c for c, _s, _x in sg})) for _y, _n, r, sg in sx_lay]
+    ck("a span's words are ONE run, so its underline is not dashed at the spaces",
+       "runs == spans on every line", sx_pairs,
+       bool(sx_pairs) and all(a == b for a, b in sx_pairs))
+    wrapped = Scene({**wide, "layers": [
+        {"kind": "syntax", "from": 0, "to": 2, "at": [0.5, 0.3], "w": 0.32,
+         "size": "sm", "chunks": [{"text": "one span far too wide for this narrow "
+                                           "box so it has to wrap across lines"}]}]})
+    wlay = wrapped._syntax_layout(_sd, wrapped.layers[0])[0]
+    ck("a span wider than the box wraps, and every line of it carries its own mark",
+       ">1 line, each with a run", [len(r) for _y, _n, r, _s in wlay],
+       len(wlay) > 1 and all(len(r) == 1 for _y, _n, r, _s in wlay))
+    ck("a syntax layer is read, so it lands inside the safe inset like the rest",
+       "inset > 0", Scene(wide)._bounds("syntax")[0],
+       Scene(wide)._bounds("syntax")[0] > 0)
+
     # A missing glyph is refused before the render, not shipped as a hollow box.
     # U+2212 MINUS SIGN is absent from NanumGothicBold — measured 2026-09-03 after
     # it reached a finished six-minute video.
@@ -5307,6 +5552,14 @@ def action_selftest():
                "accepted", False)
         except SceneError as e:
             ck("a scene with an undrawable character is refused, naming it",
+               "names U+2212", "U+2212" in str(e), "U+2212" in str(e))
+        try:
+            Scene({**wide, "layers": [{"kind": "syntax", "from": 0, "to": 2,
+                                       "chunks": [{"text": "a b", "role": "x − y"}]}]})
+            ck("a missing glyph inside a syntax chunk's role is refused too",
+               "SceneError", "accepted", False)
+        except SceneError as e:
+            ck("a missing glyph inside a syntax chunk's role is refused too",
                "names U+2212", "U+2212" in str(e), "U+2212" in str(e))
         # ...and the same character inside $...$ is the math font's job, not this one.
         try:
