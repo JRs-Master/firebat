@@ -430,7 +430,7 @@ User Prompt (사용자 지시사항, `system:user-prompt`) 는 **User AI 만** �
 모델 목록은 `system/llm/models.json` (core/src/llm/registry.rs 로 resolve) 가 single source. AI Assistant 후보·기본값:
 ```
 DEFAULT_AI_ASSISTANT_MODEL = 'gemini-3.1-flash-lite';
-AI_ASSISTANT_MODELS = ['gemini-3.1-flash-lite', 'gpt-5.4-nano'];
+AI_ASSISTANT_MODELS = ['gemini-3.1-flash-lite'];
 ```
 
 Core 파사드: `getAiAssistantModel` / `setAiAssistantModel` / `getAvailableAiAssistantModels`.

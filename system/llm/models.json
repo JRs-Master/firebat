@@ -1,8 +1,7 @@
 {
   "defaultAssistantModel": "current",
   "assistantModels": [
-    "gemini-3.1-flash-lite",
-    "gpt-5.4-nano"
+    "gemini-3.1-flash-lite"
   ],
   "defaultLibraryExtractionModel": "gemini-3.5-flash",
   "libraryExtractionProModel": "gemini-3.1-pro-preview",
@@ -55,54 +54,9 @@
       "category": "api-anthropic"
     },
     {
-      "id": "claude-opus-4-8",
+      "id": "claude-fable-5-1",
       "maxOutput": 128000,
-      "displayName": "Claude Opus 4.8",
-      "provider": "Anthropic",
-      "format": "anthropic-messages",
-      "endpoint": "https://api.anthropic.com/v1/messages",
-      "apiKeyVaultKey": "system:anthropic:api-key",
-      "features": {
-        "mcpConnector": true,
-        "extendedThinking": true,
-        "imageInput": true,
-        "promptCache": true
-      },
-      "extraHeaders": {
-        "anthropic-version": "2023-06-01"
-      },
-      "pricing": {
-        "input": 5,
-        "output": 25,
-        "cachedInput": 0.5
-      },
-      "thinking": {
-        "kind": "extendedThinking",
-        "levels": [
-          {
-            "value": "low"
-          },
-          {
-            "value": "medium"
-          },
-          {
-            "value": "high"
-          },
-          {
-            "value": "xhigh"
-          },
-          {
-            "value": "max"
-          }
-        ]
-      },
-      "execMode": "api",
-      "category": "api-anthropic"
-    },
-    {
-      "id": "claude-fable-5",
-      "maxOutput": 128000,
-      "displayName": "Claude Fable 5",
+      "displayName": "Claude Fable 5.1",
       "provider": "Anthropic",
       "format": "anthropic-messages",
       "endpoint": "https://api.anthropic.com/v1/messages",
@@ -336,7 +290,7 @@
     {
       "id": "vertex-gemini-3.1-pro",
       "maxOutput": 64000,
-      "displayName": "Gemini 3.1 Pro (Vertex)",
+      "displayName": "Gemini 3.1 Pro",
       "provider": "Vertex",
       "format": "vertex-gemini",
       "endpoint": "https://aiplatform.googleapis.com",
@@ -369,7 +323,7 @@
     {
       "id": "vertex-gemini-3.5-flash",
       "maxOutput": 64000,
-      "displayName": "Gemini 3.5 Flash (Vertex)",
+      "displayName": "Gemini 3.5 Flash",
       "provider": "Vertex",
       "format": "vertex-gemini",
       "endpoint": "https://aiplatform.googleapis.com",
@@ -401,7 +355,7 @@
     },
     {
       "id": "vertex-gemini-3.1-flash-lite",
-      "displayName": "Gemini 3.1 Flash Lite (Vertex)",
+      "displayName": "Gemini 3.1 Flash Lite",
       "provider": "Vertex",
       "format": "vertex-gemini",
       "endpoint": "https://aiplatform.googleapis.com",
@@ -413,6 +367,52 @@
       },
       "execMode": "api",
       "category": "vertex-google"
+    },
+    {
+      "id": "gpt-6-astra",
+      "maxOutput": 128000,
+      "displayName": "GPT-6 Astra",
+      "provider": "OpenAI",
+      "format": "openai-responses",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "apiKeyVaultKey": "system:openai:api-key",
+      "features": {
+        "mcpConnector": true,
+        "strictTools": true,
+        "reasoning": true,
+        "toolSearch": true,
+        "imageInput": true
+      },
+      "pricing": {
+        "input": 10,
+        "output": 50,
+        "cachedInput": 1
+      },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          {
+            "value": "none"
+          },
+          {
+            "value": "low"
+          },
+          {
+            "value": "medium"
+          },
+          {
+            "value": "high"
+          },
+          {
+            "value": "xhigh"
+          },
+          {
+            "value": "max"
+          }
+        ]
+      },
+      "execMode": "api",
+      "category": "api-openai"
     },
     {
       "id": "gpt-5.6-sol",
@@ -553,145 +553,9 @@
       "category": "api-openai"
     },
     {
-      "id": "gpt-5.5",
-      "maxOutput": 64000,
-      "displayName": "GPT-5.5",
-      "provider": "OpenAI",
-      "format": "openai-responses",
-      "endpoint": "https://api.openai.com/v1/responses",
-      "apiKeyVaultKey": "system:openai:api-key",
-      "features": {
-        "mcpConnector": true,
-        "strictTools": true,
-        "reasoning": true,
-        "toolSearch": true,
-        "imageInput": true
-      },
-      "pricing": {
-        "input": 10,
-        "output": 60,
-        "cachedInput": 1
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none"
-          },
-          {
-            "value": "minimal"
-          },
-          {
-            "value": "low"
-          },
-          {
-            "value": "medium"
-          },
-          {
-            "value": "high"
-          },
-          {
-            "value": "xhigh"
-          }
-        ]
-      },
-      "execMode": "api",
-      "category": "api-openai"
-    },
-    {
-      "id": "gpt-5.4-mini",
-      "displayName": "GPT-5.4 Mini",
-      "provider": "OpenAI",
-      "format": "openai-responses",
-      "endpoint": "https://api.openai.com/v1/responses",
-      "apiKeyVaultKey": "system:openai:api-key",
-      "features": {
-        "mcpConnector": true,
-        "strictTools": true,
-        "reasoning": true,
-        "toolSearch": true,
-        "imageInput": true
-      },
-      "pricing": {
-        "input": 1.5,
-        "output": 8,
-        "cachedInput": 0.15
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none"
-          },
-          {
-            "value": "minimal"
-          },
-          {
-            "value": "low"
-          },
-          {
-            "value": "medium"
-          },
-          {
-            "value": "high"
-          },
-          {
-            "value": "xhigh"
-          }
-        ]
-      },
-      "execMode": "api",
-      "category": "api-openai"
-    },
-    {
-      "id": "gpt-5.4-nano",
-      "displayName": "GPT-5.4 Nano",
-      "provider": "OpenAI",
-      "format": "openai-responses",
-      "endpoint": "https://api.openai.com/v1/responses",
-      "apiKeyVaultKey": "system:openai:api-key",
-      "features": {
-        "mcpConnector": true,
-        "strictTools": true,
-        "reasoning": true,
-        "toolSearch": true,
-        "imageInput": true
-      },
-      "pricing": {
-        "input": 0.4,
-        "output": 2,
-        "cachedInput": 0.04
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none"
-          },
-          {
-            "value": "minimal"
-          },
-          {
-            "value": "low"
-          },
-          {
-            "value": "medium"
-          },
-          {
-            "value": "high"
-          },
-          {
-            "value": "xhigh"
-          }
-        ]
-      },
-      "execMode": "api",
-      "category": "api-openai"
-    },
-    {
       "id": "solar-pro4",
       "maxOutput": 128000,
-      "displayName": "Solar Pro 4 (Upstage)",
+      "displayName": "Solar Pro 4",
       "provider": "Upstage",
       "format": "openai-chat",
       "endpoint": "https://api.upstage.ai/v1/chat/completions",
@@ -737,7 +601,7 @@
     },
     {
       "id": "cli-claude-code-auto",
-      "displayName": "Claude Code CLI (Auto)",
+      "displayName": "Auto",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
@@ -771,7 +635,7 @@
     },
     {
       "id": "cli-claude-code-opus-5",
-      "displayName": "Claude Opus 5 (Claude Code CLI)",
+      "displayName": "Claude Opus 5",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
@@ -804,42 +668,8 @@
       "category": "cli-claude"
     },
     {
-      "id": "cli-claude-code-opus-4-8",
-      "displayName": "Claude Code CLI (Opus 4.8)",
-      "provider": "CLI",
-      "format": "cli-claude-code",
-      "endpoint": "claude",
-      "features": {
-        "mcpConnector": true,
-        "extendedThinking": true
-      },
-      "thinking": {
-        "kind": "extendedThinking",
-        "levels": [
-          {
-            "value": "low"
-          },
-          {
-            "value": "medium"
-          },
-          {
-            "value": "high"
-          },
-          {
-            "value": "xhigh"
-          },
-          {
-            "value": "max"
-          }
-        ]
-      },
-      "execMode": "cli",
-      "cliProvider": "claude",
-      "category": "cli-claude"
-    },
-    {
-      "id": "cli-claude-code-fable-5",
-      "displayName": "Claude Code CLI (Fable 5)",
+      "id": "cli-claude-code-fable-5-1",
+      "displayName": "Claude Fable 5.1",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
@@ -873,7 +703,7 @@
     },
     {
       "id": "cli-claude-code-sonnet-5",
-      "displayName": "Claude Code CLI (Sonnet 5)",
+      "displayName": "Claude Sonnet 5",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
@@ -907,7 +737,7 @@
     },
     {
       "id": "cli-claude-code-haiku-4-5",
-      "displayName": "Claude Code CLI (Haiku 4.5)",
+      "displayName": "Claude Haiku 4.5",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
@@ -941,7 +771,7 @@
     },
     {
       "id": "cli-gemini-auto",
-      "displayName": "Gemini CLI (Auto)",
+      "displayName": "Auto",
       "provider": "CLI",
       "format": "cli-gemini",
       "endpoint": "gemini",
@@ -972,7 +802,7 @@
     },
     {
       "id": "cli-gemini-3.1-pro",
-      "displayName": "Gemini CLI (3.1 Pro)",
+      "displayName": "Gemini 3.1 Pro",
       "provider": "CLI",
       "format": "cli-gemini",
       "endpoint": "gemini",
@@ -1003,7 +833,7 @@
     },
     {
       "id": "cli-gemini-3.5-flash",
-      "displayName": "Gemini CLI (3.5 Flash)",
+      "displayName": "Gemini 3.5 Flash",
       "provider": "CLI",
       "format": "cli-gemini",
       "endpoint": "gemini",
@@ -1034,7 +864,7 @@
     },
     {
       "id": "cli-codex-auto",
-      "displayName": "Codex CLI (Auto)",
+      "displayName": "Auto",
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
@@ -1067,8 +897,46 @@
       "category": "cli-codex"
     },
     {
+      "id": "cli-codex-gpt-6-astra",
+      "displayName": "GPT-6 Astra",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": {
+        "mcpConnector": true,
+        "reasoning": true
+      },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          {
+            "value": "none"
+          },
+          {
+            "value": "low"
+          },
+          {
+            "value": "medium"
+          },
+          {
+            "value": "high"
+          },
+          {
+            "value": "xhigh"
+          },
+          {
+            "value": "max"
+          }
+        ]
+      },
+      "execMode": "cli",
+      "cliProvider": "codex",
+      "category": "cli-codex",
+      "maxOutput": 128000
+    },
+    {
       "id": "cli-codex-gpt-5.6-sol",
-      "displayName": "GPT-5.6 Sol (Codex CLI)",
+      "displayName": "GPT-5.6 Sol",
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
@@ -1106,7 +974,7 @@
     },
     {
       "id": "cli-codex-gpt-5.6-terra",
-      "displayName": "GPT-5.6 Terra (Codex CLI)",
+      "displayName": "GPT-5.6 Terra",
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
@@ -1144,7 +1012,7 @@
     },
     {
       "id": "cli-codex-gpt-5.6-luna",
-      "displayName": "GPT-5.6 Luna (Codex CLI)",
+      "displayName": "GPT-5.6 Luna",
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
@@ -1179,74 +1047,6 @@
       "cliProvider": "codex",
       "category": "cli-codex",
       "maxOutput": 128000
-    },
-    {
-      "id": "cli-codex-gpt-5.5",
-      "displayName": "Codex CLI (GPT-5.5)",
-      "provider": "CLI",
-      "format": "cli-codex",
-      "endpoint": "codex",
-      "features": {
-        "mcpConnector": true,
-        "reasoning": true
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none"
-          },
-          {
-            "value": "low"
-          },
-          {
-            "value": "medium"
-          },
-          {
-            "value": "high"
-          },
-          {
-            "value": "xhigh"
-          }
-        ]
-      },
-      "execMode": "cli",
-      "cliProvider": "codex",
-      "category": "cli-codex"
-    },
-    {
-      "id": "cli-codex-5.3-codex-spark",
-      "displayName": "Codex CLI (5.3-Codex Spark, preview)",
-      "provider": "CLI",
-      "format": "cli-codex",
-      "endpoint": "codex",
-      "features": {
-        "mcpConnector": true,
-        "reasoning": true
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none"
-          },
-          {
-            "value": "low"
-          },
-          {
-            "value": "medium"
-          },
-          {
-            "value": "high"
-          },
-          {
-            "value": "xhigh"
-          }
-        ]
-      },
-      "execMode": "cli",
-      "cliProvider": "codex",
-      "category": "cli-codex"
     }
   ]
 }
