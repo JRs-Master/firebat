@@ -6064,7 +6064,7 @@ def action_render(inp):
     # A drum whose note this font's kit does not answer to would come out as nothing at all, and
     # silence reads as a mixing decision rather than a missing sample. Substitute the GM1 stand-in
     # and SAY which ones moved (the module knows; the listener cannot).
-    # ── 박자 가이드 — 요청했을 때만, 파일에 굽는 스템으로 (사용자 확정 8/24. 재생기에서
+    # ── 박자 가이드 — 요청했을 때만, 파일로 만드는 스템으로 (사용자 확정 8/24. 재생기에서
     # 시계로 치는 안은 배속·이동마다 스케줄을 다시 짜는 새 기계라 기각 — 스템은 이미 있는
     # 배관이고, 켜고 끄는 알약도 가이드 것과 같은 것 하나다).
     # 소리는 GM2 가 이 용도로 정해 둔 그 건반 — 강박 = metronome_bell(34), 나머지 = click(33).
@@ -6465,7 +6465,7 @@ def action_preview(inp):
         return {"success": False, "error": f"악보 파일을 찾지 못했습니다: {src}"}
     with open(media_path, "rb") as fh:
         h = hashlib.sha1(fh.read()).hexdigest()[:10]
-    # 이미 구워 둔 것이 있으면 그것 — 미디어 보관함이 곧 캐시다(모듈이 따로 장부를 안 든다).
+    # 이미 만들어 둔 것이 있으면 그것 — 미디어 보관함이 곧 캐시다(모듈이 따로 장부를 안 든다).
     tag = f"preview-{h}"
     try:
         for fn in sorted(os.listdir("user/media")):
@@ -6484,7 +6484,7 @@ def action_preview(inp):
     if not isinstance(imports, dict):
         return {"success": False, "error": "미리듣기 렌더가 파일을 내놓지 않았습니다"}
     # 이름이 곧 색인 — 다음 호출이 이 해시로 이 파일을 찾는다.
-    # 여기서만 해시가 이름에 남는다 — 다음 호출이 이 이름으로 구운 것을 찾기 때문이다.
+    # 여기서만 해시가 이름에 남는다 — 다음 호출이 이 이름으로 만든 것을 찾기 때문이다.
     imports["filenameHint"] = f"{_display_name(stem)}-{tag}"
     return {"success": True, "data": {"_mediaImport": imports, "cached": False,
                                       "note": "악보를 소리로 구웠습니다 — 브라우저는 MIDI 를 "
@@ -6566,7 +6566,7 @@ def action_levels(inp):
     inv = font_inventory(font) if (use_sf2 and font) else None
     if inv and inv.get("attenDb"):
         # 폰트가 선언한 감쇠가 실측 어긋남을 설명하나? 설명하면 렌더 때마다 공짜로 보정할 수
-        # 있고, 아니면 짧은 탐침을 한 번 굽는 수밖에 없다. 그 판정을 위해 나란히 싣는다.
+        # 있고, 아니면 짧은 탐침을 한 번 만드는 수밖에 없다. 그 판정을 위해 나란히 싣는다.
         for r in rows:
             prog = next((e.get("program") for e in arr
                          if e.get("part") == r["part"] and e.get("program") is not None), None)

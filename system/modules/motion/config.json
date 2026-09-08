@@ -6,7 +6,7 @@
   "providerType": "compute",
   "capability": "motion-graphics",
   "version": "0.1.0",
-  "description": "캔버스 코드로 굽는 2D 모션그래픽·캐릭터 애니메이션 영상 — 씬 선언(JSON)을 받아 쇼츠 mp4, 정지 스틸, 투명 클립아트 스티커 PNG 를 만든다. 배경은 그라디언트·밤하늘·image_gen 실사 이미지, 위에 캐릭터(파이어뱃)·말풍선·타이틀·정보카드·라인업·불꽃놀이·하트·켄번즈 이미지 층을 얹는다. BGM·음성 트랙 먹싱과 음성 립싱크 지원.",
+  "description": "캔버스 코드로 만드는 2D 모션그래픽·캐릭터 애니메이션 영상 — 씬 선언(JSON)을 받아 쇼츠 mp4, 정지 스틸, 투명 클립아트 스티커 PNG 를 만든다. 배경은 그라디언트·밤하늘·image_gen 실사 이미지, 위에 캐릭터(파이어뱃)·말풍선·타이틀·정보카드·라인업·불꽃놀이·하트·켄번즈 이미지 층을 얹는다. BGM·음성 트랙 먹싱과 음성 립싱크 지원.",
   "tags": ["동영상", "영상 제작", "쇼츠", "애니메이션", "모션그래픽", "클립아트", "스티커", "홍보 영상", "인트로", "캐릭터"],
   "aliases": ["video", "animation", "shorts", "motion-graphics", "clipart"],
   "packages": ["numpy", "pillow", "imageio-ffmpeg", "soundfile", "matplotlib"],
@@ -25,7 +25,7 @@
       {
         "id": "render",
         "name": "영상 렌더",
-        "description": "씬 선언을 mp4 로 굽는다 — 캐릭터·텍스트·불꽃·이미지 층을 타임라인에 얹고, BGM·음성을 먹싱한다. stills 를 주면 영상 대신 지정 시각의 정지 PNG 만 뽑는다(수정 반복용 싼 검수 경로). 씬 문법·에셋 목록은 assets 액션이 전부 말한다.",
+        "description": "씬 선언을 mp4 로 만든다 — 캐릭터·텍스트·불꽃·이미지 층을 타임라인에 얹고, BGM·음성을 먹싱한다. stills 를 주면 영상 대신 지정 시각의 정지 PNG 만 뽑는다(수정 반복용 싼 검수 경로). 씬 문법·에셋 목록은 assets 액션이 전부 말한다.",
         "domain": "제작",
         "params": ["duration", "size", "fps", "background", "layers", "audio", "camera", "stills", "quality", "async", "part"],
         "tags": ["영상", "쇼츠", "렌더", "동영상 제작"],
@@ -64,7 +64,7 @@
       {
         "id": "concat",
         "name": "클립 이어붙이기",
-        "desc": "Join 2..12 finished mp4 clips into one, in the order given — ffmpeg stream copy, no re-encode, seconds not minutes. {clips:['<mp4>', '<mp4>', ...]}. This is how a video longer than one 90s scene is made: render the parts and join them, so fixing one part costs that part instead of the whole bake. Every part must share size, fps and quality.",
+        "desc": "Join 2..12 finished mp4 clips into one, in the order given — ffmpeg stream copy, no re-encode, seconds not minutes. {clips:['<mp4>', '<mp4>', ...]}. This is how a video longer than one 90s scene is made: render the parts and join them, so fixing one part costs that part instead of the whole video. Every part must share size, fps and quality.",
         "params": ["clips"]
       },
       {

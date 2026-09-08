@@ -73,8 +73,8 @@ const MUSIC_KINDS: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
 const IMAGE_KINDS: KindChip[] = ['image', 'generated', 'clipart', 'photo'];
 
 /** 악보 미리듣기 — 브라우저엔 MIDI 신디사이저가 없어서, 소리는 이쪽에서 만들어야 한다.
- *  굽는 엔진은 sing 이 렌더에 쓰는 바로 그것이라 **여기서 들리는 것이 곧 렌더 결과**다.
- *  같은 파일은 한 번만 굽는다(모듈이 해시로 이름 붙여 두고 다음엔 그것을 찾는다). */
+ *  소리를 만드는 엔진은 sing 이 렌더에 쓰는 바로 그것이라 **여기서 들리는 것이 곧 렌더 결과**다.
+ *  같은 파일은 한 번만 만든다(모듈이 해시로 이름 붙여 두고 다음엔 그것을 찾는다). */
 function ScorePreview({ path, t }: { path: string; t: (k: string) => string }) {
   const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'error'>('idle');
   const [url, setUrl] = useState('');
@@ -89,7 +89,7 @@ function ScorePreview({ path, t }: { path: string; t: (k: string) => string }) {
         body: JSON.stringify({ module: 'sing', data: { action: 'preview', path } }),
       });
       const j = await res.json();
-      // 구운 파일은 media 로 들어오고(첫 번째), 이미 있던 것이면 url 이 바로 온다.
+      // 만들어진 파일은 media 로 들어오고(첫 번째), 이미 있던 것이면 url 이 바로 온다.
       const got = j?.data?.url
         || (Array.isArray(j?.data?.media) ? j.data.media[0]?.url : j?.data?.media?.url);
       if (!j?.success || !got) throw new Error(j?.error || 'preview failed');

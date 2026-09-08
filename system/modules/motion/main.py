@@ -3083,7 +3083,7 @@ class Scene:
         return cache[path]
 
     def _draw_spritesheet(self, d, g, t, a, L):
-        # Free game sprite sheets (and future canvas-baked sequences) as an
+        # Free game sprite sheets (and future canvas-made sequences) as an
         # animated layer — one media file carries every frame in a grid, so a
         # long effect travels as a single image import instead of N files.
         key = ("sheet", L["_path"])
@@ -5168,8 +5168,8 @@ def action_assets(inp=None):
     "concat": "concat {clips:['<mp4>', '<mp4>', ...]} - joins 2..12 finished clips "
               "in order, ffmpeg stream copy, no re-encode. This is how a video "
               "longer than one scene is made: a 10s 1080p draft costs ~53s of "
-              "render, so five minutes is ~30min whichever way it is cut - as one "
-              "bake, fixing one line costs that again; as clips it costs the one "
+              "render, so five minutes is ~30min whichever way it is cut - made in "
+              "one pass, fixing one line costs that again; as clips it costs the one "
               "clip plus a join measured in seconds. Every part must share size, "
               "fps and quality. Render the parts with part:true so they land in "
               "the scratch area instead of the media store — otherwise a six-part "
@@ -5254,8 +5254,8 @@ def action_concat(inp):
     The 90-second scene cap is not why a long story is built in clips. Measured
     2026-08-30 on this server, a 10-second 1920x1080 draft frame loop costs 53
     seconds of wall time, so five minutes is half an hour of rendering however it
-    is cut. Baked as one file, fixing one caption costs that half hour again;
-    baked as clips it costs the eight minutes of the clip that was wrong, plus
+    is cut. Made in one pass, fixing one caption costs that half hour again;
+    made as clips it costs the eight minutes of the clip that was wrong, plus
     this, which is seconds.
 
     Stream copy needs the parts to agree on codec, size and frame rate.
