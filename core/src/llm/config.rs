@@ -507,10 +507,13 @@ mod tests {
 
     #[test]
     fn anthropic_pricing_passthrough() {
-        let m = anthropic_api("claude-sonnet-5", "Claude Sonnet 5", 3.0, 15.0);
-        let p = m.pricing.expect("opus pricing");
-        assert_eq!(p.input, 5.0);
-        assert_eq!(p.output, 25.0);
+        // Placeholder id and name, like the helper tests beside it: this measures the
+        // passthrough, not any model. Naming a live one is what made it break the day
+        // that model retired -- the numbers moved and the assertions did not follow.
+        let m = anthropic_api("x", "y", 3.0, 15.0);
+        let p = m.pricing.expect("pricing");
+        assert_eq!(p.input, 3.0);
+        assert_eq!(p.output, 15.0);
     }
 
     #[test]
