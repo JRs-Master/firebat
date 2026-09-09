@@ -1569,6 +1569,7 @@ class Scene:
                                "-- install one (Debian: `apt install fonts-nanum`) or "
                                "point fontPathSerif at a TTF")
         self.font_family = self.fonts.family
+        self._fonts_by_family = {self.fonts.family: self.fonts}
         layers = inp.get("layers") or []
         if not isinstance(layers, list) or len(layers) > LAYERS_MAX:
             raise SceneError(f"layers must be a list of at most {LAYERS_MAX}")
@@ -1625,9 +1626,10 @@ class Scene:
                 L["_w"] = _num(L.get("w", 0.9), f"layers[{i}].w", 0.3, 0.98)
             if kind == "panel":
                 style = str(L.get("style") or "box")
-                if style not in ("box", "bar"):
+                if style not in ("box", "bar", "plain", "wash"):
                     raise SceneError(
-                        f"layers[{i}].panel style must be 'box' or 'bar', got {style!r}")
+                        f"layers[{i}].panel style must be 'box', 'bar', 'plain' or "
+                        f"'wash', got {style!r}")
             if kind == "syntax":
                 chunks = L.get("chunks")
                 if not isinstance(chunks, list) or not chunks:
@@ -1744,6 +1746,12 @@ class Scene:
                 L["_lines"] = [(rng.random(), rng.uniform(0.14, 0.42),
                                 rng.uniform(2.0, 5.0), rng.random())
                                for _ in range(14)]
+            fam = L.get("font")
+            if fam is not None:
+                if fam not in FONT_FAMILIES:
+                    raise SceneError(
+                        f"layer font must be one of {list(FONT_FAMILIES)}, got {fam!r}")
+                L["_font"] = fam
             self.layers.append(L)
         bg = inp.get("background") or {"kind": "night"}
         if not isinstance(bg, dict) or bg.get("kind") not in ("night", "gradient",
@@ -1953,6 +1961,43 @@ class Scene:
                    "chip": (226, 232, 240)}
     LIGHT_INK, LIGHT_DIM, LIGHT_SHADOW = (23, 32, 46), (110, 122, 145), (255, 255, 255)
 
+    def _fonts_for(self, family):
+        """The Fonts for one family, built once. A serif this box does not have falls
+        back to sans and SAYS SO, exactly as the scene-wide declaration does."""
+        got = self._fonts_by_family.get(family)
+        if got is not None:
+            return got
+        try:
+            fo = Fonts(self.ss, family)
+        except ValueError as e:
+            raise SceneError(str(e))
+        if fo.bold is None:                      # asked for a face this box lacks
+            fo = self._fonts_for("sans")
+            if self._font_note is None:
+                self._font_note = (
+                    f"font: {family!r} was asked for and this machine has no such "
+                    "face installed, so those layers were drawn in sans -- install "
+                    "one (Debian: `apt install fonts-nanum`) or point fontPathSerif "
+                    "at a TTF")
+        self._fonts_by_family[family] = fo
+        return fo
+
+    def _use_layer_font(self, L):
+        """Point self.fonts at this layer's face for the length of its draw.
+
+        Here, once, rather than in eighteen _draw_* methods: every kind gets a
+        per-layer face and none of them can drift from the others. A scene-wide
+        `font` was the whole surface until now, so a sentence set in Myeongjo took
+        its Korean apparatus with it -- and the apparatus is not the thing being
+        read. Returns the previous Fonts, or None when nothing was swapped.
+        """
+        fam = L.get("_font")
+        if not fam or fam == self.fonts.family:
+            return None
+        prev = self.fonts
+        self.fonts = self._fonts_for(fam)
+        return prev
+
     @staticmethod
     def _bg_is_dark(bg):
         bg = bg or {}
@@ -2007,7 +2052,12 @@ class Scene:
                     float(L.get("fadeOut", 0.4)))
             if a <= 0:
                 continue
-            getattr(self, "_draw_" + L["kind"])(d, g, t, a, L)
+            prev = self._use_layer_font(L)
+            try:
+                getattr(self, "_draw_" + L["kind"])(d, g, t, a, L)
+            finally:
+                if prev is not None:
+                    self.fonts = prev
         if img.size != (SW, SH) or glow.size != (SW, SH):
             raise SceneError("frame geometry drifted mid-render")
         out = np.asarray(img).astype(np.float32) + \
@@ -2088,6 +2138,8 @@ class Scene:
     # answer for every kind — including kinds nobody has written yet.
     PROBE_EPS = 2.0     # output px; antialiasing on a flush edge is not an overflow
     PROBE_INK = 10      # 0..255 max channel; below this is a drop shadow, not content
+    PROBE_CELL = 8      # px per cell of the layer-vs-layer ink mask
+    PROBE_HIT = 3       # cells of shared ink before it is a hit, not a graze
     # Clearing the edge by one pixel is not cropped, but it reads as jammed against
     # the border and it leaves nothing for the encoder's ringing to spend, so a
     # rescued layer gets a little air. Detection still triggers on contact alone.
@@ -2113,25 +2165,46 @@ class Scene:
         m = min(self.W, self.H) * self.SAFE_INSET
         return m, m, self.W - m, self.H - m
 
-    def _ink_box(self, L, t):
-        """Where layer L's own ink lands at time t, in output pixels.
+    def _ink_of(self, L, t):
+        """(box, coarse mask) for layer L's own ink at time t, in output pixels.
 
         Drawn by the same _draw_* the render calls — alone, on black, with alpha
         forced opaque so a fade cannot hide the extent. The caller holds base scale,
         so what comes back is already in output coordinates.
+
+        The mask is max-pooled into PROBE_CELL squares. Bounding boxes cannot answer
+        "is this one printing on that one": a sentence box is a rectangle around
+        ragged lines, so two blocks can share a box and no ink at all, or share ink
+        in a corner where the boxes barely meet. Cells are the right resolution for
+        text on text and cost a thousandth of a frame to keep.
         """
         img = Image.new("RGB", (self.SW, self.SH), (0, 0, 0))
         glow = Image.new("RGB", (self.SW, self.SH), (0, 0, 0))
         self._frame_img = img
-        getattr(self, "_draw_" + L["kind"])(
-            ImageDraw.Draw(img, "RGBA"), ImageDraw.Draw(glow, "RGBA"), t, 1.0, L)
+        prev = self._use_layer_font(L)
+        try:
+            getattr(self, "_draw_" + L["kind"])(
+                ImageDraw.Draw(img, "RGBA"), ImageDraw.Draw(glow, "RGBA"), t, 1.0, L)
+        finally:
+            if prev is not None:
+                self.fonts = prev
         ink = np.maximum(np.asarray(img).max(2), np.asarray(glow).max(2))
-        rows = np.nonzero(ink.max(1) >= self.PROBE_INK)[0]
+        hot = ink >= self.PROBE_INK
+        rows = np.nonzero(hot.any(1))[0]
         if not len(rows):
-            return None
-        cols = np.nonzero(ink.max(0) >= self.PROBE_INK)[0]
-        return (float(cols[0]), float(rows[0]),
-                float(cols[-1] + 1), float(rows[-1] + 1))
+            return None, None
+        cols = np.nonzero(hot.any(0))[0]
+        c = self.PROBE_CELL
+        h, w = hot.shape
+        ph, pw = -(-h // c), -(-w // c)
+        pad = np.zeros((ph * c, pw * c), bool)
+        pad[:h, :w] = hot
+        return ((float(cols[0]), float(rows[0]),
+                 float(cols[-1] + 1), float(rows[-1] + 1)),
+                pad.reshape(ph, c, pw, c).any(axis=(1, 3)))
+
+    def _ink_box(self, L, t):
+        return self._ink_of(L, t)[0]
 
     def _touching(self, box, kind, margin=0.0):
         """Which of this kind's bounds the ink reaches: (left, right, top, bottom)."""
@@ -2202,6 +2275,7 @@ class Scene:
         """
         if not self.layers:
             return
+        still = []
         keep = (self.ss, self.SW, self.SH, self.fonts, self._frame_img)
         self.ss, self.SW, self.SH = 1.0, self.W, self.H
         if self._probe_fonts is None:
@@ -2221,8 +2295,86 @@ class Scene:
                     continue
                 moving = max(abs(p - q) for p, q in zip(settled, earlier)) > 1.5
                 self._fit_ink(i, L, settled, moving, max(a + 0.01, b - 0.05))
+                if L["kind"] in self.READABLE and not moving:
+                    still.append((i, L, max(a + 0.01, b - 0.05)))
+            # Masks come AFTER the fit pass, not during it: _fit_ink nudges a layer
+            # that hung off an edge, and a mask taken before the nudge is a mask of
+            # where the layer is not.
+            seen = []
+            for i, L, tt in still:
+                try:
+                    _b, mask = self._ink_of(L, tt)
+                except Exception:
+                    continue
+                if mask is not None:
+                    seen.append((i, L, mask))
+            try:
+                self._probe_collisions(seen)
+            except Exception as e:
+                self.layout_fixes.append("overlap could not be measured: %s" % e)
         finally:
             self.ss, self.SW, self.SH, self.fonts, self._frame_img = keep
+
+    @staticmethod
+    def _full_window(L):
+        """(from+fadeIn, to-fadeOut) — while this layer is at full opacity. None when
+        the window is shorter than its own fades, i.e. the layer is a flash and the
+        frame never holds it still."""
+        lo = L["from"] + float(L.get("fadeIn", 0.4))
+        hi = L["to"] - float(L.get("fadeOut", 0.4))
+        return (lo, hi) if hi > lo else None
+
+    @classmethod
+    def _both_settled(cls, A, B):
+        """A moment when both layers are at FULL opacity together, or None.
+
+        This is what tells a hand-off from a collision, and the bar has to be full
+        opacity rather than "mostly". The fade is an ease-out cubic: at the crossover
+        of a 0.4s cross-fade BOTH copies sit at 0.875, not at a half — measured, and
+        a 0.85 bar duly reported a lesson's own reveal as ink printing over ink. Past
+        its fade-in and before its fade-out is the only stretch where a layer is
+        something the frame is holding still, and two of those at once is two things
+        on the page rather than one becoming another.
+
+        Exact rather than sampled: the windows are intervals, so intersecting them
+        cannot miss a moment that a grid of sample times steps over.
+        """
+        wa, wb = cls._full_window(A), cls._full_window(B)
+        if wa is None or wb is None:
+            return None
+        lo, hi = max(wa[0], wb[0]), min(wa[1], wb[1])
+        return (lo + hi) / 2 if hi > lo else None
+
+    def _probe_collisions(self, seen):
+        """Two things meant to be read, both fully on screen, on the same pixels.
+
+        The edge probe compares every layer against the CANVAS, which is why it had
+        nothing to say about this. Measured three times on 2026-09-09 — a note laid
+        over a sentence last line, chips over a note, a note over the chips — and the
+        report came back empty every time. Layer against layer is a different
+        question and nothing was asking it.
+
+        Named, not fixed. Which of the two gives way is a question about the lesson,
+        and a module that guesses moves the wrong one: the answer might be a shorter
+        note, a smaller sentence or a lower chip row, and only the author knows.
+        """
+        for x in range(len(seen)):
+            i, A, ma = seen[x]
+            for y in range(x + 1, len(seen)):
+                j, B, mb = seen[y]
+                if self._both_settled(A, B) is None:
+                    continue
+                cells = int((ma & mb).sum())
+                if cells < self.PROBE_HIT:
+                    continue
+                area = cells * self.PROBE_CELL * self.PROBE_CELL
+                self.layout_fixes.append(
+                    "layers[%d] (%s) and layers[%d] (%s) are both fully on screen at "
+                    "the same moment and their ink lands on the same ~%dpx — one is "
+                    "printing over the other. Neither was moved: which one gives way "
+                    "is a question about the lesson, not about the geometry. Measured "
+                    "by drawing each layer alone and comparing the ink, not the "
+                    "declared boxes." % (i, A["kind"], j, B["kind"], area))
 
     def _fit_ink(self, i, L, box, moving, t):
         left, right, top, bottom = self._touching(box, L["kind"])
@@ -2721,7 +2873,12 @@ class Scene:
         chunks = L.get("_chunks") or []
         px = {"sm": 36, "md": 48, "lg": 62}.get(str(L.get("size") or "md"), 48)
         f = self.fonts.get(px)
-        fl = self.fonts.get(max(12, int(px * 0.52)))
+        # The sentence takes the layer's face; its ROLE AND NOTE LABELS do not. A
+        # syntax layer set in Myeongjo is a printed English sentence, and the Korean
+        # apparatus underneath it is not part of that sentence -- a Myeongjo gloss
+        # reads as heavy and dated where a gothic one reads as an annotation. The
+        # labels are always sans for that reason, whichever face the sentence takes.
+        fl = self._fonts_for("sans").get(max(12, int(px * 0.52)))
         cw = self.SW * float(L.get("_w", 0.86))
         space = d.textlength(" ", font=f)
         lh, llh = f.size * 1.42, fl.size * 1.22
@@ -2935,16 +3092,37 @@ class Scene:
         declaimed: it wants a left margin, a frame, and a heading of its own.
         """
         ss, SW = self.ss, self.SW
-        lines = [str(x) for x in (L.get("lines") or [])]
-        px = {"sm": 34, "md": 42, "lg": 52}.get(str(L.get("size") or "md"), 42)
-        f = self.fonts.get(px)
-        lh = px * 1.55 * ss
+        # A line is a bare string, or {text, color, size} the way a title's rows are.
+        # A note wants its formula in the colour of the span it explains and its
+        # gloss in grey; one colour for the whole block cannot say that.
+        SZ = {"sm": 34, "md": 42, "lg": 52}
+        base = str(L.get("size") or "md")
+        px = SZ.get(base, 42)
+        rows = []
+        for x in (L.get("lines") or []):
+            if isinstance(x, dict):
+                rows.append((str(x.get("text") or ""), x.get("color"),
+                             SZ.get(str(x.get("size") or base), px)))
+            else:
+                rows.append((str(x), None, px))
+        fonts = [self.fonts.get(p) for _, _, p in rows]
+        lhs = [p * 1.55 * ss for _, _, p in rows]
         pad = 46 * ss
         cw = SW * float(L.get("w", 0.72))
         head = str(L.get("title") or "")
         fh = self.fonts.get(int(px * 0.88)) if head else None
         hh = (px * 1.75 * ss) if head else 0.0
-        chh = pad * 2 + hh + lh * len(lines)
+        style = str(L.get("style") or "box")
+        # `plain` and `wash` are notes, not documents, so the frame comes off and the
+        # text sits on the page's own left axis instead of a box's inner padding.
+        # A left rule is the loudest thing on a quiet page -- it is the one element
+        # that reads as decoration rather than as the lesson. `wash` says the same
+        # thing with a barely-there tint of the panel's accent, which is the colour
+        # of the span being explained, so the tie is stated by colour and not by
+        # furniture.
+        padx = 0.0 if style in ("plain", "wash") else pad
+        pady = {"plain": 0.0, "wash": pad * 0.62}.get(style, pad)
+        chh = pady * 2 + hh + sum(lhs)
         cx, y0 = self._at(L, [0.5, 0.20])
         y0 += (1 - eob(clamp01((t - L["from"]) / 0.6))) * 40 * ss
         x0 = cx - cw / 2
@@ -2952,11 +3130,25 @@ class Scene:
         # its left edge. A bordered card is right for a quoted passage, which is what
         # this layer was built for; it is too heavy for a running note beneath a
         # sentence, where the box competes with the thing being explained.
-        if str(L.get("style") or "box") == "bar":
+        if style == "bar":
             rule = self._color(L.get("accent"), AMBER)
             d.rounded_rectangle([x0, y0 + pad * 0.5, x0 + 7 * ss, y0 + chh - pad * 0.5],
                                 radius=4 * ss, fill=(*rule, int(235 * a)))
             x0 += 12 * ss
+        elif style == "wash":
+            # Derived from the longest line, not set to the column width: a tint that
+            # runs to the margin is a banner, and the empty half of it is the first
+            # thing the eye finds. Clamped to the column so a long line cannot push
+            # the plate past the block the rest of the page is aligned to.
+            tw = max([fo.getlength(txt) for (txt, _c, _p), fo in zip(rows, fonts)]
+                     + ([fh.getlength(head)] if head else []) + [0.0])
+            ww = min(cw, tw + pad * 1.1)
+            d.rounded_rectangle([x0 - pad * 0.55, y0, x0 + ww, y0 + chh],
+                                radius=22 * ss,
+                                fill=(*self._color(L.get("accent"), AMBER),
+                                      int(26 * a)))
+        elif style == "plain":
+            pass
         else:
             d.rounded_rectangle([x0 + 4 * ss, y0 + 10 * ss,
                                  x0 + cw + 4 * ss, y0 + chh + 10 * ss],
@@ -2966,13 +3158,18 @@ class Scene:
                                 fill=self._plate((9, 12, 24), "fill", 140, a),
                                 outline=self._plate((190, 200, 214), "edge", 150, a),
                                 width=int(2 * ss))
-        ty = y0 + pad
+        ty = y0 + pady
         if head:
-            d.text((x0 + pad, ty), head, font=fh, fill=(*CYAN, int(255 * a)))
+            # CYAN is a dark-ground accent; on a light plate it is the one colour that
+            # does not belong. A declared accent drives the heading too, so a panel
+            # has one accent rather than a rule colour and a heading colour.
+            hcol = self._color(L.get("accent"), CYAN if self.dark_bg else self.ink)
+            d.text((x0 + padx, ty), head, font=fh, fill=(*hcol, int(255 * a)))
             ty += hh
-        for ln in lines:
-            d.text((x0 + pad, ty), ln, font=f, fill=(*self.ink, int(255 * a)))
-            ty += lh
+        for (txt, col, _p), fo, lhh in zip(rows, fonts, lhs):
+            d.text((x0 + padx, ty), txt, font=fo,
+                   fill=(*self._color(col, self.ink), int(255 * a)))
+            ty += lhh
 
     def _draw_card(self, d, g, t, a, L):
         ss, SW = self.ss, self.SW
@@ -5107,7 +5304,12 @@ def action_assets(inp=None):
             "(default) is what every video so far used; serif is a Myeongjo/Serif "
             "face, which reads as a printed page and suits a sentence being taken "
             "apart. Asked for on a machine with no serif installed, the scene is "
-            "drawn in sans and SAYS SO in layoutFixes rather than silently differing",
+            "drawn in sans and SAYS SO in layoutFixes rather than silently "
+            "differing. ANY LAYER may declare its own `font` and override the scene's, "
+            "which is how an English sentence is set in serif while the Korean note "
+            "under it stays gothic — one face for both makes the apparatus look like "
+            "part of the text. A syntax layer's ROLE AND NOTE LABELS are always sans "
+            "whatever face the sentence takes, for the same reason",
     "fade": "render {fade:{in, out}} - seconds of fade from and to black at the ends "
             "of THIS clip. A standalone render defaults to 0.5/0.55; a part:true "
             "render defaults to 0/0, because an interior segment that fades is a dip "
@@ -5254,8 +5456,9 @@ def action_assets(inp=None):
                       "the text does not move between them, because label height is "
                       "reserved for every span that declares one. A span wider than "
                       "the box wraps and each of its lines keeps its own mark",
-            "panel": "{lines:[<string>..], at?, w?, size?:'sm'|'md'|'lg', title?, "
-                     "style?:'box'|'bar', accent?} a "
+            "panel": "{lines:[<string> | {text, color?, size?}..], at?, w?, "
+                     "size?:'sm'|'md'|'lg', title?, "
+                     "style?:'box'|'bar'|'plain'|'wash', accent?, font?} a "
                      "bordered block of LEFT-ALIGNED lines — a page of a document. "
                      "`title` centres every line and `list` wraps each one in its own "
                      "pill, so a quoted passage (an exam question's 자료, a statute, a "
@@ -5266,7 +5469,17 @@ def action_assets(inp=None):
                      "reports a line too long to fit. style 'bar' takes the frame off "
                      "and puts one accent rule down the left edge instead — a card is "
                      "right for a quoted passage, too heavy for a running note under a "
-                     "sentence, where the box competes with what is being explained",
+                     "sentence, where the box competes with what is being explained. "
+                     "FOR A NOTE UNDER A SENTENCE USE 'wash': a barely-there tint of "
+                     "`accent`, no rule, sized to its own longest line rather than to "
+                     "the column, so it reads as a slip laid on the page. Give it the "
+                     "colour of the span it explains and the colour states the tie, "
+                     "which a rule in the margin cannot. 'plain' is the text alone, on "
+                     "the block's own left edge — right when the page already has "
+                     "enough going on, bare when it does not. A LINE MAY CARRY ITS OWN "
+                     "colour and size, which is how a note puts its formula in the "
+                     "span's colour and its gloss in grey; `title` is the heading and "
+                     "takes `accent` too",
             "list": "{rows:[{lead, text, dots?:[[r,g,b]..], highlight?, tag?}], at?, w?} "
                     "staggered time-table rows, one pitch for every row; highlight = amber fill, thicker border, amber text and a tag badge — NOT a taller box, because the pitch is fixed and a taller box would eat the gap under itself",
             "math": "{tex, at?, h?, color?, write?} a formula the scene states as a "
@@ -6076,6 +6289,155 @@ def action_selftest():
         ck("a misspelt align is refused", "SceneError", "accepted", False)
     except SceneError:
         ck("a misspelt align is refused", "SceneError", "refused", True)
+
+    # A note is not a document. `box` owns the column because a quoted passage is
+    # the page; `wash` hugs its own text and `plain` brings no furniture at all.
+    def panel_ink(style, lines, **kw):
+        sc = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                    "size": "1920x1080",
+                    "background": {"kind": "gradient", "top": [0, 0, 0],
+                                   "bottom": [0, 0, 0], "vignette": 0},
+                    "layers": [dict({"kind": "panel", "from": 0, "to": 2,
+                                     "at": [0.5, 0.3], "w": 0.7, "size": "sm",
+                                     "style": style, "lines": lines}, **kw)]})
+        return sc, sc._ink_box(sc.layers[0], 1.0)
+    SHORT = ["짧은 줄"]
+    _, bbox = panel_ink("box", SHORT)
+    _, wbox = panel_ink("wash", SHORT)
+    _, pbox = panel_ink("plain", SHORT)
+    col = 1920 * 0.7
+    ck("a box owns its column and a wash hugs its own text",
+       "box ~ column, wash far narrower",
+       (round(bbox[2] - bbox[0]), round(wbox[2] - wbox[0]), round(col)),
+       (bbox[2] - bbox[0]) > col * 0.95 and (wbox[2] - wbox[0]) < col * 0.6)
+    ck("a plain panel brings no furniture, so its ink is the text and nothing else",
+       "narrower and shorter than the wash", (round(pbox[2] - pbox[0]),
+                                              round(pbox[3] - pbox[1]),
+                                              round(wbox[3] - wbox[1])),
+       (pbox[2] - pbox[0]) < (wbox[2] - wbox[0])
+       and (pbox[3] - pbox[1]) < (wbox[3] - wbox[1]))
+
+    # One colour for the whole block cannot say "this half is the formula and that
+    # half is the gloss", which is what a note is.
+    scp, _ = panel_ink("plain", [{"text": "가나다라", "color": [255, 0, 0]},
+                                 {"text": "마바사아", "color": [0, 0, 255]}])
+    arr = scp.draw_frame(1.0).astype(int)
+    warm = int(((arr[:, :, 0] - arr[:, :, 2]) > 60).sum())
+    cool = int(((arr[:, :, 2] - arr[:, :, 0]) > 60).sum())
+    ck("a panel's lines can each carry their own colour",
+       "both hues present", (warm, cool), warm > 200 and cool > 200)
+
+    # A face is a per-LAYER choice: a sentence set in Myeongjo must not drag its
+    # Korean apparatus along, because the apparatus is not the thing being read.
+    mix = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                 "size": "1920x1080", "font": "sans",
+                 "background": {"kind": "gradient", "top": [0, 0, 0],
+                                "bottom": [0, 0, 0], "vignette": 0},
+                 "layers": [{"kind": "title", "from": 0, "to": 2, "at": [0.5, 0.3],
+                             "font": "serif", "lines": [{"text": "Reading"}]}]})
+    swapped = []
+    _prev = mix._use_layer_font(mix.layers[0])
+    swapped.append(mix.fonts.family)
+    if _prev is not None:
+        mix.fonts = _prev
+    ck("a layer may declare its own face, and says so when the box has none",
+       "serif, or a recorded fallback", (swapped, bool(mix._font_note)),
+       swapped == ["serif"] or bool(mix._font_note))
+    ck("the scene's own face is untouched by a layer that swapped",
+       "sans", mix.fonts.family, mix.fonts.family == "sans")
+    # And the RENDER must obey it, not just the probe. Wiring one path and not the
+    # other measured right and drew wrong, which no mechanism check can see: this one
+    # renders the same string twice and compares the ink.
+    def face_ink(scene_face, layer_face):
+        sc = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                    "size": "1920x1080", "font": scene_face,
+                    "background": {"kind": "gradient", "top": [0, 0, 0],
+                                   "bottom": [0, 0, 0], "vignette": 0},
+                    "layers": [dict({"kind": "title", "from": 0, "to": 2,
+                                     "at": [0.5, 0.3],
+                                     "lines": [{"text": "Reading 구문독해"}]},
+                                    **({"font": layer_face} if layer_face else {}))]})
+        return sc, int((sc.draw_frame(1.0).max(2) > 40).sum())
+    _sc_a, ink_scene_serif = face_ink("serif", None)
+    _sc_b, ink_layer_sans = face_ink("serif", "sans")
+    _has_serif = _sc_a.font_family == "serif"
+    ck("the RENDER obeys a layer's face, not only the probe",
+       "different ink, or no serif on this box",
+       (ink_scene_serif, ink_layer_sans, _has_serif),
+       (ink_scene_serif != ink_layer_sans) if _has_serif else True)
+    try:
+        Scene({**wide, "layers": [{"kind": "title", "from": 0, "to": 2,
+                                   "font": "myeongjo",
+                                   "lines": [{"text": "x"}]}]})
+        ck("a misspelt layer font is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("a misspelt layer font is refused", "SceneError", "refused", True)
+    try:
+        Scene({**wide, "layers": [{"kind": "panel", "from": 0, "to": 2,
+                                   "style": "washed", "lines": ["x"]}]})
+        ck("a misspelt panel style is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("a misspelt panel style is refused", "SceneError", "refused", True)
+
+    # Layer against layer. The edge probe compares each layer with the CANVAS, so a
+    # note laid across a sentence measured perfectly and said nothing -- three times
+    # in one day. Both directions here: it has to fire on a real collision and stay
+    # quiet on a cross-fade, which holds two copies of one thing in one place on
+    # purpose and is the whole reveal mechanism of a lesson.
+    def two_layers(note_y, **kw):
+        return Scene({"action": "render", "duration": 3.0, "quality": "draft",
+                      "size": "1920x1080",
+                      "background": {"kind": "gradient", "top": [0, 0, 0],
+                                     "bottom": [0, 0, 0], "vignette": 0},
+                      "layers": [
+                          {"kind": "syntax", "from": 0, "to": 3, "at": [0.5, 0.20],
+                           "w": 0.85, "size": "lg", "flow": True, "active": [0],
+                           "chunks": [{"text": "As work becomes ever more modularised, "
+                                               "commoditised and standardised,",
+                                       "role": "background"},
+                                      {"text": "ties can be disconnected.",
+                                       "role": "subject and verb"}]},
+                          dict({"kind": "panel", "from": 0, "to": 3,
+                                "at": [0.5, note_y], "w": 0.85, "size": "sm",
+                                "style": "wash",
+                                "lines": ["As ~ 함에 따라", "표준화됨에 따라"]}, **kw)]})
+    hits = lambda sc: [f for f in sc.layout_fixes if "printing over the other" in f]
+    on_top = two_layers(0.30)
+    clear = two_layers(0.62)
+    ck("a note laid across a sentence is reported, which the edge probe never saw",
+       "one collision", (len(hits(on_top)), len(on_top.layout_fixes)),
+       len(hits(on_top)) == 1)
+    ck("the same two with room between them say nothing",
+       "silent", (len(hits(clear)), len(clear.layout_fixes)), not hits(clear))
+
+    # A hand-off: the same sentence twice, same place, windows overlapping by the
+    # length of one cross-fade. Both copies are fully drawn at DIFFERENT moments and
+    # never at the same one, which is what tells this from a collision.
+    CH = [{"text": "the subject", "role": "S"}, {"text": "does not move", "role": "V"}]
+    fade = Scene({"action": "render", "duration": 4.0, "quality": "draft",
+                  "size": "1920x1080",
+                  "background": {"kind": "gradient", "top": [0, 0, 0],
+                                 "bottom": [0, 0, 0], "vignette": 0},
+                  "layers": [{"kind": "syntax", "from": 0.0, "to": 2.0,
+                              "at": [0.5, 0.3], "w": 0.8, "size": "lg",
+                              "chunks": CH, "active": [0]},
+                             {"kind": "syntax", "from": 1.6, "to": 4.0,
+                              "at": [0.5, 0.3], "w": 0.8, "size": "lg",
+                              "chunks": CH, "active": [1]}]})
+    ck("a cross-fade hand-off is not a collision, so the reveal stays silent",
+       "silent", (len(hits(fade)), len(fade.layout_fixes)), not hits(fade))
+    _wa = Scene._full_window(fade.layers[0])
+    _wb = Scene._full_window(fade.layers[1])
+    ck("and the two really do overlap in time, or the check above proves nothing",
+       "windows overlap in time, but never both at full",
+       (fade.layers[0]["to"] - fade.layers[1]["from"], _wa, _wb,
+        Scene._both_settled(fade.layers[0], fade.layers[1])),
+       fade.layers[0]["to"] > fade.layers[1]["from"]
+       and Scene._both_settled(fade.layers[0], fade.layers[1]) is None)
+    ck("a 0.4s cross-fade holds both copies at 0.875, which is why the bar is full",
+       "0.875 at the crossover",
+       round(win(1.8, 0.0, 2.0, 0.4, 0.4), 4),
+       abs(win(1.8, 0.0, 2.0, 0.4, 0.4) - 0.875) < 1e-6)
 
     ck("a syntax layer is read, so it lands inside the safe inset like the rest",
        "inset > 0", Scene(wide)._bounds("syntax")[0],
