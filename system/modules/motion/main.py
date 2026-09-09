@@ -1526,6 +1526,27 @@ class Scene:
         self.W, self.H = SIZES[size]
         self.fps = int(_num(inp.get("fps", 30), "fps", FPS_MIN, FPS_MAX))
         self.dur = _num(inp.get("duration"), "duration", 0.5, DUR_MAX)
+        # A standalone clip opens out of black and closes back into it. A `part` is an
+        # INTERIOR segment of a longer video, and giving it the same treatment puts a
+        # full dip at every join -- measured 2026-09-09 on a two-part lesson, mean luma
+        # 236 -> 0 -> 237 across 1.2s at the seam. It went unnoticed through a week of
+        # blackboard lectures (6 and 9 clips = 5 and 8 dips) because a fade to black is
+        # nearly invisible on a near-black ground; the first light-paper video showed it
+        # at once.
+        #
+        # The module cannot know whether a part is the first, the last or a middle one,
+        # so it does not guess: a part fades neither way, and the parts that ARE the
+        # video's ends ask for them.
+        base_in, base_out = (0.0, 0.0) if inp.get("part") else (0.5, 0.55)
+        fd = inp.get("fade")
+        if fd is None:
+            fd = {}
+        if not isinstance(fd, dict):
+            raise SceneError(
+                "fade must be an object like {in: 0.5, out: 0.55}, seconds of "
+                "fade from and to black; `part: true` already defaults both to 0")
+        self.fade_in = _num(fd.get("in", base_in), "fade.in", 0.0, DUR_MAX)
+        self.fade_out = _num(fd.get("out", base_out), "fade.out", 0.0, DUR_MAX)
         self.ss = 1.0 if str(inp.get("quality") or "final") == "draft" else 1.5
         self.SW, self.SH = int(self.W * self.ss), int(self.H * self.ss)
         self.dark_bg = self._bg_is_dark(inp.get("background"))
@@ -1992,7 +2013,11 @@ class Scene:
         frame = Image.fromarray(out.clip(0, 255).astype(np.uint8))
         if self.ss != 1.0:
             frame = frame.resize((self.W, self.H), Image.LANCZOS)
-        fade = min(clamp01(t / 0.5), clamp01((self.dur - 0.1 - t) / 0.55))
+        fade = 1.0
+        if self.fade_in > 0:
+            fade = min(fade, clamp01(t / self.fade_in))
+        if self.fade_out > 0:
+            fade = min(fade, clamp01((self.dur - 0.1 - t) / self.fade_out))
         if fade < 1:
             frame = Image.fromarray((np.asarray(frame) * fade).astype(np.uint8))
         if self.camera:
@@ -2863,7 +2888,12 @@ class Scene:
             d.rounded_rectangle([x, y0, x + w, y0 + h], radius=h / 2,
                                 fill=((*accent, int(46 * a)) if on
                                       else self._plate((30, 36, 52), "chip", 190, a)))
-            ccx, ccy = x + gap * 0.6 + r, y0 + h / 2
+            # Labelled, the disc sits at the left and the room to its right is the
+            # label's. With the labels dropped the pill IS the disc's frame, and the
+            # same inset then leaves twice as much ring on the left as on the right
+            # -- measured 3.3px off centre on a 1080-wide frame, which is the whole
+            # of what there is to look at once the chip is a circle.
+            ccx, ccy = x + (gap * 0.6 + r if show else w / 2), y0 + h / 2
             d.ellipse([ccx - r, ccy - r, ccx + r, ccy + r],
                       fill=((*accent, int(255 * a)) if on
                             else self._plate((70, 80, 102), "chip", 235, a)))
@@ -5067,6 +5097,12 @@ def action_assets(inp=None):
             "face, which reads as a printed page and suits a sentence being taken "
             "apart. Asked for on a machine with no serif installed, the scene is "
             "drawn in sans and SAYS SO in layoutFixes rather than silently differing",
+    "fade": "render {fade:{in, out}} - seconds of fade from and to black at the ends "
+            "of THIS clip. A standalone render defaults to 0.5/0.55; a part:true "
+            "render defaults to 0/0, because an interior segment that fades is a dip "
+            "to black at the join. The module cannot tell a first part from a middle "
+            "one, so the parts that are the video's own ends ask for them: the first "
+            "part {fade:{in:0.5}}, the last {fade:{out:0.55}}",
     "coordinates": "positions are normalized [x, y], 0..1, y grows downward; "
                        "times are seconds; every layer has from/to (fade windows "
                        "fadeIn/fadeOut, default 0.4s). WHAT `at` PINS DIFFERS BY "
@@ -5383,7 +5419,10 @@ def action_assets(inp=None):
               "clip plus a join measured in seconds. Every part must share size, "
               "fps and quality. Render the parts with part:true so they land in "
               "the scratch area instead of the media store — otherwise a six-part "
-              "video leaves seven files in media and only one is the deliverable",
+              "video leaves seven files in media and only one is the deliverable. "
+              "part:true also turns OFF the fade from and to black, which would "
+              "otherwise put a full dip at every join - ask for it back with `fade` "
+              "on the first and last part only",
     "trim": "trim {media:'<mp4 in the media store or data/motion>', from?, to} "
                 "or {media, segments:[{from,to}..up to 6]} — ffmpeg stream copy, "
                 "no re-render: splitting a finished video is seconds, not minutes. "
@@ -5933,6 +5972,60 @@ def action_selftest():
         ck("a one-item steps row is refused", "SceneError", "accepted", False)
     except SceneError:
         ck("a one-item steps row is refused", "SceneError", "refused", True)
+
+    # The number's disc must sit in the middle of its pill. Labelled, the disc is at
+    # the left and the room to its right belongs to the label; with the labels dropped
+    # the pill IS the disc's frame, and the same inset left twice as much ring on one
+    # side as the other. A saturated accent makes the two shapes separable from the
+    # grey plates and the joining rules, which are neutral.
+    def chip_offset(size, w):
+        sc = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                    "size": size,
+                    "background": {"kind": "gradient", "top": [0, 0, 0],
+                                   "bottom": [0, 0, 0], "vignette": 0},
+                    "layers": [{"kind": "steps", "from": 0, "to": 2, "at": [0.5, 0.5],
+                                "w": w, "items": ITEMS, "active": 1,
+                                "accent": [255, 0, 0]}]})
+        a = sc.draw_frame(1.0).astype(int)
+        warm = a[:, :, 0] - a[:, :, 2]
+        pc = np.where((warm > 6).any(axis=0))[0]          # the active pill
+        dc = np.where((warm > 90).any(axis=0))[0]         # disc, then maybe a label
+        run = [dc[0]]
+        for c in dc[1:]:                                  # the FIRST solid run is the disc
+            if c - run[-1] > 3:
+                break
+            run.append(c)
+        return ((run[0] + run[-1]) / 2 - (pc[0] + pc[-1]) / 2,
+                run[-1] - run[0] + 1, pc[-1] - pc[0] + 1)
+    off_n, dw_n, pw_n = chip_offset("1080x1920", 0.5)     # labels dropped
+    off_w, _, _ = chip_offset("1920x1080", 0.9)           # labels kept
+    ck("with the labels dropped the number sits in the middle of its chip",
+       "|offset| < 1px", (round(off_n, 2), dw_n, pw_n), abs(off_n) < 1.0)
+    ck("with the labels kept the number stays at the left, where the label needs it",
+       "offset well left of centre", round(off_w, 2), off_w < -4)
+
+    # A part is an interior segment: fading it from and to black is a dip at the join.
+    def ends(extra):
+        sc = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                    "size": "1080x1920",
+                    "background": {"kind": "gradient", "top": [250, 250, 250],
+                                   "bottom": [250, 250, 250], "vignette": 0},
+                    "layers": [], **extra})
+        return (float(sc.draw_frame(0.0).mean()), float(sc.draw_frame(1.98).mean()))
+    a0, a1 = ends({})
+    b0, b1 = ends({"part": True})
+    c0, c1 = ends({"part": True, "fade": {"in": 0.5}})
+    ck("a standalone clip still opens out of black and closes back into it",
+       "both ends dark", (round(a0, 1), round(a1, 1)), a0 < 5 and a1 < 5)
+    ck("a part does not, so joining two of them leaves no dip at the seam",
+       "both ends full", (round(b0, 1), round(b1, 1)), b0 > 240 and b1 > 240)
+    ck("the part that IS the start of the video can ask for the opening back",
+       "in dark, out full", (round(c0, 1), round(c1, 1)), c0 < 5 and c1 > 240)
+    try:
+        Scene({**wide, "fade": 0.5})
+        ck("a fade that is not an object is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("a fade that is not an object is refused", "SceneError", "refused", True)
 
     # A header puts a mark on the left and a step count on the right. Centre-only
     # titles could not do it without the scene guessing text widths.
