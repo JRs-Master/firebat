@@ -198,8 +198,39 @@ _FONT_CANDIDATES = [
      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", False),
 ]
 
-def resolve_fonts():
-    """(bold_path, regular_path, korean_capable). Settings first, then the scan."""
+# A scene can ask for a serif face. Named as a STYLE, not a filename: the scene
+# should not have to know what this box has installed, and a list of paths in a
+# scene would be wrong on the next machine.
+_SERIF_CANDIDATES = [
+    ("/usr/share/fonts/truetype/nanum/NanumMyeongjoBold.ttf",
+     "/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf", True),
+    ("/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc",
+     "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc", True),
+    (r"C:\Windows\Fontsatang.ttc", r"C:\Windows\Fontsatang.ttc", True),
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+     "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", False),
+]
+FONT_FAMILIES = ("sans", "serif")
+
+
+def resolve_fonts(family="sans"):
+    """(bold_path, regular_path, korean_capable). Settings first, then the scan.
+
+    `family` picks which scan. The operator's fontPath override is the sans face --
+    that is what the setting has always meant -- and MODULE_FONTPATH_SERIF is its
+    serif twin, so a box with an unusual serif can still be pointed at it.
+    """
+    if family == "serif":
+        override = (os.environ.get("MODULE_FONTPATH_SERIF") or "").strip()
+        if override:
+            if os.path.isfile(override):
+                return override, override, True
+            raise ValueError(
+                f"fontPathSerif points at a missing file: {override!r}")
+        for bold, reg, ko in _SERIF_CANDIDATES:
+            if os.path.isfile(bold):
+                return bold, (reg if os.path.isfile(reg) else bold), ko
+        return None                      # caller falls back to sans and says so
     override = (os.environ.get("MODULE_FONTPATH") or "").strip()
     if override:
         if os.path.isfile(override):
@@ -254,8 +285,9 @@ def missing_glyphs(font, text, notdef):
 
 class Fonts:
     """Sized on demand against the supersampled canvas."""
-    def __init__(self, ss):
-        self.bold, self.regular, self.korean = resolve_fonts()
+    def __init__(self, ss, family="sans"):
+        self.family = family
+        self.bold, self.regular, self.korean = resolve_fonts(family)
         self.ss = ss
         self._cache = {}
 
@@ -1491,10 +1523,26 @@ class Scene:
         self.dur = _num(inp.get("duration"), "duration", 0.5, DUR_MAX)
         self.ss = 1.0 if str(inp.get("quality") or "final") == "draft" else 1.5
         self.SW, self.SH = int(self.W * self.ss), int(self.H * self.ss)
+        self.dark_bg = self._bg_is_dark(inp.get("background"))
+        self.ink = INK if self.dark_bg else self.LIGHT_INK
+        self.dim = DIM if self.dark_bg else self.LIGHT_DIM
+        self.shadow_rgb = (0, 0, 0) if self.dark_bg else self.LIGHT_SHADOW
+        family = str(inp.get("font") or "sans")
+        if family not in FONT_FAMILIES:
+            raise SceneError(
+                f"font must be one of {list(FONT_FAMILIES)}, got {family!r}")
+        self._font_note = None
         try:
-            self.fonts = Fonts(self.ss)
+            self.fonts = Fonts(self.ss, family)
         except ValueError as e:
             raise SceneError(str(e))
+        if self.fonts.bold is None:      # a serif was asked for and this box has none
+            self.fonts = Fonts(self.ss, "sans")
+            self._font_note = ("font: 'serif' was asked for and this machine has no "
+                               "serif face installed, so the scene was drawn in sans "
+                               "-- install one (Debian: `apt install fonts-nanum`) or "
+                               "point fontPathSerif at a TTF")
+        self.font_family = self.fonts.family
         layers = inp.get("layers") or []
         if not isinstance(layers, list) or len(layers) > LAYERS_MAX:
             raise SceneError(f"layers must be a list of at most {LAYERS_MAX}")
@@ -1502,6 +1550,8 @@ class Scene:
         # What had to be moved to stay on the canvas — reported with the render so an
         # author sees it instead of finding a cropped row in the finished mp4.
         self.layout_fixes = []
+        if self._font_note:
+            self.layout_fixes.append(self._font_note)
         texts = []
         for i, L in enumerate(layers):
             if not isinstance(L, dict) or "kind" not in L:
@@ -1532,6 +1582,11 @@ class Scene:
                 if len(tex) > TEXT_MAX:
                     raise SceneError(f"layers[{i}].tex exceeds {TEXT_MAX} chars")
                 L["tex"] = tex
+            if kind == "panel":
+                style = str(L.get("style") or "box")
+                if style not in ("box", "bar"):
+                    raise SceneError(
+                        f"layers[{i}].panel style must be 'box' or 'bar', got {style!r}")
             if kind == "syntax":
                 chunks = L.get("chunks")
                 if not isinstance(chunks, list) or not chunks:
@@ -1833,9 +1888,51 @@ class Scene:
 
     # ── per-layer drawing ───────────────────────────────────────────────
     def _shadow_text(self, d, xy, txt, f, fill, a, off=3):
+        # The shadow is separation from the ground, not decoration -- so it is the
+        # ground's opposite. Black under dark-theme text; white under light-theme
+        # text, where it all but disappears, which is what a light design wants.
         d.text((xy[0] + off * self.ss, xy[1] + off * self.ss), txt, font=f,
-               fill=(0, 0, 0, int(150 * a)))
+               fill=(*self.shadow_rgb, int(150 * a)))
         d.text(xy, txt, font=f, fill=(*fill, int(255 * a)))
+
+    # Ink, the shadow behind it and the plates it sits on used to be constants tuned
+    # for a dark background. A scene that declared a light one therefore got light
+    # text on light ground, a black slab for every caption and a drop shadow on every
+    # glyph -- measured 2026-09-09, the whole design read as smudged, and the only way
+    # out was to avoid light backgrounds. The background is the ONE thing that decides
+    # these, so they are derived from it here, once, instead of being passed in layer
+    # by layer (which would go wrong again on the next background).
+    #
+    # An image background stays on the dark palette on purpose: a photograph's mean
+    # says nothing about the patch behind any one line, and the shadow is what keeps
+    # text readable over it.
+    LIGHT_PLATE = {"drop": (150, 158, 175), "fill": (255, 255, 255),
+                   "edge": (198, 208, 222), "lead": (100, 112, 132)}
+    LIGHT_INK, LIGHT_DIM, LIGHT_SHADOW = (23, 32, 46), (110, 122, 145), (255, 255, 255)
+
+    @staticmethod
+    def _bg_is_dark(bg):
+        bg = bg or {}
+        kind = str(bg.get("kind") or "night")
+        if kind == "studio":
+            return False
+        if kind == "gradient":
+            luma = 0.0
+            for key, dflt in (("top", (10, 14, 30)), ("bottom", (4, 6, 14))):
+                c = bg.get(key) or dflt
+                try:
+                    r, g, b = (float(c[0]), float(c[1]), float(c[2]))
+                except (TypeError, IndexError, ValueError):
+                    r, g, b = dflt
+                luma += 0.2126 * r + 0.7152 * g + 0.0722 * b
+            return luma / 2 < 128
+        return True
+
+    def _plate(self, dark_rgb, role, alpha, a=1.0):
+        """A plate colour for this background. On a dark one it is EXACTLY the
+        constant that has always been there, so nothing already shipped can move."""
+        rgb = dark_rgb if self.dark_bg else self.LIGHT_PLATE[role]
+        return (*rgb, int(alpha * a))
 
     def _color(self, v, default):
         if isinstance(v, str):
@@ -2050,7 +2147,7 @@ class Scene:
         keep = (self.ss, self.SW, self.SH, self.fonts, self._frame_img)
         self.ss, self.SW, self.SH = 1.0, self.W, self.H
         if self._probe_fonts is None:
-            self._probe_fonts = Fonts(1.0)
+            self._probe_fonts = Fonts(1.0, self.font_family)
         self.fonts = self._probe_fonts
         try:
             for i, L in enumerate(self.layers):
@@ -2463,7 +2560,7 @@ class Scene:
         for row in L.get("lines") or []:
             row = row or {}
             f = self.fonts.get(sizes.get(str(row.get("size", "lg")), 92))
-            col = self._color(row.get("color"), INK)
+            col = self._color(row.get("color"), self.ink)
             txt = str(row.get("text") or "")
             tw = d.textlength(txt, font=f)
             self._shadow_text(d, (cx - tw / 2, y + rise), txt, f, col, a)
@@ -2479,7 +2576,7 @@ class Scene:
         parts, tw = [], 0.0
         for is_math, s in segs:
             if is_math:
-                im = _mathtext_rgba(s, INK, mh)
+                im = _mathtext_rgba(s, self.ink, mh)
                 parts.append((True, im, im.width))
                 tw += im.width
             else:
@@ -2488,10 +2585,10 @@ class Scene:
                 tw += w
         d.rounded_rectangle([cx - tw / 2 - 26 * ss + 3 * ss, y - 14 * ss + 8 * ss,
                              cx + tw / 2 + 26 * ss + 3 * ss, y + f.size + 14 * ss + 8 * ss],
-                            radius=26 * ss, fill=(4, 6, 14, int(55 * a)))
+                            radius=26 * ss, fill=self._plate((4, 6, 14), "drop", 55, a))
         d.rounded_rectangle([cx - tw / 2 - 26 * ss, y - 14 * ss,
                              cx + tw / 2 + 26 * ss, y + f.size + 14 * ss],
-                            radius=26 * ss, fill=(8, 10, 20, int(150 * a)))
+                            radius=26 * ss, fill=self._plate((8, 10, 20), "fill", 150, a))
         x = cx - tw / 2
         for is_math, val, w in parts:
             if is_math:
@@ -2502,7 +2599,7 @@ class Scene:
                     self._frame_img.paste(val.convert("RGB"),
                                           (int(x), int(y + (f.size - val.height) / 2 + f.size * 0.12)), m)
             else:
-                d.text((x, y), val, font=f, fill=(*INK, int(255 * a)))
+                d.text((x, y), val, font=f, fill=(*self.ink, int(255 * a)))
             x += w
 
     def _draw_math(self, d, g, t, a, L):
@@ -2516,7 +2613,7 @@ class Scene:
             return
         px_h = max(8, int(self.SH * float(L.get("h", 0.075))))
         im = _mathtext_rgba(str(L.get("tex") or ""),
-                            self._color(L.get("color"), INK), px_h)
+                            self._color(L.get("color"), self.ink), px_h)
         cx, cy = self._at(L, [0.5, 0.45])
         mask = im.getchannel("A")
         if a < 1:
@@ -2684,7 +2781,7 @@ class Scene:
             for ci, seg, xx in segs:
                 ch = chunks[ci]
                 on = active is None or ci in active
-                col = self._color(ch.get("color"), INK) if on else DIM
+                col = self._color(ch.get("color"), self.ink) if on else self.dim
                 self._shadow_text(d, (xx, y), seg, f, col, a)
             ly = y + f.size * 1.26
             for ci, rx0, rx1 in labels:               # role / note under the run
@@ -2729,18 +2826,30 @@ class Scene:
         cx, y0 = self._at(L, [0.5, 0.20])
         y0 += (1 - eob(clamp01((t - L["from"]) / 0.6))) * 40 * ss
         x0 = cx - cw / 2
-        d.rounded_rectangle([x0 + 4 * ss, y0 + 10 * ss,
-                             x0 + cw + 4 * ss, y0 + chh + 10 * ss],
-                            radius=26 * ss, fill=(4, 6, 14, int(60 * a)))
-        d.rounded_rectangle([x0, y0, x0 + cw, y0 + chh], radius=26 * ss,
-                            fill=(9, 12, 24, int(140 * a)),
-                            outline=(190, 200, 214, int(150 * a)), width=int(2 * ss))
+        # `bar` is the same block with the frame taken off and one accent rule down
+        # its left edge. A bordered card is right for a quoted passage, which is what
+        # this layer was built for; it is too heavy for a running note beneath a
+        # sentence, where the box competes with the thing being explained.
+        if str(L.get("style") or "box") == "bar":
+            rule = self._color(L.get("accent"), AMBER)
+            d.rounded_rectangle([x0, y0 + pad * 0.5, x0 + 7 * ss, y0 + chh - pad * 0.5],
+                                radius=4 * ss, fill=(*rule, int(235 * a)))
+            x0 += 12 * ss
+        else:
+            d.rounded_rectangle([x0 + 4 * ss, y0 + 10 * ss,
+                                 x0 + cw + 4 * ss, y0 + chh + 10 * ss],
+                                radius=26 * ss,
+                                fill=self._plate((4, 6, 14), "drop", 60, a))
+            d.rounded_rectangle([x0, y0, x0 + cw, y0 + chh], radius=26 * ss,
+                                fill=self._plate((9, 12, 24), "fill", 140, a),
+                                outline=self._plate((190, 200, 214), "edge", 150, a),
+                                width=int(2 * ss))
         ty = y0 + pad
         if head:
             d.text((x0 + pad, ty), head, font=fh, fill=(*CYAN, int(255 * a)))
             ty += hh
         for ln in lines:
-            d.text((x0 + pad, ty), ln, font=f, fill=(*INK, int(255 * a)))
+            d.text((x0 + pad, ty), ln, font=f, fill=(*self.ink, int(255 * a)))
             ty += lh
 
     def _draw_card(self, d, g, t, a, L):
@@ -2755,9 +2864,9 @@ class Scene:
         accent = self._color(L.get("accent"), AMBER)
         d.rounded_rectangle([x0 + 4 * ss, y0 + 12 * ss,
                              x0 + cw + 4 * ss, y0 + chh + 12 * ss],
-                            radius=36 * ss, fill=(4, 6, 14, int(70 * a)))
+                            radius=36 * ss, fill=self._plate((4, 6, 14), "drop", 70, a))
         d.rounded_rectangle([x0, y0, x0 + cw, y0 + chh], radius=36 * ss,
-                            fill=(9, 12, 24, int(196 * a)),
+                            fill=self._plate((9, 12, 24), "fill", 196, a),
                             outline=(*accent, int(160 * a)), width=int(2.5 * ss))
         fl, fv = self.fonts.get(30), self.fonts.get(42)
         # The rows are a block `rh * n` tall inside a box `50 + rh * n` tall, so the 120
@@ -2785,7 +2894,7 @@ class Scene:
                                 outline=(*CYAN, int(200 * a)), width=int(2 * ss))
             d.text((x0 + 66 * ss, yy + 10 * ss), lbl, font=fl, fill=(*CYAN, int(255 * a)))
             d.text((max(vx, x0 + 80 * ss + lw), yy + 3 * ss), str(row.get("value") or ""),
-                   font=fv, fill=(*INK, int(255 * a)))
+                   font=fv, fill=(*self.ink, int(255 * a)))
 
     def _draw_list(self, d, g, t, a, L):
         ss, SW = self.ss, self.SW
@@ -2811,24 +2920,26 @@ class Scene:
             y0 = y_base + k * 158 * ss
             d.rounded_rectangle(
                 [x0 + 3 * ss, y0 + 9 * ss, x0 + cw + 3 * ss, y0 + rh + 9 * ss],
-                radius=30 * ss, fill=(4, 6, 14, int(50 * ar)))
+                radius=30 * ss, fill=self._plate((4, 6, 14), "drop", 50, ar))
             d.rounded_rectangle(
                 [x0, y0, x0 + cw, y0 + rh], radius=30 * ss,
-                fill=(26, 18, 8, int(212 * ar)) if hot else (9, 12, 24, int(190 * ar)),
-                outline=(*AMBER, int(230 * ar)) if hot else (90, 100, 120, int(160 * ar)),
+                fill=((26, 18, 8, int(212 * ar)) if hot
+                      else self._plate((9, 12, 24), "fill", 190, ar)),
+                outline=((*AMBER, int(230 * ar)) if hot
+                         else self._plate((90, 100, 120), "edge", 160, ar)),
                 width=int((3 if hot else 2) * ss))
             dx0 = x0 + 46 * ss
             for j, dc in enumerate(row.get("dots") or []):
                 dxx, dy = dx0 + j * 34 * ss, y0 + rh / 2
                 d.ellipse([dxx - 11 * ss, dy - 11 * ss, dxx + 11 * ss, dy + 11 * ss],
-                          fill=(*self._color(dc, INK), int(255 * ar)),
+                          fill=(*self._color(dc, self.ink), int(255 * ar)),
                           outline=(255, 255, 255, int(90 * ar)), width=int(1.5 * ss))
             d.text((x0 + 170 * ss, y0 + rh / 2 - ft.size * 0.58),
                    str(row.get("lead") or ""), font=ft,
-                   fill=(200, 208, 220, int(255 * ar)))
+                   fill=self._plate((200, 208, 220), "lead", 255, ar))
             tx = x0 + cw * 0.44
             d.text((tx, y0 + rh / 2 - fm.size * 0.60), str(row.get("text") or ""),
-                   font=fm, fill=(*(AMBER if hot else INK), int(255 * ar)))
+                   font=fm, fill=(*(AMBER if hot else self.ink), int(255 * ar)))
             tag = str(row.get("tag") or "")
             if tag:
                 bx0 = tx + d.textlength(str(row.get("text") or ""), font=fm) + 30 * ss
@@ -4861,7 +4972,21 @@ def action_assets(inp=None):
                                "layers:[...], audio?, stills?, quality?, async?}",
                      "sticker": "{action:'sticker', name, pose?, stickerSize?}",
                      "job": "{action:'job', id, redeliver?}"},
-        "coordinates": "positions are normalized [x, y], 0..1, y grows downward; "
+        "palette": "The scene declares ONE background and every readable surface is "
+               "derived from it — ink, the dim of an inactive span, the shadow behind "
+               "text, and the plate under a caption, panel or card. Declare a light "
+               "gradient and the text goes dark, the shadow goes white (so it all but "
+               "disappears, which is what a light design wants) and the plates go "
+               "white; a dark one is exactly the paint it always was. An IMAGE "
+               "background stays on the dark palette on purpose: a photo's mean says "
+               "nothing about the patch behind any one line, and the shadow is what "
+               "keeps text readable over it. Nothing to pass per layer",
+    "font": "render {font:'sans'|'serif'} picks the face for the whole scene — sans "
+            "(default) is what every video so far used; serif is a Myeongjo/Serif "
+            "face, which reads as a printed page and suits a sentence being taken "
+            "apart. Asked for on a machine with no serif installed, the scene is "
+            "drawn in sans and SAYS SO in layoutFixes rather than silently differing",
+    "coordinates": "positions are normalized [x, y], 0..1, y grows downward; "
                        "times are seconds; every layer has from/to (fade windows "
                        "fadeIn/fadeOut, default 0.4s). WHAT `at` PINS DIFFERS BY "
                        "KIND. TOP-CENTRE, growing DOWNWARD: card (50 + 130px per row "
@@ -4995,7 +5120,8 @@ def action_assets(inp=None):
                       "the text does not move between them, because label height is "
                       "reserved for every span that declares one. A span wider than "
                       "the box wraps and each of its lines keeps its own mark",
-            "panel": "{lines:[<string>..], at?, w?, size?:'sm'|'md'|'lg', title?} a "
+            "panel": "{lines:[<string>..], at?, w?, size?:'sm'|'md'|'lg', title?, "
+                     "style?:'box'|'bar', accent?} a "
                      "bordered block of LEFT-ALIGNED lines — a page of a document. "
                      "`title` centres every line and `list` wraps each one in its own "
                      "pill, so a quoted passage (an exam question's 자료, a statute, a "
@@ -5003,7 +5129,10 @@ def action_assets(inp=None):
                      "box's TOP-CENTRE and the height follows the line count "
                      "(2*46 + 1.55*size per line, plus 1.75*size for a title). Break the "
                      "lines yourself — nothing wraps for you, and the safe-area probe "
-                     "reports a line too long to fit",
+                     "reports a line too long to fit. style 'bar' takes the frame off "
+                     "and puts one accent rule down the left edge instead — a card is "
+                     "right for a quoted passage, too heavy for a running note under a "
+                     "sentence, where the box competes with what is being explained",
             "list": "{rows:[{lead, text, dots?:[[r,g,b]..], highlight?, tag?}], at?, w?} "
                     "staggered time-table rows, one pitch for every row; highlight = amber fill, thicker border, amber text and a tag badge — NOT a taller box, because the pitch is fixed and a taller box would eat the gap under itself",
             "math": "{tex, at?, h?, color?, write?} a formula the scene states as a "
@@ -5590,6 +5719,85 @@ def action_selftest():
     boxes = [still._ink_box(still.layers[0], t) for t in (0.12, 1.0, 1.95)]
     ck("a syntax layer's ink is in the same place at every time in its window",
        "one box", boxes, all(b is not None for b in boxes) and len(set(boxes)) == 1)
+
+    # The palette now derives from the background. The thing that must hold is that
+    # NOTHING ALREADY SHIPPED MOVES: every video made so far is on a dark ground, so
+    # the dark branch has to be the old constants exactly, not an approximation.
+    pal_layers = [
+        {"kind": "title", "from": 0, "to": 2, "at": [0.5, 0.08],
+         "lines": [{"text": "제목 title"}]},
+        {"kind": "caption", "from": 0, "to": 2, "text": "자막 caption"},
+        {"kind": "panel", "from": 0, "to": 2, "at": [0.5, 0.3], "w": 0.6,
+         "lines": ["첫 줄", "둘째 줄"]},
+        {"kind": "card", "from": 0, "to": 2, "at": [0.5, 0.55],
+         "rows": [{"label": "가", "value": "나"}]},
+    ]
+    night = {"action": "render", "duration": 2.0, "quality": "draft",
+             "size": "1920x1080", "layers": pal_layers}
+    a_now = Scene(night).draw_frame(1.5)
+    ck("the dark palette is the same paint it always was (nothing shipped moves)",
+       "ink/dim/shadow unchanged",
+       (Scene(night).ink, Scene(night).dim, Scene(night).shadow_rgb),
+       Scene(night).ink == INK and Scene(night).dim == DIM
+       and Scene(night).shadow_rgb == (0, 0, 0) and Scene(night).dark_bg)
+    lightsc = Scene({**night, "background": {"kind": "gradient", "top": [248, 250, 253],
+                                             "bottom": [238, 243, 250]}})
+    ck("a light gradient flips ink, dim and the shadow, and only then",
+       "dark ink on light ground",
+       (lightsc.dark_bg, lightsc.ink, lightsc.shadow_rgb),
+       not lightsc.dark_bg and lightsc.ink == Scene.LIGHT_INK
+       and lightsc.shadow_rgb == (255, 255, 255))
+    # ...and the two really do look different, so the derivation is wired to the paint
+    b_light = lightsc.draw_frame(1.5)
+    ck("the two palettes draw different frames (the derivation is actually used)",
+       "different", int(np.abs(a_now.astype(int) - b_light.astype(int)).max()),
+       np.abs(a_now.astype(int) - b_light.astype(int)).max() > 60)
+    ck("an image background keeps the dark palette -- a photo's mean says nothing "
+       "about the patch behind one line",
+       True, Scene._bg_is_dark({"kind": "image", "media": "x.png"}),
+       Scene._bg_is_dark({"kind": "image", "media": "x.png"})
+       and Scene._bg_is_dark({"kind": "night"})
+       and not Scene._bg_is_dark({"kind": "studio"}))
+
+    # `panel` gained a second style, and a typo in it must not draw the other one
+    # A flat ground on purpose: the default night sky twinkles, so measuring against
+    # it counts the stars as panel ink and the two styles come out the same size.
+    flat = {**night, "background": {"kind": "gradient", "top": [0, 0, 0],
+                                    "bottom": [0, 0, 0], "vignette": 0}}
+    barsc = Scene({**flat, "layers": [
+        {"kind": "panel", "from": 0, "to": 2, "at": [0.5, 0.3], "w": 0.6,
+         "style": "bar", "accent": [255, 190, 70], "lines": ["한 줄", "두 줄"]}]})
+    boxsc = Scene({**flat, "layers": [
+        {"kind": "panel", "from": 0, "to": 2, "at": [0.5, 0.3], "w": 0.6,
+         "lines": ["한 줄", "두 줄"]}]})
+    bar_ink = int((np.abs(barsc.draw_frame(1.5).astype(int)
+                          - barsc.background().astype(int)).max(2) > 12).sum())
+    box_ink = int((np.abs(boxsc.draw_frame(1.5).astype(int)
+                          - boxsc.background().astype(int)).max(2) > 12).sum())
+    ck("panel style 'bar' drops the frame, so it paints far less than the box",
+       "bar < box", (bar_ink, box_ink), 0 < bar_ink < box_ink * 0.6)
+    try:
+        Scene({**night, "layers": [{"kind": "panel", "from": 0, "to": 2,
+                                    "style": "bax", "lines": ["x"]}]})
+        ck("a misspelt panel style is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("a misspelt panel style is refused", "SceneError", "refused", True)
+
+    # A scene picks its own face; the operator's global setting is no longer the
+    # only say. Asking for a serif this box does not have falls back and SAYS SO.
+    try:
+        serif = Scene({**night, "font": "serif"})
+        ck("a scene can declare a serif face, and says so if the box has none",
+           "resolved or a note", (serif.font_family, len(serif.layout_fixes)),
+           serif.font_family == "serif"
+           or any("serif" in f for f in serif.layout_fixes))
+    except SceneError as e:
+        ck("a scene can declare a serif face", "no error", str(e), False)
+    try:
+        Scene({**night, "font": "comic"})
+        ck("an unknown font family is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("an unknown font family is refused", "SceneError", "refused", True)
 
     ck("a syntax layer is read, so it lands inside the safe inset like the rest",
        "inset > 0", Scene(wide)._bounds("syntax")[0],
