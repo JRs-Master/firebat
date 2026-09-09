@@ -3020,21 +3020,26 @@ class Scene:
             for r in rows:
                 tops.append(tops[-1] + r[4])
             if tops[-1] > cap and len(rows) > 1:
+                # PAGES, not a sliding window. A window grown around whichever line
+                # is lit moves by one line per beat, and every move is a different
+                # picture -- which the cross-fade between neighbouring layers then
+                # prints twice. Measured in a finished clip: 31,347 -> 47,807 ink px,
+                # two scroll positions overlaid and unreadable, seven times in one
+                # read. Pages are cut from the top and do not depend on which line is
+                # lit, so every beat inside one page gets the same window and the
+                # hand-off between them cannot be seen. Eleven units came out as two
+                # pages with one turn instead of five slides.
+                pages, i = [], 0
+                while i < len(rows):
+                    j = i
+                    while j < len(rows) and tops[j + 1] - tops[i] <= cap:
+                        j += 1
+                    pages.append((i, max(j, i + 1)))
+                    i = pages[-1][1]
                 act = L.get("_active") or []
-                lit = [i for i, r in enumerate(rows)
-                       if any(ci in act for ci, _a, _b in r[1])] or [0]
-                st, en = min(lit), max(lit) + 1
-                while en - st > 1 and tops[en] - tops[st] > cap:
-                    en -= 1                      # the lit span alone must fit first
-                grew = True
-                while grew:
-                    grew = False
-                    if st > 0 and tops[en] - tops[st - 1] <= cap:
-                        st -= 1
-                        grew = True
-                    if en < len(rows) and tops[en + 1] - tops[st] <= cap:
-                        en += 1
-                        grew = True
+                lit = next((i for i, r in enumerate(rows)
+                            if any(ci in act for ci, _a, _b in r[1])), 0)
+                st, en = next((p for p in pages if p[0] <= lit < p[1]), pages[0])
                 keep = range(st, en)
                 L["_scrolled"] = (st, en, len(rows))
             else:
@@ -6573,6 +6578,27 @@ def action_selftest():
        (_h0.layers[0].get("_scrolled"), _hL.layers[0].get("_scrolled")),
        _h0.layers[0]["_scrolled"][0] < _hL.layers[0]["_scrolled"][0]
        and _hL.layers[0]["_scrolled"][1] == len(FINE))
+
+    # And the property the ghost turned on: the windows TILE. Walk the lit line
+    # through every position and the windows that come back are the same few pages,
+    # each starting where the last ended. Two beats therefore either share a window
+    # exactly -- so the cross-fade between them is invisible -- or their windows do
+    # not overlap at all. The one-line offset a sliding window produced is what a
+    # cross-fade printed as two sentences on top of each other (measured 31,347 ->
+    # 47,807 ink px in a finished clip), and this is what makes it unreachable.
+    wins = []
+    for i in range(len(FINE)):
+        sc, _b = fine([i], 0.42)
+        wins.append(tuple(sc.layers[0]["_scrolled"][:2]))
+    uniq = sorted(set(wins))
+    tiles = (uniq[0][0] == 0 and uniq[-1][1] == len(FINE)
+             and all(a[1] == b[0] for a, b in zip(uniq, uniq[1:])))
+    ck("the windows tile the sentence, so neighbours share one or share none",
+       "pages end where the next begins", (uniq, len(set(wins))),
+       tiles and len(uniq) <= 3)
+    ck("every beat sees the page its own line is on",
+       "lit line inside its window", wins,
+       all(w[0] <= i < w[1] for i, w in enumerate(wins)))
 
     # C. One LINE whose pieces carry their own size and colour. Two title layers
     # cannot do it: the gap between them would be a guess about glyph widths.
