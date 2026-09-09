@@ -2381,6 +2381,27 @@ class Scene:
             for y in range(x + 1, len(seen)):
                 j, B, mb = seen[y]
                 if self._both_settled(A, B) is None:
+                    # Not a collision, but possibly a HAND-OFF THAT PRINTS TWICE.
+                    # A reveal cross-fades two layers of one kind on purpose, and
+                    # that is right while they are the same picture with a different
+                    # thing lit. Reserve label height only under the span being
+                    # explained and they stop being the same picture: everything
+                    # below that label shifts, and the dissolve prints the sentence
+                    # twice, offset. The layer knows where its lines landed, so this
+                    # is asked and not estimated.
+                    ra, rb = A.get("_rows_y"), B.get("_rows_y")
+                    if (ra is None or rb is None or ra == rb
+                            or min(A["to"], B["to"]) <= max(A["from"], B["from"])):
+                        continue
+                    self.layout_fixes.append(
+                        "layers[%d] and layers[%d] are both %s, they hand over by "
+                        "cross-fade, and their lines are NOT in the same places "
+                        "(%s against %s) — the dissolve prints both layouts at once. "
+                        "Either give the two the same layout (declare every span's "
+                        "label, so the height is reserved whether or not it is drawn) "
+                        "or let them CUT: fadeIn/fadeOut 0 and windows that touch "
+                        "instead of overlapping."
+                        % (i, j, A["kind"], ra[:4], rb[:4]))
                     continue
                 cells = int((ma & mb).sum())
                 if cells < self.PROBE_HIT:
@@ -3049,6 +3070,13 @@ class Scene:
             nlab, runs, segs, labels, rh = rows[li]
             out.append((y, nlab, runs, segs, labels))
             y += rh
+        # Where the lines landed, kept on the layer so the probe can compare two
+        # layers without re-deriving the packing. A cross-fade between two layouts
+        # that disagree here IS the ghost, and this is the only exact way to ask:
+        # both pixel rulers I tried had the real reveal and the ghost in the same
+        # band (union/larger 1.262 against 1.086) or went blind when only part of
+        # the block moved.
+        L["_rows_y"] = tuple(round(r[0] / max(self.ss, 1e-6), 1) for r in out)
         return out, f, fl, llh, self.ss, x0, cw
 
     def _draw_syntax(self, d, g, t, a, L):
