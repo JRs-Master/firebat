@@ -2308,6 +2308,17 @@ class Scene:
                     continue
                 if mask is not None:
                     seen.append((i, L, mask))
+            for i, L, _t in still:
+                sc = L.get("_scrolled")
+                if sc:
+                    self.layout_fixes.append(
+                        "layers[%d] (syntax) needs %d lines and its region holds %d, "
+                        "so the lines scroll and it is showing %d-%d with the "
+                        "explained span kept in view. The type was NOT shrunk: a "
+                        "sentence split across screens hides where the subject sits "
+                        "relative to its verb, and letters that change size between "
+                        "episodes give the channel no house style."
+                        % (i, sc[2], sc[1] - sc[0], sc[0] + 1, sc[1]))
             try:
                 self._probe_collisions(seen)
             except Exception as e:
@@ -2777,6 +2788,31 @@ class Scene:
         sizes = {"xl": 118, "lg": 92, "md": 52, "sm": 30}
         for row in L.get("lines") or []:
             row = row or {}
+            if row.get("parts"):
+                # One LINE whose pieces each carry their own size and colour: a
+                # wordmark beside the subject it belongs to, a step number set larger
+                # than the word STEP. Two title layers cannot do it — the gap between
+                # them would be a guess about glyph widths, which is the guess this
+                # layer exists to remove. Baselines are aligned by ascent, so pieces
+                # of different sizes sit on one line instead of one top edge.
+                bits = []
+                for p in row["parts"]:
+                    p = p or {}
+                    pf = self.fonts.get(sizes.get(
+                        str(p.get("size", row.get("size", "lg"))), 92))
+                    bits.append((str(p.get("text") or ""), pf,
+                                 self._color(p.get("color"), self.ink),
+                                 d.textlength(str(p.get("text") or ""), font=pf)))
+                tw = sum(b[3] for b in bits)
+                bx = (cx - tw / 2 if align == "center"
+                      else (cx if align == "left" else cx - tw))
+                base = max(b[1].getmetrics()[0] for b in bits)
+                for txt, pf, col, pw in bits:
+                    self._shadow_text(
+                        d, (bx, y + rise + base - pf.getmetrics()[0]), txt, pf, col, a)
+                    bx += pw
+                y += max(b[1].size for b in bits) * 1.28
+                continue
             f = self.fonts.get(sizes.get(str(row.get("size", "lg")), 92))
             col = self._color(row.get("color"), self.ink)
             txt = str(row.get("text") or "")
@@ -2931,8 +2967,8 @@ class Scene:
             for ci, _s, _w in ln:
                 last[ci] = li
 
-        cx, y = self._at(L, [0.5, 0.20])
-        x0, out = cx - cw / 2, []
+        cx, y_top = self._at(L, [0.5, 0.20])
+        x0, rows = cx - cw / 2, []
         for li, ln in enumerate(packed):
             runs, segs, x = [], [], x0
             for ci, seg, w in ln:
@@ -2956,8 +2992,51 @@ class Scene:
                     continue
                 labels.append((ci, rx0, rx1))
                 nlab = max(nlab, bool(ch.get("role")) + bool(ch.get("note")))
+            rows.append((nlab, runs, segs, labels, lh + nlab * llh))
+
+        # A FIXED REGION. `h` says how much of the frame the sentence gets, and when
+        # the sentence is taller than that the LINES scroll — the type does not
+        # shrink. Two things fall out of that choice. Letters that change size from
+        # one episode to the next give a channel no house style, and the reader pays
+        # for it every time. And a sentence split across screens destroys the one
+        # thing this layer teaches: where the subject sits relative to its verb, which
+        # you cannot see if they are on different screens.
+        #
+        # Line-snapped, so no half line is ever shown, and the window always holds
+        # the span being explained. Everything below the region — the note, the chips
+        # — then has a place that does not move, whatever the sentence turns out to
+        # be, and cannot be collided with.
+        keep = range(len(rows))
+        if L.get("h"):
+            cap = self.SH * float(L["h"])
+            tops = [0.0]
+            for r in rows:
+                tops.append(tops[-1] + r[4])
+            if tops[-1] > cap and len(rows) > 1:
+                act = L.get("_active") or []
+                lit = [i for i, r in enumerate(rows)
+                       if any(ci in act for ci, _a, _b in r[1])] or [0]
+                st, en = min(lit), max(lit) + 1
+                while en - st > 1 and tops[en] - tops[st] > cap:
+                    en -= 1                      # the lit span alone must fit first
+                grew = True
+                while grew:
+                    grew = False
+                    if st > 0 and tops[en] - tops[st - 1] <= cap:
+                        st -= 1
+                        grew = True
+                    if en < len(rows) and tops[en + 1] - tops[st] <= cap:
+                        en += 1
+                        grew = True
+                keep = range(st, en)
+                L["_scrolled"] = (st, en, len(rows))
+            else:
+                L.pop("_scrolled", None)
+        out, y = [], y_top
+        for li in keep:
+            nlab, runs, segs, labels, rh = rows[li]
             out.append((y, nlab, runs, segs, labels))
-            y += lh + nlab * llh
+            y += rh
         return out, f, fl, llh, self.ss, x0, cw
 
     def _draw_syntax(self, d, g, t, a, L):
@@ -5480,6 +5559,13 @@ def action_assets(inp=None):
                      "colour and size, which is how a note puts its formula in the "
                      "span's colour and its gloss in grey; `title` is the heading and "
                      "takes `accent` too",
+            "titleParts": "a title LINE may be {parts:[{text, size?, color?}..]} "
+                          "instead of {text, size, color} — pieces of one line, each "
+                          "at its own size and colour, baselines aligned. That is how "
+                          "a header puts a wordmark beside the subject it belongs to, "
+                          "or sets the step number larger than the word STEP. Two "
+                          "layers side by side cannot: the gap between them would be "
+                          "a guess about glyph widths",
             "list": "{rows:[{lead, text, dots?:[[r,g,b]..], highlight?, tag?}], at?, w?} "
                     "staggered time-table rows, one pitch for every row; highlight = amber fill, thicker border, amber text and a tag badge — NOT a taller box, because the pitch is fixed and a taller box would eat the gap under itself",
             "math": "{tex, at?, h?, color?, write?} a formula the scene states as a "
@@ -6438,6 +6524,90 @@ def action_selftest():
        "0.875 at the crossover",
        round(win(1.8, 0.0, 2.0, 0.4, 0.4), 4),
        abs(win(1.8, 0.0, 2.0, 0.4, 0.4) - 0.875) < 1e-6)
+
+    # D. A sentence longer than its region scrolls by LINES. The type does not
+    # shrink (letters that change size between episodes give a channel no house
+    # style) and the sentence is not split across screens (that hides where the
+    # subject sits relative to its verb, which is the whole lesson). Everything
+    # below the region therefore has a place that cannot be collided with.
+    FINE = [("As work becomes", "일이"), ("ever more modularised,", "모듈화"),
+            ("commoditised", "상품화"), ("and standardised,", "표준화"),
+            ("and as markets", "시장이"), ("for digital work", "노동을"),
+            ("are created,", "만들어지자"), ("ties", "유대는"),
+            ("between service work", "노동과"), ("and particular places", "장소의"),
+            ("can be disconnected.", "끊긴다")]
+    def fine(active, h=None):
+        lay = {"kind": "syntax", "from": 0, "to": 2, "at": [0.5, 0.10], "w": 0.85,
+               "size": "lg", "flow": False, "active": active,
+               "chunks": [{"text": e, "role": k} for e, k in FINE]}
+        if h:
+            lay["h"] = h
+        sc = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                    "size": "1080x1920",
+                    "background": {"kind": "gradient", "top": [0, 0, 0],
+                                   "bottom": [0, 0, 0], "vignette": 0},
+                    "layers": [lay]})
+        return sc, sc._ink_box(sc.layers[0], 1.0)
+    _f0, free = fine([0])
+    _h0, held = fine([0], 0.42)
+    _hL, last = fine([10], 0.42)
+    cap = 1920 * 0.42
+    ck("a sentence longer than its region is held inside it, and says so",
+       "ink within the region, one note",
+       (round(free[3] - free[1]), round(held[3] - held[1]), round(cap),
+        len(_h0.layout_fixes)),
+       (free[3] - free[1]) > cap and (held[3] - held[1]) <= cap + 40
+       and len(_h0.layout_fixes) == 1 and "scroll" in _h0.layout_fixes[0])
+    ck("with no region declared nothing scrolls, so every scene so far is untouched",
+       "no scroll recorded", _f0.layers[0].get("_scrolled"),
+       _f0.layers[0].get("_scrolled") is None)
+    ck("the window follows the span being explained rather than staying at the top",
+       "different lines shown",
+       (_h0.layers[0].get("_scrolled"), _hL.layers[0].get("_scrolled")),
+       _h0.layers[0]["_scrolled"][0] < _hL.layers[0]["_scrolled"][0]
+       and _hL.layers[0]["_scrolled"][1] == len(FINE))
+
+    # C. One LINE whose pieces carry their own size and colour. Two title layers
+    # cannot do it: the gap between them would be a guess about glyph widths.
+    def parts_ink(lines):
+        sc = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                    "size": "1920x1080",
+                    "background": {"kind": "gradient", "top": [0, 0, 0],
+                                   "bottom": [0, 0, 0], "vignette": 0},
+                    "layers": [{"kind": "title", "from": 0, "to": 2, "at": [0.5, 0.3],
+                                "align": "left", "lines": lines}]})
+        return sc, sc.draw_frame(1.0).astype(int)
+    _sp, arr = parts_ink([{"parts": [{"text": "H  ", "size": "sm"},
+                                     {"text": "H", "size": "xl"}]}])
+    ink = arr.max(2) > 40
+    cols = np.nonzero(ink.any(0))[0]
+    # The two runs of ink, not the halves of the row: splitting at the midpoint lands
+    # inside the large glyph when the sizes differ this much, and then both halves
+    # measure the same piece -- which is what the first cut of this check did, and it
+    # read as a pass-shaped failure (identical numbers on both sides).
+    runs, cur = [], [cols[0]]
+    for c in cols[1:]:
+        if c - cur[-1] > 4:
+            runs.append(cur)
+            cur = [c]
+        else:
+            cur.append(c)
+    runs.append(cur)
+    lo = np.nonzero(ink[:, runs[0][0]:runs[0][-1] + 1].any(1))[0]    # small piece
+    hi = np.nonzero(ink[:, runs[-1][0]:runs[-1][-1] + 1].any(1))[0]  # large piece
+    ck("the pieces of one line sit side by side on ONE baseline, not on one top edge",
+       "bottoms agree, tops do not",
+       (int(lo.min()), int(lo.max()), int(hi.min()), int(hi.max())),
+       abs(int(lo.max()) - int(hi.max())) <= 6
+       and int(lo.min()) - int(hi.min()) > 20)
+    _st, one = parts_ink([{"parts": [{"text": "AB", "size": "md"},
+                                     {"text": "CD", "size": "md"}]}])
+    _st2, two = parts_ink([{"text": "AB", "size": "md"}, {"text": "CD", "size": "md"}])
+    r1 = np.nonzero((one.max(2) > 40).any(1))[0]
+    r2 = np.nonzero((two.max(2) > 40).any(1))[0]
+    ck("parts make ONE line where separate rows make two",
+       "one row is far shorter", (int(r1.max() - r1.min()), int(r2.max() - r2.min())),
+       (r1.max() - r1.min()) < (r2.max() - r2.min()) * 0.7)
 
     ck("a syntax layer is read, so it lands inside the safe inset like the rest",
        "inset > 0", Scene(wide)._bounds("syntax")[0],
