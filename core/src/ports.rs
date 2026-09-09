@@ -3382,6 +3382,12 @@ pub struct TtsRequest {
     /// WAV output instead of mp3 (single-voice OpenAI only; Gemini is wav natively). The sing
     /// pipeline needs it: its DSP reads via libsndfile, which does not decode mp3.
     pub wav: bool,
+    /// BCP-47 for the SPOKEN language ("ko-KR", "en-US"). Empty = the model infers it,
+    /// which is what it did for every call before this field existed: on a Korean script
+    /// with English terms in it that inference is per-request, and it lands differently
+    /// on the lines that open in English. Gemini's SpeechConfig carries it beside the
+    /// voice; OpenAI has no equivalent and ignores it.
+    pub language: String,
 }
 
 /// 멀티스피커 화자 설정 — 토익 등 화자별 억양·성별 다름.

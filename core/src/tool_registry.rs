@@ -139,6 +139,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             "type": "object",
             "properties": {
                 "script": {"type": "string", "description": "Spoken text. Multi-speaker dialogue = one 'Name: line' per line (names match speakers[].name)."},
+                "language": {"type": "string", "description": "BCP-47 for the SPOKEN language ('ko-KR', 'en-US'). Omit and the model infers it per request, which is fine for one language and is not for a script that mixes two: the same lesson then gets a different reading on the lines that open in the other language."},
                 "speakers": {
                     "type": "array",
                     "description": "Dialogue speakers (omit for single-voice monologue). Each = {name, accent?, gender?}.",
@@ -176,6 +177,11 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty());
+                let language = args
+                    .get("language")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
                 let speakers: Vec<crate::ports::TtsSpeaker> = args
                     .get("speakers")
                     .and_then(|v| v.as_array())
@@ -238,6 +244,9 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     sp.gender.hash(&mut hasher);
                 }
                 style.hash(&mut hasher);
+                // In the key, or the same script in a second language answers with the
+                // first one's file.
+                language.hash(&mut hasher);
                 let name = format!("tts-{:016x}.{ext}", hasher.finish());
                 if let Some(url) = media.conv_attachment_url(&conv, &name).await? {
                     // A cache hit answers the same shape or the caller learns the timing from a
@@ -271,6 +280,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     style,
                     align: true, // listening 오디오 — LRC 정렬(노래방·단어 seek)
                     wav: false,
+                    language,
                 };
                 let result = tts.synthesize(&req).await?;
                 let url = media.save_conv_attachment(&conv, &name, &result.audio).await?;

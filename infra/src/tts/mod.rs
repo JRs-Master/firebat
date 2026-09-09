@@ -214,47 +214,27 @@ impl TtsAdapter {
         if req.align {
             prompt.push_str("Read the following aloud, every line verbatim:\n\n");
         }
-        let speech_config = if req.speakers.len() <= 1 {
+        let speech_config: Vec<serde_json::Value> = if req.speakers.len() <= 1 {
             // multiSpeaker 는 정확히 2명 필수(1명이면 400 — 실측). 0~1명 = 단일 voice(1명이면 그 화자 보이스).
             let v = req.speakers.first().map(|s| s.voice.clone()).filter(|x| !x.is_empty()).unwrap_or_else(|| req.voice.clone());
-            serde_json::json!({
-                "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": v } }
-            })
+            vec![speech_entry(&v, &req.language, None)]
         } else {
             // 화자별 억양 텍스트 지시("X speaks with a Y accent")는 Gemini 안전필터에 PROHIBITED_CONTENT 로
             // 차단됨(오탐, safetySettings BLOCK_NONE 으로도 override 불가) + 프리빌트 보이스가 안 먹어 효과도
             // 없음 → 주입 안 함. 억양 다양성은 보이스 선택(성별별 큐레이션)으로.
-            let configs: Vec<serde_json::Value> = req
-                .speakers
+            req.speakers
                 .iter()
-                .map(|s| {
-                    serde_json::json!({
-                        "speaker": s.speaker,
-                        "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": s.voice } }
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "multiSpeakerVoiceConfig": { "speakerVoiceConfigs": configs }
-            })
+                .map(|s| speech_entry(&s.voice, &req.language, Some(&s.speaker)))
+                .collect()
         };
         prompt.push_str(&req.text);
-        let body = serde_json::json!({
-            "contents": [{ "parts": [{ "text": prompt }] }],
-            "generationConfig": {
-                "responseModalities": ["AUDIO"],
-                "speechConfig": speech_config,
-            },
-        });
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
-            req.model
-        );
+        let body = tts_body(&req.model, &prompt, speech_config);
         let resp = self
             .client
-            .post(&url)
+            .post(TTS_URL)
             .header("x-goog-api-key", &key)
             .header("Content-Type", "application/json")
+            .header("Api-Revision", TTS_API_REVISION)
             .json(&body)
             .send()
             .await
@@ -268,25 +248,22 @@ impl TtsAdapter {
             .json()
             .await
             .map_err(|e| format!("Gemini TTS 응답 파싱: {e}"))?;
-        let inline = &json["candidates"][0]["content"]["parts"][0]["inlineData"];
-        let b64 = inline["data"]
-            .as_str()
-            .ok_or_else(|| "Gemini TTS 응답에 오디오 데이터 없음".to_string())?;
-        // 샘플레이트 = 응답 mimeType 의 rate= 에서 읽음("audio/L16;codec=pcm;rate=24000").
-        // 옛엔 24000 하드코딩 → 모델이 다른 rate(예 16kHz)면 WAV 가 1.5배 빨라지고 길이·LRC 가 통째 어긋남.
-        let mime = inline["mimeType"].as_str().unwrap_or("");
-        let rate = mime
-            .split(';')
-            .find_map(|s| s.trim().strip_prefix("rate="))
-            .and_then(|r| r.trim().parse::<u32>().ok())
-            .filter(|r| *r >= 8000 && *r <= 48000)
-            .unwrap_or(24000);
-        tracing::info!(target: "tts", mime = %mime, rate = rate, "Gemini TTS PCM sample rate");
+        let (b64, mime, srate, chans) = find_audio(&json).ok_or_else(|| {
+            format!(
+                "Gemini TTS 응답에 오디오 블록 없음: {}",
+                json.to_string().chars().take(300).collect::<String>()
+            )
+        })?;
+        // 샘플레이트는 블록이 말하면 그것, 아니면 mime 의 rate=("audio/L16;codec=pcm;rate=24000").
+        // 하드코딩 24000 이던 시절엔 모델이 16kHz 를 주면 WAV 가 1.5배 빨라지고 LRC 가 통째로 어긋났다.
+        let (rate, ch) = audio_shape(mime, srate, chans);
+        tracing::info!(target: "tts", mime = %mime, rate = rate, channels = ch,
+                       "Gemini TTS audio block");
         let pcm = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("Gemini PCM decode: {e}"))?;
         Ok(TtsResult {
-            audio: pcm_to_wav(&pcm, rate, 1, 16),
+            audio: audio_to_wav(pcm, rate, ch),
             content_type: "audio/wav".to_string(),
             ext: "wav".to_string(),
             lines: Vec::new(),
@@ -330,17 +307,15 @@ impl TtsAdapter {
         let n_turns = turns.len();
         let model = req.model.clone();
         let global_style = req.style.clone();
+        let language = req.language.clone();
         // into_iter(owned) + prompt 를 async 안에서 — 빌린 &tuple 로 인한 HRTB(FnOnce) 회피.
         let futs = turns.into_iter().map(|(voice, style, text)| {
             let client = self.client.clone();
             let key = key.clone();
             let model = model.clone();
             let global_style = global_style.clone();
+            let language = language.clone();
             async move {
-                let url = format!(
-                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
-                    model
-                );
                 // 억양/스타일 = DIRECTOR'S NOTES + 명확한 서문 + TRANSCRIPT 라벨(Gemini TTS 공식). 모호한
                 // 프롬프트는 분류기가 TTS 로 못 알아채 PROHIBITED_CONTENT 거부하거나 notes 를 소리내 읽음 →
                 // 서문으로 "transcript 를 음성 합성" 명확히 + 스크립트 시작 라벨링. 그래도 차단되면 notes 빼고
@@ -374,17 +349,16 @@ impl TtsAdapter {
                         prompt.push_str("\nTRANSCRIPT\n");
                     }
                     prompt.push_str(&text);
-                    let body = serde_json::json!({
-                        "contents": [{ "parts": [{ "text": prompt }] }],
-                        "generationConfig": {
-                            "responseModalities": ["AUDIO"],
-                            "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } },
-                        },
-                    });
+                    let body = tts_body(
+                        &model,
+                        &prompt,
+                        vec![speech_entry(&voice, &language, None)],
+                    );
                     let resp = match client
-                        .post(&url)
+                        .post(TTS_URL)
                         .header("x-goog-api-key", &key)
                         .header("Content-Type", "application/json")
+                        .header("Api-Revision", TTS_API_REVISION)
                         .json(&body)
                         .send()
                         .await
@@ -408,15 +382,8 @@ impl TtsAdapter {
                             continue;
                         }
                     };
-                    let inline = &json["candidates"][0]["content"]["parts"][0]["inlineData"];
-                    if let Some(b64) = inline["data"].as_str() {
-                        let mime = inline["mimeType"].as_str().unwrap_or("");
-                        let rate = mime
-                            .split(';')
-                            .find_map(|s| s.trim().strip_prefix("rate="))
-                            .and_then(|r| r.trim().parse::<u32>().ok())
-                            .filter(|r| *r >= 8000 && *r <= 48000)
-                            .unwrap_or(24000);
+                    if let Some((b64, mime, srate, chans)) = find_audio(&json) {
+                        let (rate, _ch) = audio_shape(mime, srate, chans);
                         match base64::engine::general_purpose::STANDARD.decode(b64) {
                             Ok(pcm) => return Ok::<(Vec<u8>, u32), String>((pcm, rate)),
                             Err(e) => {
@@ -1422,6 +1389,103 @@ fn map_words_to_lines(
 }
 
 /// PCM(16-bit LE) → WAV. Gemini TTS 응답 = 24kHz mono 16-bit PCM (헤더 없음) → RIFF/WAVE 헤더 부착.
+const TTS_URL: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
+const TTS_API_REVISION: &str = "2026-05-20";
+
+/// One entry of `speech_config`. `language` is left out when empty, so a caller that
+/// says nothing keeps the behaviour every call had before the field existed: the
+/// model infers the language. It is worth saying when you know it — a Korean script
+/// with English terms in it gets that inference made fresh per request, and it does
+/// not always land the same way on the lines that open in English.
+fn speech_entry(voice: &str, language: &str, speaker: Option<&str>) -> serde_json::Value {
+    let mut e = serde_json::Map::new();
+    if let Some(sp) = speaker {
+        e.insert("speaker".to_string(), serde_json::Value::String(sp.to_string()));
+    }
+    e.insert("voice".to_string(), serde_json::Value::String(voice.to_string()));
+    let l = language.trim();
+    if !l.is_empty() {
+        e.insert("language".to_string(), serde_json::Value::String(l.to_string()));
+    }
+    serde_json::Value::Object(e)
+}
+
+/// The interactions request. The model moved into the body, the prompt became
+/// `input`, the modality became `response_format`, and the voices became a LIST.
+fn tts_body(model: &str, input: &str, speech: Vec<serde_json::Value>) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "input": input,
+        "response_format": { "type": "audio" },
+        "generation_config": { "speech_config": speech },
+    })
+}
+
+/// (base64, mime, sample rate, channels) for the audio in a response, wherever the
+/// envelope puts it.
+///
+/// The guide names a convenience property and never prints the raw JSON, so this is
+/// the one part of the move that could not be read off the page. Finding the block
+/// beats hard-coding a path and then being wrong in a way that only shows up in
+/// production: an audio block is a `data` string beside a mime type, and nothing else
+/// in this response looks like that.
+fn find_audio(v: &serde_json::Value) -> Option<(&str, &str, Option<u64>, Option<u64>)> {
+    match v {
+        serde_json::Value::Object(o) => {
+            let mime = o
+                .get("mime_type")
+                .or_else(|| o.get("mimeType"))
+                .and_then(serde_json::Value::as_str);
+            let audio = o.get("type").and_then(serde_json::Value::as_str) == Some("audio")
+                || mime.map_or(false, |m| m.starts_with("audio/"));
+            if audio {
+                if let Some(d) = o.get("data").and_then(serde_json::Value::as_str) {
+                    return Some((
+                        d,
+                        mime.unwrap_or(""),
+                        o.get("sample_rate")
+                            .or_else(|| o.get("sampleRate"))
+                            .and_then(serde_json::Value::as_u64),
+                        o.get("channels").and_then(serde_json::Value::as_u64),
+                    ));
+                }
+            }
+            o.values().find_map(find_audio)
+        }
+        serde_json::Value::Array(a) => a.iter().find_map(find_audio),
+        _ => None,
+    }
+}
+
+/// Sample rate and channel count from the block, falling back to the mime's `rate=`
+/// and then to the 24 kHz mono every Gemini TTS response has been.
+fn audio_shape(mime: &str, srate: Option<u64>, chans: Option<u64>) -> (u32, u16) {
+    let rate = srate
+        .and_then(|r| u32::try_from(r).ok())
+        .or_else(|| {
+            mime.split(';')
+                .find_map(|x| x.trim().strip_prefix("rate="))
+                .and_then(|r| r.trim().parse::<u32>().ok())
+        })
+        .filter(|r| *r >= 8000 && *r <= 48000)
+        .unwrap_or(24000);
+    let ch = chans
+        .and_then(|c| u16::try_from(c).ok())
+        .filter(|c| *c == 1 || *c == 2)
+        .unwrap_or(1);
+    (rate, ch)
+}
+
+/// RIFF is four bytes and says whether this is already a container. Taking the mime's
+/// word for it would be trusting the label over the thing it labels.
+fn audio_to_wav(bytes: Vec<u8>, rate: u32, channels: u16) -> Vec<u8> {
+    if bytes.starts_with(b"RIFF") {
+        bytes
+    } else {
+        pcm_to_wav(&bytes, rate, channels, 16)
+    }
+}
+
 fn pcm_to_wav(pcm: &[u8], sample_rate: u32, channels: u16, bits: u16) -> Vec<u8> {
     let byte_rate = sample_rate * channels as u32 * (bits as u32 / 8);
     let block_align = channels * (bits / 8);
