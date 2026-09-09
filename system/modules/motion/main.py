@@ -39,6 +39,10 @@ SIZES = {"1080x1920": (1080, 1920), "1920x1080": (1920, 1080), "1080x1080": (108
 DUR_MAX = 90.0
 FPS_MIN, FPS_MAX = 10, 30
 LAYERS_MAX = 40
+VOICES_MAX = 48    # was 12, set when a scene meant a few lines of narration.
+                   # Reading a sentence the way a native reads it is the opposite
+                   # shape: eleven sense units, each with its own gloss, is 22
+                   # placements of one to three seconds. 2026-09-09.
 TEXT_MAX = 200
 STICKER_MIN, STICKER_MAX = 200, 2048
 OUT_DIR = os.path.join("data", "motion")
@@ -1799,8 +1803,11 @@ class Scene:
             self.voices.append(
                 (media_path(v["media"]),
                  _num(v.get("at", 0), f"audio.voices[{i}].at", 0, self.dur)))
-        if len(self.voices) > 12:
-            raise SceneError("audio.voices: at most 12 lines")
+        if len(self.voices) > VOICES_MAX:
+            raise SceneError(
+                "audio.voices: at most %d placements — one file per sense unit is "
+                "what this timeline is for, but a thousand of them is a mixing job, "
+                "not a scene" % VOICES_MAX)
         self.bgm_gain_db = _num(audio.get("bgmGainDb", -8), "audio.bgmGainDb", -40, 6)
         # A track shorter than the scene used to leave the tail silent with nothing
         # said about it — the duration cap going 20s -> 90s made that the common case.
@@ -5608,7 +5615,7 @@ def action_assets(inp=None):
                            "apart over a minute. Right for a scene whose visuals do "
                            "not have to land on particular words; for anything "
                            "narrated point-by-point use voices",
-                  "voices": "lines on the timeline: [{media, at}] (max 12) — dialogue "
+                  "voices": "lines on the timeline: [{media, at}] (max 48) — dialogue "
                             "between characters AND single-narrator explainers, which "
                             "is most of them. One tts call per point, the duration "
                             "action per file, then each line starts where the previous "
