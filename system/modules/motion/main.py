@@ -1956,6 +1956,17 @@ class Scene:
     @staticmethod
     def _bg_is_dark(bg):
         bg = bg or {}
+        # A picture's mean says nothing about the patch behind any one line, which is
+        # why an image background is derived as dark. That reasoning holds for a photo
+        # and fails for a plate we commissioned: we know what it looks like, so we can
+        # say. Declaring it beats inferring it, and the inference stays the default.
+        pal = bg.get("palette")
+        if pal is not None:
+            if pal not in ("light", "dark"):
+                raise SceneError("background.palette must be 'light' or 'dark', got "
+                                 f"{pal!r} — omit it and the palette is derived from "
+                                 "the background itself")
+            return pal == "dark"
         kind = str(bg.get("kind") or "night")
         if kind == "studio":
             return False
@@ -5140,12 +5151,18 @@ def action_assets(inp=None):
                       "floor line, made for caster / info videos (top/bottom "
                       "colors overridable)",
             "gradient": "{kind:'gradient', top:[r,g,b], bottom:[r,g,b]}",
-            "image": "{kind:'image', media:'/user/media/<file>'} cover-cropped, so a "
+            "image": "{kind:'image', media:'/user/media/<file>', palette?, vignette?} "
+                     "cover-cropped, so a "
                      "picture whose aspect differs from the canvas loses the overflowing "
                      "edges — measured 2026-09-04, a 1536x1024 board on a 1920x1080 frame "
                      "is scaled 1.25x and 100px comes off the top and the bottom, taking "
                      "the drawn wooden border with it. Ask image_gen for the canvas aspect "
-                     "when the picture has edges worth keeping",
+                     "when the picture has edges worth keeping. An image background "
+                     "takes the DARK palette by default because a photo's mean says "
+                     "nothing about the patch behind any one line; a plate you had "
+                     "made can say so with palette:'light'|'dark'. Its vignette "
+                     "defaults to 0.25, which greys the corners of a light plate — "
+                     "pass vignette:0 with a light one",
             "vignette": "any background takes vignette: 0..0.6 edge darkening "
                         "(defaults: night .22, studio .16, gradient .15, image .25; "
                         "0 disables)",
@@ -5878,6 +5895,21 @@ def action_selftest():
        Scene._bg_is_dark({"kind": "image", "media": "x.png"})
        and Scene._bg_is_dark({"kind": "night"})
        and not Scene._bg_is_dark({"kind": "studio"}))
+    ck("a plate we had made can say which palette it wants, either way",
+       "declaration beats the guess",
+       (Scene._bg_is_dark({"kind": "image", "media": "x.png", "palette": "light"}),
+        Scene._bg_is_dark({"kind": "gradient", "top": [255, 255, 255],
+                           "bottom": [255, 255, 255], "palette": "dark"})),
+       Scene._bg_is_dark({"kind": "image", "media": "x.png",
+                          "palette": "light"}) is False
+       and Scene._bg_is_dark({"kind": "gradient", "top": [255, 255, 255],
+                              "bottom": [255, 255, 255],
+                              "palette": "dark"}) is True)
+    try:
+        Scene._bg_is_dark({"kind": "night", "palette": "bright"})
+        ck("a misspelt palette is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("a misspelt palette is refused", "SceneError", "refused", True)
 
     # `panel` gained a second style, and a typo in it must not draw the other one
     # A flat ground on purpose: the default night sky twinkles, so measuring against
