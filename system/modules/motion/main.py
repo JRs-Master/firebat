@@ -287,7 +287,12 @@ class Fonts:
     """Sized on demand against the supersampled canvas."""
     def __init__(self, ss, family="sans"):
         self.family = family
-        self.bold, self.regular, self.korean = resolve_fonts(family)
+        found = resolve_fonts(family)
+        # None = a serif was asked for and this box has none. The caller falls back
+        # and says so; unpacking it here raised TypeError instead, so the fallback --
+        # the one path that exists ONLY for a machine without a serif -- had never run
+        # on a machine with one, which is every machine it was written on.
+        self.bold, self.regular, self.korean = found or (None, None, False)
         self.ss = ss
         self._cache = {}
 
@@ -1560,7 +1565,7 @@ class Scene:
             if kind not in ("sprite", "bubble", "title", "caption", "card", "list",
                             "image", "fireworks", "hearts", "confetti", "model3d",
                             "spark", "shake", "speedlines", "hpbar", "spritesheet",
-                            "math", "panel", "syntax"):
+                            "math", "panel", "syntax", "steps"):
                 raise SceneError(
                     f"layers[{i}].kind {kind!r} is unknown — the assets action lists "
                     "every kind and its fields")
@@ -1582,6 +1587,21 @@ class Scene:
                 if len(tex) > TEXT_MAX:
                     raise SceneError(f"layers[{i}].tex exceeds {TEXT_MAX} chars")
                 L["tex"] = tex
+            if kind == "title":
+                al = str(L.get("align") or "center")
+                if al not in ("left", "center", "right"):
+                    raise SceneError(
+                        f"layers[{i}].align must be left, center or right, got {al!r}")
+            if kind == "steps":
+                items = L.get("items")
+                if not isinstance(items, list) or not 2 <= len(items) <= 8:
+                    raise SceneError(
+                        f"layers[{i}]: a steps layer needs `items` — 2..8 short "
+                        "labels, one per step, e.g. items:['전체','as절 ①','주어']")
+                L["_items"] = [str(x or "") for x in items]
+                L["_active"] = int(_num(L.get("active", 0), f"layers[{i}].active",
+                                        0, len(items) - 1))
+                L["_w"] = _num(L.get("w", 0.9), f"layers[{i}].w", 0.3, 0.98)
             if kind == "panel":
                 style = str(L.get("style") or "box")
                 if style not in ("box", "bar"):
@@ -1803,6 +1823,7 @@ class Scene:
         for row in L.get("rows") or []:
             row = row or {}
             out += [str(row.get(k) or "") for k in ("label", "value", "lead", "text", "tag")]
+        out += [str(x or "") for x in (L.get("items") or [])]
         for ch in L.get("chunks") or []:
             if isinstance(ch, dict):
                 out += [str(ch.get(k) or "") for k in ("text", "role", "note")]
@@ -1907,7 +1928,8 @@ class Scene:
     # says nothing about the patch behind any one line, and the shadow is what keeps
     # text readable over it.
     LIGHT_PLATE = {"drop": (150, 158, 175), "fill": (255, 255, 255),
-                   "edge": (198, 208, 222), "lead": (100, 112, 132)}
+                   "edge": (198, 208, 222), "lead": (100, 112, 132),
+                   "chip": (226, 232, 240)}
     LIGHT_INK, LIGHT_DIM, LIGHT_SHADOW = (23, 32, 46), (110, 122, 145), (255, 255, 255)
 
     @staticmethod
@@ -2045,7 +2067,7 @@ class Scene:
     # the shape the code below reads as "on purpose".
     SAFE_INSET = 0.045          # of the shorter axis, each side
     READABLE = frozenset(("math", "title", "caption", "card", "list", "bubble",
-                          "hpbar", "panel", "syntax"))
+                          "hpbar", "panel", "syntax", "steps"))
 
     def _bounds(self, kind):
         """The rectangle this kind has to land inside: the bitmap for decoration, an
@@ -2553,9 +2575,17 @@ class Scene:
                        (235, 60, 90), int(255 * a))
 
     def _draw_title(self, d, g, t, a, L):
+        """Stacked display lines. `align` says what `at[0]` pins: the centre (default,
+        and what every scene so far assumed), the left edge, or the right edge.
+
+        Alignment belongs here because it needs glyph widths, and the scene has none:
+        a header with a mark on the left and a step count on the right could only be
+        placed by guessing how wide each was, which is guessing wrong on the first
+        title that changes length."""
         ss = self.ss
         cx, y = self._at(L, [0.5, 0.09])
         rise = 26 * ss * (1 - eo3((t - L["from"]) / 0.9))
+        align = str(L.get("align") or "center")
         sizes = {"xl": 118, "lg": 92, "md": 52, "sm": 30}
         for row in L.get("lines") or []:
             row = row or {}
@@ -2563,7 +2593,8 @@ class Scene:
             col = self._color(row.get("color"), self.ink)
             txt = str(row.get("text") or "")
             tw = d.textlength(txt, font=f)
-            self._shadow_text(d, (cx - tw / 2, y + rise), txt, f, col, a)
+            x = cx - tw / 2 if align == "center" else (cx if align == "left" else cx - tw)
+            self._shadow_text(d, (x, y + rise), txt, f, col, a)
             y += f.size * 1.28
 
     def _draw_caption(self, d, g, t, a, L):
@@ -2801,6 +2832,56 @@ class Scene:
                     lx = min(max((rx0 + rx1) / 2 - tw / 2, bx0), bx0 + bcw - tw)
                     d.text((lx, yy), txt, font=fl, fill=(*c, int(255 * a)))
                     yy += llh
+
+    def _draw_steps(self, d, g, t, a, L):
+        """Where the lesson is: numbered chips in a row, joined by a rule, the current
+        one filled.
+
+        It measures itself and DROPS THE LABELS when the row will not fit, leaving the
+        numbers. That is not a fallback bolted on -- it is the whole reason this is a
+        layer: the same declaration has to serve a 1920-wide frame, where five labelled
+        chips fit comfortably, and a 1080-wide one, where they do not. A `compact`
+        flag would push that decision onto the scene, which cannot measure text.
+        """
+        ss, SW = self.ss, self.SW
+        items, act = L["_items"], L["_active"]
+        cw = SW * float(L["_w"])
+        accent = self._color(L.get("accent"), AMBER)
+        h, r, gap, link = 64 * ss, 22 * ss, 22 * ss, 34 * ss
+        fn, fl = self.fonts.get(24), self.fonts.get(26)
+        labels = [d.textlength(x, font=fl) for x in items]
+        wide = [2 * r + gap + lw + gap * 1.4 for lw in labels]
+        need = sum(wide) + link * (len(items) - 1)
+        show = need <= cw
+        if not show:
+            wide = [2 * r + gap * 0.9] * len(items)
+            need = sum(wide) + link * (len(items) - 1)
+        cx, y0 = self._at(L, [0.5, 0.86])
+        x = cx - need / 2
+        for i, (label, w) in enumerate(zip(items, wide)):
+            on = i == act
+            d.rounded_rectangle([x, y0, x + w, y0 + h], radius=h / 2,
+                                fill=((*accent, int(46 * a)) if on
+                                      else self._plate((30, 36, 52), "chip", 190, a)))
+            ccx, ccy = x + gap * 0.6 + r, y0 + h / 2
+            d.ellipse([ccx - r, ccy - r, ccx + r, ccy + r],
+                      fill=((*accent, int(255 * a)) if on
+                            else self._plate((70, 80, 102), "chip", 235, a)))
+            num = str(i + 1)
+            nw = d.textlength(num, font=fn)
+            d.text((ccx - nw / 2, ccy - fn.size * 0.62), num, font=fn,
+                   fill=((255, 255, 255, int(255 * a)) if on
+                         else (*self.dim, int(255 * a))))
+            if show:
+                d.text((ccx + r + gap * 0.7, ccy - fl.size * 0.64), label, font=fl,
+                       fill=((*accent, int(255 * a)) if on
+                             else (*self.dim, int(255 * a))))
+            if i + 1 < len(items):                      # the rule joining them
+                ly = y0 + h / 2
+                d.line([(x + w + link * 0.18, ly), (x + w + link * 0.82, ly)],
+                       fill=self._plate((90, 100, 122), "edge", 170, a),
+                       width=max(1, int(2 * ss)))
+            x += w + link
 
     def _draw_panel(self, d, g, t, a, L):
         """A bordered block of LEFT-ALIGNED lines — a page of a document.
@@ -5787,17 +5868,89 @@ def action_selftest():
     # only say. Asking for a serif this box does not have falls back and SAYS SO.
     try:
         serif = Scene({**night, "font": "serif"})
-        ck("a scene can declare a serif face, and says so if the box has none",
+        ck("a scene can declare a serif face",
            "resolved or a note", (serif.font_family, len(serif.layout_fixes)),
            serif.font_family == "serif"
            or any("serif" in f for f in serif.layout_fixes))
     except SceneError as e:
         ck("a scene can declare a serif face", "no error", str(e), False)
+    # ...and the no-serif branch is FORCED, because otherwise it is only ever
+    # exercised on a machine nobody develops on. It crashed on TypeError until this
+    # canary ran it.
+    _saved, _env = list(_SERIF_CANDIDATES), os.environ.pop("MODULE_FONTPATH_SERIF", None)
+    try:
+        _SERIF_CANDIDATES.clear()
+        bare = Scene({**night, "font": "serif"})
+        ck("a box with no serif draws in sans and says so, instead of failing",
+           "sans + a note", (bare.font_family, bare.layout_fixes[:1]),
+           bare.font_family == "sans"
+           and any("serif" in f for f in bare.layout_fixes))
+    except Exception as e:  # noqa: BLE001 — the point is that it must not raise
+        ck("a box with no serif draws in sans and says so, instead of failing",
+           "no exception", f"{type(e).__name__}: {e}", False)
+    finally:
+        _SERIF_CANDIDATES[:] = _saved
+        if _env is not None:
+            os.environ["MODULE_FONTPATH_SERIF"] = _env
     try:
         Scene({**night, "font": "comic"})
         ck("an unknown font family is refused", "SceneError", "accepted", False)
     except SceneError:
         ck("an unknown font family is refused", "SceneError", "refused", True)
+
+    # `steps` measures itself: labelled where they fit, numbers alone where they do
+    # not. Both frames come from ONE declaration -- the scene cannot measure text, so
+    # a "compact" flag would just move the guess to the wrong side.
+    ITEMS = ["전체", "as절 ①", "as절 ②",
+             "주어부", "동사부"]
+    def steps_ink(size, w=0.9):
+        sc = Scene({"action": "render", "duration": 2.0, "quality": "draft",
+                    "size": size,
+                    "background": {"kind": "gradient", "top": [0, 0, 0],
+                                   "bottom": [0, 0, 0], "vignette": 0},
+                    "layers": [{"kind": "steps", "from": 0, "to": 2, "at": [0.5, 0.5],
+                                "w": w, "items": ITEMS, "active": 1}]})
+        box = sc._ink_box(sc.layers[0], 1.5)
+        return sc, box, (box[2] - box[0]) if box else 0
+    # Both branches, each with room to spare. The first cut of this check put the two
+    # cases on either side of a boundary they landed EXACTLY on -- the labelled row
+    # measured 972.0 and the narrow box was 972.0 -- so the same branch answered both
+    # and the check could not tell them apart.
+    _, _, wide_w = steps_ink("1920x1080", 0.9)
+    _, _, narrow_w = steps_ink("1080x1920", 0.5)
+    ck("a steps row fits the box it is given, whichever branch it takes",
+       "both inside", (round(wide_w), round(narrow_w)),
+       0 < wide_w <= 1728 + 2 and 0 < narrow_w <= 540 + 2)
+    ck("a box too small for the labels gets the numbers instead of an overflow",
+       "narrow row is far shorter", (round(wide_w), round(narrow_w)),
+       narrow_w < wide_w * 0.62)
+    ck("a steps row is read, so it lands inside the safe inset",
+       "inset > 0", Scene(wide)._bounds("steps")[0],
+       Scene(wide)._bounds("steps")[0] > 0)
+    try:
+        Scene({**wide, "layers": [{"kind": "steps", "from": 0, "to": 2,
+                                   "items": ["only one"]}]})
+        ck("a one-item steps row is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("a one-item steps row is refused", "SceneError", "refused", True)
+
+    # A header puts a mark on the left and a step count on the right. Centre-only
+    # titles could not do it without the scene guessing text widths.
+    def title_box(align):
+        sc = Scene({**wide, "layers": [
+            {"kind": "title", "from": 0, "to": 2, "at": [0.5, 0.2], "align": align,
+             "lines": [{"text": "ABCDEFG", "size": "md"}]}]})
+        return sc._ink_box(sc.layers[0], 1.5)
+    bl, bc, br = title_box("left"), title_box("center"), title_box("right")
+    ck("title align puts the left edge, the centre or the right edge on at[0]",
+       "left starts at it, right ends at it", (round(bl[0]), round(bc[0]), round(br[2])),
+       abs(bl[0] - 960) < 12 and abs(br[2] - 960) < 12 and bc[0] < bl[0])
+    try:
+        Scene({**wide, "layers": [{"kind": "title", "from": 0, "to": 2,
+                                   "align": "middle", "lines": [{"text": "x"}]}]})
+        ck("a misspelt align is refused", "SceneError", "accepted", False)
+    except SceneError:
+        ck("a misspelt align is refused", "SceneError", "refused", True)
 
     ck("a syntax layer is read, so it lands inside the safe inset like the rest",
        "inset > 0", Scene(wide)._bounds("syntax")[0],
