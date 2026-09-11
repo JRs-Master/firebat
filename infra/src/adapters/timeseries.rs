@@ -44,6 +44,10 @@ impl TimeseriesStoreAdapter {
                 end        INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_ts_cov_key ON ts_coverage(series_key);
+            -- The append path asks only for the intervals that MEET the one being added, so it
+            -- seeks by (series, end) instead of walking a series that can hold hundreds of
+            -- thousands of them: a live tick stream had 566,831 intervals in one series.
+            CREATE INDEX IF NOT EXISTS idx_ts_cov_key_end ON ts_coverage(series_key, end);
             "#,
         )
         .map_err(|e| format!("timeseries schema: {e}"))?;
@@ -228,21 +232,48 @@ impl ITimeseriesStorePort for TimeseriesStoreAdapter {
             }
         }
 
-        // 3) coverage [cov_start, cov_end) 추가 + 전체 병합 재기록.
+        // 3) coverage [cov_start, cov_end) — collapse only the intervals this one MEETS.
+        //
+        // This used to read every interval for the series, merge the whole set in memory, delete
+        // all of it and write it back. For a backfilled candle series that is a handful of rows.
+        // For a live one-second tick stream it is the entire history, rewritten on every tick —
+        // and the set only collapses where intervals touch, so a sparse stream (a trade in about
+        // a quarter of the seconds) leaves them disjoint and the set grows without bound.
+        // Measured 2026-09-11: 566,831 intervals in one tick series, ~22 MB/s of writes out of
+        // fifteen ticks a minute, a 100 MB WAL that never reset, and a box that had gone slow.
+        //
+        // Only a neighbour can change: something that overlaps [start,end) or abuts either edge.
+        // Those collapse into one row; every other interval is already right and is left alone.
+        // The stored set is therefore not guaranteed normalised — `uncovered` merges on read,
+        // which it has always done — but in normal operation it stays disjoint anyway.
         if cov_start < cov_end {
-            let mut iv = self.coverage(&conn, key);
-            iv.push((cov_start, cov_end));
-            let merged = Self::merge_intervals(iv);
-            let _ = conn.execute(
-                "DELETE FROM ts_coverage WHERE series_key = ?1",
-                params![key],
-            );
-            for (s, e) in merged {
+            let (mut s, mut e) = (cov_start, cov_end);
+            let met: Vec<(i64, i64)> = conn
+                .prepare(
+                    "SELECT start, end FROM ts_coverage
+                     WHERE series_key = ?1 AND end >= ?2 AND start <= ?3",
+                )
+                .and_then(|mut st| {
+                    st.query_map(params![key, cov_start, cov_end], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+                    })
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                })
+                .unwrap_or_default();
+            for (ms, me) in &met {
+                s = s.min(*ms);
+                e = e.max(*me);
+            }
+            if !met.is_empty() {
                 let _ = conn.execute(
-                    "INSERT INTO ts_coverage (series_key, start, end) VALUES (?1, ?2, ?3)",
-                    params![key, s, e],
+                    "DELETE FROM ts_coverage WHERE series_key = ?1 AND end >= ?2 AND start <= ?3",
+                    params![key, cov_start, cov_end],
                 );
             }
+            let _ = conn.execute(
+                "INSERT INTO ts_coverage (series_key, start, end) VALUES (?1, ?2, ?3)",
+                params![key, s, e],
+            );
         }
 
         let _ = conn.execute_batch("COMMIT;");
@@ -264,6 +295,72 @@ mod tests {
 
     fn row(d: i64, close: f64) -> (i64, serde_json::Value) {
         (d, json!({"date": d.to_string(), "close": close}))
+    }
+
+    /// The intervals as STORED. These tests are about what the append path writes, and the port's
+    /// own reader merges on the way out — which would hide exactly the thing being measured.
+    fn cov_rows(dir: &tempfile::TempDir, key: &str) -> Vec<(i64, i64)> {
+        let c = Connection::open(dir.path().join("ts.db")).unwrap();
+        let mut st = c
+            .prepare("SELECT start, end FROM ts_coverage WHERE series_key = ?1 ORDER BY start")
+            .unwrap();
+        let out = st
+            .query_map(params![key], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        out
+    }
+
+    fn insert_raw(dir: &tempfile::TempDir, key: &str, s: i64, e: i64) {
+        Connection::open(dir.path().join("ts.db"))
+            .unwrap()
+            .execute(
+                "INSERT INTO ts_coverage (series_key, start, end) VALUES (?1, ?2, ?3)",
+                params![key, s, e],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn touching_appends_collapse_into_one_interval() {
+        let (d, s) = store();
+        for t in [10i64, 11, 12] {
+            s.merge_rows("k", &[row(t, 1.0)], t, t + 1);
+        }
+        assert_eq!(cov_rows(&d, "k"), vec![(10, 13)]);
+    }
+
+    #[test]
+    fn sparse_appends_stay_disjoint_and_read_as_gaps() {
+        let (d, s) = store();
+        for t in [10i64, 12, 14] {
+            s.merge_rows("k", &[row(t, 1.0)], t, t + 1);
+        }
+        // A second with no trade in it is not covered, and saying otherwise would claim data
+        // that was never seen — so the set stays disjoint and the gaps are reported.
+        assert_eq!(cov_rows(&d, "k"), vec![(10, 11), (12, 13), (14, 15)]);
+        assert_eq!(s.uncovered("k", 10, 15), vec![(11, 12), (13, 14)]);
+    }
+
+    #[test]
+    fn an_append_leaves_intervals_it_does_not_meet_alone() {
+        let (d, s) = store();
+        // Two overlapping intervals that a whole-set rewrite would normalise into one.
+        insert_raw(&d, "k", 100, 200);
+        insert_raw(&d, "k", 150, 250);
+        // An append nowhere near them must not rewrite them: that rewrite is what turned one
+        // tick a few seconds into hundreds of thousands of row writes.
+        s.merge_rows("k", &[row(10, 1.0)], 10, 11);
+        let cov = cov_rows(&d, "k");
+        assert!(
+            cov.contains(&(100, 200)) && cov.contains(&(150, 250)),
+            "the append rewrote intervals it does not meet: {cov:?}"
+        );
+        // Reads still normalise, which is why not normalising on write is safe.
+        assert_eq!(s.uncovered("k", 100, 250), Vec::<(i64, i64)>::new());
     }
 
     #[test]
