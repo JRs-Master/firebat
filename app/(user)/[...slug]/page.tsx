@@ -39,6 +39,7 @@ async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
 }
 import { PasswordGate } from './password-gate';
 import { ProjectRootView } from './project-root';
+import { pageOrAbsent } from '../../../lib/page-lookup';
 import { AppFrame } from './app-frame';
 import type { Metadata } from 'next';
 
@@ -64,7 +65,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
   const result = await getPageRpc({ slug });
-  if (!result.ok || !result.data) {
+  const record = pageOrAbsent(result, `page '${slug}'`);
+  if (!record) {
     // projectRoot fallback — 1-segment URL 이 프로젝트명과 매칭되면 프로젝트 카탈로그 metadata
     if (!slug.includes('/')) {
       const projectsRes = await scanProjects({});
@@ -107,7 +109,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return { title: 'Not Found' };
   }
 
-  const spec = parsePageRecord(result.data);
+  const spec = parsePageRecord(record);
   const visibility = await resolveVisibility(spec);
 
   // 비공개 페이지는 메타데이터 최소화
@@ -186,7 +188,10 @@ export default async function DynamicPage({ params, searchParams }: Props) {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
   const result = await getPageRpc({ slug });
-  if (!result.ok || !result.data) {
+  // 없는 것과 못 물어본 것은 다르다 — 아래 폴백들은 "없다"에만 해당한다. 통신이 실패했는데
+  // 여기로 내려오면 코어가 삐끗한 순간에 **딴 페이지**가 조용히 뜬다(2026-09-11 실측).
+  const record = pageOrAbsent(result, `page '${slug}'`);
+  if (!record) {
     // 리디렉트 테이블 확인 — slug 변경/프로젝트 이동된 페이지 자동 이동
     const redirectRes = await getRedirect({ slug });
     const redirectTo = redirectRes.ok ? redirectRes.data : null;
@@ -241,7 +246,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     redirect('/404');
   }
 
-  const spec = parsePageRecord(result.data);
+  const spec = parsePageRecord(record);
   const visibility = await resolveVisibility(spec);
 
   // 비공개 페이지 — admin 로그인 상태면 미리보기 허용 (Phase 4 Step 7), 그 외 404

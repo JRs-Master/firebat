@@ -15,6 +15,7 @@ import { get as getPage, verifyPassword as verifyPagePasswordRpc } from './api-g
 import { verifyPassword as verifyProjectPasswordRpc } from './api-gen/project';
 import { parsePageRecord, type ParsedPageSpec } from './util/page-pb-convert';
 import { resolvePageVisibility } from './page-visibility';
+import { pageOrAbsent } from './page-lookup';
 import { SESSION_COOKIE_NAME } from './config';
 
 export type PageGate =
@@ -23,8 +24,10 @@ export type PageGate =
 
 export async function gatePage(slug: string): Promise<PageGate> {
   const res = await getPage({ slug });
-  if (!res.ok || !res.data) return { ok: false, reason: 'missing' };
-  const spec = parsePageRecord(res.data);
+  // 못 물어본 것을 'missing' 으로 적으면 잠깐 아픈 서버가 "그런 페이지 없음"으로 보인다.
+  const record = pageOrAbsent(res, `page '${slug}'`);
+  if (!record) return { ok: false, reason: 'missing' };
+  const spec = parsePageRecord(record);
   const visibility = await resolvePageVisibility(spec);
 
   if (visibility === 'private') {
