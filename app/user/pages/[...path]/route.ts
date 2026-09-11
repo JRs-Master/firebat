@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileBinary } from '../../../../lib/api-gen/storage';
 import { readDeclaration, appCsp, appBootstrap, injectBootstrap } from '../../../../lib/page-app';
@@ -136,6 +137,18 @@ export async function GET(
     if (boot) { buf = Buffer.from(injectBootstrap(buf.toString('utf8'), boot), 'utf8'); seeded = true; }
   }
   const total = buf.length;
+  // Two questions, not one. WHO may hold a copy is the gate's business; HOW STALE that copy may get
+  // is the file's. Welding them into one ternary meant PUBLISHING a page silently changed its code's
+  // freshness: while gated, every file was no-store and always current; the moment it went public the
+  // app's own js and css sat in the browser for five minutes. So one published page answered a
+  // workspace open and an F5 differently, and an update could hand a browser a fresh entry document
+  // that then loaded stale code beside it — the entry is no-store, its siblings were not, and they
+  // expire on their own clocks. Measured 2026-09-11 on /sixty, where three files were replaced and
+  // the reload mixed versions.
+  //
+  // Freshness comes from the bytes now instead of a clock: `no-cache` still lets the browser keep
+  // the copy, it just has to ask first, and an unchanged file costs a 304 rather than a refetch.
+  const etag = `"${createHash('sha1').update(buf).digest('base64url')}"`;
   const headers: Record<string, string> = {
     'Content-Type': file.mimeType || 'application/octet-stream',
     // The app's own policy, translated from what it declared. Same source of truth as the sandbox
@@ -149,7 +162,9 @@ export async function GET(
     // carom — write, reload, `fromCache=true`, old seed, and the record the app had just saved was
     // simply not there. The bytes were on the server the whole time. Reading an app's own state as
     // "gone" is the failure this had to not have.
-    'Cache-Control': seeded || visibility !== 'public' ? 'private, no-store' : 'public, max-age=300',
+    'Cache-Control': seeded ? 'private, no-store'
+      : `${visibility === 'public' ? 'public' : 'private'}, no-cache`,
+    ETag: etag,
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',
     // This answers differently to a navigation than to the frame's own request (above).
@@ -163,6 +178,12 @@ export async function GET(
     // a gated page's files are still refused upstream by `gatePage`.
     'Access-Control-Allow-Origin': '*',
   };
+
+  // A seeded document is a different body every time — the page's stored state is inlined into it —
+  // so it has no stable tag to revalidate against and must never come back as a 304.
+  if (!seeded && !req.headers.get('range') && req.headers.get('if-none-match') === etag) {
+    return new NextResponse(null, { status: 304, headers });
+  }
 
   // Range — media inside a page project needs seek, and the file server this replaces had it.
   const range = req.headers.get('range');
