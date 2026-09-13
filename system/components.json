@@ -1536,7 +1536,25 @@
               "mean": "meaning",
               "trans": "meaning",
               "partOfSpeech": "pos",
-              "pos_tag": "pos"
+              "pos_tag": "pos",
+              "english": "word",
+              "headword": "word",
+              "ipa": "pronunciation",
+              "phonetic": "pronunciation",
+              "sentence": "example",
+              "exampleSentence": "example",
+              "usage": "example",
+              "exampleKo": "exampleMeaning",
+              "exampleTranslation": "exampleMeaning",
+              "memory": "mnemonic",
+              "hook": "mnemonic",
+              "association": "mnemonic",
+              "origin": "etymology",
+              "roots": "etymology",
+              "synonym": "synonyms",
+              "antonym": "antonyms",
+              "img": "image",
+              "imageUrl": "image"
             },
             "properties": {
               "word": {
@@ -1550,10 +1568,70 @@
               },
               "meaning": {
                 "type": "string"
+              },
+              "pronunciation": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "phonetic e.g. /juːˈbɪkwɪtəs/ (tap 🔊 also speaks it via browser TTS)"
+              },
+              "example": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "example sentence USING the word — shown on reveal with the word auto-highlighted (context learning)"
+              },
+              "exampleMeaning": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Korean translation of the example sentence"
+              },
+              "mnemonic": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "memory hook — keyword/sound association (경선식식 소리연상) linking the word to its meaning. Strong for hard/abstract words; omit when it would be forced."
+              },
+              "etymology": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "word roots / origin for deep encoding, e.g. 'ubi(어디든)+que → 어디에나'"
+              },
+              "synonyms": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "antonyms": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "optional image URL (dual coding — best for concrete words; NOT auto-fetched, the author/app provides it)"
               }
             }
           },
-          "description": "vocab flashcards (단어 암기) for key/difficult words in the sentence — include 3–8 useful items. Each: word (English) + pos (part-of-speech abbreviation, e.g. n. v. a. adv. prep. conj.) + meaning (Korean). Rendered as memorize-then-reveal (tap to show). Always add these when analyzing an English sentence."
+          "description": "vocab flashcards (단어 암기) for key/difficult words in the sentence — include 3–8 useful items. Same item shape as the `vocab` component's words: word + meaning required, and pos / pronunciation / example(+exampleMeaning) / mnemonic / etymology / synonyms / antonyms / image are optional, each one a deeper encoding layer shown on reveal. Meaning alone is recognition; a mnemonic or an etymology is what makes a hard word stick — add them for the hard ones. Rendered as memorize-then-reveal (tap to show). Always add these when analyzing an English sentence."
         }
       }
     }

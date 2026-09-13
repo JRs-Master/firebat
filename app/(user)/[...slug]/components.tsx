@@ -1163,7 +1163,7 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
 
 // 단어 암기 — 인터랙티브 플래시카드. 의미는 미색 redaction 바로 가려두고(외우기), 탭하면 공개.
 // "모두 보기/가리기" 토글. 기본 = 전부 가림(암기 모드).
-function VocabList({ items }: { items: Array<{ word: string; meaning: string; pos?: string }> }) {
+function VocabList({ items }: { items: VocabWord[] }) {
   const [shown, setShown] = useState<Set<number>>(new Set());
   const allShown = items.length > 0 && shown.size === items.length;
   const toggleAll = () => setShown(allShown ? new Set() : new Set(items.map((_, i) => i)));
@@ -1181,7 +1181,8 @@ function VocabList({ items }: { items: Array<{ word: string; meaning: string; po
         {items.map((w, i) => {
           const open = shown.has(i);
           return (
-            <li key={i} className="flex items-baseline gap-3 py-1.5 first:pt-0 last:pb-0">
+            <li key={i} className="py-1.5 first:pt-0 last:pb-0">
+              <div className="flex items-baseline gap-3">
               <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px] shrink-0">{w.word}</span>
               <button
                 type="button"
@@ -1193,6 +1194,9 @@ function VocabList({ items }: { items: Array<{ word: string; meaning: string; po
                   ? <span>{w.pos && <span className="text-indigo-400 font-medium">{w.pos} </span>}<InlineMd text={w.meaning} /></span>
                   : <span className="opacity-0">{w.pos ? `${w.pos} ` : ''}{w.meaning || '•••'}</span>}
               </button>
+              </div>
+              {/* 공개했을 때만 정교화 층을 붙인다 — 가린 채로 보이면 인출 연습이 깨진다. */}
+              {open && <WordReveal w={w} />}
             </li>
           );
         })}
@@ -2594,7 +2598,8 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
   pattern?: string;
   translation?: string;
   notes?: string[];
-  vocab?: Array<{ word?: string; meaning?: string; pos?: string; partOfSpeech?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string }>;
+  vocab?: Array<{ word?: string; meaning?: string; pos?: string; partOfSpeech?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string;
+    pronunciation?: string; example?: string; exampleMeaning?: string; mnemonic?: string; etymology?: string; synonyms?: string[]; antonyms?: string[]; image?: string }>;
   groups?: Array<{ label?: string; role?: string; text?: string; depth?: number; modifies?: string; head?: string }>;
 }) {
   const toks = Array.isArray(tokens) ? tokens.filter((t) => t && t.text) : [];
@@ -2610,10 +2615,15 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
     .filter((g) => g.text);
   const noteList = Array.isArray(notes) ? notes.filter(Boolean) : [];
   const vocabList = (Array.isArray(vocab) ? vocab : [])
+    // 정교화 층을 그대로 실어 보낸다. 여기서 {word,pos,meaning} 으로 누르면 단어 카드가
+    // 이미 그릴 줄 아는 니모닉·어원·예문이 통째로 사라진다 — 좁은 사본이 원본을 이기던 자리.
     .map((w) => ({
       word: (w?.word ?? w?.en ?? w?.term ?? '') as string,
       pos: (w?.pos ?? w?.partOfSpeech ?? '') as string,
       meaning: (w?.meaning ?? w?.ko ?? w?.kor ?? w?.definition ?? w?.def ?? '') as string,
+      pronunciation: w?.pronunciation, example: w?.example, exampleMeaning: w?.exampleMeaning,
+      mnemonic: w?.mnemonic, etymology: w?.etymology,
+      synonyms: w?.synonyms, antonyms: w?.antonyms, image: w?.image,
     }))
     .filter((w) => w.word || w.meaning);
   return (
