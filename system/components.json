@@ -1387,8 +1387,8 @@
   {
     "name": "sentence",
     "componentType": "Sentence",
-    "description": "English syntax-reading study card (구문독해 / 천일문 style): one sentence split into reading chunks with grammar roles (S/V/O/C/M) + per-chunk 직독직해 Korean gloss + sentence pattern (1~5형식) + grammar notes (준동사 etc.) + vocab flashcards. Interactive: tap a chunk to reveal its role + gloss (hidden by default = self-test); vocab meanings stay hidden (memorize) until tapped. Renders on a cream exam-paper background.",
-    "semanticText": "영어 구문독해 천일문 문장분석 직독직해 끊어읽기 문장구조 성분 S V O C M 주어 동사 목적어 보어 수식어 5형식 문장형식 준동사 to부정사 동명사 분사 관계사 문법 해설 영어 단어 암기 어휘 vocabulary grammar sentence syntax reading",
+    "description": "English syntax-reading study card (구문독해 / 천일문 style) that teaches a PROCEDURE, not a fact: ask first (ask) → strip what is not the skeleton (groups with strip) → name the one trap (trap) → the skeleton stands (tokens roles) → read it twice (per-chunk 직독직해 gloss, then natural translation) → memorise the hard words (vocab, with mnemonic/etymology) → one rule to take away (rule). Interactive: tap a chunk to reveal its role + gloss (hidden by default = self-test); vocab meanings stay hidden until tapped and open an elaboration layer (example / mnemonic / etymology / synonyms). Renders on a cream exam-paper background.",
+    "semanticText": "영어 구문독해 천일문 문장분석 직독직해 끊어읽기 문장구조 성분 S V O C M 주어 동사 목적어 보어 수식어 5형식 문장형식 준동사 to부정사 동명사 분사 관계사 문법 해설 영어 단어 암기 어휘 vocabulary grammar sentence syntax reading 함정 오답포인트 뼈대 찾기 군더더기 걷어내기 오늘의 규칙 여는 질문 절차 학습",
     "propsSchema": {
       "type": "object",
       "synonyms": {
@@ -1404,7 +1404,12 @@
         "points": "notes",
         "note": "notes",
         "grammarPoints": "notes",
-        "analysis": "notes"
+        "analysis": "notes",
+        "question": "ask",
+        "prompt": "ask",
+        "takeaway": "rule",
+        "keyPoint": "rule",
+        "summary": "rule"
       },
       "properties": {
         "sentence": {
@@ -1514,10 +1519,17 @@
                   "string",
                   "null"
                 ]
+              },
+              "strip": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true = this chunk is scaffolding to strip away, not skeleton (부사절·전치사구·관계절·삽입구). Rendered dimmed. **Array order is the stripping order — outermost first**, which is the whole move this card teaches: take away what is not the skeleton and what remains is."
               }
             }
           },
-          "description": "구·절 구조 끊어읽기 (선택) — 문장을 구/절 청크로 분해: label(구/절 종류, e.g. 주어부/동사부/목적어부/보어부/관계절/부사절/전치사구), text(그 청크의 영어 원문), depth(중첩 깊이 0=최상위·1=그 안의 절·2…), modifies(이 구가 수식하는 대상의 짧은 표기, e.g. 'The package' — 수식어구·관계절에만). 천일문식 구문 분해(수식 관계 포함)."
+          "description": "구·절 구조 끊어읽기 (선택) — 문장을 구/절 청크로 분해: label(구/절 종류, e.g. 주어부/동사부/목적어부/보어부/관계절/부사절/전치사구), text(그 청크의 영어 원문), depth(중첩 깊이 0=최상위·1=그 안의 절·2…), modifies(이 구가 수식하는 대상의 짧은 표기, e.g. 'The package' — 수식어구·관계절에만). 천일문식 구문 분해(수식 관계 포함). 걷어내는 순서대로 배열하고 뼈대가 아닌 것에 strip:true 를 단다."
         },
         "vocab": {
           "type": [
@@ -1632,6 +1644,55 @@
             }
           },
           "description": "vocab flashcards (단어 암기) for key/difficult words in the sentence — include 3–8 useful items. Same item shape as the `vocab` component's words: word + meaning required, and pos / pronunciation / example(+exampleMeaning) / mnemonic / etymology / synonyms / antonyms / image are optional, each one a deeper encoding layer shown on reveal. Meaning alone is recognition; a mnemonic or an etymology is what makes a hard word stick — add them for the hard ones. Rendered as memorize-then-reveal (tap to show). Always add these when analyzing an English sentence."
+        },
+        "ask": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the opening question, shown above everything (e.g. '이 문장의 주어와 동사는 어디일까요?'). The learner tries BEFORE being told — an answer only lands after an attempt. Ask for the skeleton, not for a translation."
+        },
+        "trap": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "synonyms": {
+            "pitfall": "trap",
+            "trick": "trap",
+            "gotcha": "trap"
+          },
+          "properties": {
+            "at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "the chunk the trap sits on, verbatim"
+            },
+            "looksLike": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "what it is mistaken for, e.g. '동사처럼 생겼다'"
+            },
+            "why": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "what settles it — the evidence in the sentence itself"
+            }
+          },
+          "description": "the ONE place a reader goes wrong in this sentence. Exactly one — a card with three traps has none. It belongs after the structure is stripped: named earlier it is hidden by the modifiers, named later the translation has already given it away."
+        },
+        "rule": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the one line to take away, shown last. Name the procedure only after it has been walked — given first it is a slogan. One sentence, general enough for the next sentence of this pattern, e.g. '동사 자리가 이미 찼으면, 그 앞엣것은 주어다.'"
         }
       }
     }

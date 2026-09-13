@@ -2592,15 +2592,18 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   );
 }
 
-function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, groups }: {
+function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, groups, ask, trap, rule }: {
   sentence?: string;
+  ask?: string;
+  trap?: { at?: string; looksLike?: string; why?: string } | null;
+  rule?: string;
   tokens?: Array<{ text: string; role?: string; gloss?: string; form?: string }>;
   pattern?: string;
   translation?: string;
   notes?: string[];
   vocab?: Array<{ word?: string; meaning?: string; pos?: string; partOfSpeech?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string;
     pronunciation?: string; example?: string; exampleMeaning?: string; mnemonic?: string; etymology?: string; synonyms?: string[]; antonyms?: string[]; image?: string }>;
-  groups?: Array<{ label?: string; role?: string; text?: string; depth?: number; modifies?: string; head?: string }>;
+  groups?: Array<{ label?: string; role?: string; text?: string; depth?: number; modifies?: string; head?: string; strip?: boolean }>;
 }) {
   const toks = Array.isArray(tokens) ? tokens.filter((t) => t && t.text) : [];
   // 구·절 구조(끊어읽기) — AI 부담 줄이려 토큰 인덱스 매칭 대신 text+depth 직접. depth=절 중첩,
@@ -2610,6 +2613,7 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
       label: (g?.label ?? g?.role ?? '') as string,
       text: (g?.text ?? '') as string,
       depth: Math.max(0, Math.min(Number(g?.depth) || 0, 4)),
+      strip: g?.strip === true,
       modifies: (g?.modifies ?? g?.head ?? '') as string,
     }))
     .filter((g) => g.text);
@@ -2628,6 +2632,13 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
     .filter((w) => w.word || w.meaning);
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      {/* 여는 질문 — 맨 위. 시도한 뒤의 답만 답이 된다(인출 효과), 그래서 분석보다 앞에 선다. */}
+      {ask && (
+        <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2">
+          <span className="text-[11px] font-bold text-indigo-600 mr-1.5">Q</span>
+          <span className="text-[13px] sm:text-[14px] font-medium text-slate-700"><InlineMd text={ask} /></span>
+        </div>
+      )}
       {pattern && (
         <div className="mb-2.5">
           <span className="inline-block text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5">{pattern}</span>
@@ -2655,12 +2666,23 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
           <div className="flex flex-col gap-1">
             {groupList.map((g, i) => (
               <div key={i} className="flex items-baseline gap-2 text-[13px] sm:text-[14px]" style={{ paddingLeft: `${g.depth * 14}px` }}>
-                {g.label && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{g.label}</span>}
-                <span className="flex-1 min-w-0 text-slate-700"><InlineMd text={g.text} /></span>
+                {g.label && <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${g.strip ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{g.label}</span>}
+                {/* 걷어낼 것은 흐리게 — 뼈대가 아닌 것을 지우고 나면 남는 게 뼈대라는 걸 눈이 먼저 안다. */}
+                <span className={`flex-1 min-w-0 ${g.strip ? 'text-slate-400' : 'text-slate-700'}`}><InlineMd text={g.text} /></span>
                 {g.modifies && <span className="shrink-0 text-[10px] font-medium text-cyan-600 self-center" title="수식 대상">→ {g.modifies}</span>}
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {/* 함정 — 군더더기를 걷고도 헷갈리는 자리 하나. 구조 바로 뒤에 선다: 걷어내기 전에 짚으면
+          군더더기에 가려 안 보이고, 해석 뒤로 밀면 답을 이미 알고 보는 것이 된다. */}
+      {trap && (trap.at || trap.looksLike || trap.why) && (
+        <div className="mt-3.5 rounded-lg border border-rose-200 bg-rose-50/60 p-3">
+          <div className="text-[11px] font-bold text-rose-600 mb-1">함정</div>
+          {trap.at && <div className="text-[14px] sm:text-[15px] font-semibold text-slate-800">{trap.at}</div>}
+          {trap.looksLike && <div className="mt-0.5 text-[13px] text-rose-700"><InlineMd text={trap.looksLike} /></div>}
+          {trap.why && <div className="mt-1 text-[13px] sm:text-[14px] text-slate-600"><InlineMd text={trap.why} /></div>}
         </div>
       )}
       {translation && (
@@ -2678,6 +2700,13 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
               <li key={i} className="flex gap-1.5"><span className="text-indigo-400 shrink-0">•</span><span className="flex-1"><InlineMd text={n} /></span></li>
             ))}
           </ul>
+        </div>
+      )}
+      {/* 가져갈 한 줄 — 맨 끝. 절차를 다 밟은 뒤에 이름을 붙여야 그 이름이 뭔가를 가리킨다. */}
+      {rule && (
+        <div className="mt-3.5 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
+          <div className="text-[11px] font-bold text-emerald-700 mb-1">오늘의 규칙</div>
+          <div className="text-[14px] sm:text-[15px] font-medium text-slate-800"><InlineMd text={rule} /></div>
         </div>
       )}
     </div>
