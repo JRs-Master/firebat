@@ -174,9 +174,7 @@ impl PageManager {
         // ① 위로 — 조상 중에 신뢰 앱이 있나
         for cut in ancestors(slug) {
             if self.is_vouched_app(cut) {
-                return Err(format!(
-                    "slug \"{slug}\" 는 신뢰 앱 \"{cut}\" 의 주소 안이라 쓸 수 없습니다.                      그 앱이 \"{cut}/…\" 를 전부 자기 화면으로 받으므로 이 페이지는 저장되어도                      열리지 않습니다. 다른 이름을 쓰거나(예: \"{cut}-…\"), 그 앱의 trust 를 끄십시오."
-                ));
+                return Err(format!("slug \"{slug}\" 는 이미 앱 \"{cut}\" 가 쓰고 있습니다."));
             }
         }
         // ② 아래로 — 이 저장이 앱을 신뢰로 만드는데 이미 그 아래에 페이지가 있나
@@ -194,8 +192,7 @@ impl PageManager {
                 .collect();
             if !under.is_empty() {
                 return Err(format!(
-                    "\"{slug}\" 를 신뢰 앱으로 두면 그 아래 페이지 {}개가 주소를 잃습니다: {}.                      먼저 그 페이지들의 이름을 옮기십시오.",
-                    under.len(),
+                    "slug \"{slug}\" 아래에 페이지가 이미 있습니다: {}",
                     under.join(", ")
                 ));
             }
