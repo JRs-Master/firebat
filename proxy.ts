@@ -102,6 +102,11 @@ export async function proxy(request: NextRequest) {
   // 이 페이지를 볼 수 있나) + AppManager(그 페이지가 선언했나 — 저장소·모듈명) +
   // requiresApproval 클래스 전면 거부(page-form 과 같은 함수) + IP rate.
   if (pathname === '/api/page-bridge' && request.method === 'POST') return NextResponse.next();
+  // 이 파일의 rewrite 가 스스로 부르는 조회 — 내부 요청이라 쿠키가 없다. 여기 없으면 401 을
+  // 받고, 그러면 「신뢰 앱이 아니다」로 읽혀 주소가 파일 경로로 떨어진다(실측 2026-09-14).
+  // 답하는 것은 「이 페이지를 어떻게 배달하나」뿐이고, 「누가 볼 수 있나」는 바이트를 내주는
+  // 라우트의 gatePage 가 그대로 판정한다 — 권한을 여는 칸이 아니다.
+  if (pathname === '/api/page-entry' && request.method === 'GET') return NextResponse.next();
   // Telegram webhook — 텔레그램 Bot API 가 호출. X-Telegram-Bot-Api-Secret-Token 헤더로 자체 검증.
   if (pathname === '/api/telegram/webhook' && request.method === 'POST') return NextResponse.next();
   // 사이트 소유권 인증 파일 — Google/AdSense/Naver/Bing crawler 가 토큰 없이 접근.
