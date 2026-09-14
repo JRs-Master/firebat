@@ -21,6 +21,14 @@ export interface PageNeeds {
   modules?: string[];
   /** Extra https hosts for the app's `script-src`. */
   scripts?: string[];
+  /**
+   * https hosts this app may embed in a frame of its own — a video, a map, a player.
+   *
+   * ⚠️ Only a vouched app gets these. A framed app is sandboxed, and a nested frame inherits its
+   * parent's sandbox, so the embedded page would have no origin either and most embeds refuse to
+   * run that way. Opening `frame-src` there would have looked like a feature and delivered nothing.
+   */
+  frames?: string[];
   worker?: boolean;
   fullscreen?: boolean;
   modals?: boolean;
@@ -33,6 +41,25 @@ export interface PageDeclaration {
   kind: PageKind;
   /** The app's own source directory, e.g. `user/pages/carom/`. */
   source?: string;
+  /**
+   * The operator vouches for this app's code, so it is served as a page of this site rather than
+   * framed on an origin of its own.
+   *
+   * The sandbox exists for one reason: the admin API takes cookie auth, so an app on our origin
+   * could act as the signed-in admin. That danger is real when someone ELSE wrote the app. When the
+   * operator wrote it, the app already has every privilege the operator has — framing it guards
+   * nothing and costs six things we measured: no real address, F5 loses the place, no SEO, no
+   * embedded frames, none of our own components, and (2026-09-14, Edge 153) the frame does not
+   * survive at all.
+   *
+   * ⛔ Default off, and a hub tenant can never set it: a tenant vouching for their own code is the
+   * exact thing the boundary is for. This is the operator's signature, not the author's.
+   *
+   * ⚠️ Not the end state. With a domain, apps get an origin of their own and even un-vouched ones
+   * stop needing the frame — this declaration then costs nothing and guards nothing. It is written
+   * so that day changes one function, not every app.
+   */
+  trust: boolean;
   needs: PageNeeds;
 }
 
@@ -45,10 +72,12 @@ export function readDeclaration(head: Record<string, any> | undefined | null): P
   return {
     kind,
     source,
+    trust: h.trust === true,
     needs: {
       storage: n.storage === true,
       modules: Array.isArray(n.modules) ? n.modules.filter((m: any) => typeof m === 'string') : [],
       scripts: Array.isArray(n.scripts) ? n.scripts.filter(isGrantableScriptHost) : [],
+      frames: Array.isArray(n.frames) ? n.frames.filter(isGrantableScriptHost) : [],
       worker: n.worker === true,
       fullscreen: n.fullscreen === true,
       modals: n.modals === true,
@@ -105,6 +134,35 @@ export function frameAllow(needs: PageNeeds): string {
  * headers) or send cookies (its requests are cross-site) — measured. Server access is the bridge's
  * one path, not a fetch.
  */
+/**
+ * The policy for a vouched app — a page of this site, not a prisoner of it.
+ *
+ * The differences from the jail are the ones the jail existed to impose: this document may frame
+ * what it declared (a lesson can embed the video it is about), it may talk to our own origin (the
+ * bridge is a same-origin call now, not a message to a parent), and it may be navigated to, because
+ * being navigated to is how a page is opened. `'self'` finally means something here.
+ *
+ * Still not `default-src *`: an app that never declared a host should not reach one, and a typo in
+ * a URL should fail loudly rather than fetch a stranger.
+ */
+export function trustedAppCsp(needs: PageNeeds): string {
+  const hosts = (needs.scripts ?? []).join(' ');
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${hosts}`.trim(),
+    `style-src 'self' 'unsafe-inline' ${hosts} https://fonts.googleapis.com`.trim(),
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' data: blob: https:",
+    "font-src 'self' https: data:",
+    "connect-src 'self' https:",
+    needs.worker ? "worker-src 'self' blob:" : "worker-src 'none'",
+    // The one the jail could never give: an embedded player, a map, a video the lesson is about.
+    needs.frames?.length ? `frame-src ${needs.frames.join(' ')}` : "frame-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ');
+}
+
 export function appCsp(needs: PageNeeds): string {
   const scripts = ["'self'", "'unsafe-inline'", ...(needs.scripts ?? [])].join(' ');
   const styles = ["'self'", "'unsafe-inline'", ...(needs.scripts ?? [])].join(' ');
@@ -156,18 +214,31 @@ function embed(value: unknown): string {
 export function appBootstrap(
   slug: string,
   seed: Record<string, string>,
-  opts: { storage: boolean; modules: string[] },
+  opts: { storage: boolean; modules: string[]; direct?: boolean },
 ): string {
   const parts: string[] = [];
   if (opts.storage) parts.push(STORAGE_SHIM);
-  if (opts.modules.length) parts.push(MODULE_CLIENT);
+  if (opts.modules.length) parts.push(opts.direct ? MODULE_CLIENT_DIRECT : MODULE_CLIENT);
   if (!parts.length) return '';
-  return `<script>(function(){
-var SLUG=${embed(slug)},S=${embed(seed)},MODULES=${embed(opts.modules)},SEQ=0,PEND={};
-function post(m){try{m.v=1;m.slug=SLUG;parent.postMessage(m,'*')}catch(e){}}
+  // ⭐ The app's side of the contract does not change between the two: the same shimmed
+  // `localStorage`, the same `firebat.call`, the same page store behind both. Only the WIRE
+  // differs — framed, the app has no origin and has to ask its parent to speak for it; vouched, it
+  // is a page of this site and calls the bridge itself. An app must not have to know which it is,
+  // or vouching for one would mean editing it.
+  const transport = opts.direct
+    ? `function post(m){try{fetch('/api/page-bridge',{method:'POST',credentials:'same-origin',
+ headers:{'content-type':'application/json'},
+ body:JSON.stringify({slug:SLUG,op:'storage.'+m.op,key:m.key,value:m.value})})
+ .then(function(r){return r.json()}).then(function(j){
+  if(j&&j.ok===false)console.error('[firebat] storage: '+(j.error||'store failed'))})
+ .catch(function(){})}catch(e){}}`
+    : `function post(m){try{m.v=1;m.slug=SLUG;parent.postMessage(m,'*')}catch(e){}}
 addEventListener('message',function(e){var d=e.data;if(!d)return;
  if(d.fb==='store:error'){console.error('[firebat] storage: '+d.error);return}
- if(d.fb==='call:done'&&PEND[d.id]){var p=PEND[d.id];delete PEND[d.id];d.ok?p.res(d.data):p.rej(new Error(d.error||'call failed'))}});
+ if(d.fb==='call:done'&&PEND[d.id]){var p=PEND[d.id];delete PEND[d.id];d.ok?p.res(d.data):p.rej(new Error(d.error||'call failed'))}});`;
+  return `<script>(function(){
+var SLUG=${embed(slug)},S=${embed(seed)},MODULES=${embed(opts.modules)},SEQ=0,PEND={};
+${transport}
 ${parts.join('\n')}
 })()</script>`;
 }
@@ -195,6 +266,17 @@ window.firebat={modules:MODULES,call:function(module,input){
  var id=String(++SEQ);
  return new Promise(function(res,rej){PEND[id]={res:res,rej:rej};post({fb:'call',id:id,module:module,input:input||{}});
   setTimeout(function(){if(PEND[id]){delete PEND[id];rej(new Error('module call timed out'))}},120000)})}};`;
+
+/** The same `firebat.call`, without a parent to relay it. Same refusal text, so an app that names
+ *  an undeclared module reads the same sentence either way. */
+const MODULE_CLIENT_DIRECT = `
+window.firebat={modules:MODULES,call:function(module,input){
+ if(MODULES.indexOf(module)<0)return Promise.reject(new Error("this page did not declare '"+module+"' — add it to needs.modules and republish"));
+ return fetch('/api/page-bridge',{method:'POST',credentials:'same-origin',
+  headers:{'content-type':'application/json'},
+  body:JSON.stringify({slug:SLUG,op:'module.run',module:module,input:input||{}})})
+ .then(function(r){return r.json()})
+ .then(function(j){if(!j||!j.ok)throw new Error((j&&j.error)||'call failed');return j.data})}};`;
 
 
 /**

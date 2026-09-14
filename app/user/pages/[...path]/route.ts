@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileBinary } from '../../../../lib/api-gen/storage';
-import { readDeclaration, appCsp, appBootstrap, injectBootstrap } from '../../../../lib/page-app';
+import { readDeclaration, appCsp, trustedAppCsp, appBootstrap, injectBootstrap } from '../../../../lib/page-app';
 import { appStore } from '../../../../lib/api-gen/page';
 import { gatePage } from '../../../../lib/page-gate';
 
@@ -110,8 +110,11 @@ export async function GET(
   // `Sec-Fetch-Dest` tells a navigation from the frame's own request (`document` vs `iframe`); a
   // request without the header is served as before, since this decides how many URLs an app has and
   // not who may read it — that is `gatePage`, above, and it has already run.
+  // A vouched app IS this page — navigating to it is how it is opened, not an escape from a frame.
+  // The refusal below exists because an app on an opaque origin must not also have an address on
+  // ours; a vouched app has no opaque origin to protect.
   let attachment: string | null = null;
-  if ((req.headers.get('sec-fetch-dest') || '') === 'document') {
+  if (!decl.trust && (req.headers.get('sec-fetch-dest') || '') === 'document') {
     if (!decl.needs.downloads || (file.mimeType || '').startsWith('text/html')) return notFound();
     // Segments are already `[A-Za-z0-9._-]` only, so the quoted name needs no further escaping.
     attachment = `attachment; filename="${base.split('/').pop()}"`;
@@ -133,6 +136,7 @@ export async function GET(
     const boot = appBootstrap(name, seed, {
       storage: !!decl.needs.storage,
       modules: decl.needs.modules ?? [],
+      direct: decl.trust,
     });
     if (boot) { buf = Buffer.from(injectBootstrap(buf.toString('utf8'), boot), 'utf8'); seeded = true; }
   }
@@ -153,7 +157,10 @@ export async function GET(
     'Content-Type': file.mimeType || 'application/octet-stream',
     // The app's own policy, translated from what it declared. Same source of truth as the sandbox
     // tokens the page frames it with — split them and the looser half decides.
-    'Content-Security-Policy': appCsp(decl.needs),
+    // ⛔ The jail's policy is for the jail. A vouched app is a page of this site: `'self'` means our
+    // origin (in the frame it meant nothing, which is why the frame needed every allowance spelled
+    // out), and the app may reach the bridge the way any page of ours does.
+    'Content-Security-Policy': decl.trust ? trustedAppCsp(decl.needs) : appCsp(decl.needs),
     // A gated project must not sit in a shared cache, and an app under active editing should not
     // be pinned for long anywhere. Public assets keep the five minutes Caddy was giving them.
     //

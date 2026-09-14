@@ -298,6 +298,16 @@ export default async function DynamicPage({ params, searchParams }: Props) {
   // could not be made full-bleed without restructuring the page to fool the guess.
   const declared = readDeclaration(spec.head);
   if (declared.kind === 'app' && declared.source) {
+    // Vouched: the app is a page of this site, so it is served at its own address instead of being
+    // framed. `index.html` and not the directory on purpose — a directory URL is normalised to the
+    // slash-less form and every relative `src="app.js"` in the document would then resolve one
+    // level too high (measured 2026-08-30 on carom). Naming the file keeps the app unedited.
+    //
+    // ⛔ Never inside a hub. There the page's author is a tenant, and a tenant vouching for their
+    // own code is exactly what the sandbox is for; the declaration is the operator's signature.
+    if (declared.trust && !slug.startsWith('hub:')) {
+      redirect(`/user/pages/${slug.split('/').map(encodeURIComponent).join('/')}/index.html`);
+    }
     return <AppFrame slug={slug} needs={declared.needs} title={spec.head?.title} />;
   }
 
