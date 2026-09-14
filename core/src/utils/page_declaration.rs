@@ -64,6 +64,11 @@ pub struct PageNeeds {
     /// Extra hosts for the app's CSP `script-src`. https only — see `is_grantable_script_host`.
     #[serde(default)]
     pub scripts: Vec<String>,
+    /// Hosts this app may embed in a frame. Only reachable once the app is out of a sandbox of its
+    /// own — a sandboxed frame hands its sandbox to everything it nests — so this means something
+    /// only together with `trust`.
+    #[serde(default)]
+    pub frames: Vec<String>,
     #[serde(default)]
     pub worker: bool,
     #[serde(default)]
@@ -86,6 +91,12 @@ pub struct PageDeclaration {
     /// Source directory for an app (`user/pages/<slug>/`). `None` = the body is the content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// The operator vouches for this app's code, so it is served as a page of this site rather than
+    /// framed on an origin of its own. The full reasoning lives with the renderer (`lib/page-app.ts`)
+    /// — what matters here is that a vouched app is addressed at its slug and OWNS the whole subtree
+    /// under it, which is why `PageManager::save` refuses to put a page there.
+    #[serde(default)]
+    pub trust: bool,
     #[serde(default)]
     pub needs: PageNeeds,
 }
@@ -121,11 +132,17 @@ pub fn parse_declaration(spec: &serde_json::Value) -> PageDeclaration {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
+    let trust = head.get("trust").and_then(|v| v.as_bool()).unwrap_or(false);
     let needs = head
         .get("needs")
         .and_then(|v| serde_json::from_value::<PageNeeds>(v.clone()).ok())
         .unwrap_or_default();
-    PageDeclaration { kind, source, needs }
+    PageDeclaration {
+        kind,
+        source,
+        trust,
+        needs,
+    }
 }
 
 /// The `<!--firebat … -->` header at the top of an app's entry file, if it has one.

@@ -125,6 +125,11 @@ impl PageManager {
         if !is_hub_scoped {
             crate::utils::slug_validator::check_reserved(slug)?;
         }
+        // 이름 충돌은 같은 문자열만이 아니다 — 신뢰 앱은 자기 slug **아래 주소를 전부** 가진다
+        // (`proxy.ts` 가 그 subtree 를 앱 진입으로 보낸다). 거기 놓인 페이지는 저장은 되고
+        // **영영 안 열린다.** 조용히 지는 모양이라 중복 검사와 같은 자리에서 막는다. hub 도 같이
+        // 건다 — 주소 공간은 하나이고, 예약어와 달리 이건 「내부 영역」이 없다.
+        self.check_vouched_subtree(slug, spec)?;
         // Overwrite scope guard — a hub visitor (project = "hub:...") must not overwrite an existing
         // page owned by a different scope (admin or another hub). db.save_page is ON CONFLICT DO UPDATE,
         // so without this a hub save_page(adminSlug) would hijack the admin page + reassign its project.
@@ -147,6 +152,55 @@ impl PageManager {
         let slugs_vec: Vec<String> = slugs.into_iter().collect();
         self.db.replace_media_usage(slug, &slugs_vec);
         Ok(project_owned)
+    }
+
+    /// `slug` 가 지금 신뢰 앱인가 — 즉 그 아래 주소를 전부 가지는 페이지인가.
+    fn is_vouched_app(&self, slug: &str) -> bool {
+        self.get(slug)
+            .and_then(|p| serde_json::from_str::<serde_json::Value>(&p.spec).ok())
+            .map(|v| {
+                let d = crate::utils::page_declaration::parse_declaration(&v);
+                d.kind == crate::utils::page_declaration::PageKind::App && d.trust
+            })
+            .unwrap_or(false)
+    }
+
+    /// 신뢰 앱의 주소 공간을 지킨다 — **양쪽 다** 막아야 순서를 바꿔서 만들 수 없다.
+    ///
+    /// ⚠️ 신뢰 앱에만 건다. 프레임 안 앱은 자기 주소가 없어 subtree 를 안 가져가고, 보통 페이지는
+    /// 자유롭게 겹쳐도 된다(`guide` 와 `guide/chapter-1` 은 평범한 CMS 모양이다). 실제로 충돌하는
+    /// 경우로 좁히는 것이 규칙이지 목록이 아니다.
+    fn check_vouched_subtree(&self, slug: &str, spec: &str) -> InfraResult<()> {
+        // ① 위로 — 조상 중에 신뢰 앱이 있나
+        for cut in ancestors(slug) {
+            if self.is_vouched_app(cut) {
+                return Err(format!(
+                    "slug \"{slug}\" 는 신뢰 앱 \"{cut}\" 의 주소 안이라 쓸 수 없습니다.                      그 앱이 \"{cut}/…\" 를 전부 자기 화면으로 받으므로 이 페이지는 저장되어도                      열리지 않습니다. 다른 이름을 쓰거나(예: \"{cut}-…\"), 그 앱의 trust 를 끄십시오."
+                ));
+            }
+        }
+        // ② 아래로 — 이 저장이 앱을 신뢰로 만드는데 이미 그 아래에 페이지가 있나
+        let decl = serde_json::from_str::<serde_json::Value>(spec)
+            .map(|v| crate::utils::page_declaration::parse_declaration(&v))
+            .unwrap_or_default();
+        if decl.kind == crate::utils::page_declaration::PageKind::App && decl.trust {
+            let prefix = format!("{slug}/");
+            let under: Vec<String> = self
+                .db
+                .list_pages()
+                .into_iter()
+                .filter(|p| p.slug.starts_with(&prefix))
+                .map(|p| p.slug)
+                .collect();
+            if !under.is_empty() {
+                return Err(format!(
+                    "\"{slug}\" 를 신뢰 앱으로 두면 그 아래 페이지 {}개가 주소를 잃습니다: {}.                      먼저 그 페이지들의 이름을 옮기십시오.",
+                    under.len(),
+                    under.join(", ")
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// The page's project, and a spec that agrees with it.
@@ -673,8 +727,30 @@ impl PageManager {
 // Tests 이관 — `infra/tests/page_manager_test.rs` (integration test).
 // private fn 사용 test 만 inline 유지 — `extract_media_slugs_from_spec`
 // (uses `PageManager::extract_media_slugs` private fn).
+/// `slug` 의 조상 경로들, 가까운 것부터. **평평한 slug 는 하나도 내지 않는다** — 지금 있는 모든
+/// 페이지가 평평하므로 이 가드는 그것들을 건드릴 수 없다는 뜻이고, 그게 이 함수를 따로 둔 이유다.
+fn ancestors(slug: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut cut = slug;
+    while let Some(i) = cut.rfind('/') {
+        cut = &cut[..i];
+        out.push(cut);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    // 이 가드가 지금 있는 페이지를 건드릴 수 없다는 것부터 잰다 — 여섯 개가 전부 평평하다.
+    #[test]
+    fn a_flat_slug_has_no_ancestors_so_the_subtree_guard_never_fires_on_one() {
+        assert!(super::ancestors("sixty").is_empty());
+        assert!(super::ancestors("carom").is_empty());
+        assert_eq!(super::ancestors("sixty/as-markets"), vec!["sixty"]);
+        // 가까운 조상부터 — 먼 쪽이 먼저 걸리면 엉뚱한 앱 이름을 대며 거절한다.
+        assert_eq!(super::ancestors("a/b/c"), vec!["a/b", "a"]);
+    }
+
     use super::*;
 
     #[test]

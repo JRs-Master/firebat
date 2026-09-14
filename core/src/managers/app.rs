@@ -156,16 +156,16 @@ impl AppManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::page_declaration::PageNeeds;
 
     #[test]
     fn a_page_that_declared_nothing_may_call_nothing() {
         // The check under test is the one that matters here — an empty declaration grants nothing,
         // whichever module is asked for.
+        // `..Default::default()` on purpose — this test is about what an EMPTY declaration grants,
+        // so a field added later must land here as its default rather than as a compile error.
         let d = PageDeclaration {
             kind: PageKind::App,
-            source: None,
-            needs: PageNeeds::default(),
+            ..Default::default()
         };
         assert!(!d.needs.modules.iter().any(|m| m == "yfinance"));
         assert!(!d.needs.storage);
