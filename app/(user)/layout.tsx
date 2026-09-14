@@ -18,6 +18,7 @@ import { tokensToCss, mergeTokens } from '../../lib/design-tokens';
 import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';
 import { parsePageRecord } from '../../lib/util/page-pb-convert';
+import { readDeclaration } from '../../lib/page-app';
 
 /** Page-level layout override 해석 — proxy.ts 가 설정한 x-firebat-pathname 으로 spec 조회.
  *  spec.head.layoutMode / contentMaxWidth 설정되어 있으면 페이지별 override.
@@ -68,11 +69,42 @@ async function isHubInstancePage(): Promise<boolean> {
   }
 }
 
+/**
+ * `kind: "app"` 페이지는 화면이 iframe 하나다 — 헤더도 푸터도 사이드바도 안 보인다.
+ *
+ * 그런데 여태 그것들을 **전부 렌더하고 CSS 로 숨겼다**(AppFrame 의 LOCK_CSS). 숨긴 것의 대가가
+ * 네트워크에 그대로 남는다: 실측 2026-09-14, 앱 페이지 한 번 여는 데 청크 29개와 2 MB 폰트.
+ * 우리 출처는 TLS 가 없어 HTTP/1.1 이고 **연결이 6개**라, 그 덩어리가 연결을 다 물면 **프레임이
+ * 자기 파일을 못 받는다** — 실패한 로드의 `app.js` 요청이 0건이던 것이 이것이고, 사용자가 본
+ * 「중간에 멈춘다」가 이것이다. 캐시가 차 있으면 이기고 비어 있으면 진다(배포 직후가 그 순간이다).
+ *
+ * 보이지 않는 크롬 때문에 앱이 굶는 것은 크롬 쪽이 틀린 것이다. hub 와 같은 우회로 보낸다.
+ */
+async function isAppPage(): Promise<boolean> {
+  try {
+    const h = await headers();
+    const pathname = h.get('x-firebat-pathname') ?? '';
+    if (!pathname || pathname === '/' || pathname.startsWith('/api')) return false;
+    const slug = decodeURIComponent(pathname.replace(/^\/+/, '').replace(/\/+$/, ''));
+    if (!slug) return false;
+    const res = await getPageRpc({ slug });
+    if (!res.ok || !res.data) return false;
+    const decl = readDeclaration(parsePageRecord(res.data).head);
+    return decl.kind === 'app' && !!decl.source;
+  } catch {
+    return false;
+  }
+}
+
 /** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입.
  *  Hub instance 매칭 시 = layout 자체 우회 (children 만 렌더) — admin chat UI 가 본인 layout
  *  (ConsoleLayoutInner) 을 가지고 있어 중복 헤더 / footer 회피. */
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
   if (await isHubInstancePage()) {
+    return <>{children}</>;
+  }
+  // 앱 페이지도 같은 우회. 숨길 것을 그리지 않으면 그 청크도 그 폰트도 받지 않는다.
+  if (await isAppPage()) {
     return <>{children}</>;
   }
   const seoRes = await getCmsSettings();
