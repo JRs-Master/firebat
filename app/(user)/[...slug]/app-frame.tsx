@@ -123,6 +123,15 @@ export function AppFrame({
           src={src}
           title={title || slug}
           sandbox={sandboxTokens(needs)}
+          // The frame loads after the page settles, not alongside it. Measured 2026-09-14 on Edge
+          // 153: an app frame fetched its document and then never parsed it — no `app.js`, no
+          // stylesheet, not even a one-pixel image — and a moment later the frame was showing the
+          // site root. The moment tracked the parent's hydration, not the frame's own work: making
+          // the frame's font non-blocking moved it from 2.2s to 0.6s. Chromium 143 never does it.
+          // Deferring the frame takes it out of that window. This is avoidance, not a diagnosis —
+          // what Edge is doing there is still unexplained, and the standing structural answer is to
+          // stop framing reviewed apps at all (CLAUDE.md 제13장).
+          loading="lazy"
           {...(allow ? { allow } : {})}
           style={{ display: 'block', width: '100%', height: '100dvh', border: 0 }}
         />
