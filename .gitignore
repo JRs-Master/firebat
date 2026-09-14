@@ -22,6 +22,8 @@ tsconfig.tsbuildinfo
 
 # Claude Code 작업 기록
 CLAUDE.md
+# CLAUDE.md 의 청크 — 같은 성격(PII·작업 기록)이라 같이 무시한다
+CLAUDE.*.md
 
 # Firebat AI 자율 메모리 인덱스 (data/firebat-memory/ 본문은 data/ 로 자동 gitignored)
 firebat.md
