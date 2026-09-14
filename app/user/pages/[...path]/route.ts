@@ -164,7 +164,14 @@ export async function GET(
     // "gone" is the failure this had to not have.
     'Cache-Control': seeded ? 'private, no-store'
       : `${visibility === 'public' ? 'public' : 'private'}, no-cache`,
-    ETag: etag,
+    // ⛔ A seeded document gets NO validator. Its body carries the page's stored state inline, so
+    // the tag describes bytes that will not exist again — and handing out `no-store` and a
+    // validator together tells a browser two opposite things about the same response. This shipped
+    // as `ETag: etag` for every file: the 304 branch below excluded seeded documents, but the
+    // header did not, so the contradiction went out on every app's entry document. The commit that
+    // added it had already written down why seeded documents "ha[ve] no stable tag" — the code just
+    // did not follow its own sentence.
+    ...(seeded ? {} : { ETag: etag }),
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes',
     // This answers differently to a navigation than to the frame's own request (above).
