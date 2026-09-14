@@ -13,7 +13,45 @@ import { SESSION_COOKIE_NAME } from './lib/config';
  * - /api/auth: 로그인 엔드포인트 — 인증 불필요
  * - /api/*: 쿠키 또는 Bearer 토큰 필요 (세부 검증은 route handler에서)
  */
-export function proxy(request: NextRequest) {
+/**
+ * A vouched app keeps its own address.
+ *
+ * `head.trust` takes an app out of the sandbox, and the obvious delivery — redirect `/sixty` to the
+ * file it lives in — works but renames the product: the bar would read `/user/pages/sixty/index.html`.
+ * An address is part of what a page is, so the app is served AT its slug and only the routing moves.
+ *
+ * It has to happen here. A rewrite runs before routing, and the page route can only render React or
+ * redirect. The lookup is one internal call (`/api/page-entry`), cached per slug for a minute — an
+ * app does not become un-vouched between two clicks — and the answer is not a permission: the route
+ * that hands over the bytes still runs `gatePage`.
+ *
+ * ⛔ Fail open. Every path out of here that is not a definite "yes" lets the request continue, and
+ * the page route still redirects a vouched app to its file. If this layer goes quiet the app is
+ * ugly, not gone.
+ */
+const ENTRY_TTL_MS = 60_000;
+const entryCache = new Map<string, { entry: string | null; at: number }>();
+const SLUG_ONLY = /^\/([A-Za-z0-9][A-Za-z0-9_-]*)$/;
+
+async function vouchedEntry(request: NextRequest): Promise<string | null> {
+  const m = SLUG_ONLY.exec(request.nextUrl.pathname);
+  if (!m) return null;
+  const slug = m[1];
+  const hit = entryCache.get(slug);
+  if (hit && Date.now() - hit.at < ENTRY_TTL_MS) return hit.entry;
+  try {
+    const url = new URL(`/api/page-entry?slug=${encodeURIComponent(slug)}`, request.nextUrl.origin);
+    const res = await fetch(url);
+    const entry = res.ok ? (((await res.json()) as { entry?: string }).entry ?? null) : null;
+    entryCache.set(slug, { entry, at: Date.now() });
+    return entry;
+  } catch {
+    // A hiccup is not an answer — do not cache it, and do not let it decide how the page is served.
+    return null;
+  }
+}
+
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   // 쿠키 확인 — SESSION_COOKIE_NAME (firebat_token) 만. 옛 firebat_admin_token=authenticated
@@ -88,6 +126,14 @@ export function proxy(request: NextRequest) {
   // head.layoutMode override 결정하기 위해 사용. /admin /api 는 layout 무관해도 영향 0.
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-firebat-pathname', pathname);
+
+  // Vouched app — same URL, different route. Asked last so nothing above changes meaning: the auth
+  // redirects and the API allow-list have already had their say.
+  const entry = await vouchedEntry(request);
+  if (entry) {
+    return NextResponse.rewrite(new URL(entry, request.nextUrl.origin),
+      { request: { headers: requestHeaders } });
+  }
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
