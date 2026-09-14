@@ -145,8 +145,8 @@ export async function GET(
   // in one place because they answer the same fact: `base-uri 'self'` permits the tag, and
   // `script-src 'unsafe-inline'` the repair, both only in the vouched policy.
   if (decl.trust && (file.mimeType || '').startsWith('text/html')) {
-    const dirUrl = `/user/pages/${name.split('/').map(encodeURIComponent).join('/')}/`;
-    buf = Buffer.from(injectBootstrap(buf.toString('utf8'), trustedHead(dirUrl)), 'utf8');
+    const enc = name.split('/').map(encodeURIComponent).join('/');
+    buf = Buffer.from(injectBootstrap(buf.toString('utf8'), trustedHead(`/user/pages/${enc}/`, `/${enc}`)), 'utf8');
   }
   const total = buf.length;
   // Two questions, not one. WHO may hold a copy is the gate's business; HOW STALE that copy may get

@@ -261,22 +261,28 @@ install('sessionStorage',mk({},false));`;
  *  its page declared. Refusals name the fix, so an app that needs another module is a declaration
  *  edit rather than a mystery. */
 const MODULE_CLIENT = `
-window.firebat={modules:MODULES,call:function(module,input){
+window.firebat=window.firebat||{};window.firebat.modules=MODULES;
+window.firebat.call=function(module,input){
  if(MODULES.indexOf(module)<0)return Promise.reject(new Error("this page did not declare '"+module+"' — add it to needs.modules and republish"));
  var id=String(++SEQ);
  return new Promise(function(res,rej){PEND[id]={res:res,rej:rej};post({fb:'call',id:id,module:module,input:input||{}});
-  setTimeout(function(){if(PEND[id]){delete PEND[id];rej(new Error('module call timed out'))}},120000)})}};`;
+  setTimeout(function(){if(PEND[id]){delete PEND[id];rej(new Error('module call timed out'))}},120000)})};`;
 
 /** The same `firebat.call`, without a parent to relay it. Same refusal text, so an app that names
- *  an undeclared module reads the same sentence either way. */
+ *  an undeclared module reads the same sentence either way.
+ *
+ *  ⚠️ Both clients ADD to `window.firebat` rather than replacing it. A vouched app is told where it
+ *  is mounted by a script that runs before this one, and assigning a fresh object here wiped that —
+ *  the later injection must not silently delete what the earlier one declared. */
 const MODULE_CLIENT_DIRECT = `
-window.firebat={modules:MODULES,call:function(module,input){
+window.firebat=window.firebat||{};window.firebat.modules=MODULES;
+window.firebat.call=function(module,input){
  if(MODULES.indexOf(module)<0)return Promise.reject(new Error("this page did not declare '"+module+"' — add it to needs.modules and republish"));
  return fetch('/api/page-bridge',{method:'POST',credentials:'same-origin',
   headers:{'content-type':'application/json'},
   body:JSON.stringify({slug:SLUG,op:'module.run',module:module,input:input||{}})})
  .then(function(r){return r.json()})
- .then(function(j){if(!j||!j.ok)throw new Error((j&&j.error)||'call failed');return j.data})}};`;
+ .then(function(j){if(!j||!j.ok)throw new Error((j&&j.error)||'call failed');return j.data})};`;
 
 
 /**
@@ -306,9 +312,17 @@ window.firebat={modules:MODULES,call:function(module,input){
  * On `window`, so it runs after everything the app itself has to say: click bubbles target → …→
  * document → window, and an app that stops a link of its own (SIXTY's footer "준비 중" links) has
  * already set `defaultPrevented` by the time this sees it.
+ *
+ * ⭐ `firebat.mount` is the other half: **an app cannot route on the path unless it is told where it
+ * was mounted.** It knows its own files (that is the base) and it can read `location`, but it cannot
+ * tell which leading segments are the framework's address and which are its own route — and getting
+ * that wrong turns every deep link into a wrong page. It is not something the app can fix in itself
+ * ([[feedback_fixable_in_the_module]]), so the framework says it. An app that finds it absent is
+ * not vouched and has no address of its own to route on, which is the honest signal to fall back.
  */
-export function trustedHead(dirUrl: string): string {
-  return `<base href="${dirUrl}"><script>(function(){window.addEventListener('click',function(e){
+export function trustedHead(dirUrl: string, mount: string): string {
+  return `<base href="${dirUrl}"><script>window.firebat=window.firebat||{};window.firebat.mount=${embed(mount)};
+(function(){window.addEventListener('click',function(e){
  if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
  var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;
  var w=a.getAttribute('target');if(w&&w!=='_self')return;

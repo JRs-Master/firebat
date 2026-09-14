@@ -25,16 +25,34 @@ import { SESSION_COOKIE_NAME } from './lib/config';
  * app does not become un-vouched between two clicks — and the answer is not a permission: the route
  * that hands over the bytes still runs `gatePage`.
  *
+ * ⭐ The app owns the whole subtree, so `/sixty/as-markets` serves the same entry as `/sixty`. That
+ * is what lets a vouched app route on the PATH instead of the hash: a deep link and an F5 both land
+ * on the app, which then reads `location.pathname`. Hash routing was itself a symptom of the jail —
+ * a framed app had no address, so the fragment was the only place its state could live.
+ *
+ * The subpath is not composed into the target: every route under the app serves its entry, which is
+ * the whole convention. The app's own FILES are untouched by this — they keep their real addresses
+ * under `/user/pages/<slug>/` and the document's `<base>` points there, so they never come through
+ * here (the matcher below excludes anything with a file extension).
+ *
+ * ⚠️ Two prices, both declared rather than discovered: a page can no longer exist at `<slug>/…`,
+ * and a deep link 404s instead of merely looking ugly if this lookup fails — the bare address still
+ * fails open, but `/sixty/as-markets` has nowhere else to be served from.
+ *
  * ⛔ Fail open. Every path out of here that is not a definite "yes" lets the request continue, and
  * the page route still redirects a vouched app to its file. If this layer goes quiet the app is
  * ugly, not gone.
  */
 const ENTRY_TTL_MS = 60_000;
+/** Bounded: this now answers for every first path segment on the site, so a crawler walking made-up
+ *  ones must not grow the map forever. Dropping the whole thing costs one lookup per live app. */
+const ENTRY_CACHE_MAX = 500;
 const entryCache = new Map<string, { entry: string | null; at: number }>();
-const SLUG_ONLY = /^\/([A-Za-z0-9][A-Za-z0-9_-]*)$/;
+/** `/slug` or `/slug/<route>` — the first segment names the app, the rest is the app's own route. */
+const APP_PATH = /^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\/.*)?$/;
 
 async function vouchedEntry(request: NextRequest): Promise<string | null> {
-  const m = SLUG_ONLY.exec(request.nextUrl.pathname);
+  const m = APP_PATH.exec(request.nextUrl.pathname);
   if (!m) return null;
   const slug = m[1];
   const hit = entryCache.get(slug);
@@ -43,6 +61,7 @@ async function vouchedEntry(request: NextRequest): Promise<string | null> {
     const url = new URL(`/api/page-entry?slug=${encodeURIComponent(slug)}`, request.nextUrl.origin);
     const res = await fetch(url);
     const entry = res.ok ? (((await res.json()) as { entry?: string }).entry ?? null) : null;
+    if (entryCache.size >= ENTRY_CACHE_MAX) entryCache.clear();
     entryCache.set(slug, { entry, at: Date.now() });
     return entry;
   } catch {
