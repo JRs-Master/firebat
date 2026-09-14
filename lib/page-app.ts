@@ -328,7 +328,8 @@ export function trustedHead(dirUrl: string, mount: string): string {
  var w=a.getAttribute('target');if(w&&w!=='_self')return;
  var h=a.getAttribute('href');if(!h||h.charAt(0)!=='#')return;
  e.preventDefault();var n=h.slice(1);
- if(location.hash.replace(/^#/,'')===n)return;
+ var c=document.getElementById(n);
+ if(location.hash.replace(/^#/,'')===n){if(c)c.scrollIntoView();return}
  location.hash=n})})();</script>`;
 }
 
