@@ -280,6 +280,45 @@ window.firebat={modules:MODULES,call:function(module,input){
 
 
 /**
+ * What a vouched app's document needs in its head — and the repair that need costs.
+ *
+ * A vouched app is served AT its slug (`/sixty`) while its files stay at `/user/pages/sixty/`, so
+ * every relative `src="app.js"` in it resolves one level too high — the miss that left carom with a
+ * canvas and dead buttons on 2026-08-30. `<base>` names the directory once and fixes all of them,
+ * which is what keeps an app from having to be edited in order to be vouched for.
+ *
+ * ⭐ But `<base>` is not a subresource setting. A fragment-only `href="#/l/x"` resolves against it
+ * too, so the first internal click threw the app off its own address: the bar read
+ * `/user/pages/sixty/#/l/as-markets` (measured 2026-09-14), and `href="#quiz"` became a whole
+ * document load that landed on a blank screen — a router that correctly ignores a non-route hash
+ * renders nothing when that hash arrives on a fresh load. One tag, two jobs, opposite values.
+ *
+ * Aiming the base at the public address only moves the damage. `/sixty/` is 308'd back to `/sixty`
+ * by the framework's trailing-slash rule (measured the same day), so a fragment link would resolve
+ * to a DIFFERENT path than the document it sits in and every click would cost a full reload plus a
+ * redirect. The address cannot become a directory without turning that rule off for the whole site.
+ *
+ * So the two jobs are separated: the base keeps resolving subresources, and fragment navigation is
+ * put back where it was before we added a base the app never asked for. ⚠️ This repairs OUR side
+ * effect rather than patching the app — the same document un-vouched behaves identically, which is
+ * the property that lets `trust` be one field ([[feedback_richer_surface_must_be_superset]]).
+ *
+ * On `window`, so it runs after everything the app itself has to say: click bubbles target → …→
+ * document → window, and an app that stops a link of its own (SIXTY's footer "준비 중" links) has
+ * already set `defaultPrevented` by the time this sees it.
+ */
+export function trustedHead(dirUrl: string): string {
+  return `<base href="${dirUrl}"><script>(function(){window.addEventListener('click',function(e){
+ if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+ var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;
+ var w=a.getAttribute('target');if(w&&w!=='_self')return;
+ var h=a.getAttribute('href');if(!h||h.charAt(0)!=='#')return;
+ e.preventDefault();var n=h.slice(1);
+ if(location.hash.replace(/^#/,'')===n)return;
+ location.hash=n})})();</script>`;
+}
+
+/**
  * Put the bootstrap into an HTML document before anything of the app's own runs.
  *
  * After `<head>` when there is one, otherwise at the very top: the app's first script must not be

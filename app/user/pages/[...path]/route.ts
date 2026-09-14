@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileBinary } from '../../../../lib/api-gen/storage';
-import { readDeclaration, appCsp, trustedAppCsp, appBootstrap, injectBootstrap } from '../../../../lib/page-app';
+import { readDeclaration, appCsp, trustedAppCsp, appBootstrap, injectBootstrap, trustedHead } from '../../../../lib/page-app';
 import { appStore } from '../../../../lib/api-gen/page';
 import { gatePage } from '../../../../lib/page-gate';
 
@@ -140,14 +140,13 @@ export async function GET(
     });
     if (boot) { buf = Buffer.from(injectBootstrap(buf.toString('utf8'), boot), 'utf8'); seeded = true; }
   }
-  // A vouched app is served at its own slug, so its document's address is `/sixty` while its files
-  // still live under `/user/pages/sixty/`. Every relative `src="app.js"` in it would then resolve
-  // one level too high — the same miss that left carom with a canvas and dead buttons on 2026-08-30.
-  // Naming the directory once fixes every relative URL in the document, so the app is not edited to
-  // be vouched for. Declared before anything of the app's own, and `base-uri 'self'` permits it.
+  // A vouched app's document is at its slug while its files are not — `trustedHead` says what that
+  // costs and what it hands back. Declared before anything of the app's own, and the two pieces stay
+  // in one place because they answer the same fact: `base-uri 'self'` permits the tag, and
+  // `script-src 'unsafe-inline'` the repair, both only in the vouched policy.
   if (decl.trust && (file.mimeType || '').startsWith('text/html')) {
     const dirUrl = `/user/pages/${name.split('/').map(encodeURIComponent).join('/')}/`;
-    buf = Buffer.from(injectBootstrap(buf.toString('utf8'), `<base href="${dirUrl}">`), 'utf8');
+    buf = Buffer.from(injectBootstrap(buf.toString('utf8'), trustedHead(dirUrl)), 'utf8');
   }
   const total = buf.length;
   // Two questions, not one. WHO may hold a copy is the gate's business; HOW STALE that copy may get
