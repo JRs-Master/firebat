@@ -1313,11 +1313,23 @@ impl ModuleManager {
                         .unwrap_or("")
                         .to_string(),
                     speakers: Vec::new(),
-                    style: decl
-                        .get("style")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(String::from),
+                    // 모듈은 네 칸으로 선언한다 — 자유 문자열 하나였을 때는 벤더 머리글자를
+                    // 모듈이 알아야 했고, 모르면 지시가 대사 옆에 벌거벗고 앉았다.
+                    direction: {
+                        let d = decl.get("direction");
+                        let slot = |k: &str| -> Option<String> {
+                            d.and_then(|v| v.get(k))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                        };
+                        crate::ports::TtsDirection {
+                            profile: slot("profile"),
+                            scene: slot("scene"),
+                            notes: slot("notes"),
+                            context: slot("context"),
+                        }
+                    },
                     align: false,
                     wav: true, // modules read via libsndfile — mp3 does not decode there
                     language: String::new(),
@@ -1326,7 +1338,10 @@ impl ModuleManager {
                 use std::hash::{Hash, Hasher};
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 text.hash(&mut hasher);
-                req.style.hash(&mut hasher);
+                req.direction.profile.hash(&mut hasher);
+                req.direction.scene.hash(&mut hasher);
+                req.direction.notes.hash(&mut hasher);
+                req.direction.context.hash(&mut hasher);
                 let path = format!("data/{module_name}/prep-{:016x}.wav", hasher.finish());
                 if let Some(dir) = std::path::Path::new(&path).parent() {
                     let _ = std::fs::create_dir_all(dir);

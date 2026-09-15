@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use base64::Engine;
-use firebat_core::ports::{ITtsPort, IVaultPort, InfraResult, TtsLine, TtsRequest, TtsResult, TtsSpeaker, TtsWord};
+use firebat_core::ports::{ITtsPort, IVaultPort, InfraResult, TtsDirection, TtsLine, TtsRequest, TtsResult, TtsSpeaker, TtsWord};
 
 pub struct TtsAdapter {
     vault: Arc<dyn IVaultPort>,
@@ -130,7 +130,7 @@ impl TtsAdapter {
         model: &str,
         input: &str,
         voice: &str,
-        style: Option<&str>,
+        notes: &str,
         wav: bool,
     ) -> InfraResult<Vec<u8>> {
         let mut body = serde_json::json!({
@@ -139,10 +139,10 @@ impl TtsAdapter {
             "voice": voice,
             "response_format": if wav { "wav" } else { "mp3" },
         });
-        if let Some(s) = style {
-            if !s.trim().is_empty() {
-                body["instructions"] = serde_json::Value::String(s.trim().to_string());
-            }
+        // OpenAI 는 지시를 실을 칸이 따로 있다. 같은 조립물을 그 칸에 넣는다 — 모양을 아는
+        // 것은 어댑터 하나뿐이어야 하고, 부르는 쪽은 provider 를 몰라야 한다.
+        if !notes.trim().is_empty() {
+            body["instructions"] = serde_json::Value::String(notes.trim().to_string());
         }
         let resp = self
             .client
@@ -172,7 +172,8 @@ impl TtsAdapter {
         // OpenAI = 단일 voice. 멀티스피커는 화자별 voice 로 줄별 생성 후 mp3 byte-concat
         // (같은 model/format 라 플레이어가 연속 재생). 단일 화자면 통째 1회.
         let audio = if req.speakers.is_empty() {
-            self.openai_one(&key, &req.model, &req.text, &req.voice, req.style.as_deref(), req.wav)
+            self.openai_one(&key, &req.model, &req.text, &req.voice,
+                            &director_block(&req.direction, None), req.wav)
                 .await?
         } else {
             let mut out: Vec<u8> = Vec::new();
@@ -190,11 +191,12 @@ impl TtsAdapter {
                     .iter()
                     .find(|s| s.speaker.eq_ignore_ascii_case(spk));
                 let voice = sp.map(|s| s.voice.as_str()).unwrap_or(req.voice.as_str());
-                let style = sp.and_then(|s| s.style.as_deref()).or(req.style.as_deref());
+                let notes = director_block(&req.direction,
+                                           sp.and_then(|s| s.notes.as_deref()));
                 let utter = if utter.is_empty() { line } else { utter };
                 // Always mp3 here: raw WAV segments cannot be byte-concatenated (each carries its
                 // own header). The wav flag is a single-voice contract (the sing pipeline).
-                let mp3 = self.openai_one(&key, &req.model, utter, voice, style, false).await?;
+                let mp3 = self.openai_one(&key, &req.model, utter, voice, &notes, false).await?;
                 out.extend_from_slice(&mp3);
             }
             if out.is_empty() {
@@ -223,20 +225,8 @@ impl TtsAdapter {
         // first line's alignment window ran 11.5s for a 15-syllable sentence, which is the spoken
         // direction sitting inside it. The user heard it before anyone saw it here — a longer
         // window does not say WHY it is longer.
-        // 연출은 **머리글자 아래**에 둔다 — 대사와 같은 층에 두면 대사가 된다. 대화 경로
-        // (gemini_per_turn)는 이미 그렇게 하고 있었는데 단일 화자 경로만 벌거벗겨 놓고
-        // 있었고, 2026-09-16 에 번역이 난 자리가 거기다. 부르는 쪽이 이미 자기 머리글자를
-        // 달았으면 덧씌우지 않는다.
-        if let Some(st) = &req.style {
-            let st = st.trim();
-            if !st.is_empty() {
-                if !st.starts_with('#') {
-                    prompt.push_str("### DIRECTOR'S NOTES\n");
-                }
-                prompt.push_str(st);
-                prompt.push_str("\n\n");
-            }
-        }
+        // 연출은 어댑터가 조립한다 — 부르는 쪽은 뜻만 보낸다.
+        prompt.push_str(&director_block(&req.direction, None));
         // 서문 — 없으면 native 가 긴 비대화 줄(안내문/디렉션)을 드롭한다(실측: 멀티 32s→59s, 단일 7.7s→30s).
         // 단일·멀티 둘 다 드롭하므로 리스닝(align=긴 스크립트)이면 항상 서문 추가. 짧은 샘플(align=false)은
         // 스타일 지시와 충돌 피하려 제외. "모든 줄 verbatim 낭독" → 드롭 0 → 줄 수=오디오 일치 →
@@ -335,11 +325,11 @@ impl TtsAdapter {
                         .iter()
                         .find(|s| s.speaker.eq_ignore_ascii_case(name))
                     {
-                        return (sp.voice.clone(), sp.style.clone(), b.trim().to_string());
+                        return (sp.voice.clone(), sp.notes.clone(), b.trim().to_string());
                     }
                 }
                 let sp = &req.speakers[0];
-                (sp.voice.clone(), sp.style.clone(), l.to_string())
+                (sp.voice.clone(), sp.notes.clone(), l.to_string())
             })
             .filter(|(_, _, t)| !t.is_empty())
             .collect();
@@ -348,29 +338,22 @@ impl TtsAdapter {
         }
         let n_turns = turns.len();
         let model = req.model.clone();
-        let global_style = req.style.clone();
+        let direction = req.direction.clone();
         let language = req.language.clone();
         // into_iter(owned) + prompt 를 async 안에서 — 빌린 &tuple 로 인한 HRTB(FnOnce) 회피.
-        let futs = turns.into_iter().map(|(voice, style, text)| {
+        let futs = turns.into_iter().map(|(voice, notes, text)| {
             let client = self.client.clone();
             let key = key.clone();
             let model = model.clone();
-            let global_style = global_style.clone();
+            let direction = direction.clone();
             let language = language.clone();
             async move {
                 // 억양/스타일 = 벤더 예시의 머리글자 그대로 — `### DIRECTOR'S NOTES` 아래 연출,
                 // `#### TRANSCRIPT` 아래 낭독할 글. 모호한 프롬프트는 분류기가 TTS 로 못 알아채
                 // PROHIBITED_CONTENT 로 거부하거나 notes 를 소리 내어 읽는다. 차단되면 notes 빼고
                 // 평문 재시도 → 오디오 보장(평문은 항상 통과, 서버 재현 확인).
-                let dnote = style
-                    .as_ref()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                let gstyle = global_style
-                    .as_ref()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                let mut use_notes = dnote.is_some() || gstyle.is_some();
+                let block = director_block(&direction, notes.as_deref());
+                let mut use_notes = !block.trim().is_empty();
                 let mut last_err = String::new();
                 for attempt in 0..3u32 {
                     if attempt > 0 {
@@ -378,25 +361,9 @@ impl TtsAdapter {
                     }
                     let mut prompt = String::new();
                     if use_notes {
-                        // 벤더 예시와 같은 머리글자다 — `### DIRECTOR'S NOTES` 위, `#### TRANSCRIPT`
-                        // 아래. 예전엔 그 위에 우리가 지어낸 문장을 한 줄 얹었다("Read the transcript
-                        // below aloud… Do not read these notes or labels out loud."). 두 가지가 틀렸다:
-                        //   · 그 문장 자체가 **대사 자리의 산문**이라, 모델이 읽거나 따르는 대상이 된다
-                        //     (단일 화자 쪽에서 같은 모양이 두 번 사고를 냈다 — 8/30·9/16)
-                        //   · 금지형이다. 금지는 대체 행동을 안 준다 — 머리글자가 그 일을 구조로 한다
-                        // ⚠️ 그 문장이 있던 이유(분류기가 TTS 요청으로 못 알아채 PROHIBITED_CONTENT)는
-                        //    실측이었다. 그래서 지우되 **아래 재시도는 그대로 둔다** — 막히면 notes 를
-                        //    통째로 빼고 평문으로 다시 던진다(평문은 항상 통과, 서버 재현 확인).
-                        prompt.push_str("### DIRECTOR'S NOTES\n");
-                        if let Some(g) = &gstyle {
-                            prompt.push_str(g);
-                            prompt.push('\n');
-                        }
-                        if let Some(d) = &dnote {
-                            prompt.push_str(d);
-                            prompt.push('\n');
-                        }
-                        prompt.push_str("\n#### TRANSCRIPT\n\n");
+                        // 머리글자는 조립 함수가 붙였다. 여기서는 경계만 더한다.
+                        prompt.push_str(&block);
+                        prompt.push_str("#### TRANSCRIPT\n\n");
                     }
                     prompt.push_str(&text);
                     let body = tts_body(
@@ -1439,6 +1406,39 @@ fn map_words_to_lines(
 /// PCM(16-bit LE) → WAV. Gemini TTS 응답 = 24kHz mono 16-bit PCM (헤더 없음) → RIFF/WAVE 헤더 부착.
 const TTS_URL: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const TTS_API_REVISION: &str = "2026-05-20";
+
+/// 연출 네 칸 → 벤더가 정한 문서. **머리글자가 경계다.**
+///
+/// 벤더 프롬프트 가이드의 예시가 이 모양이고, 그 머리글자 덕분에 모델이 「연출」과 「말할 글」을
+/// 가른다. 우리는 한동안 이 자리에 우리가 쓴 산문을 넣었고("Read the following aloud…"),
+/// 산문은 경계가 아니라 또 하나의 대사 줄이라 두 번 사고가 났다 — 내레이션이 자기 지시를
+/// 읽었고(8/30), 우리말 대사가 영어로 나왔다(9/16).
+///
+/// 빈 칸은 안 싣는다 — 빈 머리글자는 모델에게 답할 수 없는 질문이다.
+fn director_block(d: &TtsDirection, extra_notes: Option<&str>) -> String {
+    let mut out = String::new();
+    let mut put = |head: &str, body: &str| {
+        let body = body.trim();
+        if !body.is_empty() {
+            out.push_str(head);
+            out.push_str("\n");
+            out.push_str(body);
+            out.push_str("\n\n");
+        }
+    };
+    put("## AUDIO PROFILE", d.profile.as_deref().unwrap_or(""));
+    put("## THE SCENE", d.scene.as_deref().unwrap_or(""));
+    // 화자별 지시는 공통 지시 **아래**에 붙는다 — 같은 머리글자 안이라 둘이 한 사람의 연기다.
+    let notes = match (d.notes.as_deref(), extra_notes) {
+        (Some(a), Some(b)) if !b.trim().is_empty() => format!("{a}\n{b}"),
+        (Some(a), _) => a.to_string(),
+        (None, Some(b)) => b.to_string(),
+        (None, None) => String::new(),
+    };
+    put("### DIRECTOR'S NOTES", &notes);
+    put("### SAMPLE CONTEXT", d.context.as_deref().unwrap_or(""));
+    out
+}
 
 /// One entry of `speech_config`. `language` is left out when empty, so a caller that
 /// says nothing keeps the behaviour every call had before the field existed: the

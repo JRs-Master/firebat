@@ -3374,9 +3374,8 @@ pub struct TtsRequest {
     pub voice: String,
     /// 멀티스피커(비었으면 단일). 각 화자 보이스 + 억양.
     pub speakers: Vec<TtsSpeaker>,
-    /// 전역 말투/억양 지시(단일 화자 또는 공통). OpenAI instructions / Gemini 프롬프트 스타일.
-    /// 억양은 free-text(예: "American accent" / "British accent") — 하드코딩 enum 아님, AI 가 시험별 배정.
-    pub style: Option<String>,
+    /// 연출 — 벤더가 정한 다섯 조각 중 넷(다섯째가 Transcript = `text`).
+    pub direction: TtsDirection,
     /// LRC 정렬(STT 타임스탬프) 수행 여부 — listening 오디오=true(노래방·단어 seek), 샘플 미리듣기=false(낭비 회피).
     pub align: bool,
     /// WAV output instead of mp3 (single-voice OpenAI only; Gemini is wav natively). The sing
@@ -3396,10 +3395,38 @@ pub struct TtsRequest {
 pub struct TtsSpeaker {
     pub speaker: String, // 화자 이름(text 의 "Name:" 매칭)
     pub voice: String,
-    /// 이 화자 억양/말투(free-text, 예: "British accent").
-    pub style: Option<String>,
+    /// 이 화자만의 연출(free-text, 예: "British accent"). 전역 notes 아래에 덧붙는다.
+    pub notes: Option<String>,
     /// 성별 — AI 가 대화 내용 따라 주입("male"/"female"/"남"/"여"). 핸들러가 그 성별 보이스 자동배정.
     pub gender: Option<String>,
+}
+
+/// 연출. **자유 문자열 하나가 아니라 칸이다** — 벤더 프롬프트 가이드가 다섯 조각을 이름으로
+/// 못 박아 놨고(Audio Profile · Scene · Director's Notes · Sample context · Transcript), 그 중
+/// 넷이 여기 산다. 다섯째는 `TtsRequest.text` 다.
+///
+/// ⭐ 칸으로 받는 이유 = **부르는 쪽이 벤더 규약을 몰라도 되게.** 예전엔 `style` 자유 문자열 하나라
+/// 모듈이 머리글자와 순서를 직접 알아야 했고, 모르면 「한국어 영어 원어민, 빠르게」 같은 벌거벗은
+/// 명령 조각이 대사 바로 위에 앉았다 — 2026-09-16 에 우리말 대사가 통째로 영어로 나온 뿌리가 그것이다.
+/// 이제 머리글자·순서·경계는 어댑터가 알고, 모듈은 **뜻만** 말한다.
+#[derive(Debug, Clone, Default)]
+pub struct TtsDirection {
+    /// 이 목소리가 누구인가 — 정체·아키타입·나이·배경.
+    pub profile: Option<String>,
+    /// 어디서, 어떤 분위기인가 — 물리적 환경과 vibe.
+    pub scene: Option<String>,
+    /// 연기 지시 — 말투·호흡·속도·발음·억양.
+    pub notes: Option<String>,
+    /// 배우가 장면에 자연스럽게 들어오는 시작점.
+    pub context: Option<String>,
+}
+
+impl TtsDirection {
+    pub fn is_empty(&self) -> bool {
+        [&self.profile, &self.scene, &self.notes, &self.context]
+            .iter()
+            .all(|v| v.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true))
+    }
 }
 
 /// LRC 단어 — 정렬(STT)이 채운 단어별 타임스탬프(초). 노래방 fill·단어 클릭 seek 용.

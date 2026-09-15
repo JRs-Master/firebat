@@ -6003,7 +6003,9 @@ def action_render(inp):
         return {"success": True, "data": {"_prepare": {
             "service": "tts",
             "text": " ".join(syls),
-            "style": "또박또박, 음절 하나하나를 또렷하게, 일정한 속도로 읽어 주세요.",
+            # 연출은 네 칸이다(profile·scene·notes·context) — 프레임워크가 벤더 모양으로
+            # 조립한다. 여기서 머리글자를 알 필요가 없다.
+            "direction": {"notes": "또박또박, 음절 하나하나를 또렷하게, 일정한 속도로 읽는다."},
             # 목소리는 곡이 고른다 — 프레임워크는 원래 이 칸을 넘겨 주고 있었는데(module.rs 의
             # `_prepare.voice`) 우리가 안 보내서 늘 서버 기본값으로 불렀다. 음역을 옥타브로 접는
             # 것은 키가 안 맞을 때의 응급처치고, 애초에 맞는 목소리로 부르는 것이 본래 순서다.
