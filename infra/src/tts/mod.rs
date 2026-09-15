@@ -223,9 +223,17 @@ impl TtsAdapter {
         // first line's alignment window ran 11.5s for a 15-syllable sentence, which is the spoken
         // direction sitting inside it. The user heard it before anyone saw it here — a longer
         // window does not say WHY it is longer.
-        if let Some(s) = &req.style {
-            if !s.trim().is_empty() {
-                prompt.push_str(s.trim());
+        // 연출은 **머리글자 아래**에 둔다 — 대사와 같은 층에 두면 대사가 된다. 대화 경로
+        // (gemini_per_turn)는 이미 그렇게 하고 있었는데 단일 화자 경로만 벌거벗겨 놓고
+        // 있었고, 2026-09-16 에 번역이 난 자리가 거기다. 부르는 쪽이 이미 자기 머리글자를
+        // 달았으면 덧씌우지 않는다.
+        if let Some(st) = &req.style {
+            let st = st.trim();
+            if !st.is_empty() {
+                if !st.starts_with('#') {
+                    prompt.push_str("### DIRECTOR'S NOTES\n");
+                }
+                prompt.push_str(st);
                 prompt.push_str("\n\n");
             }
         }
