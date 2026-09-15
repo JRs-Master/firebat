@@ -133,7 +133,7 @@ fn tts_timing(lines: &[crate::ports::TtsLine]) -> serde_json::Value {
 fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "tts".to_string(),
-        description: "Text to listening audio; returns { url, seconds, lines:[{text, at, end}] } — `url` for a `listening` component's audioUrl, `seconds` for the length you have to fit, and `lines` for where each sentence actually lands (place a caption, a scene or a `voices` entry at that `at` and picture and voice cannot drift). You choose the script and, for dialogues, each speaker's accent and gender (realistic to the target test); provider and voices come from settings. Multi-speaker: write 'Name: line' per turn and list those names in `speakers`. A line of `[pause: N]` inserts N seconds of silence. Cached — the same script and voice is not regenerated."
+        description: "Text to listening audio; returns { url, seconds, lines:[{text, at, end}] } — `url` for a `listening` component's audioUrl, `seconds` for the length you have to fit, and `lines` for where each sentence actually lands (place a caption, a scene or a `voices` entry at that `at` and picture and voice cannot drift). You choose the script and, for dialogues, each speaker's accent and gender (realistic to the target test); provider comes from settings, and so does the voice unless you name one. Multi-speaker: write 'Name: line' per turn and list those names in `speakers`. A line of `[pause: N]` inserts N seconds of silence. Cached — the same script and voice is not regenerated."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -149,7 +149,8 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         "gender": {"type": "string", "description": "'male' or 'female' — infer from the dialogue/role; picks a matching voice."}
                     }}
                 },
-                "style": {"type": "string", "description": "Global accent/delivery instruction (single voice or common to all)."}
+                "style": {"type": "string", "description": "Global accent/delivery instruction (single voice or common to all)."},
+                "voice": {"type": "string", "description": "Name the single voice ('Kore', 'Zephyr', 'Puck', 'nova'…) instead of taking the one in settings. Name it whenever a set of clips has to sound like one person: settings can change between two calls and the voice is otherwise not yours to hold. Unknown here = an error, not a substitution. Ignored when `speakers` is given."}
             },
             "required": ["script"]
         }),
@@ -177,6 +178,11 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty());
+                let want_voice = args
+                    .get("voice")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
                 let language = args
                     .get("language")
                     .and_then(|v| v.as_str())
@@ -234,6 +240,24 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 if provider == "browser" {
                     return Ok(serde_json::json!({ "browser": true }));
                 }
+                // 어느 보이스로 날지를 **합성 전에** 정한다 — 캐시키가 여기서 정해지기 때문이다.
+                // 멀티스피커는 화자별로 따로 배정되니 단일 보이스가 안 쓰이고, 그 값을 키에 넣으면
+                // 설정만 바꿔도 남의 대화 캐시가 통째로 무효가 된다.
+                let voice = if speakers.is_empty() {
+                    tts.effective_voice(&want_voice)
+                } else {
+                    String::new()
+                };
+                // 이름을 댔는데 안 먹었으면 말한다. 조용히 다른 사람 목소리를 돌려주면 한 벌 안에서
+                // 화자가 갈리고, 그건 아무도 신고하지 않는 종류다.
+                if speakers.is_empty()
+                    && !want_voice.is_empty()
+                    && !voice.eq_ignore_ascii_case(&want_voice)
+                {
+                    return Err(format!(
+                        "voice \"{want_voice}\" is not available on provider \"{provider}\""
+                    ));
+                }
                 let ext = if provider == "openai" { "mp3" } else { "wav" };
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 provider.hash(&mut hasher);
@@ -244,6 +268,15 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     sp.gender.hash(&mut hasher);
                 }
                 style.hash(&mut hasher);
+                // 보이스가 키에 없으면 「같은 지문 = 같은 소리」가 거짓이 된다 — 설정이 바뀐 뒤에도
+                // 옛 파일이 적중으로 돌아오고, 그때 새로 생긴 줄만 새 화자가 된다. 그 통로가 오늘
+                // 한 편 안에서 화자를 갈라 놓았다.
+                // ⚠️ 이 줄이 단일 화자의 옛 열쇠를 전부 바꾼다 — 옛 파일은 그대로 살아 있으니
+                // 이미 실린 영상·페이지는 무사하고, 같은 지문을 다시 부르면 그때 한 번 다시 난다.
+                // 멀티스피커는 비어 있을 때 안 넣어 열쇠가 그대로다(쓰이지도 않는 값이다).
+                if !voice.is_empty() {
+                    voice.hash(&mut hasher);
+                }
                 // In the key, or the same script in a second language answers with the
                 // first one's file.
                 language.hash(&mut hasher);
@@ -275,7 +308,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     provider,
                     model,
                     text: script,
-                    voice: String::new(),
+                    voice: voice.clone(),
                     speakers,
                     style,
                     align: true, // listening 오디오 — LRC 정렬(노래방·단어 seek)
