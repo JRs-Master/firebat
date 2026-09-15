@@ -139,7 +139,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             "type": "object",
             "properties": {
                 "script": {"type": "string", "description": "Spoken text. Multi-speaker dialogue = one 'Name: line' per line (names match speakers[].name)."},
-                "language": {"type": "string", "description": "BCP-47 for the SPOKEN language ('ko-KR', 'en-US'). Omit and the model infers it per request, which is fine for one language and is not for a script that mixes two: the same lesson then gets a different reading on the lines that open in the other language."},
+                "language": {"type": "string", "description": "The SPOKEN language, spelled the way the provider's own reference spells it ('ko', 'en'). Omit and the model infers it per request, which is fine for one language and is not for a script that mixes two: the same lesson then gets a different reading on the lines that open in the other language. A spelling the provider does not use is not refused — it is simply not honoured, so a call going through is no evidence the field landed."},
                 "speakers": {
                     "type": "array",
                     "description": "Dialogue speakers (omit for single-voice monologue). Each = {name, accent?, gender?}.",
