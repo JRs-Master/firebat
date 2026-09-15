@@ -70,10 +70,10 @@ impl TtsAdapter {
         let female = gender.map(Self::is_female);
         match (provider, female) {
             // 큐레이션 = 스타일 확실히 다른 보이스(설정 picker 와 일치). 억양은 style 프롬프트로 미국식.
-            ("gemini", Some(true)) => &["Kore", "Leda", "Aoede", "Sulafat", "Zephyr"],
+            ("gemini", Some(true)) => &["Kore", "Leda", "Aoede", "Sulafat"],
             ("gemini", Some(false)) => &["Puck", "Charon", "Fenrir", "Orus"],
             ("gemini", None) => &[
-                "Kore", "Puck", "Leda", "Charon", "Aoede", "Fenrir", "Sulafat", "Orus", "Zephyr",
+                "Kore", "Puck", "Leda", "Charon", "Aoede", "Fenrir", "Sulafat", "Orus",
             ],
             (_, Some(true)) => &["nova", "shimmer", "coral"],
             (_, Some(false)) => &["onyx", "echo", "ash"],
@@ -81,16 +81,23 @@ impl TtsAdapter {
         }
     }
 
-    /// 단일 화자의 보이스를 정한다 — 부르는 쪽이 이름을 대면 그것, 아니면 설정, 그것도 없으면
-    /// provider 의 첫 보이스. 큐레이션 목록이 유효한 이름의 유일한 집이라, 여기 없는 이름은
-    /// 설정에서 와도 요청에서 와도 안 쓰인다(부르는 쪽이 댄 이름이 안 먹었는지는 도구가 답을
-    /// 자기 요청과 비교해서 알아내고 그때 말한다 — 조용히 바꿔치지 않는다).
+    /// 단일 화자의 보이스를 정한다.
+    ///
+    /// ⭐ **이름을 댔으면 그대로 간다.** 어댑터는 그 이름이 유효한지 판정하지 않는다 — 어느 이름이
+    /// 있는지 아는 것은 provider 고, 여기 목록은 provider 의 카탈로그가 아니라 **아무도 이름을 안
+    /// 댔을 때 우리가 고르는 기본**이다. 그 둘을 한 목록으로 겸하면 제품이 쓰려는 이름마다
+    /// 여기 한 줄을 더하고 러스트를 배포해야 한다 — 선언으로 고칠 수 있어야 할 것이 코어에 갇힌다.
+    /// 틀린 이름은 provider 가 거부하며 자기 목록을 말한다. 그게 최신이고 우리 목록은 아니다.
+    ///
+    /// 이름이 없을 때만 우리가 고른다 — 설정(`system:tts:voice`), 없으면 첫 보이스. 설정에는
+    /// 목록 검사가 남는다: provider 를 바꾸면 저장된 값이 **다른 provider 의 이름**일 수 있고,
+    /// 그건 부르는 쪽의 뜻이 아니라 남아 있던 값이다.
     fn resolve_voice(&self, provider: &str, requested: &str) -> String {
-        let list = Self::voices_for_gender(provider, None);
         let want = requested.trim();
-        if let Some(v) = list.iter().find(|v| v.eq_ignore_ascii_case(want)) {
-            return (*v).to_string();
+        if !want.is_empty() {
+            return want.to_string();
         }
+        let list = Self::voices_for_gender(provider, None);
         self.first_secret(&["system:tts:voice"])
             .filter(|v| list.iter().any(|c| c.eq_ignore_ascii_case(v)))
             .unwrap_or_else(|| list[0].to_string())

@@ -150,7 +150,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     }}
                 },
                 "style": {"type": "string", "description": "Global accent/delivery instruction (single voice or common to all)."},
-                "voice": {"type": "string", "description": "Name the single voice ('Kore', 'Zephyr', 'Puck', 'nova'…) instead of taking the one in settings. Name it whenever a set of clips has to sound like one person: settings can change between two calls and the voice is otherwise not yours to hold. Unknown here = an error, not a substitution. Ignored when `speakers` is given."}
+                "voice": {"type": "string", "description": "Name the single voice instead of taking the one in settings. Name it whenever a set of clips has to sound like one person: settings can change between two calls and the voice is otherwise not yours to hold. The name goes to the provider as given, and the provider answers if it has no such voice. Ignored when `speakers` is given."}
             },
             "required": ["script"]
         }),
@@ -248,16 +248,6 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 } else {
                     String::new()
                 };
-                // 이름을 댔는데 안 먹었으면 말한다. 조용히 다른 사람 목소리를 돌려주면 한 벌 안에서
-                // 화자가 갈리고, 그건 아무도 신고하지 않는 종류다.
-                if speakers.is_empty()
-                    && !want_voice.is_empty()
-                    && !voice.eq_ignore_ascii_case(&want_voice)
-                {
-                    return Err(format!(
-                        "voice \"{want_voice}\" is not available on provider \"{provider}\""
-                    ));
-                }
                 let ext = if provider == "openai" { "mp3" } else { "wav" };
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 provider.hash(&mut hasher);
