@@ -1556,7 +1556,9 @@ class Scene:
         self.dark_bg = self._bg_is_dark(inp.get("background"))
         self.ink = INK if self.dark_bg else self.LIGHT_INK
         self.dim = DIM if self.dark_bg else self.LIGHT_DIM
-        self.shadow_rgb = (0, 0, 0) if self.dark_bg else self.LIGHT_SHADOW
+        # None = 그림자를 안 그린다. 밝은 배경에서는 그릴 것이 없다 — 어두운 잉크가 이미
+        # 떠 있고, 흰 그림자는 분리가 아니라 **글자에 붙는 흰 테**가 된다(아래 참조).
+        self.shadow_rgb = (0, 0, 0) if self.dark_bg else None
         family = str(inp.get("font") or "sans")
         if family not in FONT_FAMILIES:
             raise SceneError(
@@ -1945,11 +1947,17 @@ class Scene:
 
     # ── per-layer drawing ───────────────────────────────────────────────
     def _shadow_text(self, d, xy, txt, f, fill, a, off=3):
-        # The shadow is separation from the ground, not decoration -- so it is the
-        # ground's opposite. Black under dark-theme text; white under light-theme
-        # text, where it all but disappears, which is what a light design wants.
-        d.text((xy[0] + off * self.ss, xy[1] + off * self.ss), txt, font=f,
-               fill=(*self.shadow_rgb, int(150 * a)))
+        # 그림자는 바탕에서 떼어 놓는 장치이지 장식이 아니다. 어두운 바탕에서는 검정이 그 일을 한다.
+        #
+        # ⭐ 밝은 바탕에서는 **아무것도 안 그린다.** 예전엔 흰색(255,255,255)을 alpha 150 으로
+        #    3px 어긋나게 깔았고, 주석은 "거의 안 보인다"고 적어 뒀다. 실제로는 종이색 배경 위에서
+        #    글자마다 **흰 테**가 붙어 획을 살찌우고 가장자리를 번지게 한다 — 사용자가 두 번
+        #    신고했다(2026-09-15 "글자가 안 또렷하다", 09-16 "글자에 흰색 그림자 같은거").
+        #    나는 첫 번째를 축소 시 획 두께 문제로 진단했는데 원인은 여기였다.
+        #    밝은 바탕에 어두운 잉크는 대비가 이미 충분해서 뗄 것이 없다.
+        if self.shadow_rgb is not None:
+            d.text((xy[0] + off * self.ss, xy[1] + off * self.ss), txt, font=f,
+                   fill=(*self.shadow_rgb, int(150 * a)))
         d.text(xy, txt, font=f, fill=(*fill, int(255 * a)))
 
     # Ink, the shadow behind it and the plates it sits on used to be constants tuned
@@ -1966,7 +1974,7 @@ class Scene:
     LIGHT_PLATE = {"drop": (150, 158, 175), "fill": (255, 255, 255),
                    "edge": (198, 208, 222), "lead": (100, 112, 132),
                    "chip": (226, 232, 240)}
-    LIGHT_INK, LIGHT_DIM, LIGHT_SHADOW = (23, 32, 46), (110, 122, 145), (255, 255, 255)
+    LIGHT_INK, LIGHT_DIM = (23, 32, 46), (110, 122, 145)
 
     def _fonts_for(self, family):
         """The Fonts for one family, built once. A serif this box does not have falls
@@ -6218,11 +6226,11 @@ def action_selftest():
        and Scene(night).shadow_rgb == (0, 0, 0) and Scene(night).dark_bg)
     lightsc = Scene({**night, "background": {"kind": "gradient", "top": [248, 250, 253],
                                              "bottom": [238, 243, 250]}})
-    ck("a light gradient flips ink, dim and the shadow, and only then",
-       "dark ink on light ground",
+    ck("a light gradient flips the ink and drops the shadow, and only then",
+       "dark ink on light ground, no shadow",
        (lightsc.dark_bg, lightsc.ink, lightsc.shadow_rgb),
        not lightsc.dark_bg and lightsc.ink == Scene.LIGHT_INK
-       and lightsc.shadow_rgb == (255, 255, 255))
+       and lightsc.shadow_rgb is None)
     # ...and the two really do look different, so the derivation is wired to the paint
     b_light = lightsc.draw_frame(1.5)
     ck("the two palettes draw different frames (the derivation is actually used)",

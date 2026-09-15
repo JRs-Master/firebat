@@ -234,7 +234,19 @@ impl TtsAdapter {
         // 스타일 지시와 충돌 피하려 제외. "모든 줄 verbatim 낭독" → 드롭 0 → 줄 수=오디오 일치 →
         // signal_align 정렬 정확.
         if req.align {
-            prompt.push_str("Read the following aloud, every line verbatim:\n\n");
+            // ⭐ 서문은 **대사의 언어로** 쓴다. 영어로 쓰면 우리말 대사를 읽기 직전의
+            //    마지막 토큰이 영어가 되고, 이건 TTS 엔진이 아니라 생성 모델이라 그 다음에
+            //    영어가 나온다 — 2026-09-16 실측: 우리말 대사가 통째로 영어로 번역돼 나왔다
+            //    (사용자가 1분 55초에서 잡음). style 에 「텍스트에 적힌 언어로 읽는다」를
+            //    우리말로 적어 둔 상태였는데도 그랬다. 지시를 더 쓰는 것보다 **영어 문장을
+            //    치우는 것**이 먼저다.
+            // ⚠️ 서문 자체는 뺄 수 없다 — 없으면 native 가 긴 비대화 줄을 통째로 드롭한다
+            //    (실측: 멀티 32s→59s, 단일 7.7s→30s). 언어만 바꾼다.
+            prompt.push_str(if req.language.trim().to_lowercase().starts_with("ko") {
+                "아래 글을 소리 내어 읽으십시오. 한 줄도 빠짐없이 적힌 그대로 읽습니다.\n\n"
+            } else {
+                "Read the following aloud, every line verbatim:\n\n"
+            });
         }
         let speech_config: Vec<serde_json::Value> = if req.speakers.len() <= 1 {
             // multiSpeaker 는 정확히 2명 필수(1명이면 400 — 실측). 0~1명 = 단일 voice(1명이면 그 화자 보이스).

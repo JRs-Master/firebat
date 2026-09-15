@@ -150,6 +150,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     }}
                 },
                 "style": {"type": "string", "description": "Global accent/delivery instruction (single voice or common to all)."},
+                "retake": {"type": "boolean", "description": "Synthesize again even though this script was made before, and replace the stored take. The cache answers with the file it already has, so an unusable take — a line read too slowly, a Korean line that came back in English — is permanent for that script until you ask for a new one here. Use it when you are rejecting a take, not by default: a set of clips is only one set because unchanged lines keep their file."},
                 "voice": {"type": "string", "description": "Name the single voice instead of taking the one in settings. Name it whenever a set of clips has to sound like one person: settings can change between two calls and the voice is otherwise not yours to hold. The name goes to the provider as given, and the provider answers if it has no such voice. Ignored when `speakers` is given."}
             },
             "required": ["script"]
@@ -183,6 +184,9 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim().to_string())
                     .unwrap_or_default();
+                // 「다시 뽑아라」 — 캐시가 대답하지 못하게 한다. 읽기만 건너뛰고 쓰기는 그대로라,
+                // 새 테이크가 같은 이름에 덮여 다음 호출부터는 그것이 그 지문의 소리가 된다.
+                let retake = args.get("retake").and_then(|v| v.as_bool()).unwrap_or(false);
                 let language = args
                     .get("language")
                     .and_then(|v| v.as_str())
@@ -271,7 +275,8 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 // first one's file.
                 language.hash(&mut hasher);
                 let name = format!("tts-{:016x}.{ext}", hasher.finish());
-                if let Some(url) = media.conv_attachment_url(&conv, &name).await? {
+                let hit = if retake { None } else { media.conv_attachment_url(&conv, &name).await? };
+                if let Some(url) = hit {
                     // A cache hit answers the same shape or the caller learns the timing from a
                     // fresh call and not from a repeat — the alignment is already on disk beside
                     // the audio, so read it back rather than making the answer depend on luck.
