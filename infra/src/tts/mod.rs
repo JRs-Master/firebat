@@ -350,9 +350,9 @@ impl TtsAdapter {
             let global_style = global_style.clone();
             let language = language.clone();
             async move {
-                // 억양/스타일 = DIRECTOR'S NOTES + 명확한 서문 + TRANSCRIPT 라벨(Gemini TTS 공식). 모호한
-                // 프롬프트는 분류기가 TTS 로 못 알아채 PROHIBITED_CONTENT 거부하거나 notes 를 소리내 읽음 →
-                // 서문으로 "transcript 를 음성 합성" 명확히 + 스크립트 시작 라벨링. 그래도 차단되면 notes 빼고
+                // 억양/스타일 = 벤더 예시의 머리글자 그대로 — `### DIRECTOR'S NOTES` 아래 연출,
+                // `#### TRANSCRIPT` 아래 낭독할 글. 모호한 프롬프트는 분류기가 TTS 로 못 알아채
+                // PROHIBITED_CONTENT 로 거부하거나 notes 를 소리 내어 읽는다. 차단되면 notes 빼고
                 // 평문 재시도 → 오디오 보장(평문은 항상 통과, 서버 재현 확인).
                 let dnote = style
                     .as_ref()
@@ -370,8 +370,16 @@ impl TtsAdapter {
                     }
                     let mut prompt = String::new();
                     if use_notes {
-                        // 서문(분류기에 TTS 요청임을 명시) + DIRECTOR'S NOTES(AI 자유 free-text) + TRANSCRIPT 라벨.
-                        prompt.push_str("Read the transcript below aloud as natural speech. Do not read these notes or labels out loud.\n\nDIRECTOR'S NOTES\n");
+                        // 벤더 예시와 같은 머리글자다 — `### DIRECTOR'S NOTES` 위, `#### TRANSCRIPT`
+                        // 아래. 예전엔 그 위에 우리가 지어낸 문장을 한 줄 얹었다("Read the transcript
+                        // below aloud… Do not read these notes or labels out loud."). 두 가지가 틀렸다:
+                        //   · 그 문장 자체가 **대사 자리의 산문**이라, 모델이 읽거나 따르는 대상이 된다
+                        //     (단일 화자 쪽에서 같은 모양이 두 번 사고를 냈다 — 8/30·9/16)
+                        //   · 금지형이다. 금지는 대체 행동을 안 준다 — 머리글자가 그 일을 구조로 한다
+                        // ⚠️ 그 문장이 있던 이유(분류기가 TTS 요청으로 못 알아채 PROHIBITED_CONTENT)는
+                        //    실측이었다. 그래서 지우되 **아래 재시도는 그대로 둔다** — 막히면 notes 를
+                        //    통째로 빼고 평문으로 다시 던진다(평문은 항상 통과, 서버 재현 확인).
+                        prompt.push_str("### DIRECTOR'S NOTES\n");
                         if let Some(g) = &gstyle {
                             prompt.push_str(g);
                             prompt.push('\n');
@@ -380,7 +388,7 @@ impl TtsAdapter {
                             prompt.push_str(d);
                             prompt.push('\n');
                         }
-                        prompt.push_str("\nTRANSCRIPT\n");
+                        prompt.push_str("\n#### TRANSCRIPT\n\n");
                     }
                     prompt.push_str(&text);
                     let body = tts_body(
