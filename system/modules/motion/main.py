@@ -36,9 +36,15 @@ import gltf3d  # noqa: E402 — module-local pure-python GLB reader + toon raste
 
 # ── limits ───────────────────────────────────────────────────────────────────
 SIZES = {"1080x1920": (1080, 1920), "1920x1080": (1920, 1080), "1080x1080": (1080, 1080)}
-DUR_MAX = 90.0
+# ⚠️ 길이·레이어 한도는 **어디서 도느냐**에 달렸다. 파일에 박아 두면 한 숫자가 두 기계를
+#    동시에 섬긴다 — 서버는 1코어라 긴 장면이 몇십 분씩 물리고, 로컬 렌더는 그 장면을 9분에
+#    끝낸다. 그래서 숫자를 부르는 쪽이 정하게 두고 **기본값은 서버 기준 그대로** 둔다.
+#    ⭐ 메모리는 길이에 안 비례한다(실측) — `write_frames` 로 한 장씩 내보내고 쌓지 않는다.
+#    그래서 이 한도가 막는 것은 메모리가 아니라 **시간**이다.
+#    한도를 올리면 그 수치를 트리거로 적어 둔 항목을 훑을 것(2026-08/26 에 20→90 올릴 때의 규칙).
+DUR_MAX = float(os.environ.get("MOTION_DUR_MAX", "90"))
 FPS_MIN, FPS_MAX = 10, 30
-LAYERS_MAX = 40
+LAYERS_MAX = int(os.environ.get("MOTION_LAYERS_MAX", "40"))
 VOICES_MAX = 48    # was 12, set when a scene meant a few lines of narration.
                    # Reading a sentence the way a native reads it is the opposite
                    # shape: eleven sense units, each with its own gloss, is 22
