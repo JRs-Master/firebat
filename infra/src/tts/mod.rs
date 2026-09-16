@@ -246,27 +246,26 @@ impl TtsAdapter {
             //    (실측: 멀티 32s→59s, 단일 7.7s→30s).
             prompt.push_str("#### TRANSCRIPT\n\n");
         }
-        let speech_config: Vec<serde_json::Value> = if req.speakers.len() <= 1 {
+        let voices: Vec<(String, Option<String>)> = if req.speakers.len() <= 1 {
             // multiSpeaker 는 정확히 2명 필수(1명이면 400 — 실측). 0~1명 = 단일 voice(1명이면 그 화자 보이스).
             let v = req.speakers.first().map(|s| s.voice.clone()).filter(|x| !x.is_empty()).unwrap_or_else(|| req.voice.clone());
-            vec![speech_entry(&v, &req.language, None)]
+            vec![(v, None)]
         } else {
             // 화자별 억양 텍스트 지시("X speaks with a Y accent")는 Gemini 안전필터에 PROHIBITED_CONTENT 로
             // 차단됨(오탐, safetySettings BLOCK_NONE 으로도 override 불가) + 프리빌트 보이스가 안 먹어 효과도
             // 없음 → 주입 안 함. 억양 다양성은 보이스 선택(성별별 큐레이션)으로.
             req.speakers
                 .iter()
-                .map(|s| speech_entry(&s.voice, &req.language, Some(&s.speaker)))
+                .map(|s| (s.voice.clone(), Some(s.speaker.clone())))
                 .collect()
         };
         prompt.push_str(&req.text);
-        let body = tts_body(&req.model, &prompt, speech_config);
+        let body = tts_body(&prompt, speech_config(&voices));
         let resp = self
             .client
-            .post(TTS_URL)
+            .post(tts_url(&req.model))
             .header("x-goog-api-key", &key)
             .header("Content-Type", "application/json")
-            .header("Api-Revision", TTS_API_REVISION)
             .json(&body)
             .send()
             .await
@@ -339,14 +338,12 @@ impl TtsAdapter {
         let n_turns = turns.len();
         let model = req.model.clone();
         let direction = req.direction.clone();
-        let language = req.language.clone();
         // into_iter(owned) + prompt 를 async 안에서 — 빌린 &tuple 로 인한 HRTB(FnOnce) 회피.
         let futs = turns.into_iter().map(|(voice, perf, text)| {
             let client = self.client.clone();
             let key = key.clone();
             let model = model.clone();
             let direction = direction.clone();
-            let language = language.clone();
             async move {
                 // 억양/스타일 = 벤더 예시의 머리글자 그대로 — `### DIRECTOR'S NOTES` 아래 연출,
                 // `#### TRANSCRIPT` 아래 낭독할 글. 모호한 프롬프트는 분류기가 TTS 로 못 알아채
@@ -366,16 +363,11 @@ impl TtsAdapter {
                         prompt.push_str("#### TRANSCRIPT\n\n");
                     }
                     prompt.push_str(&text);
-                    let body = tts_body(
-                        &model,
-                        &prompt,
-                        vec![speech_entry(&voice, &language, None)],
-                    );
+                    let body = tts_body(&prompt, speech_config(&[(voice.clone(), None)]));
                     let resp = match client
-                        .post(TTS_URL)
+                        .post(tts_url(&model))
                         .header("x-goog-api-key", &key)
                         .header("Content-Type", "application/json")
-                        .header("Api-Revision", TTS_API_REVISION)
                         .json(&body)
                         .send()
                         .await
@@ -1404,8 +1396,15 @@ fn map_words_to_lines(
 }
 
 /// PCM(16-bit LE) → WAV. Gemini TTS 응답 = 24kHz mono 16-bit PCM (헤더 없음) → RIFF/WAVE 헤더 부착.
-const TTS_URL: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
-const TTS_API_REVISION: &str = "2026-05-20";
+/// The model goes in the PATH here, which is the shape this adapter was built against
+/// and the shape it is back on (2026-09-17, by the operator's call). The interactions
+/// endpoint answered too; what it bought was a `language` slot beside the voice, and
+/// that slot is gone again with it — the product that asked for it now declares in its
+/// director's notes that one narrator reads both languages, so a second place saying
+/// the same thing was a second place to drift.
+fn tts_url(model: &str) -> String {
+    format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent")
+}
 
 /// 연출 네 칸 → 벤더가 정한 문서. **머리글자가 경계다.**
 ///
@@ -1440,32 +1439,36 @@ fn director_block(d: &TtsDirection, extra: Option<&str>) -> String {
     out
 }
 
-/// One entry of `speech_config`. `language` is left out when empty, so a caller that
-/// says nothing keeps the behaviour every call had before the field existed: the
-/// model infers the language. It is worth saying when you know it — a Korean script
-/// with English terms in it gets that inference made fresh per request, and it does
-/// not always land the same way on the lines that open in English.
-fn speech_entry(voice: &str, language: &str, speaker: Option<&str>) -> serde_json::Value {
-    let mut e = serde_json::Map::new();
-    if let Some(sp) = speaker {
-        e.insert("speaker".to_string(), serde_json::Value::String(sp.to_string()));
+/// `speechConfig` — one voice, or a speaker table when there is more than one.
+///
+/// ⚠️ Exactly two speakers or none: the multi-speaker form 400s on one (measured), which
+/// is why a single entry takes the plain `voiceConfig` branch rather than a table of one.
+fn speech_config(voices: &[(String, Option<String>)]) -> serde_json::Value {
+    if voices.len() <= 1 {
+        let v = voices.first().map(|x| x.0.as_str()).unwrap_or("");
+        return serde_json::json!({ "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": v } } });
     }
-    e.insert("voice".to_string(), serde_json::Value::String(voice.to_string()));
-    let l = language.trim();
-    if !l.is_empty() {
-        e.insert("language".to_string(), serde_json::Value::String(l.to_string()));
-    }
-    serde_json::Value::Object(e)
+    let configs: Vec<serde_json::Value> = voices
+        .iter()
+        .map(|(voice, speaker)| {
+            serde_json::json!({
+                "speaker": speaker.clone().unwrap_or_default(),
+                "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } }
+            })
+        })
+        .collect();
+    serde_json::json!({ "multiSpeakerVoiceConfig": { "speakerVoiceConfigs": configs } })
 }
 
-/// The interactions request. The model moved into the body, the prompt became
-/// `input`, the modality became `response_format`, and the voices became a LIST.
-fn tts_body(model: &str, input: &str, speech: Vec<serde_json::Value>) -> serde_json::Value {
+/// The generateContent request: prompt in `contents`, modality and voices in
+/// `generationConfig`, model in the URL rather than the body.
+fn tts_body(prompt: &str, speech: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
-        "model": model,
-        "input": input,
-        "response_format": { "type": "audio" },
-        "generation_config": { "speech_config": speech },
+        "contents": [{ "parts": [{ "text": prompt }] }],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": speech,
+        },
     })
 }
 

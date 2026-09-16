@@ -517,7 +517,6 @@ impl MediaService for MediaServiceImpl {
             },
             align: false, // 보이스 샘플 미리듣기 — 짧은 문장, LRC 정렬 불필요
             wav: false,
-            language: String::new(),
         };
         match tts.synthesize(&request).await {
             Ok(r) => {

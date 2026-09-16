@@ -139,7 +139,6 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             "type": "object",
             "properties": {
                 "script": {"type": "string", "description": "Spoken text. Multi-speaker dialogue = one 'Name: line' per line (names match speakers[].name). Inline tags in square brackets change delivery for what follows them — [whispers], [shouting], [excited], [tired], [sarcastic], [laughs], [sighs], [gasp], and pace ones like [very fast] / [very slow]; there is no fixed list, so try what you mean. Put them where the change starts, and use ENGLISH tags even when the script is not in English. A tag is the lever for a change that happens INSIDE one line; direction.performance is for how the whole take sounds."},
-                "language": {"type": "string", "description": "The SPOKEN language as a BCP-47 code, in the SHORT form the provider's table lists — 'ko', 'en', 'ja', 'cmn'. A region suffix ('ko-KR') is not in that table. Omit and the model infers it per request, which is fine for one language and is not for a script that mixes two: the same lesson then gets a different reading on the lines that open in the other language. A spelling the provider does not use is not refused — it is simply not honoured, so a call going through is no evidence the field landed."},
                 "speakers": {
                     "type": "array",
                     "description": "Dialogue speakers (omit for single-voice monologue). Each = {name, accent?, gender?}.",
@@ -195,11 +194,6 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 // 「다시 뽑아라」 — 캐시가 대답하지 못하게 한다. 읽기만 건너뛰고 쓰기는 그대로라,
                 // 새 테이크가 같은 이름에 덮여 다음 호출부터는 그것이 그 지문의 소리가 된다.
                 let retake = args.get("retake").and_then(|v| v.as_bool()).unwrap_or(false);
-                let language = args
-                    .get("language")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.trim().to_string())
-                    .unwrap_or_default();
                 let speakers: Vec<crate::ports::TtsSpeaker> = args
                     .get("speakers")
                     .and_then(|v| v.as_array())
@@ -282,9 +276,6 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 if !voice.is_empty() {
                     voice.hash(&mut hasher);
                 }
-                // In the key, or the same script in a second language answers with the
-                // first one's file.
-                language.hash(&mut hasher);
                 let name = format!("tts-{:016x}.{ext}", hasher.finish());
                 let hit = if retake { None } else { media.conv_attachment_url(&conv, &name).await? };
                 if let Some(url) = hit {
@@ -319,7 +310,6 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     direction,
                     align: true, // listening 오디오 — LRC 정렬(노래방·단어 seek)
                     wav: false,
-                    language,
                 };
                 let result = tts.synthesize(&req).await?;
                 let url = media.save_conv_attachment(&conv, &name, &result.audio).await?;

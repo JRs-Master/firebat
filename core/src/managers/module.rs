@@ -1332,7 +1332,6 @@ impl ModuleManager {
                     },
                     align: false,
                     wav: true, // modules read via libsndfile — mp3 does not decode there
-                    language: String::new(),
                 };
                 let take = tts.synthesize(&req).await?;
                 use std::hash::{Hash, Hasher};
