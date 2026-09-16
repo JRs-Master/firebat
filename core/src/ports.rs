@@ -3395,8 +3395,8 @@ pub struct TtsRequest {
 pub struct TtsSpeaker {
     pub speaker: String, // 화자 이름(text 의 "Name:" 매칭)
     pub voice: String,
-    /// 이 화자만의 연출(free-text, 예: "British accent"). 전역 notes 아래에 덧붙는다.
-    pub notes: Option<String>,
+    /// 이 화자만의 연출(free-text, 예: "British accent"). 전역 지시 아래에 덧붙는다.
+    pub performance: Option<String>,
     /// 성별 — AI 가 대화 내용 따라 주입("male"/"female"/"남"/"여"). 핸들러가 그 성별 보이스 자동배정.
     pub gender: Option<String>,
 }
@@ -3415,15 +3415,16 @@ pub struct TtsDirection {
     pub profile: Option<String>,
     /// 어디서, 어떤 분위기인가 — 물리적 환경과 vibe.
     pub scene: Option<String>,
-    /// 연기 지시 — 말투·호흡·속도·발음·억양.
-    pub notes: Option<String>,
+    /// 연기 지시 — 말투·호흡·속도·발음·억양. 벤더는 이 칸을 Director's Notes 라 부르는데
+    /// 그 철자는 모듈 하나의 이름과 겹쳐서 감사가 막는다(core 는 모듈 이름을 알면 안 된다).
+    pub performance: Option<String>,
     /// 배우가 장면에 자연스럽게 들어오는 시작점.
     pub context: Option<String>,
 }
 
 impl TtsDirection {
     pub fn is_empty(&self) -> bool {
-        [&self.profile, &self.scene, &self.notes, &self.context]
+        [&self.profile, &self.scene, &self.performance, &self.context]
             .iter()
             .all(|v| v.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true))
     }

@@ -130,7 +130,7 @@ impl TtsAdapter {
         model: &str,
         input: &str,
         voice: &str,
-        notes: &str,
+        direction: &str,
         wav: bool,
     ) -> InfraResult<Vec<u8>> {
         let mut body = serde_json::json!({
@@ -141,8 +141,8 @@ impl TtsAdapter {
         });
         // OpenAI 는 지시를 실을 칸이 따로 있다. 같은 조립물을 그 칸에 넣는다 — 모양을 아는
         // 것은 어댑터 하나뿐이어야 하고, 부르는 쪽은 provider 를 몰라야 한다.
-        if !notes.trim().is_empty() {
-            body["instructions"] = serde_json::Value::String(notes.trim().to_string());
+        if !direction.trim().is_empty() {
+            body["instructions"] = serde_json::Value::String(direction.trim().to_string());
         }
         let resp = self
             .client
@@ -191,12 +191,12 @@ impl TtsAdapter {
                     .iter()
                     .find(|s| s.speaker.eq_ignore_ascii_case(spk));
                 let voice = sp.map(|s| s.voice.as_str()).unwrap_or(req.voice.as_str());
-                let notes = director_block(&req.direction,
-                                           sp.and_then(|s| s.notes.as_deref()));
+                let block = director_block(&req.direction,
+                                           sp.and_then(|s| s.performance.as_deref()));
                 let utter = if utter.is_empty() { line } else { utter };
                 // Always mp3 here: raw WAV segments cannot be byte-concatenated (each carries its
                 // own header). The wav flag is a single-voice contract (the sing pipeline).
-                let mp3 = self.openai_one(&key, &req.model, utter, voice, &notes, false).await?;
+                let mp3 = self.openai_one(&key, &req.model, utter, voice, &block, false).await?;
                 out.extend_from_slice(&mp3);
             }
             if out.is_empty() {
@@ -325,11 +325,11 @@ impl TtsAdapter {
                         .iter()
                         .find(|s| s.speaker.eq_ignore_ascii_case(name))
                     {
-                        return (sp.voice.clone(), sp.notes.clone(), b.trim().to_string());
+                        return (sp.voice.clone(), sp.performance.clone(), b.trim().to_string());
                     }
                 }
                 let sp = &req.speakers[0];
-                (sp.voice.clone(), sp.notes.clone(), l.to_string())
+                (sp.voice.clone(), sp.performance.clone(), l.to_string())
             })
             .filter(|(_, _, t)| !t.is_empty())
             .collect();
@@ -341,7 +341,7 @@ impl TtsAdapter {
         let direction = req.direction.clone();
         let language = req.language.clone();
         // into_iter(owned) + prompt 를 async 안에서 — 빌린 &tuple 로 인한 HRTB(FnOnce) 회피.
-        let futs = turns.into_iter().map(|(voice, notes, text)| {
+        let futs = turns.into_iter().map(|(voice, perf, text)| {
             let client = self.client.clone();
             let key = key.clone();
             let model = model.clone();
@@ -352,7 +352,7 @@ impl TtsAdapter {
                 // `#### TRANSCRIPT` 아래 낭독할 글. 모호한 프롬프트는 분류기가 TTS 로 못 알아채
                 // PROHIBITED_CONTENT 로 거부하거나 notes 를 소리 내어 읽는다. 차단되면 notes 빼고
                 // 평문 재시도 → 오디오 보장(평문은 항상 통과, 서버 재현 확인).
-                let block = director_block(&direction, notes.as_deref());
+                let block = director_block(&direction, perf.as_deref());
                 let mut use_notes = !block.trim().is_empty();
                 let mut last_err = String::new();
                 for attempt in 0..3u32 {
@@ -1415,7 +1415,7 @@ const TTS_API_REVISION: &str = "2026-05-20";
 /// 읽었고(8/30), 우리말 대사가 영어로 나왔다(9/16).
 ///
 /// 빈 칸은 안 싣는다 — 빈 머리글자는 모델에게 답할 수 없는 질문이다.
-fn director_block(d: &TtsDirection, extra_notes: Option<&str>) -> String {
+fn director_block(d: &TtsDirection, extra: Option<&str>) -> String {
     let mut out = String::new();
     let mut put = |head: &str, body: &str| {
         let body = body.trim();
@@ -1429,13 +1429,13 @@ fn director_block(d: &TtsDirection, extra_notes: Option<&str>) -> String {
     put("## AUDIO PROFILE", d.profile.as_deref().unwrap_or(""));
     put("## THE SCENE", d.scene.as_deref().unwrap_or(""));
     // 화자별 지시는 공통 지시 **아래**에 붙는다 — 같은 머리글자 안이라 둘이 한 사람의 연기다.
-    let notes = match (d.notes.as_deref(), extra_notes) {
+    let perf = match (d.performance.as_deref(), extra) {
         (Some(a), Some(b)) if !b.trim().is_empty() => format!("{a}\n{b}"),
         (Some(a), _) => a.to_string(),
         (None, Some(b)) => b.to_string(),
         (None, None) => String::new(),
     };
-    put("### DIRECTOR'S NOTES", &notes);
+    put("### DIRECTOR'S NOTES", &perf);
     put("### SAMPLE CONTEXT", d.context.as_deref().unwrap_or(""));
     out
 }

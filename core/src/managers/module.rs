@@ -1326,7 +1326,7 @@ impl ModuleManager {
                         crate::ports::TtsDirection {
                             profile: slot("profile"),
                             scene: slot("scene"),
-                            notes: slot("notes"),
+                            performance: slot("performance"),
                             context: slot("context"),
                         }
                     },
@@ -1340,7 +1340,7 @@ impl ModuleManager {
                 text.hash(&mut hasher);
                 req.direction.profile.hash(&mut hasher);
                 req.direction.scene.hash(&mut hasher);
-                req.direction.notes.hash(&mut hasher);
+                req.direction.performance.hash(&mut hasher);
                 req.direction.context.hash(&mut hasher);
                 let path = format!("data/{module_name}/prep-{:016x}.wav", hasher.finish());
                 if let Some(dir) = std::path::Path::new(&path).parent() {

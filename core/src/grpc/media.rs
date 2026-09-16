@@ -512,7 +512,7 @@ impl MediaService for MediaServiceImpl {
             speakers: Vec::new(),
             // 기본 억양 = 미국식(설정 보이스 리스트는 미국 억양 기준 큐레이션).
             direction: crate::ports::TtsDirection {
-                notes: Some("Speak naturally with a standard American English accent.".to_string()),
+                performance: Some("Speak naturally with a standard American English accent.".to_string()),
                 ..Default::default()
             },
             align: false, // 보이스 샘플 미리듣기 — 짧은 문장, LRC 정렬 불필요

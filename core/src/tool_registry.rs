@@ -138,18 +138,18 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "script": {"type": "string", "description": "Spoken text. Multi-speaker dialogue = one 'Name: line' per line (names match speakers[].name). Inline tags in square brackets change delivery for what follows them — [whispers], [shouting], [excited], [tired], [sarcastic], [laughs], [sighs], [gasp], and pace ones like [very fast] / [very slow]; there is no fixed list, so try what you mean. Put them where the change starts, and use ENGLISH tags even when the script is not in English. A tag is the lever for a change that happens INSIDE one line; direction.notes is for how the whole take sounds."},
+                "script": {"type": "string", "description": "Spoken text. Multi-speaker dialogue = one 'Name: line' per line (names match speakers[].name). Inline tags in square brackets change delivery for what follows them — [whispers], [shouting], [excited], [tired], [sarcastic], [laughs], [sighs], [gasp], and pace ones like [very fast] / [very slow]; there is no fixed list, so try what you mean. Put them where the change starts, and use ENGLISH tags even when the script is not in English. A tag is the lever for a change that happens INSIDE one line; direction.performance is for how the whole take sounds."},
                 "language": {"type": "string", "description": "The SPOKEN language as a BCP-47 code, in the SHORT form the provider's table lists — 'ko', 'en', 'ja', 'cmn'. A region suffix ('ko-KR') is not in that table. Omit and the model infers it per request, which is fine for one language and is not for a script that mixes two: the same lesson then gets a different reading on the lines that open in the other language. A spelling the provider does not use is not refused — it is simply not honoured, so a call going through is no evidence the field landed."},
                 "speakers": {
                     "type": "array",
                     "description": "Dialogue speakers (omit for single-voice monologue). Each = {name, accent?, gender?}.",
                     "items": {"type": "object", "properties": {
                         "name": {"type": "string", "description": "Speaker name as written in the script 'Name:' lines."},
-                        "notes": {"type": "string", "description": "This speaker's own direction (e.g. 'British accent', 'speaks quickly'). Added under the shared notes."},
+                        "performance": {"type": "string", "description": "This speaker's own delivery (e.g. 'British accent', 'speaks quickly'). Added under the shared one."},
                         "gender": {"type": "string", "description": "'male' or 'female' — infer from the dialogue/role; picks a matching voice."}
                     }}
                 },
-                "direction": {"type": "object", "description": "How it is performed. Four named slots, not one blob of prose: the provider reads a document with headings, and a bare instruction written next to the script is read as the script (measured — a narration once spoke its own direction, and a Korean script once came back in English). Give only the slots you mean.", "properties": {"profile": {"type": "string", "description": "Who this voice is — identity, archetype, age, background."}, "scene": {"type": "string", "description": "Where it happens and the vibe of the room."}, "notes": {"type": "string", "description": "Performance: delivery, breathing, pace, articulation, accent."}, "context": {"type": "string", "description": "How the performer enters the scene — a starting point, not the script."}}},
+                "direction": {"type": "object", "description": "How it is performed. Four named slots, not one blob of prose: the provider reads a document with headings, and a bare instruction written next to the script is read as the script (measured — a narration once spoke its own direction, and a Korean script once came back in English). Give only the slots you mean.", "properties": {"profile": {"type": "string", "description": "Who this voice is — identity, archetype, age, background."}, "scene": {"type": "string", "description": "Where it happens and the vibe of the room."}, "performance": {"type": "string", "description": "How it is delivered: breathing, pace, articulation, accent."}, "context": {"type": "string", "description": "How the performer enters the scene — a starting point, not the script."}}},
                 "retake": {"type": "boolean", "description": "Synthesize again even though this script was made before, and replace the stored take. The cache answers with the file it already has, so an unusable take — a line read too slowly, a Korean line that came back in English — is permanent for that script until you ask for a new one here. Use it when you are rejecting a take, not by default: a set of clips is only one set because unchanged lines keep their file."},
                 "voice": {"type": "string", "description": "Name the single voice instead of taking the one in settings. Name it whenever a set of clips has to sound like one person: settings can change between two calls and the voice is otherwise not yours to hold. The name goes to the provider as given, and the provider answers if it has no such voice. Ignored when `speakers` is given."}
             },
@@ -184,7 +184,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let direction = crate::ports::TtsDirection {
                     profile: slot("profile"),
                     scene: slot("scene"),
-                    notes: slot("notes"),
+                    performance: slot("performance"),
                     context: slot("context"),
                 };
                 let want_voice = args
@@ -214,7 +214,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty())?;
                                 let st = o
-                                    .get("notes")
+                                    .get("performance")
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty());
@@ -230,7 +230,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty());
-                                Some(crate::ports::TtsSpeaker { speaker: name, voice, notes: st, gender })
+                                Some(crate::ports::TtsSpeaker { speaker: name, voice, performance: st, gender })
                             })
                             .collect()
                     })
@@ -265,13 +265,13 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 script.hash(&mut hasher);
                 for sp in &speakers {
                     sp.speaker.hash(&mut hasher);
-                    sp.notes.hash(&mut hasher);
+                    sp.performance.hash(&mut hasher);
                     sp.gender.hash(&mut hasher);
                 }
                 // 네 칸이 다 열쇠에 들어간다 — 하나만 바뀌어도 다른 소리다.
                 direction.profile.hash(&mut hasher);
                 direction.scene.hash(&mut hasher);
-                direction.notes.hash(&mut hasher);
+                direction.performance.hash(&mut hasher);
                 direction.context.hash(&mut hasher);
                 // 보이스가 키에 없으면 「같은 지문 = 같은 소리」가 거짓이 된다 — 설정이 바뀐 뒤에도
                 // 옛 파일이 적중으로 돌아오고, 그때 새로 생긴 줄만 새 화자가 된다. 그 통로가 오늘
