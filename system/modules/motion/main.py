@@ -3053,15 +3053,40 @@ class Scene:
             # Label height is reserved for every span that DECLARES one, whether or
             # not it is the active one -- otherwise the sentence re-flows each time
             # the spotlight moves, which is the drift this layer exists to stop.
-            labels, nlab = [], 0
+            # ⭐ LABELS THAT WOULD COLLIDE GO DOWN A ROW. Two short spans sitting
+            # next to each other both want the space under themselves, and a long
+            # role name then prints on top of its neighbour's -- measured 2026-09-18
+            # on `you`(목적어) + `grow`(목적격보어 · 원형부정사), which only became
+            # adjacent when the caller widened its column. The layer-against-layer
+            # probe cannot see this: it is one layer drawing over itself.
+            # ⚠️ The row is assigned HERE, not while drawing, because the number of
+            # label rows decides the line's height -- resolve it later and a pushed
+            # label lands on the next sentence line instead.
+            # ⚠️ Every label is placed, active or not, for the same reason the runs
+            # are: the sentence must not re-flow when the spotlight moves.
+            labels, nlab, taken = [], 0, []
+            gap = fl.size * 0.5
             for ci, rx0, rx1 in runs:
                 if last[ci] != li:
                     continue
                 ch = chunks[ci]
-                if not (ch.get("role") or ch.get("note")):
+                ts = [x for x in (ch.get("role"), ch.get("note")) if x]
+                if not ts:
                     continue
-                labels.append((ci, rx0, rx1))
-                nlab = max(nlab, bool(ch.get("role")) + bool(ch.get("note")))
+                tw = max(d.textlength(x, font=fl) for x in ts)
+                lx = min(max((rx0 + rx1) / 2 - tw / 2, x0), x0 + cw - tw)
+                r = 0
+                while True:
+                    while len(taken) < r + len(ts):
+                        taken.append([])
+                    if all(all(lx >= b1 + gap or lx + tw <= b0 - gap
+                               for b0, b1 in taken[r + k]) for k in range(len(ts))):
+                        break
+                    r += 1
+                for k in range(len(ts)):
+                    taken[r + k].append((lx, lx + tw))
+                labels.append((ci, rx0, rx1, r, lx, tw))
+                nlab = max(nlab, r + len(ts))
             rows.append((nlab, runs, segs, labels, lh + nlab * llh))
 
         # A FIXED REGION. `h` says how much of the frame the sentence gets, and when
@@ -3169,22 +3194,23 @@ class Scene:
                 col = self._color(ch.get("color"), self.ink) if on else self.dim
                 self._shadow_text(d, (xx, y), seg, f, col, a)
             ly = y + f.size * 1.26
-            for ci, rx0, rx1 in labels:               # role / note under the run
+            # `row` and `lx` come from the layout -- see the collision note there. A
+            # note can be wider than the span it names, and centring it blindly hangs
+            # it off the block; the safe-area probe would then move the whole SENTENCE
+            # to rescue a label (measured 22px on the first cut). The label gives way
+            # instead: the layout already clamped `lx` inside the box.
+            for ci, rx0, rx1, row, lx, tw in labels:  # role / note under the run
                 ch = chunks[ci]
                 if active is not None and ci not in active:
                     continue
                 col = self._color(ch.get("color"), AMBER)
-                yy = ly
+                yy = ly + row * llh
                 for txt, c in ((ch.get("role"), col), (ch.get("note"), DIM)):
                     if not txt:
                         continue
-                    tw = d.textlength(txt, font=fl)
-                    # A note can be wider than the span it names. Centred blindly it
-                    # hangs off the block, and the safe-area probe then moves the
-                    # whole SENTENCE to rescue a label -- measured 22px on the first
-                    # cut. The label gives way instead: it stays inside the box.
-                    lx = min(max((rx0 + rx1) / 2 - tw / 2, bx0), bx0 + bcw - tw)
-                    d.text((lx, yy), txt, font=fl, fill=(*c, int(255 * a)))
+                    w = d.textlength(txt, font=fl)
+                    d.text((lx + (tw - w) / 2, yy), txt, font=fl,
+                           fill=(*c, int(255 * a)))
                     yy += llh
 
     def _draw_steps(self, d, g, t, a, L):
