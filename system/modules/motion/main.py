@@ -35,6 +35,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gltf3d  # noqa: E402 — module-local pure-python GLB reader + toon rasterizer
 
 # ── limits ───────────────────────────────────────────────────────────────────
+# A panel's type scale. Module-level because the SCENE has to wrap its own lines
+# (nothing here wraps for you) and cannot do that without knowing the size in px.
+# Copied into the caller it drifts: a caller that had its own table wrapped a
+# passage at 34px while the panel drew it at 28 (2026-09-17).
+PANEL_STYLES = ("box", "sheet", "bar", "plain", "wash")
+PANEL_SZ = {"xs": 28, "sm": 34, "md": 42, "lg": 52}
+
 SIZES = {"1080x1920": (1080, 1920), "1920x1080": (1920, 1080), "1080x1080": (1080, 1080)}
 # ⚠️ 길이·레이어 한도는 **어디서 도느냐**에 달렸다. 파일에 박아 두면 한 숫자가 두 기계를
 #    동시에 섬긴다 — 서버는 1코어라 긴 장면이 몇십 분씩 물리고, 로컬 렌더는 그 장면을 9분에
@@ -1638,10 +1645,12 @@ class Scene:
                 L["_w"] = _num(L.get("w", 0.9), f"layers[{i}].w", 0.3, 0.98)
             if kind == "panel":
                 style = str(L.get("style") or "box")
-                if style not in ("box", "bar", "plain", "wash"):
+                # ⚠️ 그리는 곳과 **받는 곳**이 둘이다. 새 모양을 그리기만 하고 여기를 안
+                #    고치면 선언이 거부당한다 — 2026-09-17 에 `sheet` 가 그랬다.
+                if style not in PANEL_STYLES:
                     raise SceneError(
-                        f"layers[{i}].panel style must be 'box', 'bar', 'plain' or "
-                        f"'wash', got {style!r}")
+                        f"layers[{i}].panel style must be one of "
+                        f"{', '.join(repr(s) for s in PANEL_STYLES)}, got {style!r}")
             if kind == "syntax":
                 chunks = L.get("chunks")
                 if not isinstance(chunks, list) or not chunks:
@@ -1980,7 +1989,26 @@ class Scene:
     LIGHT_PLATE = {"drop": (150, 158, 175), "fill": (255, 255, 255),
                    "edge": (198, 208, 222), "lead": (100, 112, 132),
                    "chip": (226, 232, 240)}
-    LIGHT_INK, LIGHT_DIM = (23, 32, 46), (110, 122, 145)
+    # A DIM SPAN IS STILL BEING READ. `dim` says "this is not the part we are talking
+    # about right now" -- it does not say "you may skip this". In a syntax lesson the
+    # dim text IS the sentence, and the student reads all of it on every screen.
+    # Measured on a rendered frame 2026-09-18: (110, 122, 145) on the light plate is
+    # **4.3 : 1**, under the 4.5 : 1 that body text needs, and a viewer said so first
+    # ("텍스트가 회색이라 잘 안보이는데"). (88, 100, 122) is 5.9 : 1 and still reads as
+    # clearly secondary against LIGHT_INK's 14.9 : 1 -- the gap that carries the meaning
+    # is ink-to-dim, and 5.9 keeps it while putting the floor above legibility.
+    # ⚠️ The dark theme was measured too and left alone: DIM on the dark plate is
+    # 7.1 : 1 already. Only the light side was short.
+    LIGHT_INK, LIGHT_DIM = (23, 32, 46), (88, 100, 122)
+    # SMALL TEXT NEEDS MORE CONTRAST, NOT LESS. The step row is set at 20px on a 1920
+    # frame, and at that size antialiasing never lets a glyph reach full coverage: a
+    # (88, 100, 122) label came out of the renderer as (112, 123, 143) against its own
+    # pill -- **3.5 : 1**, while the identical colour at body size measures 5.9 : 1.
+    # Colour alone cannot be read off the constant; it has to be measured on the frame.
+    # So the row gets its own step on the light plate, and the active/inactive
+    # difference stays exactly where it already was -- the accent pill and the accent
+    # hue. The dark plate keeps `dim`, which measures 7.1 : 1 there.
+    LIGHT_STEP = (55, 66, 84)
 
     def _fonts_for(self, family):
         """The Fonts for one family, built once. A serif this box does not have falls
@@ -3173,8 +3201,14 @@ class Scene:
         items, act = L["_items"], L["_active"]
         cw = SW * float(L["_w"])
         accent = self._color(L.get("accent"), AMBER)
-        h, r, gap, link = 64 * ss, 22 * ss, 22 * ss, 34 * ss
-        fn, fl = self.fonts.get(24), self.fonts.get(26)
+        # The row is a PROGRESS STRIP, not content -- at the default it sets the label
+        # in type the size of a passage's body, which on a reading lesson makes the
+        # bottom of the frame compete with the thing being read. `size` lets the scene
+        # say which it is; the disc and the pill shrink with the label so the row stays
+        # one object rather than small text in a big pill.
+        k = 0.78 if str(L.get("size") or "md") == "sm" else 1.0
+        h, r, gap, link = 64 * ss * k, 22 * ss * k, 22 * ss * k, 34 * ss * k
+        fn, fl = self.fonts.get(int(24 * k)), self.fonts.get(int(26 * k))
         labels = [d.textlength(x, font=fl) for x in items]
         wide = [2 * r + gap + lw + gap * 1.4 for lw in labels]
         need = sum(wide) + link * (len(items) - 1)
@@ -3198,15 +3232,18 @@ class Scene:
             d.ellipse([ccx - r, ccy - r, ccx + r, ccy + r],
                       fill=((*accent, int(255 * a)) if on
                             else self._plate((70, 80, 102), "chip", 235, a)))
+            # See LIGHT_STEP: this row is small text, so it gets a darker step than
+            # `dim` on the light plate. The dark plate is already clear of the floor.
+            step = self.dim if self.dark_bg else self.LIGHT_STEP
             num = str(i + 1)
             nw = d.textlength(num, font=fn)
             d.text((ccx - nw / 2, ccy - fn.size * 0.62), num, font=fn,
                    fill=((255, 255, 255, int(255 * a)) if on
-                         else (*self.dim, int(255 * a))))
+                         else (*step, int(255 * a))))
             if show:
                 d.text((ccx + r + gap * 0.7, ccy - fl.size * 0.64), label, font=fl,
                        fill=((*accent, int(255 * a)) if on
-                             else (*self.dim, int(255 * a))))
+                             else (*step, int(255 * a))))
             if i + 1 < len(items):                      # the rule joining them
                 ly = y0 + h / 2
                 d.line([(x + w + link * 0.18, ly), (x + w + link * 0.82, ly)],
@@ -3228,7 +3265,13 @@ class Scene:
         # A line is a bare string, or {text, color, size} the way a title's rows are.
         # A note wants its formula in the colour of the span it explains and its
         # gloss in grey; one colour for the whole block cannot say that.
-        SZ = {"sm": 34, "md": 42, "lg": 52}
+        # `xs` is for a QUOTED PASSAGE, which is a different job from a note: a note is
+        # two or three lines and wants to be read at a glance, a passage is twenty and
+        # wants to fit beside the apparatus explaining it. 34px on a 1080-tall frame is
+        # already large for body text, and a seven-sentence letter set at it leaves no
+        # room for the choices and the note it is being explained with (measured
+        # 2026-09-17: the passage alone wanted 799px of the 743 available).
+        SZ = PANEL_SZ
         base = str(L.get("size") or "md")
         px = SZ.get(base, 42)
         rows = []
@@ -3239,7 +3282,16 @@ class Scene:
             else:
                 rows.append((str(x), None, px))
         fonts = [self.fonts.get(p) for _, _, p in rows]
-        lhs = [p * 1.55 * ss for _, _, p in rows]
+        # Leading is the caller's, not a constant. 1.55 is right for a note of two
+        # or three lines and wrong for a page of a document: a seven-sentence letter
+        # set solid reads as a wall, and the panel's whole contract is that a quoted
+        # passage -- an exam question's material, a statute, a letter -- lives here.
+        # The scene knows which of the two it is declaring; this function cannot.
+        # Clamped, because outside this range it is no longer leading: under 1.2 the
+        # descenders of one line touch the caps of the next, and over 2.6 the block
+        # stops reading as one passage.
+        lead = min(2.6, max(1.2, float(L.get("lead", 1.55))))
+        lhs = [p * lead * ss for _, _, p in rows]
         pad = 46 * ss
         cw = SW * float(L.get("w", 0.72))
         head = str(L.get("title") or "")
@@ -3257,7 +3309,15 @@ class Scene:
         pady = {"plain": 0.0, "wash": pad * 0.62}.get(style, pad)
         chh = pady * 2 + hh + sum(lhs)
         cx, y0 = self._at(L, [0.5, 0.20])
-        y0 += (1 - eob(clamp01((t - L["from"]) / 0.6))) * 40 * ss
+        # A CUT IS A CUT. `fadeIn: 0` asks for no transition, and a 0.6s slide is a
+        # transition -- a scene that cuts between two panels holding the SAME page
+        # (an exam passage with a different sentence lit) then re-animates the whole
+        # page on every beat, which reads as the page being replaced. Measured on a
+        # reading lesson 2026-09-17: seven beats, seven slide-ins of an unchanged
+        # passage. The entry belongs to a layer that is arriving, not to one that is
+        # already there.
+        if float(L.get("fadeIn", -1)) != 0.0:
+            y0 += (1 - eob(clamp01((t - L["from"]) / 0.6))) * 40 * ss
         x0 = cx - cw / 2
         # `bar` is the same block with the frame taken off and one accent rule down
         # its left edge. A bordered card is right for a quoted passage, which is what
@@ -3280,6 +3340,16 @@ class Scene:
                                 radius=22 * ss,
                                 fill=(*self._color(L.get("accent"), AMBER),
                                       int(26 * a)))
+        elif style == "sheet":
+            # An EXAM PAPER's box: a hairline frame, no drop, almost no radius, and the
+            # page's own ground showing through. `box` is a card -- it floats, and a
+            # quoted passage does not float, it is printed. The distinction is not
+            # decoration: a student who has seen a real 시험지 reads the frame as
+            # 「this is the given material」, which is exactly what it is.
+            d.rounded_rectangle([x0, y0, x0 + cw, y0 + chh], radius=8 * ss,
+                                fill=self._plate((9, 12, 24), "fill", 34, a),
+                                outline=self._plate((150, 166, 190), "edge", 130, a),
+                                width=max(1, int(1.5 * ss)))
         elif style == "plain":
             pass
         else:
@@ -5590,14 +5660,14 @@ def action_assets(inp=None):
                       "reserved for every span that declares one. A span wider than "
                       "the box wraps and each of its lines keeps its own mark",
             "panel": "{lines:[<string> | {text, color?, size?}..], at?, w?, "
-                     "size?:'sm'|'md'|'lg', title?, "
-                     "style?:'box'|'bar'|'plain'|'wash', accent?, font?} a "
+                     "size?:'xs'|'sm'|'md'|'lg', title?, "
+                     "style?:'box'|'sheet'|'bar'|'plain'|'wash', accent?, font?} a "
                      "bordered block of LEFT-ALIGNED lines — a page of a document. "
                      "`title` centres every line and `list` wraps each one in its own "
                      "pill, so a quoted passage (an exam question's 자료, a statute, a "
                      "letter) has no home in either: this is where it goes. `at` is the "
                      "box's TOP-CENTRE and the height follows the line count "
-                     "(2*46 + 1.55*size per line, plus 1.75*size for a title). Break the "
+                     "(2*46 + `lead`*size per line, plus 1.75*size for a title). Break the "
                      "lines yourself — nothing wraps for you, and the safe-area probe "
                      "reports a line too long to fit. style 'bar' takes the frame off "
                      "and puts one accent rule down the left edge instead — a card is "
@@ -5607,7 +5677,12 @@ def action_assets(inp=None):
                      "`accent`, no rule, sized to its own longest line rather than to "
                      "the column, so it reads as a slip laid on the page. Give it the "
                      "colour of the span it explains and the colour states the tie, "
-                     "which a rule in the margin cannot. 'plain' is the text alone, on "
+                     "which a rule in the margin cannot. `lead` is the line height as a "
+                     "multiple of the type size (default 1.55, clamped 1.2~2.6) — "
+                     "raise it for a passage meant to be read through, leave it for "
+                     "a note. 'sheet' is an exam paper's box -- hairline frame, no drop "
+                     "shadow, almost no radius -- for given material that is PRINTED "
+                     "rather than floating. 'plain' is the text alone, on "
                      "the block's own left edge — right when the page already has "
                      "enough going on, bare when it does not. A LINE MAY CARRY ITS OWN "
                      "colour and size, which is how a note puts its formula in the "
