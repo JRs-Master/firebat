@@ -53,6 +53,13 @@ export const GET = withAuth(async (req: NextRequest) => {
     const occRes = await listOccurrences({ fromDate: from, toDate: to });
     if (occRes.ok) occurrences = occRes.data ?? [];
   }
+  // ?jobs=a,b — only these jobs' occurrences. The scheduler list reads a few jobs' firing times;
+  // a job that fires every five minutes is five hundred rows it would carry for nothing.
+  const onlyJobs = req.nextUrl.searchParams.get('jobs');
+  if (onlyJobs) {
+    const want = new Set(onlyJobs.split(',').filter(Boolean));
+    occurrences = occurrences.filter((o: any) => typeof o?.jobId === 'string' && want.has(o.jobId));
+  }
 
   // hub-scoped 자료 필터 — owner 시작 'hub:' 모두 제외 (admin 자료만 표시).
   const adminJobs = (jobsRes.data ?? [])

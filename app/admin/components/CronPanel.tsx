@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useCallback, useId, useMemo } from 'react';
+import { useState, useCallback, useEffect, useId, useMemo } from 'react';
 import { compareName } from '../../../lib/util/sort-name';
 import { createPortal } from 'react-dom';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Play, Lock, Boxes } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { useRunningCronJobs } from '../hooks/active-jobs';
 import { Tooltip } from './Tooltip';
@@ -14,12 +14,13 @@ import { useTranslations } from '../../../lib/i18n';
 import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
-import { useAdminTimezone } from '../hooks/use-admin-timezone';
+import { useAdminTimezone, type ZoneClock } from '../hooks/use-admin-timezone';
 import { ZoneBadge } from './ZoneBadge';
 import { hubFetch } from '../../../lib/hub-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { TIME } from '../../../lib/util/time';
-import { describeCron } from '../../../lib/util/cron-job';
+import { describeCron, describeFires } from '../../../lib/util/cron-job';
+import { TIMEZONE_OPTIONS } from '../../../lib/timezones';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 import type { CronRunWhen, CronRetry, CronNotify } from '../../../lib/types/firebat-types';
@@ -146,6 +147,61 @@ export function CronPanel({
     [queryClient],
   );
 
+  // Times on this panel are the operator's clock. A job can keep another one — the Toss loop runs
+  // on New York time so that summer time moves with the market — and its rule, written in that
+  // clock, must not be read as this panel's: "9~14시" under a Seoul badge looks like a daytime job
+  // that in fact fires 22:50~03:50 Seoul. Such a job is shown from the instants the scheduler will
+  // fire it, read in the operator's zone, with its own clock named beside them.
+  const adminTz = useAdminTimezone();
+  const jobZone = (job: CronJob) => (!job.zone || job.zone === 'auto' ? adminTz : job.zone);
+  const foreignJobs = useMemo(
+    () => (hubMode || !adminTz
+      ? []
+      : jobs.filter(j => j.mode === 'cron' && !!j.zone && j.zone !== 'auto' && j.zone !== adminTz)),
+    [jobs, adminTz, hubMode],
+  );
+  const foreignKey = foreignJobs.map(j => `${j.jobId}|${j.cronTime}|${j.zone}`).join(',');
+  const { data: foreignFires } = useQuery({
+    queryKey: ['cron-fires', adminTz, foreignKey],
+    queryFn: async () => {
+      const ymd = (ms: number) => new Intl.DateTimeFormat('en-CA', {
+        timeZone: adminTz ?? undefined, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(ms);
+      const now = Date.now();
+      const ids = foreignJobs.map(j => j.jobId).join(',');
+      // Eight days: a full week of sessions whatever day it is now, plus the one under way.
+      const res = await apiGet<{ occurrences?: { jobId: string; occursAt: string }[] }>(
+        `/api/cron?from=${ymd(now)}&to=${ymd(now + 8 * TIME.DAY_MS)}&jobs=${encodeURIComponent(ids)}`,
+        { category: 'cron' },
+      );
+      const byJob: Record<string, number[]> = {};
+      for (const o of res.occurrences ?? []) (byJob[o.jobId] ??= []).push(Date.parse(o.occursAt));
+      return byJob;
+    },
+    enabled: foreignJobs.length > 0,
+    staleTime: 30 * TIME.MINUTE_MS,
+  });
+  // Whether that clock is on summer time is core's answer, the same one the scheduler fires by.
+  const foreignZones = useMemo(() => [...new Set(foreignJobs.map(j => j.zone as string))], [foreignJobs]);
+  const zoneClocks = useQueries({
+    queries: foreignZones.map(zone => ({
+      queryKey: ['zone-clock', zone],
+      queryFn: () => apiGet<{ clock?: ZoneClock | null }>(
+        `/api/settings/zone?zone=${encodeURIComponent(zone)}`, { category: 'cron' },
+      ).then(r => r?.clock ?? null).catch(() => null),
+      staleTime: 60 * TIME.MINUTE_MS,
+    })),
+  });
+  const zonePlace = (zone: string) => {
+    const label = TIMEZONE_OPTIONS.find(o => o.value === zone)?.labelKo;
+    // "(UTC-05:00) 동부 (뉴욕)" → "뉴욕"; a zone outside the list keeps its own name.
+    return label?.match(/\(([^()]+)\)$/)?.[1] ?? label?.replace(/^\(UTC[^)]*\)\s*/, '') ?? zone;
+  };
+  const zoneOffset = (zone: string) => {
+    const clock = zoneClocks[foreignZones.indexOf(zone)]?.data;
+    return clock ? `UTC${clock.offset}${clock.dstActive ? ' 서머타임' : ''}` : '';
+  };
+
   // SSE (cron:complete / sidebar:refresh) + window 'firebat-refresh' 통합 수신
   // EventsManager 싱글톤이 EventSource 1개만 유지 — Sidebar 와 공유. hub mode 면 no-op (admin SSE 수신 X).
   useSidebarRefresh(hubMode ? () => {} : invalidateCron);
@@ -196,9 +252,15 @@ export function CronPanel({
     if (expr.includes('|')) {
       return expr.split('|').map(e => e.trim()).filter(Boolean).map(formatCron).join(' · ');
     }
-    const parts = expr.split(/\s+/);
+    let parts = expr.trim().split(/\s+/);
+    // Six fields lead with seconds — the module loops write "0 50 9-14 * * 1-5". A whole-second
+    // offset reads the same without it; anything else stays as written.
+    if (parts.length === 6 && /^\d+$/.test(parts[0])) parts = parts.slice(1);
     if (parts.length !== 5) return expr;
-    const [min, hour, dom, mon, dow] = parts;
+    const [min, hour, dom, mon, dowRaw] = parts;
+    // Day names mean what they say (MON-FRI); the numbers are Unix, 0 = Sunday.
+    const DOW_NUM: Record<string, string> = { SUN: '0', MON: '1', TUE: '2', WED: '3', THU: '4', FRI: '5', SAT: '6' };
+    const dow = dowRaw.toUpperCase().replace(/[A-Z]{3}/g, n => DOW_NUM[n] ?? n);
 
     const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
     const dowLabel = (() => {
@@ -240,7 +302,9 @@ export function CronPanel({
 
     // 시·분 조합
     if (hourLabel && min === '0') parts_out.push(hourLabel + ' 정각');
-    else if (hourLabel && /^\d+$/.test(min)) parts_out.push(`${hour}:${min.padStart(2, '0')}`);
+    else if (hourLabel && /^\d+$/.test(min)) {
+      parts_out.push(/^\d+$/.test(hour) ? `${hour}:${min.padStart(2, '0')}` : `${hourLabel} 매시 ${min}분`);
+    }
     else if (hourLabel && /^\*\/\d+$/.test(min)) parts_out.push(`${hourLabel} ${min.slice(2)}분마다`);
     else if (hourLabel) parts_out.push(hourLabel);
     else parts_out.push(minLabel);
@@ -248,7 +312,6 @@ export function CronPanel({
     return parts_out.join(' ') || expr;
   };
 
-  const adminTz = useAdminTimezone();
   const formatTime = (iso: string) => {
     const d = new Date(iso);
     // The configured zone, not the browser's — the same zone the cron expression is evaluated in.
@@ -302,6 +365,16 @@ export function CronPanel({
   const modeLabel = (job: CronJob) => {
     if (job.mode === 'cron') {
       let label = formatCron(job.cronTime!);
+      const zone = jobZone(job);
+      if (zone && adminTz && zone !== adminTz) {
+        const mine = describeFires(foreignFires?.[job.jobId] ?? [], adminTz);
+        const offset = zoneOffset(zone);
+        // Until the instants arrive, the rule shows in its own clock — named, so it is never read
+        // as this panel's.
+        label = mine
+          ? `${mine} · ${zonePlace(zone)} 시계${offset ? ` ${offset}` : ''}`
+          : `${zonePlace(zone)} 시각 ${label}${offset ? ` · ${offset}` : ''}`;
+      }
       if (job.endAt) label += ` ~${formatTime(job.endAt)}`;
       return label;
     }
@@ -593,9 +666,29 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
   const [endAt, setEndAt] = useState(job?.endAt ? toLocalInput(job.endAt) : '');
   const [permanent, setPermanent] = useState(!job?.endAt);
   const [showInCalendar, setShowInCalendar] = useState<boolean>(!!job?.showInCalendar);
-  // Whether this job follows the setting instead of the clock it was written in. Offered
-  // at registration and on every later edit — the choice carries forward and stays editable.
-  const [followZone, setFollowZone] = useState<boolean>(job?.zone === 'auto');
+  // Which clock this job keeps — its times are read in it. A zone stays when the setting changes,
+  // `auto` follows the setting, and a market's own zone moves with that market's summer time.
+  // Offered at registration and on every later edit, and always sent back as chosen: an unchecked
+  // "follow" box used to send nothing, and the scheduler pinned the job to whatever the setting was
+  // that day — saving the New York loop from here would have turned it into a Seoul one.
+  const zoneSelectId = useId();
+  const adminTz = useAdminTimezone();
+  const [zoneChoice, setZoneChoice] = useState<string>(job?.zone ?? '');
+  useEffect(() => {
+    // A new job starts on the operator's clock, named, once the setting has loaded.
+    if (!job?.zone && adminTz) setZoneChoice(z => z || adminTz);
+  }, [adminTz, job?.zone]);
+  const zoneForClock = !zoneChoice || zoneChoice === 'auto' ? adminTz : zoneChoice;
+  const [zoneClock, setZoneClock] = useState<ZoneClock | null>(null);
+  useEffect(() => {
+    if (!zoneForClock) { setZoneClock(null); return; }
+    let alive = true;
+    apiGet<{ clock?: ZoneClock | null }>(
+      `/api/settings/zone?zone=${encodeURIComponent(zoneForClock)}`, { category: 'cron' })
+      .then(r => { if (alive) setZoneClock(r?.clock ?? null); })
+      .catch(() => { if (alive) setZoneClock(null); });
+    return () => { alive = false; };
+  }, [zoneForClock]);
   const [saving, setSaving] = useState(false);
   const [savedTick, setSavedTick] = useState(false); // 저장 완료 순간 표시 (모달이 안 닫히므로 피드백 필요)
   const [error, setError] = useState('');
@@ -707,8 +800,9 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
 
       // 캘린더 표시 opt-in (시스템 스케줄은 항상 false).
       body.showInCalendar = showInCalendar;
-      // Unset means "pin it", which the adapter does with the zone configured right now.
-      body.zone = followZone ? 'auto' : undefined;
+      // The clock as chosen. Empty = the configured zone at this moment, which is what the adapter
+      // pins an unset zone to; the other modes keep whatever the job had.
+      body.zone = mode === 'cron' ? (zoneChoice || undefined) : (job?.zone || undefined);
 
       try {
         // owner-injected save — hub 면 op-dispatch(owner-scope, Rust update_owned 강제) / admin 이면 REST PUT.
@@ -902,6 +996,35 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
             </div>
           )}
 
+          {/* 위 실행 시각을 어느 시계로 읽나. 설정 화면과 같은 목록 — 서머타임 지역은 자동 전환. */}
+          {mode === 'cron' && (
+            <div>
+              <label className="text-[11px] font-semibold text-slate-500 mb-1 block" htmlFor={zoneSelectId}>시간대</label>
+              <select
+                value={zoneChoice}
+                onChange={e => setZoneChoice(e.target.value)}
+                className="w-full px-3 py-1.5 text-[12px] bg-white border border-slate-300 rounded-lg outline-none focus:border-blue-400 cursor-pointer"
+                name="zone" id={zoneSelectId}
+              >
+                {!zoneChoice && <option value="">설정 시간대</option>}
+                <option value="auto">설정 시간대를 따름 — 설정을 바꾸면 같이 바뀜</option>
+                {zoneChoice && zoneChoice !== 'auto' && !TIMEZONE_OPTIONS.some(o => o.value === zoneChoice) && (
+                  <option value={zoneChoice}>{zoneChoice}</option>
+                )}
+                {TIMEZONE_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.labelKo}</option>
+                ))}
+              </select>
+              {zoneClock && (
+                <p className="text-[10px] text-slate-500 px-1 mt-1">
+                  <b>{zoneClock.abbr || zoneClock.zone}</b> · 지금 UTC{zoneClock.offset}
+                  {zoneClock.observesDst ? (zoneClock.dstActive ? ' · 서머타임 (자동 전환)' : ' · 서머타임 지역 (자동 전환)') : ''}
+                  {zoneForClock && adminTz && zoneForClock !== adminTz ? ' · 목록에는 설정 시간대로 바꿔 표시' : ''}
+                </p>
+              )}
+            </div>
+          )}
+
           {mode === 'once' && (
             <div>
               <label className="text-[11px] font-semibold text-slate-500 mb-1 block" htmlFor={runAtId}>실행 시각</label>
@@ -952,18 +1075,6 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
             <input type="checkbox" checked={showInCalendar} onChange={e => setShowInCalendar(e.target.checked)}
               className="w-3.5 h-3.5 rounded border-slate-300" name="showInCalendar" autoComplete="off" aria-label="캘린더에 표시" />
             <span className="text-[11px] text-slate-600">캘린더에 표시 <span className="text-slate-400">— 이 스케줄의 일정·실행기록을 캘린더에 표시</span></span>
-          </label>
-
-          {/* 이 잡이 어느 시계를 쓰나. 기본은 등록 시점의 설정 시간대로 박제 — 표시 시간대를
-              바꿨다고 장중 스케줄이 재해석되면 안 되기 때문이고, 그래서 따라가는 쪽이 opt-in 이다. */}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={followZone} onChange={e => setFollowZone(e.target.checked)}
-              className="w-3.5 h-3.5 rounded border-slate-300" name="followZone" autoComplete="off"
-              aria-label="설정 시간대를 따름" />
-            <span className="text-[11px] text-slate-600">
-              설정 시간대를 따름{' '}
-              <span className="text-slate-400">— 설정한 시간대로 변경됩니다</span>
-            </span>
           </label>
 
           {/* 실행 모드 + 고급 — 시스템 스케줄은 숨김(주기만 편집) */}
