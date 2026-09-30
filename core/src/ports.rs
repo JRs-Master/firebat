@@ -655,6 +655,16 @@ pub struct WsFieldEq {
     pub equals: serde_json::Value,
 }
 
+/// Per-target refusals inside a subscribe ack, for venues that take part of a declaration and
+/// list the rest (Toss: `rejected: [{target, code, message}]`). `list` is the dot-path to that
+/// list in the ack, `key` the dot-path inside each entry to the refused key — compared with a
+/// watch's `route_topics`, so only the watch that asked for it is refused.
+#[derive(Debug, Clone)]
+pub struct WsRejectedSpec {
+    pub list: String,
+    pub key: String,
+}
+
 /// Login handshake spec — `frame` may contain the literal `"{TOKEN}"` placeholder which the
 /// adapter fills with the token from `token_secret` (OAuthTokenProvider, proactive refresh).
 #[derive(Debug, Clone)]
@@ -799,10 +809,11 @@ pub struct WsStreamSpec {
     pub endpoint: String,
     pub match_field: String,
     pub echo_values: Vec<String>,
-    /// Frame sent on an idle socket to keep it open. A private stream is silent by nature — no
-    /// order, no frame — and a venue that closes idle sockets (Upbit: ~120s) would drop exactly
-    /// the connection that has nothing to say yet. A JSON string is sent as raw text (`"PING"`),
-    /// anything else as JSON.
+    /// Frame sent on every heartbeat (60s) while the socket is up. A private stream is silent by
+    /// nature — no order, no frame — and a venue that closes idle sockets (Upbit: ~120s) would drop
+    /// exactly the connection that has nothing to say yet. Toss counts only what the client sends,
+    /// so to it even a socket full of ticks is idle after 180s. A JSON string is sent as raw text
+    /// (`"PING"`), anything else as JSON.
     pub keepalive: Option<serde_json::Value>,
     pub login: Option<WsLoginSpec>,
     pub error_msg_field: Option<String>,
@@ -811,6 +822,8 @@ pub struct WsStreamSpec {
     pub subscribe_frame: serde_json::Value,
     pub subscribe_match: String,
     pub subscribe_success: Option<WsFieldEq>,
+    /// Where the ack lists targets it refused while taking the rest (config `subscribe.rejected`).
+    pub subscribe_rejected: Option<WsRejectedSpec>,
     /// Sent best-effort when the watch stops (e.g. CNSRCLR).
     pub unsubscribe_frame: Option<serde_json::Value>,
     /// Frame type carrying realtime events (e.g. "REAL").
@@ -879,6 +892,18 @@ pub struct WsStreamSpec {
     pub route_type_path: Option<String>,
     pub subscribe_items: Vec<String>,
     pub subscribe_types: Vec<String>,
+    /// The keys this watch's frames carry, filled from its args (config stream `routeTopic`, e.g.
+    /// `"trade:us:{symbol}"`), and where a frame carries its key (`routeTopicPath`, e.g. `topic`).
+    /// For venues that stamp every frame with the subscription it answers — Toss does, at the top
+    /// of the frame, where `route_item_path` (a path inside each `data[]` record) cannot see it.
+    /// The same keys name this watch's entries when an ack refuses part of a declaration.
+    pub route_topics: Vec<String>,
+    pub route_topic_path: Option<String>,
+    /// A subscribe frame replaces every subscription on the socket instead of adding one (config
+    /// `ws.subscribeReplaces`, Toss). On a shared socket the adapter then declares the union of
+    /// every watch's elements whenever the set changes — one watch's frame alone would unsubscribe
+    /// all the others.
+    pub subscribe_replaces: bool,
     pub mock: bool,
 }
 

@@ -43,6 +43,11 @@ const FIRST_RESULT_TIMEOUT: Duration = Duration::from_secs(12);
 /// Consecutive subscribe NACKs after which a previously-working watch gives up.
 /// A NACK is an application-level rejection of our args — it will not heal by retrying.
 const MAX_SUBSCRIBE_REJECTS: u32 = 3;
+/// How long a venue whose subscribe frame replaces the socket's subscription waits after a watch
+/// arrives or leaves before declaring the new set. A page that starts three watches at once is one
+/// declaration, not three — Toss refuses more than five a second, and a refused declaration leaves
+/// the previous one in force.
+const REDECLARE_COALESCE: Duration = Duration::from_millis(250);
 
 /// One-shot channel start() listens on for the first session outcome.
 type FirstResultTx = tokio::sync::oneshot::Sender<Result<(), String>>;
@@ -339,6 +344,15 @@ fn conn_key(spec: &WsStreamSpec) -> String {
 /// declares no routing path gets the frame untouched, which is how a private connection and every
 /// non-JSON dialect keep behaving exactly as before.
 fn route_frame(frame: &serde_json::Value, spec: &WsStreamSpec) -> Option<serde_json::Value> {
+    // A venue that stamps each frame with the subscription it answers is routed on that key alone.
+    if let Some(path) = &spec.route_topic_path {
+        if topic_matches(frame, path, &spec.route_topics) == Some(false) {
+            return None;
+        }
+        if !spec.route_topics.is_empty() {
+            return Some(frame.clone());
+        }
+    }
     let Some(item_path) = &spec.route_item_path else {
         return Some(frame.clone());
     };
@@ -376,6 +390,137 @@ fn route_frame(frame: &serde_json::Value, spec: &WsStreamSpec) -> Option<serde_j
         o.insert("data".into(), serde_json::Value::Array(keep));
     }
     Some(out)
+}
+
+/// Whether a frame stamped with a subscription key belongs to a watch subscribed to `topics`.
+/// `None` when that is not for this check to say: the watch declared no keys, or the frame carries
+/// none at `path` (a control frame, or a shape the venue added) — neither is dropped silently.
+fn topic_matches(frame: &serde_json::Value, path: &str, topics: &[String]) -> Option<bool> {
+    if topics.is_empty() {
+        return None;
+    }
+    let key = frame_get(frame, path)?.as_str()?;
+    Some(topics.iter().any(|t| t == key))
+}
+
+/// Every watch's subscribe elements as one declaration — for venues where a subscribe frame
+/// replaces the socket's whole subscription (`subscribe_replaces`). Elements that differ only in
+/// their list-valued fields merge: `{type:"trade:us",codes:["TQQQ"]}` and
+/// `{type:"trade:us",codes:["AAPL"]}` go out as one element carrying both codes. Order is kept,
+/// and a value two watches both asked for goes out once.
+fn union_subscribe<'a>(frames: impl IntoIterator<Item = &'a serde_json::Value>) -> serde_json::Value {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for frame in frames {
+        match frame {
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    merge_subscribe_element(&mut out, item);
+                }
+            }
+            other => merge_subscribe_element(&mut out, other),
+        }
+    }
+    serde_json::Value::Array(out)
+}
+
+fn merge_subscribe_element(out: &mut Vec<serde_json::Value>, item: &serde_json::Value) {
+    if let Some(obj) = item.as_object() {
+        let same_shape = |e: &serde_json::Value| {
+            e.as_object().is_some_and(|have| {
+                have.len() == obj.len()
+                    && obj.iter().all(|(k, v)| match (v, have.get(k)) {
+                        (serde_json::Value::Array(_), Some(serde_json::Value::Array(_))) => true,
+                        (v, Some(w)) => v == w,
+                        (_, None) => false,
+                    })
+            })
+        };
+        if let Some(existing) = out.iter_mut().find(|e| same_shape(&**e)) {
+            if let Some(have) = existing.as_object_mut() {
+                for (k, v) in obj {
+                    if let (Some(add), Some(serde_json::Value::Array(list))) =
+                        (v.as_array(), have.get_mut(k))
+                    {
+                        for x in add {
+                            if !list.contains(x) {
+                                list.push(x.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    }
+    if !out.contains(item) {
+        out.push(item.clone());
+    }
+}
+
+/// The entry an ack's per-target refusals hold for one of `topics`, as the refusal reason.
+fn rejected_among(
+    ack: &serde_json::Value,
+    rule: &firebat_core::ports::WsRejectedSpec,
+    topics: &[String],
+) -> Option<String> {
+    frame_get(ack, &rule.list)?
+        .as_array()?
+        .iter()
+        .find(|entry| {
+            frame_get(entry, &rule.key)
+                .and_then(|v| v.as_str())
+                .is_some_and(|k| topics.iter().any(|t| t == k))
+        })
+        .map(|entry| format!("subscribe rejected: {entry}"))
+}
+
+/// Why a subscribe ack refuses this watch, if it does: the whole declaration failed its success
+/// rule, or the venue listed one of this watch's keys among the targets it would not take.
+fn refusal(ack: &serde_json::Value, spec: &WsStreamSpec) -> Option<String> {
+    if let Some(rule) = &spec.subscribe_success {
+        if !field_eq(ack, rule) {
+            return Some(format!("subscribe rejected: {}", frame_error(ack, spec)));
+        }
+    }
+    let rule = spec.subscribe_rejected.as_ref()?;
+    rejected_among(ack, rule, &spec.route_topics)
+}
+
+/// Count one refusal against a watch and say whether to give up on it. Its first attempt is
+/// reported to start() and abandoned — the args are wrong and retrying cannot fix them; a watch
+/// that used to work gets a few reconnects first.
+fn refuse(m: &mut Member, reason: &str) -> bool {
+    m.rejects += 1;
+    let give_up = m.first.is_some() || m.rejects >= MAX_SUBSCRIBE_REJECTS;
+    if let Some(tx) = m.first.take() {
+        let _ = tx.send(Err(reason.to_string()));
+    }
+    if give_up {
+        set_state(&m.status, "failed", Some(reason.to_string()));
+        tracing::error!(
+            target: "ws_stream", watch_id = %m.spec.watch_id,
+            reason = %reason, attempts = m.rejects,
+            "ws stream giving up - subscribe rejected (fix the watch args and restart it)"
+        );
+    }
+    give_up
+}
+
+/// The declared keepalive as a websocket message: a JSON string goes out as raw text (Toss and
+/// Upbit both want a bare `PING`), anything else as JSON.
+fn keepalive_message(v: &serde_json::Value) -> Message {
+    match v {
+        serde_json::Value::String(s) => Message::Text(s.clone()),
+        other => Message::Text(other.to_string()),
+    }
+}
+
+/// Resolves at `at`, or never — so a `select!` branch can wait on an optional deadline.
+async fn sleep_until_or_never(at: Option<tokio::time::Instant>) {
+    match at {
+        Some(t) => tokio::time::sleep_until(t).await,
+        None => std::future::pending().await,
+    }
 }
 
 /// A JWT signed here and now, from a key pair in the vault.
@@ -662,6 +807,15 @@ async fn run_session(
     .await;
     let mut ws = match connect {
         Ok(Ok((ws, _))) => ws,
+        // A refused upgrade is the venue judging the credential, not the network. Named a login
+        // rejection, the loop refreshes the token before the next attempt and stops after repeated
+        // refusals, instead of offering the same refused token every minute for as long as it runs.
+        Ok(Err(tungstenite::Error::Http(resp))) if matches!(resp.status().as_u16(), 401 | 403) => {
+            return SessionEnd::Dropped(format!(
+                "login rejected: handshake HTTP {}",
+                resp.status().as_u16()
+            ))
+        }
         Ok(Err(e)) => return SessionEnd::Dropped(format!("connect failed: {e}")),
         Err(_) => return SessionEnd::Dropped("connect timeout".to_string()),
     };
@@ -719,7 +873,38 @@ async fn run_session(
     // placeholder; kiwoom has none there, so filling it is a no-op.
     let mut decrypt_keys: Option<(String, String)> = None;
     let mut drop_ids: Vec<String> = Vec::new();
+    if spec.subscribe_replaces {
+        // One declaration for the whole socket: a frame per watch would leave only the last one
+        // subscribed. The venue answers it with one ack that names what it refused.
+        let frame = fill_token(
+            &union_subscribe(members.iter().map(|m| &m.spec.subscribe_frame)),
+            token.as_deref(),
+        );
+        if let Err(e) = send(&mut ws, &frame).await {
+            return SessionEnd::Dropped(e);
+        }
+        if !spec.subscribe_match.is_empty() {
+            match exchange(&mut ws, spec, &spec.subscribe_match).await {
+                Ok(resp) => {
+                    for m in members.iter_mut() {
+                        match refusal(&resp, &m.spec) {
+                            Some(reason) => {
+                                if refuse(m, &reason) {
+                                    drop_ids.push(m.spec.watch_id.clone());
+                                }
+                            }
+                            None => m.rejects = 0,
+                        }
+                    }
+                }
+                Err(e) => return SessionEnd::Dropped(format!("subscribe: {e}")),
+            }
+        }
+    }
     for idx in 0..members.len() {
+        if spec.subscribe_replaces {
+            break;
+        }
         let msp = members[idx].spec.clone();
         let frame = fill_token(&msp.subscribe_frame, token.as_deref());
         if let Err(e) = send(&mut ws, &frame).await {
@@ -730,29 +915,11 @@ async fn run_session(
         }
         match exchange(&mut ws, &msp, &msp.subscribe_match).await {
             Ok(resp) => {
-                if let Some(rule) = &msp.subscribe_success {
-                    if !field_eq(&resp, rule) {
-                        let reason = format!("subscribe rejected: {}", frame_error(&resp, &msp));
-                        let m = &mut members[idx];
-                        m.rejects += 1;
-                        // A first attempt is reported to start() and abandoned: the args are wrong
-                        // and retrying cannot fix them. A watch that used to work gets a few
-                        // reconnects before being given up on.
-                        let give_up = m.first.is_some() || m.rejects >= MAX_SUBSCRIBE_REJECTS;
-                        if let Some(tx) = m.first.take() {
-                            let _ = tx.send(Err(reason.clone()));
-                        }
-                        if give_up {
-                            set_state(&m.status, "failed", Some(reason.clone()));
-                            drop_ids.push(msp.watch_id.clone());
-                            tracing::error!(
-                                target: "ws_stream", watch_id = %msp.watch_id,
-                                reason = %reason, attempts = m.rejects,
-                                "ws stream giving up - subscribe rejected (fix the watch args and restart it)"
-                            );
-                        }
-                        continue;
+                if let Some(reason) = refusal(&resp, &msp) {
+                    if refuse(&mut members[idx], &reason) {
+                        drop_ids.push(msp.watch_id.clone());
                     }
+                    continue;
                 }
                 members[idx].rejects = 0;
                 // KIS ack carries the AES iv/key - capture it, never forward it: that is a secret.
@@ -815,6 +982,9 @@ async fn run_session(
     let mut frames_at_last_beat: u64 = 0;
     let mut hb = tokio::time::interval(std::time::Duration::from_secs(60));
     hb.tick().await; // fire immediately once, then every 60s
+    // When the set of watches changes on a socket whose subscribe replaces, the new set is
+    // declared once this passes (see REDECLARE_COALESCE).
+    let mut redeclare_at: Option<tokio::time::Instant> = None;
 
     // Realtime loop — cancel-aware.
     loop {
@@ -843,6 +1013,25 @@ async fn run_session(
                     );
                 }
                 frames_at_last_beat = frames_seen;
+                // The declared keepalive rides this beat. It was declared, documented and parsed
+                // from 2026-08-02 and sent by nothing, so a private stream the venue closes when
+                // idle (Upbit ~120s) reconnected on that cadence, and Toss — which counts only
+                // what the client sends — would drop every socket at 180s.
+                if let Some(ka) = &spec.keepalive {
+                    if let Err(e) = ws.send(keepalive_message(ka)).await {
+                        return SessionEnd::Dropped(format!("keepalive failed: {e}"));
+                    }
+                }
+            }
+            _ = sleep_until_or_never(redeclare_at) => {
+                redeclare_at = None;
+                let frame = fill_token(
+                    &union_subscribe(members.iter().map(|m| &m.spec.subscribe_frame)),
+                    token.as_deref(),
+                );
+                if let Err(e) = send(&mut ws, &frame).await {
+                    return SessionEnd::Dropped(e);
+                }
             }
             _ = cancel_rx.changed() => {
                 if *cancel_rx.borrow() {
@@ -870,11 +1059,18 @@ async fn run_session(
                         if token_spec_slot.is_none() {
                             *token_spec_slot = ts;
                         }
-                        let frame = fill_token(&m.spec.subscribe_frame, token.as_deref());
                         let wid = m.spec.watch_id.clone();
-                        members.push(m);
-                        if let Err(e) = send(&mut ws, &frame).await {
-                            return SessionEnd::Dropped(e);
+                        if spec.subscribe_replaces {
+                            members.push(m);
+                            if redeclare_at.is_none() {
+                                redeclare_at = Some(tokio::time::Instant::now() + REDECLARE_COALESCE);
+                            }
+                        } else {
+                            let frame = fill_token(&m.spec.subscribe_frame, token.as_deref());
+                            members.push(m);
+                            if let Err(e) = send(&mut ws, &frame).await {
+                                return SessionEnd::Dropped(e);
+                            }
                         }
                         tracing::info!(
                             target: "ws_stream", watch_id = %wid, watches = members.len(),
@@ -887,7 +1083,12 @@ async fn run_session(
                     Some(ConnCmd::Remove(watch_id)) => {
                         if let Some(pos) = members.iter().position(|m| m.spec.watch_id == watch_id) {
                             let gone = members.remove(pos);
-                            if let Some(unsub) = &gone.spec.unsubscribe_frame {
+                            if spec.subscribe_replaces {
+                                // Declaring the others without it is the unsubscribe.
+                                if !members.is_empty() && redeclare_at.is_none() {
+                                    redeclare_at = Some(tokio::time::Instant::now() + REDECLARE_COALESCE);
+                                }
+                            } else if let Some(unsub) = &gone.spec.unsubscribe_frame {
                                 let frame = fill_token(unsub, token.as_deref());
                                 let _ = send(&mut ws, &frame).await;
                             }
@@ -1041,34 +1242,28 @@ async fn run_session(
                 // Ack for a registration added mid-session (see the Add command above). Resolving
                 // it here keeps the frame loop running while we wait.
                 if members.iter().any(|m| m.spec.subscribe_match == kind) {
-                    let rule = members
-                        .iter()
-                        .find(|m| m.spec.subscribe_match == kind)
-                        .and_then(|m| m.spec.subscribe_success.clone());
-                    let ok = rule.map(|r| field_eq(&frame, &r)).unwrap_or(true);
-                    let reason = if ok {
-                        None
-                    } else {
-                        Some(format!("subscribe rejected: {}", frame_error(&frame, spec)))
-                    };
-                    let pending: Vec<String> = members
-                        .iter()
-                        .filter(|m| m.first.is_some())
-                        .map(|m| m.spec.watch_id.clone())
-                        .collect();
+                    // Each watch still waiting is judged by its own declaration: the whole ack can
+                    // fail its success rule, or name one watch's keys among the refused targets
+                    // while the rest went through.
+                    let mut gone: Vec<String> = Vec::new();
                     for m in members.iter_mut().filter(|m| m.first.is_some()) {
+                        let reason = refusal(&frame, &m.spec);
                         if let Some(tx) = m.first.take() {
                             let _ = tx.send(match &reason {
                                 None => Ok(()),
                                 Some(r) => Err(r.clone()),
                             });
                         }
-                        set_state(&m.status, if ok { "live" } else { "failed" }, reason.clone());
+                        let state = if reason.is_none() { "live" } else { "failed" };
+                        if reason.is_some() {
+                            gone.push(m.spec.watch_id.clone());
+                        }
+                        set_state(&m.status, state, reason);
                     }
                     // A rejected registration must come off the socket: it will never receive a
                     // frame, and leaving it in place would route ticks to a dead watch.
-                    if !ok {
-                        members.retain(|m| !pending.contains(&m.spec.watch_id));
+                    if !gone.is_empty() {
+                        members.retain(|m| !gone.contains(&m.spec.watch_id));
                         if members.is_empty() {
                             let _ = ws.close(None).await;
                             return SessionEnd::Cancelled;
@@ -1444,4 +1639,78 @@ fn frame_error(frame: &serde_json::Value, spec: &WsStreamSpec) -> String {
         }
     }
     coerce(frame).chars().take(300).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{keepalive_message, rejected_among, topic_matches, union_subscribe};
+    use firebat_core::ports::WsRejectedSpec;
+    use serde_json::json;
+    use tokio_tungstenite::tungstenite::Message;
+
+    #[test]
+    fn watches_on_a_replacing_venue_are_declared_together() {
+        // Toss replaces the socket's whole subscription with each frame: two watches that each sent
+        // their own would leave only the second subscribed.
+        let a = json!([{"type": "trade:us", "codes": ["TQQQ"]}]);
+        let b = json!([{"type": "trade:us", "codes": ["AAPL"]}]);
+        let c = json!([{"type": "personal:order", "codes": ["3"]}]);
+        let d = json!([{"type": "trade:us", "codes": ["TQQQ"]}]);
+        let out = union_subscribe([&a, &b, &c, &d]);
+        assert_eq!(
+            out,
+            json!([
+                {"type": "trade:us", "codes": ["TQQQ", "AAPL"]},
+                {"type": "personal:order", "codes": ["3"]}
+            ]),
+            "same shape merges its lists, a symbol two watches share goes out once"
+        );
+    }
+
+    #[test]
+    fn elements_that_differ_in_a_scalar_stay_apart() {
+        let a = json!([{"type": "trade:us", "codes": ["TQQQ"]}]);
+        let b = json!([{"type": "trade:kr", "codes": ["005930"]}]);
+        let out = union_subscribe([&a, &b]);
+        assert_eq!(out.as_array().map(|v| v.len()), Some(2));
+        // A non-list frame is one element, and an identical element is not repeated.
+        let id = json!({"id": "req-1"});
+        assert_eq!(union_subscribe([&id, &id]), json!([{"id": "req-1"}]));
+    }
+
+    #[test]
+    fn a_frame_goes_to_the_watch_whose_topic_it_carries() {
+        let topics = vec!["trade:us:TQQQ".to_string()];
+        let tqqq = json!({"type": "message", "topic": "trade:us:TQQQ", "data": {"price": "80.1"}});
+        let aapl = json!({"type": "message", "topic": "trade:us:AAPL", "data": {"price": "230"}});
+        let bare = json!({"type": "message", "data": {}});
+        assert_eq!(topic_matches(&tqqq, "topic", &topics), Some(true));
+        assert_eq!(topic_matches(&aapl, "topic", &topics), Some(false));
+        assert_eq!(topic_matches(&bare, "topic", &topics), None, "no key is not a reason to drop");
+        assert_eq!(topic_matches(&aapl, "topic", &[]), None, "a watch with no keys takes everything");
+    }
+
+    #[test]
+    fn a_partial_refusal_names_only_the_watch_that_asked() {
+        let rule = WsRejectedSpec { list: "rejected".into(), key: "target".into() };
+        let ack = json!({
+            "type": "subscriptions",
+            "subscribed": ["trade:us:TQQQ"],
+            "rejected": [{"target": "trade:us:NOPE", "code": "stock-not-found", "message": "해당 종목을 찾을 수 없습니다."}]
+        });
+        let refused = rejected_among(&ack, &rule, &["trade:us:NOPE".to_string()]);
+        assert!(refused.as_deref().is_some_and(|r| r.contains("stock-not-found")));
+        assert!(rejected_among(&ack, &rule, &["trade:us:TQQQ".to_string()]).is_none());
+        assert!(rejected_among(&json!({"type": "subscriptions"}), &rule, &["x".to_string()]).is_none());
+    }
+
+    #[test]
+    fn a_string_keepalive_is_sent_bare() {
+        // Toss and Upbit both take a bare text PING; the JSON string "\"PING\"" is a different frame.
+        assert_eq!(keepalive_message(&json!("PING")), Message::Text("PING".to_string()));
+        assert_eq!(
+            keepalive_message(&json!({"trnm": "PING"})),
+            Message::Text("{\"trnm\":\"PING\"}".to_string())
+        );
+    }
 }

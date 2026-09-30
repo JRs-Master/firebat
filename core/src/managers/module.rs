@@ -2373,6 +2373,7 @@ impl ModuleManager {
                 .unwrap_or_default()
                 .to_string(),
             subscribe_success: parse_ws_field_eq(subscribe.get("successWhen")),
+            subscribe_rejected: parse_ws_rejected(subscribe.get("rejected")),
             subscribe_frame,
             unsubscribe_frame,
             realtime_match: decl
@@ -2468,6 +2469,21 @@ impl ModuleManager {
                 .and_then(|v| v.as_str())
                 .map(|k| ws_str_list(args_view.get(k)))
                 .unwrap_or_default(),
+            route_topics: match decl.get("routeTopic").and_then(|v| v.as_str()) {
+                Some(t) => ws_route_topics(t, &args_view).map_err(|e| {
+                    format!("[{}] ws.streams.{}.routeTopic: {e}", meta.module, meta.stream)
+                })?,
+                None => Vec::new(),
+            },
+            route_topic_path: decl
+                .get("routeTopicPath")
+                .or_else(|| ws.get("routeTopicPath"))
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            subscribe_replaces: ws
+                .get("subscribeReplaces")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             mock,
         };
         port.start(spec).await?;
@@ -3456,6 +3472,57 @@ fn ws_str_list(v: Option<&serde_json::Value>) -> Vec<String> {
         Some(serde_json::Value::Number(n)) => vec![n.to_string()],
         _ => Vec::new(),
     }
+}
+
+/// A stream's `routeTopic` filled from the watch args — the keys the venue will stamp on this
+/// watch's frames. `"trade:us:{symbol}"` with `symbol: ["AAPL","TSLA"]` is two keys, the way one
+/// subscribe frame covers a batch. `{name:default}` falls back to the default; an absent `{name?}`
+/// yields no keys at all (route everything, as an undeclared topic does); an absent `{name}` is an
+/// error, the same as it is in the subscribe frame.
+fn ws_route_topics(template: &str, args: &serde_json::Value) -> Result<Vec<String>, String> {
+    let mut out = vec![String::new()];
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        let Some(len) = rest[open..].find('}') else { break };
+        let close = open + len;
+        for o in out.iter_mut() {
+            o.push_str(&rest[..open]);
+        }
+        let inner = &rest[open + 1..close];
+        let (name, default) = match inner.split_once(':') {
+            Some((n, d)) => (n, Some(d)),
+            None => (inner, None),
+        };
+        let optional = name.ends_with('?');
+        let name = name.trim_end_matches('?');
+        let mut values = ws_str_list(args.get(name));
+        if values.is_empty() {
+            match default {
+                Some(d) => values.push(d.to_string()),
+                None if optional => return Ok(Vec::new()),
+                None => return Err(format!("required param missing: {name}")),
+            }
+        }
+        out = out
+            .iter()
+            .flat_map(|o| values.iter().map(move |v| format!("{o}{v}")))
+            .collect();
+        rest = &rest[close + 1..];
+    }
+    for o in out.iter_mut() {
+        o.push_str(rest);
+    }
+    Ok(out)
+}
+
+/// `subscribe.rejected: {list, key}` → WsRejectedSpec. Both halves or nothing: a list with no key
+/// would refuse no one and a key with no list has nothing to read.
+fn parse_ws_rejected(v: Option<&serde_json::Value>) -> Option<crate::ports::WsRejectedSpec> {
+    let v = v?;
+    Some(crate::ports::WsRejectedSpec {
+        list: v.get("list")?.as_str()?.to_string(),
+        key: v.get("key")?.as_str()?.to_string(),
+    })
 }
 
 /// A registration group number unique to this watch, derived from its id so it survives restarts.
@@ -4875,7 +4942,10 @@ mod coercion_tests {
 
 #[cfg(test)]
 mod ws_frame_tests {
-    use super::{parse_ws_jwt, parse_ws_login, substitute_ws_frame, ws_group_no, ws_str_list};
+    use super::{
+        parse_ws_jwt, parse_ws_login, parse_ws_rejected, substitute_ws_frame, ws_group_no,
+        ws_route_topics, ws_str_list,
+    };
     use serde_json::json;
 
     #[test]
@@ -4985,5 +5055,36 @@ mod ws_frame_tests {
         assert_eq!(ws_str_list(Some(&json!("005930"))), vec!["005930"]);
         assert_eq!(ws_str_list(Some(&json!(["005930", "000660"]))), vec!["005930", "000660"]);
         assert!(ws_str_list(None).is_empty(), "no declaration means route everything on the type");
+    }
+
+    #[test]
+    fn a_route_topic_is_the_key_the_venue_stamps_on_this_watch() {
+        // Toss stamps `trade:us:AAPL` on every AAPL trade frame; a watch has to know its own.
+        let one = ws_route_topics("trade:us:{symbol}", &json!({"symbol": "AAPL"})).unwrap();
+        assert_eq!(one, vec!["trade:us:AAPL"]);
+        // A batch in one subscription is one key per symbol, as the frame covers them.
+        let two = ws_route_topics("trade:us:{symbol}", &json!({"symbol": ["AAPL", "TSLA"]})).unwrap();
+        assert_eq!(two, vec!["trade:us:AAPL", "trade:us:TSLA"]);
+        // The venue's account id is a number in its REST replies and a string on the wire.
+        let acct = ws_route_topics("personal:order:{accountSeq}", &json!({"accountSeq": 3})).unwrap();
+        assert_eq!(acct, vec!["personal:order:3"]);
+        let dflt = ws_route_topics("orderbook:{market:kr}:{symbol}", &json!({"symbol": "005930"})).unwrap();
+        assert_eq!(dflt, vec!["orderbook:kr:005930"]);
+    }
+
+    #[test]
+    fn a_route_topic_without_its_arg_is_an_error_unless_optional() {
+        assert!(ws_route_topics("trade:us:{symbol}", &json!({})).is_err());
+        // Optional and absent: no keys, which routes everything — what an undeclared topic does.
+        assert!(ws_route_topics("personal:order:{accountSeq?}", &json!({})).unwrap().is_empty());
+        assert_eq!(ws_route_topics("heartbeat", &json!({})).unwrap(), vec!["heartbeat"]);
+    }
+
+    #[test]
+    fn a_rejected_declaration_needs_both_halves() {
+        let r = parse_ws_rejected(Some(&json!({"list": "rejected", "key": "target"}))).unwrap();
+        assert_eq!((r.list.as_str(), r.key.as_str()), ("rejected", "target"));
+        assert!(parse_ws_rejected(Some(&json!({"list": "rejected"}))).is_none());
+        assert!(parse_ws_rejected(None).is_none());
     }
 }

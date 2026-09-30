@@ -1054,6 +1054,8 @@ mod module_contract_tests {
                     problems.push(format!("{name}: jwt signed but no header carries it"));
                 }
             }
+            let replaces = ws["subscribeReplaces"].as_bool().unwrap_or(false);
+            let shared = ws["shareConnection"].as_bool().unwrap_or(false);
             for (stream, decl) in streams {
                 if decl["subscribe"]["frame"].is_null() {
                     problems.push(format!("{name}.{stream}: subscribe.frame missing"));
@@ -1061,6 +1063,20 @@ mod module_contract_tests {
                 // Without it every frame on the socket is unrecognised and silently dropped.
                 if decl["realtimeMatch"].as_str().unwrap_or_default().is_empty() {
                     problems.push(format!("{name}.{stream}: realtimeMatch missing"));
+                }
+                // A key with nowhere to read it from routes nothing.
+                let topic_path = decl["routeTopicPath"].as_str().or(ws["routeTopicPath"].as_str());
+                if decl["routeTopic"].is_string() && topic_path.is_none() {
+                    problems.push(format!(
+                        "{name}.{stream}: routeTopic declared but no routeTopicPath says where a frame carries it"
+                    ));
+                }
+                // One socket, one declaration for every watch on it: the key the venue stamps on
+                // a frame is then the only way to tell whose frame it is.
+                if replaces && shared && !decl["routeTopic"].is_string() {
+                    problems.push(format!(
+                        "{name}.{stream}: subscribeReplaces on a shared socket needs routeTopic"
+                    ));
                 }
             }
             // A websocket-served action is reached through the module's own action set. Declared
