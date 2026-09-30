@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "토스증권 시세·차트 — 국내(KRX/NXT)·미국 주식의 현재가·호가·체결·캔들·종목검색·거래소별 전체 종목·환율·거래일정·순위·시장지표, 국내 종목별 수급(투자자·프로그램매매·공매도·신용·대차).",
+  "description": "토스증권 시세·차트 — 국내(KRX/NXT)·미국 주식의 현재가·호가·체결·캔들·종목검색·거래소별 전체 종목·환율·거래일정·순위·시장지표, 국내 종목별 수급(투자자·프로그램매매·공매도·신용·대차), 실시간 체결·호가.",
   "aliases": [
     "토스",
     "토스증권",
@@ -31,6 +31,113 @@
         "result.candles",
         "records"
       ]
+    }
+  },
+  "ws": {
+    "endpoint": "wss://openapi-ws.tossinvest.com/ws/v1",
+    "matchField": "type",
+    "keepalive": "PING",
+    "shareConnection": true,
+    "subscribeReplaces": true,
+    "routeTopicPath": "topic",
+    "login": {
+      "headers": {
+        "Authorization": "Bearer {TOKEN}"
+      },
+      "tokenSecret": "TOSS_ACCESS_TOKEN"
+    },
+    "streams": {
+      "trade-us": {
+        "desc": "미국 주식 실시간 체결 (체결가·체결량, 프리·정규·애프터·데이마켓)",
+        "keyDesc": "symbol = 미국 티커, 대문자 (예 TQQQ) — 여러 종목이면 목록",
+        "description": "US trades as they print. Frame: {type:'message', topic:'trade:us:<SYMBOL>', data:{price, volume, timestamp, currency}} — price and volume are decimal strings. Nothing is sent on subscribe; the next trade is the first frame. Lossy under backpressure: frames can be skipped, never reordered.",
+        "subscribe": {
+          "frame": [
+            {
+              "type": "trade:us",
+              "codes": [
+                "{symbol}"
+              ]
+            }
+          ],
+          "match": "subscriptions",
+          "rejected": {
+            "list": "rejected",
+            "key": "target"
+          }
+        },
+        "realtimeMatch": "message",
+        "routeTopic": "trade:us:{symbol}"
+      },
+      "trade-kr": {
+        "desc": "국내 주식 실시간 체결 (체결가·체결량, KRX 정규장 + NXT 프리·정규·애프터 통합)",
+        "keyDesc": "symbol = 국내 종목코드 6자리 (예 005930) — 여러 종목이면 목록",
+        "description": "KR trades as they print, KRX and NXT together. Frame: {type:'message', topic:'trade:kr:<SYMBOL>', data:{price, volume, timestamp, currency}} — price and volume are decimal strings. Nothing is sent on subscribe; the next trade is the first frame. Lossy under backpressure: frames can be skipped, never reordered.",
+        "subscribe": {
+          "frame": [
+            {
+              "type": "trade:kr",
+              "codes": [
+                "{symbol}"
+              ]
+            }
+          ],
+          "match": "subscriptions",
+          "rejected": {
+            "list": "rejected",
+            "key": "target"
+          }
+        },
+        "realtimeMatch": "message",
+        "routeTopic": "trade:kr:{symbol}"
+      },
+      "orderbook-us": {
+        "desc": "미국 주식 실시간 호가 (매도·매수 호가와 잔량)",
+        "keyDesc": "symbol = 미국 티커, 대문자 (예 TQQQ) — 여러 종목이면 목록",
+        "description": "US order book changes. Frame: {type:'message', topic:'orderbook:us:<SYMBOL>', data:{timestamp, currency, asks:[{price, volume}], bids:[{price, volume}]}} — the same shape as the REST orderbook. Nothing is sent on subscribe; the next change is the first frame.",
+        "subscribe": {
+          "frame": [
+            {
+              "type": "orderbook:us",
+              "codes": [
+                "{symbol}"
+              ]
+            }
+          ],
+          "match": "subscriptions",
+          "rejected": {
+            "list": "rejected",
+            "key": "target"
+          }
+        },
+        "realtimeMatch": "message",
+        "routeTopic": "orderbook:us:{symbol}"
+      },
+      "orderbook-kr": {
+        "desc": "국내 주식 실시간 호가 (매도·매수 호가와 잔량, KRX+NXT 통합)",
+        "keyDesc": "symbol = 국내 종목코드 6자리 (예 005930) — 여러 종목이면 목록",
+        "description": "KR order book changes, KRX and NXT together. Frame: {type:'message', topic:'orderbook:kr:<SYMBOL>', data:{timestamp, currency, asks:[{price, volume}], bids:[{price, volume}]}} — the same shape as the REST orderbook. Nothing is sent on subscribe; the next change is the first frame.",
+        "subscribe": {
+          "frame": [
+            {
+              "type": "orderbook:kr",
+              "codes": [
+                "{symbol}"
+              ]
+            }
+          ],
+          "match": "subscriptions",
+          "rejected": {
+            "list": "rejected",
+            "key": "target"
+          }
+        },
+        "realtimeMatch": "message",
+        "routeTopic": "orderbook:kr:{symbol}"
+      }
+    },
+    "frame": {
+      "kind": "json"
     }
   },
   "input": {

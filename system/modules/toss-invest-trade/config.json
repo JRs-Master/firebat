@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "토스증권 계좌·주문 — 국내(KRX/NXT)·미국 주식의 주문(현금·조건주문·정정·취소)·계좌·보유종목·매수가능금액·매도가능수량·주문내역. 미국 소수점·금액 주문을 지원합니다.",
+  "description": "토스증권 계좌·주문 — 국내(KRX/NXT)·미국 주식의 주문(현금·조건주문·정정·취소)·계좌·보유종목·매수가능금액·매도가능수량·주문내역·내 주문 실시간 이벤트. 미국 소수점·금액 주문을 지원합니다.",
   "aliases": [
     "토스",
     "토스증권",
@@ -43,6 +43,47 @@
       }
     }
   ],
+  "ws": {
+    "endpoint": "wss://openapi-ws.tossinvest.com/ws/v1",
+    "matchField": "type",
+    "keepalive": "PING",
+    "shareConnection": true,
+    "subscribeReplaces": true,
+    "routeTopicPath": "topic",
+    "login": {
+      "headers": {
+        "Authorization": "Bearer {TOKEN}"
+      },
+      "tokenSecret": "TOSS_ACCESS_TOKEN"
+    },
+    "streams": {
+      "order": {
+        "desc": "내 주문 실시간 이벤트 (계좌 — 접수·부분체결·체결·취소·정정·거부 push, 국내·미국 주식)",
+        "keyDesc": "accountSeq = accounts 응답의 계좌 식별자 (종목이 아니라 계좌)",
+        "description": "Own order events for one account, lossless while connected. Frame: {type:'message', topic:'personal:order:<accountSeq>', data:{event, accountSeq, order}} — event is PENDING, PARTIAL_FILL, FILL, CANCELING, CANCELED, REPLACING, REPLACED, REJECTED, CANCEL_REJECTED or REPLACE_REJECTED; order is the order-detail shape (orderId, symbol, side, status, quantity, orderAmount, execution{filledQuantity, averageFilledPrice, filledAmount, commission, tax}) without execution.filledAt. Events during a disconnect are not replayed — list-orders is the record.",
+        "subscribe": {
+          "frame": [
+            {
+              "type": "personal:order",
+              "codes": [
+                "{accountSeq}"
+              ]
+            }
+          ],
+          "match": "subscriptions",
+          "rejected": {
+            "list": "rejected",
+            "key": "target"
+          }
+        },
+        "realtimeMatch": "message",
+        "routeTopic": "personal:order:{accountSeq}"
+      }
+    },
+    "frame": {
+      "kind": "json"
+    }
+  },
   "input": {
     "type": "object",
     "required": [
