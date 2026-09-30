@@ -227,6 +227,9 @@ def _overlay_trade_knobs(inst, trade):
         v = trade.get(k)
         if v is not None and v != "":
             inst[k] = v
+    # A flag the editor stores as a string arrives here as one meaning: the engine reads a boolean.
+    if trade.get("adoptExternal") not in (None, ""):
+        inst["adoptExternal"] = _truthy(trade.get("adoptExternal"))
 
 
 def _trade_instances(settings, taken):
@@ -477,6 +480,52 @@ def last_close(bars):
 
 
 # ── actions ──────────────────────────────────────────────────────────────────────────────────
+# Strategy kinds that decide from money and position alone — no analyser rule to evaluate, so the
+# pipeline carries them without one and the cycle prices them from a quote.
+RULELESS_KINDS = frozenset({"infinite-buy"})
+
+
+def _truthy(value):
+    """A settings flag, as the editor stores it (a string) or as JSON writes it (a boolean)."""
+    return value is True or str(value or "").strip().lower() in ("true", "1", "yes", "on", "all")
+
+
+def _market_zone(settings, market):
+    """The zone a market's session is declared in, when this host can resolve it — else None."""
+    spec = (settings.get("tradingHours") or {}).get(str(market or "").strip().lower())
+    zone = str((spec or {}).get("zone") or "").strip() if isinstance(spec, dict) else ""
+    return zone if zone and clock.has_zone(zone) else None
+
+
+def _quote_prices(value, depth=0):
+    """`{symbol: price}` out of quote responses in whatever envelope they arrive — a loop of
+    `prices` calls, one call, or bare rows. A row counts when it names its symbol and a price."""
+    out = {}
+    if depth > 6 or value is None:
+        return out
+    if isinstance(value, list):
+        for v in value:
+            for k, px in _quote_prices(v, depth + 1).items():
+                out.setdefault(k, px)
+        return out
+    if isinstance(value, dict):
+        sym = value.get("symbol")
+        if isinstance(sym, str) and sym:
+            for k in ("lastPrice", "price", "close", "last", "tradePrice", "trade_price"):
+                try:
+                    px = float(str(value.get(k)).replace(",", ""))
+                except (TypeError, ValueError):
+                    continue
+                if px > 0:
+                    out.setdefault(sym, px)
+                    break
+        for v in value.values():
+            if isinstance(v, (dict, list)):
+                for k, px in _quote_prices(v, depth + 1).items():
+                    out.setdefault(k, px)
+    return out
+
+
 def _remember_verdicts(result, target):
     """The `remember` block for an adoption run — one fact per verdict.
 
@@ -750,7 +799,10 @@ def declared_trades(settings):
                                        else t.get("dailyLossLimitKrw")),
                     "activeFrom": str(t.get("activeFrom") or "").strip() or None,
                     "activeUntil": str(t.get("activeUntil") or "").strip() or None,
-                    "template": t.get("template") if isinstance(t.get("template"), dict) else None})
+                    "template": t.get("template") if isinstance(t.get("template"), dict) else None,
+                    # The whole holding of this symbol in this account is this trade's — shares
+                    # bought outside (a broker's own recurring buy) are adopted into its book.
+                    "adoptExternal": _truthy(t.get("adoptExternal"))})
     for w in _iv_warn:
         # Carried on the row so the gate's own warning list picks it up without a second channel.
         for row in out:
@@ -1156,7 +1208,7 @@ def _pipeline_trades(settings, strategies):
             if placed:
                 continue
             rules = st.get("rules") or ((st.get("spec") or {}).get("rules"))
-            if not rules:
+            if not rules and str(st.get("kind") or "") not in RULELESS_KINDS:
                 continue
             # The strategy's symbol wins. A screened trade names none — its list is filled at
             # runtime and the expansion puts the symbol on the strategy — so reading the trade
@@ -1206,6 +1258,14 @@ def _planned_strategy_ids(plan):
     carried no ids at all.
     """
     runs = _plan_runs(plan)
+    if not runs and isinstance(plan, dict):
+        # A cycle priced from quotes is handed the gate itself, whose trades are the scope —
+        # without this every enabled strategy of every broker would run on this one's quotes.
+        body = plan.get("data") if isinstance(plan.get("data"), dict) else plan
+        trades = body.get("trades") if isinstance(body.get("trades"), list) else []
+        named = {t.get("strategyId") for t in trades if isinstance(t, dict) and t.get("strategyId")}
+        if named:
+            return named
     ids = {r.get("strategyId") for r in runs if r.get("strategyId")}
     return ids or {r.get("symbol") for r in runs if r.get("symbol")}
 
@@ -1699,6 +1759,8 @@ def action_cycle(inp, settings):
     # Raw, not unwrapped: the loop envelope is where `failed` lives, and unwrapping to `results`
     # first would hand over a shorter list with no way to tell which run each entry belongs to.
     per_strategy = _signals_by_strategy(inp.get("plan"), inp.get("signals"))
+    # Prices for strategies that have no analyser run: a quote per symbol (`quotes`).
+    quote_px = _quote_prices(inp.get("quotes"))
     # A plan is a statement of what this cycle covers, so it is also the limit. Without this the
     # cycle ran every enabled strategy — including ones whose candles were never fetched, which
     # then fell back to *another* symbol's price and evaluated their stops against it. With one
@@ -1737,7 +1799,8 @@ def action_cycle(inp, settings):
         # A strategy with no price of its own must not trade. The branch that says so is right
         # below; this used to jump over it.
         lendable = price if (symbol and str(symbol) == str(sym)) else 0.0
-        s_price = eng.signal_price(sig, fallback=(own or {}).get("lastClose") or 0.0) or lendable
+        s_price = (eng.signal_price(sig, fallback=(own or {}).get("lastClose") or 0.0) or lendable
+                   or quote_px.get(str(sym), 0.0))
         if s_price <= 0:
             results.append({"strategyId": s["id"], "symbol": sym,
                             "error": "no price for this symbol — its candles did not arrive"})
@@ -1783,6 +1846,17 @@ def action_cycle(inp, settings):
                    "anchor_ms": a["firstMs"],
                    "age_days": ((now - a["firstMs"]) / 86400000.0
                                 if a["firstMs"] else None)}
+        # A cycle strategy restarts after it sells out, so it needs when that was — on the venue's
+        # own calendar, since "the next day" is the next trading day there — and whether it has
+        # bought since. `market_now` also judges a buy window.
+        market_now = None
+        if str(s.get("kind") or "") == "infinite-buy":
+            zone = _market_zone(settings, s.get("market") or scoped_market)
+            market_now = clock.local_in(zone, now) if zone else None
+            cm = store.cycle_marks(sconn, s["id"], broker, account, sym)
+            pos = {**pos, "exit_ms": cm["exitMs"], "own_buys_since_exit": cm["ownBuysSinceExit"],
+                   "exit_day": (clock.local_in(zone, cm["exitMs"]).date().isoformat()
+                                if zone and cm["exitMs"] else None)}
         # The window guard stops a second entry, not a second look. While a position is open its
         # stop and target have to be evaluated on every pass — keying the cycle on the entry that
         # opened it would otherwise make the exit unreachable for as long as the trade lasts.
@@ -1807,6 +1881,7 @@ def action_cycle(inp, settings):
             "quote": inp.get("quote") or {}, "settings": settings, "strategy": s,
             "mode": mode, "account_exposure": 0.0,
             "vi_halted": store.kv_get(conn, f"vi:{sym}") == "1",
+            "market_now": market_now, "now_ms": now,
         }
         try:
             intents = eng.decide(s, ctx)
@@ -1835,6 +1910,8 @@ def action_cycle(inp, settings):
         for i in intents:
             i.update({"broker": broker, "account": account, "symbol": sym,
                       "cycleId": cycle_id, "mode": mode})
+            if i.get("windowKey"):
+                i["cycleId"] = i["windowKey"]
         ctxs[s["id"]] = ctx
         ctx["_conn"] = sconn
         all_intents.extend(intents)
@@ -1957,6 +2034,8 @@ def action_cycle(inp, settings):
             marks[_sym] = _m
     if symbol and price > 0:
         marks.setdefault(symbol, price)
+    for _sym, _px in quote_px.items():
+        marks.setdefault(_sym, _px)
     abandoned = _abandon_stale_orders(conn, settings, strategies, inp.get("openOrders"), calls,
                                       marks)
 
@@ -2266,8 +2345,11 @@ def action_reconcile(inp, settings):
         booked = store.booked_qty(conn, order["order_key"])
         if f.get("cumulative"):
             inc = f["qty"] - booked
-            # A broker cannot fill more than was ordered; if it says so, believe the order.
-            inc = min(inc, float(order["req_qty"]) - booked)
+            # A broker cannot fill more than was ordered; if it says so, believe the order — unless
+            # the order was for an amount. Then the quantity was only ever an estimate, and the
+            # broker's closing total (`done`) is the one statement of what the money bought.
+            if not f.get("done"):
+                inc = min(inc, float(order["req_qty"]) - booked)
             if inc <= 1e-9:
                 continue  # nothing new in this restatement
         else:
@@ -2315,7 +2397,8 @@ def action_reconcile(inp, settings):
         store.update_order(conn, order["order_key"],
                            filled_qty=filled,
                            filled_avg=f["price"],
-                           state="filled" if filled >= float(order["req_qty"]) - 1e-9 else "partial",
+                           state=("filled" if filled >= float(order["req_qty"]) - 1e-9 or f.get("done")
+                                  else "partial"),
                            last_checked_ms=store.now_ms())
         report["applied"].append({"orderKey": order["order_key"], "qty": inc,
                                   "price": f["price"]})
@@ -2498,6 +2581,49 @@ def action_reconcile(inp, settings):
                 conn, broker, account, sym,
                 float(found["qty"]), float(found.get("avgPrice") or 0)))
 
+    # 4c. Shares that came from outside, for a trade that says the whole holding is its own.
+    #
+    # A broker's own recurring buy (a savings plan) feeds the same holding a strategy trades. Left
+    # alone those shares sit in the unassigned bucket: the strategy's average is not the account's,
+    # and "sell everything" sells only the part it bought itself. A trade that declares
+    # `adoptExternal` owns the whole holding of its symbol in its account, so the bucket's shares
+    # move into its book — at the price that makes the book's average the broker's own. Never while
+    # one of its own buys is still in flight: that surplus may be the order, not the outside.
+    adopted = []
+    if isinstance(balance_rows, list) and balance_rows:
+        in_flight = {(o.get("symbol"), o.get("side")) for o in store.open_orders(conn)
+                     if o.get("broker") == broker and (o.get("account") or "") == account}
+        for st in strategies:
+            if not _truthy(st.get("adoptExternal")):
+                continue
+            if (st.get("broker") or "") != broker or (st.get("account") or "") != account:
+                continue
+            sym = st.get("symbol")
+            if not sym or (sym, "buy") in in_flight:
+                continue
+            un_qty, _ = store.unassigned_of(conn, broker, account, sym)
+            if un_qty <= store.EPS:
+                continue
+            held, _row = orders.read_position(balance_rows, sym)
+            if not held:
+                continue
+            bq, ba = float(held.get("qty") or 0), float(held.get("avgPrice") or 0)
+            booked_cost = sum(float(r["qty"]) * float(r["avg_price"]) for r in conn.execute(
+                "SELECT qty, avg_price FROM strategy_position WHERE broker=? AND account=? "
+                "AND symbol=? AND qty > 0", (broker, account, sym)))
+            price = (bq * ba - booked_cost) / un_qty
+            if not (price > 0) or (ba > 0 and not (0.5 * ba <= price <= 2.0 * ba)):
+                # A remainder the rounding of a stated average cannot support — a sliver of a
+                # share — is priced at the broker's average rather than at a fantasy.
+                price = ba
+            try:
+                adopted.append(store.assign_unassigned(
+                    conn, broker=broker, account=account, symbol=sym, strategy_id=st["id"],
+                    price=price, source="adopt",
+                    note="adopted from outside — the trade declares the whole holding its own"))
+            except ValueError as e:
+                report.setdefault("adoptFailed", []).append({"symbol": sym, "error": str(e)})
+
     # 5. The way out of `unknown`. Ageing an unconfirmed order stops the strategy, which is right,
     # but nothing ever released it: one order the broker never accepted degraded a position for
     # good and blocked every later entry. An order is declared void only when the venue agrees on
@@ -2552,6 +2678,8 @@ def action_reconcile(inp, settings):
         "fillsApplied": report["applied"], "unattributedFills": report["unattributed"],
         "unreadableFills": report["unreadable"], "agedToUnknown": report["aged"],
         "voided": voided,
+        "adopted": adopted or None,
+        "adoptFailed": report.get("adoptFailed"),
         # Orders left alone because the broker answered with an empty open-order list. Reported
         # rather than logged: it is normal on a quiet pass and only interesting when it persists.
         "unsettledOnEmptyList": unsettled,
@@ -6091,6 +6219,123 @@ def action_selftest():
     checks.append({"name": "only the rule that fired trades, on the shared coin",
                    "want": ["p-fast"], "got": [x["strategyId"] for x in tc["placed"]],
                    "ok": [x["strategyId"] for x in tc["placed"]] == ["p-fast"]})
+
+    # ── Infinite-buy on a broker that trades fractions (2026-09-30, TQQQ via Toss) ──────────────
+    # The rule half of v1 lives here — one tranche when the price is under the average, inside a
+    # time-of-day window — and the other half arrives from outside and is adopted into the book.
+    import datetime as _dtm
+    iconn = store.connect("dryrun")  # the fixtures above closed theirs
+    ib = {"id": "ib", "kind": "infinite-buy", "market": "us",
+          "exits": {"takeProfitPct": 10.0}, "orders": {"type": "market"},
+          "money": {"perOrder": 4, "lotSize": 1e-06},
+          "infiniteBuy": {"buyWhen": "belowAverage", "buyFrom": "14:45", "buyUntil": "15:00"}}
+    at_1450 = _dtm.datetime(2026, 9, 30, 14, 50)
+    at_1350 = _dtm.datetime(2026, 9, 30, 13, 50)
+    held = {"qty": 0.206, "avg_price": 77.0}
+
+    def ib_run(pos, price, at):
+        return eng.decide(ib, {"position": pos, "price": price, "sides": set(), "market_now": at,
+                               "settings": {}, "strategy": ib})
+
+    below = ib_run(held, 76.0, at_1450)
+    checks.append({"name": "infinite-buy adds one dollar tranche under the average, in its window",
+                   "want": [("buy", 0.052631, "day:2026-09-30")],
+                   "got": [(i["side"], i["qty"], i.get("windowKey")) for i in below],
+                   "ok": [(i["side"], round(i["qty"], 6), i.get("windowKey")) for i in below]
+                         == [("buy", 0.052631, "day:2026-09-30")]})
+    early = ib_run(held, 76.0, at_1350)
+    checks.append({"name": "and not before the window opens", "want": [], "got": early,
+                   "ok": early == []})
+    above = ib_run(held, 78.0, at_1450)
+    checks.append({"name": "and not while the price is at or over the average", "want": [],
+                   "got": above, "ok": above == []})
+    target = ib_run(held, 84.8, at_1350)
+    checks.append({"name": "the whole position goes at +10%, at any hour",
+                   "want": [("sell", 0.206)], "got": [(i["side"], i["qty"]) for i in target],
+                   "ok": [(i["side"], i["qty"]) for i in target] == [("sell", 0.206)]})
+    restart = ib_run({"qty": 0.05, "avg_price": 80.0, "exit_ms": 1, "own_buys_since_exit": 0,
+                      "exit_day": "2026-09-29"}, 85.0, at_1450)
+    checks.append({"name": "the first round after a sell-out is bought whatever the average says",
+                   "want": ["first"], "got": [i.get("reason") for i in restart],
+                   "ok": [i.get("reason") for i in restart] == ["first"]})
+    same_day = ib_run({"qty": 0.05, "avg_price": 90.0, "exit_ms": 1, "own_buys_since_exit": 0,
+                       "exit_day": "2026-09-30"}, 85.0, at_1450)
+    checks.append({"name": "and nothing is bought on the day of the sell-out", "want": [],
+                   "got": same_day, "ok": same_day == []})
+    blind = ib_run(held, 76.0, None)
+    checks.append({"name": "a window with no market clock buys nothing", "want": [],
+                   "got": blind, "ok": blind == []})
+    fresh = ib_run({"qty": 0.0, "avg_price": 0.0}, 76.0, at_1450)
+    checks.append({"name": "a plain cycle with an empty book starts its first round",
+                   "want": ["first"], "got": [i.get("reason") for i in fresh],
+                   "ok": [i.get("reason") for i in fresh] == ["first"]})
+    waiting = eng.decide({**ib, "adoptExternal": True},
+                         {"position": {"qty": 0.0, "avg_price": 0.0}, "price": 76.0, "sides": set(),
+                          "market_now": at_1450, "settings": {}, "strategy": ib})
+    checks.append({"name": "but one fed from outside waits for its holding to be adopted",
+                   "want": [], "got": waiting, "ok": waiting == []})
+
+    qp = _quote_prices({"count": 1, "results": [{"success": True, "data": {"result": [
+        {"symbol": "TQQQ", "lastPrice": "77.51", "currency": "USD"}]}}]})
+    checks.append({"name": "a loop of quote calls prices its symbols", "want": {"TQQQ": 77.51},
+                   "got": qp, "ok": qp == {"TQQQ": 77.51}})
+
+    ib_settings = {"mode": "dryrun",
+                   "strategies": [{"id": "ib-lib", "kind": "infinite-buy",
+                                   "exits": {"takeProfitPct": 10.0}}],
+                   "trades": [{"id": "ib", "strategy": "ib-lib", "symbol": "TQ", "broker": "tb",
+                               "account": "", "market": "us", "mode": "ledger",
+                               "adoptExternal": "true", "money": {"perOrder": 4}}]}
+    ib_gate = action_gate({"broker": "tb", "market": "us"}, ib_settings)["data"]
+    checks.append({"name": "a rule-less kind still reaches the pipeline",
+                   "want": ["ib"], "got": [t.get("strategyId") for t in ib_gate["trades"]],
+                   "ok": [t.get("strategyId") for t in ib_gate["trades"]] == ["ib"]})
+    checks.append({"name": "and the gate's trades scope a quote-priced cycle", "want": {"ib"},
+                   "got": _planned_strategy_ids(ib_gate), "ok": _planned_strategy_ids(ib_gate) == {"ib"}})
+    checks.append({"name": "and the trade row keeps its adoption flag",
+                   "want": True, "got": declared_trades(ib_settings)[0].get("adoptExternal"),
+                   "ok": declared_trades(ib_settings)[0].get("adoptExternal") is True})
+
+    # An amount order: the quantity sent was an estimate, the broker's closing total is the fill.
+    tq = dict(strategy_id="ib", broker="tb", account="", symbol="TQ")
+    store.apply_fill(iconn, **tq, side="buy", qty=0.05, price=80.0, source="order")
+    okey = store.order_key("ib", "TQ", "buy", "day:2026-09-30")
+    store.insert_order(iconn, {"order_key": okey, "cycle_id": "day:2026-09-30", "strategy_id": "ib",
+                              "broker": "tb", "account": "", "symbol": "TQ", "side": "buy",
+                              "req_qty": 0.051612, "req_price": 77.5, "mode": "dryrun",
+                              "state": "acked"})
+    store.update_order(iconn, okey, broker_order_no="TOSS-1", sent_ms=store.now_ms())
+    rec = action_reconcile({"broker": "tb", "account": "", "market": "us",
+                            "fills": [{"orderId": "TOSS-1", "symbol": "TQ", "side": "buy",
+                                       "filledQuantity": "0.0517", "avgPrice": "77.3",
+                                       "paid_fee": "0", "orderDone": True}],
+                            "openOrders": [],
+                            "balanceRows": [{"symbol": "TQ", "quantity": "0.2017",
+                                             "avgPrice": "78.4"}]}, ib_settings)["data"]
+    pos_tq = store.position_of(iconn, "ib", "tb", "", "TQ")
+    checks.append({"name": "an amount order books what the money bought, not the estimate",
+                   "want": 0.0517, "got": (rec.get("fillsApplied") or [{}])[0].get("qty"),
+                   "ok": abs(((rec.get("fillsApplied") or [{}])[0].get("qty") or 0) - 0.0517) < 1e-9})
+    # 0.05 @ 80 + 0.0517 @ 77.3 booked; the broker holds 0.2017 @ 78.4, so 0.1 came from outside
+    # and cost 0.2017*78.4 - (4.0 + 3.99641) = 7.81687 → 78.1687 each.
+    checks.append({"name": "shares bought outside are adopted at the broker's own average",
+                   "want": [0.2017, 78.4],
+                   "got": [round(pos_tq["qty"], 6), round(pos_tq["avg_price"], 6)],
+                   "ok": abs(pos_tq["qty"] - 0.2017) < 1e-9 and abs(pos_tq["avg_price"] - 78.4) < 1e-6})
+    cm0 = store.cycle_marks(iconn, "ib", "tb", "", "TQ")
+    store.apply_fill(iconn, **tq, side="sell", qty=0.2017, price=86.3, source="order")
+    cm1 = store.cycle_marks(iconn, "ib", "tb", "", "TQ")
+    store.apply_fill(iconn, **tq, side="buy", qty=0.046, price=87.0, source="adopt")
+    cm2 = store.cycle_marks(iconn, "ib", "tb", "", "TQ")
+    store.apply_fill(iconn, **tq, side="buy", qty=0.046, price=87.0, source="order")
+    cm3 = store.cycle_marks(iconn, "ib", "tb", "", "TQ")
+    checks.append({"name": "a cycle begins at the strategy's own sell-out and counts only its own buys",
+                   "want": [None, 0, 0, 1],
+                   "got": [cm0["exitMs"], cm1["ownBuysSinceExit"], cm2["ownBuysSinceExit"],
+                           cm3["ownBuysSinceExit"]],
+                   "ok": cm0["exitMs"] is None and cm1["exitMs"] and cm1["ownBuysSinceExit"] == 0
+                         and cm2["ownBuysSinceExit"] == 0 and cm3["ownBuysSinceExit"] == 1})
+    iconn.close()
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,

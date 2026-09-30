@@ -272,6 +272,33 @@ def position_anchor(conn, strategy_id, broker, account, symbol):
     return {"peakQty": peak, "firstPrice": first_price, "firstMs": first_ms}
 
 
+# Ledger sources that are this strategy's own trading, as opposed to shares it adopted or was handed.
+OWN_SOURCES = ("order", "dryrun")
+
+
+def cycle_marks(conn, strategy_id, broker, account, symbol):
+    """Where this strategy's current cycle began: its last own sale that left it flat, and how many
+    own buys it has made since.
+
+    A cycle strategy (infinite-buy) restarts after it sells everything, and "is this the first
+    round" is a question about its own orders only — shares that arrive from outside (a broker's
+    recurring buy, adopted into the book) are part of the position but not a round this strategy
+    bought. Read off the append-only ledger, like the anchor above.
+    """
+    row = conn.execute(
+        "SELECT id, ts_ms FROM ledger WHERE strategy_id=? AND broker=? AND account=? AND symbol=? "
+        "AND side='sell' AND source IN (%s) AND qty_after <= ? ORDER BY id DESC LIMIT 1"
+        % ",".join("?" * len(OWN_SOURCES)),
+        (strategy_id, broker, account, symbol, *OWN_SOURCES, EPS)).fetchone()
+    exit_ms = int(row["ts_ms"]) if row else None
+    buys = conn.execute(
+        "SELECT COUNT(*) AS n FROM ledger WHERE strategy_id=? AND broker=? AND account=? "
+        "AND symbol=? AND side='buy' AND source IN (%s) AND id > ?"
+        % ",".join("?" * len(OWN_SOURCES)),
+        (strategy_id, broker, account, symbol, *OWN_SOURCES, row["id"] if row else 0)).fetchone()
+    return {"exitMs": exit_ms, "ownBuysSinceExit": int(buys["n"] or 0) if exit_ms else None}
+
+
 def peak_qty_since_flat(conn, strategy_id, broker, account, symbol):
     """How large this position grew since it was last empty."""
     return position_anchor(conn, strategy_id, broker, account, symbol)["peakQty"]
@@ -597,7 +624,8 @@ def read_unassigned(conn, symbol=None):
             for r in conn.execute(sql + " ORDER BY symbol", args)]
 
 
-def assign_unassigned(conn, *, broker, account, symbol, strategy_id, qty=None, note=None):
+def assign_unassigned(conn, *, broker, account, symbol, strategy_id, qty=None, note=None,
+                      price=None, source="resolve_unassigned"):
     """Move shares out of the unassigned bucket and into a strategy's book.
 
     Reconciliation deliberately never does this by itself: a surplus the ledger cannot explain
@@ -607,6 +635,10 @@ def assign_unassigned(conn, *, broker, account, symbol, strategy_id, qty=None, n
 
     Append-only, like everything else here — the strategy receives a ledger row at the bucket's own
     average, and the bucket is decremented by exactly that much. No history is rewritten.
+
+    `price` overrides the bucket's average when the caller knows what these particular shares
+    cost — the bucket keeps the broker's average for the whole holding, which is not the price of
+    the part nobody has booked yet.
     """
     row = conn.execute(
         "SELECT qty, avg_price FROM unassigned WHERE broker=? AND account=? AND symbol=?",
@@ -619,17 +651,25 @@ def assign_unassigned(conn, *, broker, account, symbol, strategy_id, qty=None, n
         raise ValueError("qty must be positive")
     if want > have + EPS:
         raise ValueError(f"unassigned holds {have} of {symbol}, cannot assign {want}")
-    price = float(row["avg_price"] or 0.0)
+    price = float(price) if price and float(price) > 0 else float(row["avg_price"] or 0.0)
     conn.execute("UPDATE unassigned SET qty=?, updated_ms=? WHERE broker=? AND account=? "
                  "AND symbol=?", (have - want, now_ms(), broker, account, symbol))
     pos = apply_fill(conn, strategy_id=strategy_id, broker=broker, account=account, symbol=symbol,
-                     side="buy", qty=want, price=price, source="resolve_unassigned",
+                     side="buy", qty=want, price=price, source=source,
                      note=note or "assigned from the unassigned bucket")
     log_event(conn, "unassigned_resolved",
               {"symbol": symbol, "qty": want, "price": price, "strategyId": strategy_id,
                "remaining": have - want}, strategy_id=strategy_id, symbol=symbol)
     return {"symbol": symbol, "qty": want, "price": price, "remaining": have - want,
             "position": {"qty": pos["qty"], "avgPrice": pos["avg_price"]}}
+
+
+def unassigned_of(conn, broker, account, symbol):
+    """The unassigned bucket's holding of one symbol — `(qty, avg_price)`, zeros when empty."""
+    row = conn.execute(
+        "SELECT qty, avg_price FROM unassigned WHERE broker=? AND account=? AND symbol=?",
+        (broker, account, symbol)).fetchone()
+    return (float(row["qty"] or 0.0), float(row["avg_price"] or 0.0)) if row else (0.0, 0.0)
 
 
 def claimed_symbols(conn, broker, account):

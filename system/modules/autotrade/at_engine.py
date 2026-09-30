@@ -689,15 +689,60 @@ def strategy_rules(strategy, ctx):
     return intents
 
 
+def infinite_buy_rules(strategy):
+    """The rule half of an infinite-buy strategy — `infiniteBuy` on the strategy, older money keys
+    as the fallback. Kept off `money` because a trade's money replaces the rule's wholesale, and
+    when to buy is the rule's to say, not the account's."""
+    rules = strategy.get("infiniteBuy") if isinstance(strategy.get("infiniteBuy"), dict) else {}
+    money = strategy.get("money") or {}
+    return {
+        "buyWhen": str(rules.get("buyWhen") or money.get("buyWhen") or "every"),
+        "buyFrom": rules.get("buyFrom"),
+        "buyUntil": rules.get("buyUntil"),
+    }
+
+
+def _buy_window_refusal(rules, ctx):
+    """Why this is not the time of day to buy, or None. The window is the venue's own clock.
+
+    `market_now` is the market-local time the cycle resolved; without it a declared window cannot
+    be judged, and an unjudged window buys nothing rather than buying at an arbitrary hour."""
+    frm, until = _hhmm(rules.get("buyFrom")), _hhmm(rules.get("buyUntil"))
+    if frm is None and until is None:
+        return None
+    at = ctx.get("market_now")
+    if at is None:
+        return "매수 시간창을 판정할 시장 시각이 없습니다 — 매매의 market 과 tradingHours 의 zone 을 확인하세요"
+    minutes = at.hour * 60 + at.minute
+    if frm is not None and minutes < frm:
+        return f"매수 시간창 전 ({at.strftime('%H:%M')} < {rules.get('buyFrom')})"
+    if until is not None and minutes >= until:
+        return f"매수 시간창 지남 ({at.strftime('%H:%M')} ≥ {rules.get('buyUntil')})"
+    return None
+
+
 def strategy_infinite_buy(strategy, ctx):
     """Split buying: add one tranche at a time, exit the whole position at a target.
 
     The money rule is the strategy here, not the signal — ta only decides whether this cycle is
     allowed to add. That is why it is code rather than a rule string: "how much is left of my
     budget" is not something an indicator expression can express.
+
+    `buyWhen` says which cycles add:
+      * `every` (default) — every cycle, the classic form;
+      * `signal` — only when ta fired a buy;
+      * `belowAverage` — only while the price is under the position's average, the half of v1
+        that buys at the average. The other half can come from outside — a broker's recurring
+        buy feeding the same holding — which is what `adoptExternal` on the trade books.
+
+    A cycle starts over after this strategy sold everything. Its first own buy ignores
+    `belowAverage` (the first round is bought whatever the price does), and nothing is bought on
+    the day of the exit — the next cycle begins the next trading day. `buyFrom`/`buyUntil` hold
+    buys to a time of day on the venue's clock; sells are checked at every cycle.
     """
     pos, price = ctx["position"], ctx["price"]
     money = strategy.get("money") or {}
+    rules = infinite_buy_rules(strategy)
     qty_held = _num(pos.get("qty"))
     avg = _num(pos.get("avg_price"))
     budget = money_of(money, "budget", "budgetKrw")
@@ -712,8 +757,28 @@ def strategy_infinite_buy(strategy, ctx):
     invested = qty_held * avg
     if budget > 0 and invested >= budget - 1:
         return []
-    # `buyWhen: "signal"` waits for ta; anything else adds a tranche every cycle (the classic form).
-    if (strategy.get("money") or {}).get("buyWhen") == "signal" and "buy" not in ctx["sides"]:
+
+    at = ctx.get("market_now")
+    today = at.date().isoformat() if at is not None else None
+    exit_day = pos.get("exit_day")
+    if exit_day and today and exit_day == today:
+        return []  # sold out today — the next round starts tomorrow
+    # A new cycle: this strategy sold everything and has not bought since, or it holds nothing and
+    # never has. Either way the first round is bought regardless of the average — except that a
+    # trade adopting an outside feed (`adoptExternal`) holding nothing yet has simply not been
+    # handed its holding: the feed starts that cycle, not an empty book.
+    first_round = ((bool(pos.get("exit_ms")) and _num(pos.get("own_buys_since_exit")) <= 0)
+                   or (not pos.get("exit_ms") and qty_held <= 0
+                       and strategy.get("adoptExternal") is not True))
+
+    when = rules["buyWhen"]
+    if when == "signal" and "buy" not in ctx["sides"]:
+        return []
+    if when == "belowAverage" and not first_round:
+        if not (qty_held > 0 and avg > 0 and 0 < price < avg):
+            return []
+    closed = _buy_window_refusal(rules, ctx)
+    if closed:
         return []
     if price <= 0 or per_order <= 0:
         return []
@@ -721,8 +786,13 @@ def strategy_infinite_buy(strategy, ctx):
     qty = floor_to_lot(min(per_order, room) / price, money.get("lotSize", 1))
     if qty <= 0:
         return []
-    return [{"side": "buy", "qty": qty, "price": price, "reason": "split"}]
-
+    intent = {"side": "buy", "qty": qty, "price": price,
+              "reason": "first" if first_round and when == "belowAverage" else "split"}
+    # One buy per market day when buys are held to a window: a re-run of the same cycle, or two
+    # runs inside the window, land on the same order key instead of buying twice.
+    if today and (rules.get("buyFrom") or rules.get("buyUntil")):
+        intent["windowKey"] = f"day:{today}"
+    return [intent]
 
 STRATEGY_KINDS = {
     "rules": strategy_rules,

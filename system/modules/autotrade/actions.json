@@ -22,7 +22,9 @@
       "barsCacheKey": "cache key from the broker's candle response",
       "signal": "a technical-analysis signals response",
       "quote": "current price snapshot {last,bid?,ask?}",
-      "cycleId": "idempotency window (omit = derived from the last closed bar)"
+      "cycleId": "idempotency window (omit = derived from the last closed bar)",
+      "plan": "the bind_bars result — or the gate's own result, for a cycle priced from quotes",
+      "quotes": "current prices for strategies without an analyser rule (infinite-buy): the loop of quote calls as it came back"
     }
   },
   {

@@ -1,0 +1,171 @@
+{
+  "title": "자동매매 · 토스 미국 — 장중 루프 (매시 50분)",
+  "cronTime": "0 50 9-14 * * 1-5",
+  "zone": "America/New_York",
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "gate",
+        "broker": "toss-invest-trade",
+        "market": "us"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "active",
+      "op": "==",
+      "value": true
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_toss-invest-trade",
+      "inputData": {
+        "action": "list_fills"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_toss-invest-trade",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_toss-invest-trade",
+      "inputData": {
+        "action": "get_balance"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "reconcile"
+      },
+      "inputMap": {
+        "broker": "$step0.scopedTo.broker",
+        "account": "$step0.scopedTo.account",
+        "fills": "$step2.rows",
+        "openOrders": "$step3.rows",
+        "balanceRows": "$step4.rows",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step0.trades",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_toss-invest",
+          "inputData": {
+            "action": "prices"
+          },
+          "inputMap": {
+            "symbols": "$prev.symbol"
+          }
+        }
+      ],
+      "continueOnError": true
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "cycle"
+      },
+      "inputMap": {
+        "plan": "$step0",
+        "quotes": "$step6",
+        "openOrders": "$step3.rows"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step7.calls",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_toss-invest-trade",
+          "inputData": "$prev.input"
+        }
+      ],
+      "continueOnError": true
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "record_orders"
+      },
+      "inputMap": {
+        "calls": "$step7.calls",
+        "results": "$step8"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_toss-invest-trade",
+      "inputData": {
+        "action": "list_fills"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_toss-invest-trade",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_toss-invest-trade",
+      "inputData": {
+        "action": "get_balance"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "reconcile"
+      },
+      "inputMap": {
+        "broker": "$step0.scopedTo.broker",
+        "account": "$step0.scopedTo.account",
+        "fills": "$step10.rows",
+        "openOrders": "$step11.rows",
+        "balanceRows": "$step12.rows",
+        "market": "$step0.scopedTo.market"
+      }
+    }
+  ]
+}

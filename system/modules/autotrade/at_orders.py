@@ -250,6 +250,9 @@ def read_fills(rows):
             # holds; without the flag it cannot tell the two shapes apart.
             "cumulative": not exec_id,
             "sideHint": str(_first(row, SIDE_KEYS) or ""),
+            # The broker says this order will fill no further. Only an amount order needs it — its
+            # quantity was an estimate, so the requested size cannot say when it is complete.
+            "done": bool(row.get("orderDone")),
             "raw": row,
         })
     return out, unreadable

@@ -297,7 +297,7 @@
       },
       "plan": {
         "type": "object",
-        "description": "[cycle] the whole bind_bars result. It is what matches a signal to the strategy that asked for it."
+        "description": "[cycle] the whole bind_bars result. It is what matches a signal to the strategy that asked for it. A cycle priced from `quotes` takes the gate's result instead."
       },
       "signals": {
         "type": [
@@ -395,6 +395,13 @@
       "toStrategyId": {
         "type": "string",
         "description": "move_position — the strategy taking them on. Must be a strategy that actually runs."
+      },
+      "quotes": {
+        "type": [
+          "array",
+          "object"
+        ],
+        "description": "[cycle] Current prices for strategies that run without an analyser rule (infinite-buy): the loop of quote calls as it came back, or rows {symbol, lastPrice}. Pair it with `plan` = the gate's own result — its trades then scope the cycle."
       }
     }
   },
@@ -547,7 +554,7 @@
       "key": "trades",
       "type": "structured-list",
       "editor": "trades",
-      "defaultValue": "[{\"id\": \"btc-trend\", \"strategy\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"live\", \"stopLossPct\": 12.0, \"money\": {\"perOrderKrw\": 10000, \"lotSize\": 1e-08}, \"limits\": {\"maxPositionKrw\": 10000}, \"loop\": \"cron-upbit.json\"}]",
+      "defaultValue": "[{\"id\": \"btc-trend\", \"strategy\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"live\", \"stopLossPct\": 12.0, \"money\": {\"perOrderKrw\": 10000, \"lotSize\": 1e-08}, \"limits\": {\"maxPositionKrw\": 10000}, \"loop\": \"cron-upbit.json\"}, {\"id\": \"tqqq-ib\", \"strategy\": \"tqqq-ib\", \"symbol\": \"TQQQ\", \"broker\": \"toss-invest-trade\", \"account\": \"\", \"market\": \"us\", \"interval\": \"1h\", \"mode\": \"live\", \"loop\": \"cron-toss-us.json\", \"adoptExternal\": true, \"money\": {\"perOrder\": 4, \"lotSize\": 1e-06}}]",
       "tab": "매매",
       "group": "매매",
       "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom-trade\",\"account\":\"모의국내\",\"market\":\"kr\",\"interval\":\"1d\"}]",
@@ -660,6 +667,21 @@
             ]
           },
           {
+            "key": "adoptExternal",
+            "label": "밖에서 산 것도 이 매매 것 (계좌의 이 종목 전부)",
+            "type": "select",
+            "options": [
+              {
+                "value": "",
+                "label": "아니오"
+              },
+              {
+                "value": "true",
+                "label": "예 — 적립식 매수 등도 이 매매 장부로"
+              }
+            ]
+          },
+          {
             "key": "symbol",
             "label": "종목",
             "type": "text"
@@ -748,7 +770,7 @@
       "key": "strategies",
       "type": "structured-list",
       "editor": "strategies",
-      "defaultValue": "[{\"id\": \"btc-trend\", \"kind\": \"rules\", \"exits\": {\"stopLossPct\": 12.0}, \"orders\": {\"type\": \"limit\", \"marketWhen\": [\"stop\"], \"limitOffsetPct\": 0.1}, \"rules\": [{\"side\": \"buy\", \"label\": \"ema9x21 (60일선 위)\", \"when\": [{\"a\": \"ema9\", \"op\": \"crossUp\", \"b\": \"ema21\"}, {\"a\": \"close\", \"op\": \">\", \"b\": \"ma360\"}]}, {\"side\": \"sell\", \"label\": \"10일선 하향\", \"when\": [{\"a\": \"close\", \"op\": \"crossDown\", \"b\": \"ma60\"}]}], \"_measured\": {\"family\": \"ema-cross + regime filter, 4h\", \"cell\": \"ema9x21-above-ma360-exit-ma60-sl12\", \"bars\": \"KRW-BTC 4시간봉 9000 (2022-06~2026-08)\", \"costs\": \"수수료 0.05% 양쪽 + 슬리피지 0.05%\", \"scale\": \"4시간봉이라 ma360=60일선, ma60=10일선, ema9/21=1.5일/3.5일\", \"trainReturnPct\": 236.1, \"trainTrades\": 47, \"trainMaxDrawdownPct\": -8.0, \"holdoutReturnPct\": 11.5, \"holdoutTrades\": 13, \"holdoutMaxDrawdownPct\": -6.4, \"buyHoldTrainPct\": 449.4, \"buyHoldHoldoutPct\": -37.5, \"segments\": \"학습전반 +30.2 / 학습후반 +134.4 / 검증전반 +0.5 / 검증후반 +10.9 — 네 구간 모두 플러스\", \"gridTried\": 24, \"note\": \"청산 속도를 재서 고른 값이다. 20일선 하향은 느려서 되돌림을 다 맞고(검증 +9.8), 5일선은 너무 빨라 추세를 놓친다(+4.0). 10일선이 최적점(+11.5). 강세장에선 매수보유에 크게 진다(학습전반 +30 vs +125) — 값은 하락장에서 나온다. 연 10~16회 거래.\"}, \"note\": \"4h · 60일선 위에서만 진입, 10일선 하향에 청산. 값은 하락장 방어에서 나옴(검증 +11.5% / 매수보유 -37.5%)\", \"interval\": \"4h\"}]",
+      "defaultValue": "[{\"id\": \"btc-trend\", \"kind\": \"rules\", \"exits\": {\"stopLossPct\": 12.0}, \"orders\": {\"type\": \"limit\", \"marketWhen\": [\"stop\"], \"limitOffsetPct\": 0.1}, \"rules\": [{\"side\": \"buy\", \"label\": \"ema9x21 (60일선 위)\", \"when\": [{\"a\": \"ema9\", \"op\": \"crossUp\", \"b\": \"ema21\"}, {\"a\": \"close\", \"op\": \">\", \"b\": \"ma360\"}]}, {\"side\": \"sell\", \"label\": \"10일선 하향\", \"when\": [{\"a\": \"close\", \"op\": \"crossDown\", \"b\": \"ma60\"}]}], \"_measured\": {\"family\": \"ema-cross + regime filter, 4h\", \"cell\": \"ema9x21-above-ma360-exit-ma60-sl12\", \"bars\": \"KRW-BTC 4시간봉 9000 (2022-06~2026-08)\", \"costs\": \"수수료 0.05% 양쪽 + 슬리피지 0.05%\", \"scale\": \"4시간봉이라 ma360=60일선, ma60=10일선, ema9/21=1.5일/3.5일\", \"trainReturnPct\": 236.1, \"trainTrades\": 47, \"trainMaxDrawdownPct\": -8.0, \"holdoutReturnPct\": 11.5, \"holdoutTrades\": 13, \"holdoutMaxDrawdownPct\": -6.4, \"buyHoldTrainPct\": 449.4, \"buyHoldHoldoutPct\": -37.5, \"segments\": \"학습전반 +30.2 / 학습후반 +134.4 / 검증전반 +0.5 / 검증후반 +10.9 — 네 구간 모두 플러스\", \"gridTried\": 24, \"note\": \"청산 속도를 재서 고른 값이다. 20일선 하향은 느려서 되돌림을 다 맞고(검증 +9.8), 5일선은 너무 빨라 추세를 놓친다(+4.0). 10일선이 최적점(+11.5). 강세장에선 매수보유에 크게 진다(학습전반 +30 vs +125) — 값은 하락장에서 나온다. 연 10~16회 거래.\"}, \"note\": \"4h · 60일선 위에서만 진입, 10일선 하향에 청산. 값은 하락장 방어에서 나옴(검증 +11.5% / 매수보유 -37.5%)\", \"interval\": \"4h\"}, {\"id\": \"tqqq-ib\", \"kind\": \"infinite-buy\", \"interval\": \"1h\", \"exits\": {\"takeProfitPct\": 10.0}, \"orders\": {\"type\": \"market\"}, \"infiniteBuy\": {\"buyWhen\": \"belowAverage\", \"buyFrom\": \"14:45\", \"buyUntil\": \"15:00\"}, \"note\": \"무한매수 v1 보조 — 토스 적립식 매수가 매일 $4, 이 매매가 나머지 $4. 매시 평단 +10% 면 전량 매도, 14:50(뉴욕) 평단 아래면 $4 매수, 전량 매도 다음 거래일 첫 매수는 수익률 무관. 소수점·금액 주문은 마감 1시간 전까지라 매수 창을 15:00 에 닫는다.\"}]",
       "tab": "전략",
       "group": "직접 선언",
       "placeholder": "[]",
