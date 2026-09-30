@@ -15,11 +15,13 @@ on:
     branches: [main]
     paths:
       - 'system/**'
+      - 'package-lock.json'
       - '.github/workflows/ci-modules.yml'
   pull_request:
     branches: [main]
     paths:
       - 'system/**'
+      - 'package-lock.json'
       - '.github/workflows/ci-modules.yml'
 
 jobs:
@@ -78,3 +80,24 @@ jobs:
           print(f"{data.get('passed')} passed, {len(bad)} failed")
           raise SystemExit(1 if (bad or not d.get('success')) else 0)
           EOF
+
+  # The prelude every Node module runs under (`_runtime/ipv4-prelude.cjs`): a connection that could
+  # not be made is made once more, every failed attempt names the phase it stopped in, and
+  # `fetch failed` carries its cause. Local sockets only. Node 24 and the undici version the
+  # lockfile pins, because that pair is what the server runs — the prelude resolves undici from
+  # the root node_modules there, which is why a lockfile change runs this workflow too.
+  prelude:
+    name: Node prelude (connect retry)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: connect retry and failure causes, against local sockets
+        run: |
+          v=$(node -p "require('./package-lock.json').packages['node_modules/undici'].version")
+          npm install --no-save --no-package-lock --prefix /tmp/prelude "undici@$v" > /dev/null
+          NODE_PATH=/tmp/prelude/node_modules node system/modules/_runtime/ipv4-prelude.test.cjs
