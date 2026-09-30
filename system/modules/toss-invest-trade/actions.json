@@ -35,10 +35,10 @@
   "path": "/orders",
   "params": {
    "accountSeq": "계좌 식별자 (필수)",
-   "status": "주문 상태 그룹 (필수) — OPEN=진행중 / CLOSED=종료 (⚠️ CLOSED 는 현재 미지원 400 closed-not-supported — 종료 주문은 order-detail 로 개별 조회)",
+   "status": "주문 상태 그룹 (필수) — OPEN=진행중 / CLOSED=종료 (일부만 체결된 채 끝난 PARTIAL_FILLED 포함)",
    "symbol": "종목 심볼 — 지정 시 해당 종목만",
-   "from": "조회 시작 (ISO 8601)",
-   "to": "조회 끝 (ISO 8601)",
+   "from": "조회 시작일 (YYYY-MM-DD, KST, 주문 생성일 기준) — 생략 시 전체",
+   "to": "조회 종료일 (YYYY-MM-DD, KST) — 생략 시 전체",
    "cursor": "페이지네이션 커서",
    "limit": "페이지 크기"
   }
@@ -100,7 +100,7 @@
   ],
   "approval": true,
   "name": "주문 생성 (매수/매도)",
-  "description": "실매매 주문 생성 — 즉시 실제 체결 시스템에 전송. 시장가/지정가, 국내·미국. 미국은 orderAmount 금액 주문 가능",
+  "description": "실매매 주문 생성 — 즉시 실제 체결 시스템에 전송. 시장가/지정가, 국내·미국. 미국은 orderAmount 금액 주문(소수점 매수)과 시장가 소수점 수량 매도 가능",
   "domain": "주문",
   "method": "POST",
   "path": "/orders",
@@ -109,10 +109,10 @@
    "symbol": "종목 심볼 (필수) — 국내=6자리 코드, 미국=티커",
    "side": "매매 방향 (필수) — BUY 또는 SELL",
    "orderType": "주문 유형 (필수) — LIMIT(지정가, price 필수) 또는 MARKET(시장가)",
-   "quantity": "주문 수량 (문자열) — quantity 또는 orderAmount 중 하나 필수",
-   "orderAmount": "주문 금액 (문자열) — 미국 시장가 금액 주문 전용 (정규장만)",
+   "quantity": "주문 수량 (문자열) — quantity 또는 orderAmount 중 하나 필수. 정수, 미국 시장가 매도만 소수점 6자리까지",
+   "orderAmount": "주문 금액 (문자열, 달러) — 미국 시장가 금액 주문 전용 (정규장 시작 ~ 마감 1시간 전)",
    "price": "지정가 (문자열) — orderType=LIMIT 일 때 필수",
-   "timeInForce": "체결 조건 — DAY(기본) 또는 CLS(미국 지정가 종가 LOC)",
+   "timeInForce": "체결 조건 — DAY(기본) / CLS(미국 지정가 종가 LOC) / OPG(국내 시가단일가)",
    "clientOrderId": "멱등성 키 — 재시도 시 중복 주문 방지",
    "confirmHighValueOrder": "고액 주문 확인 플래그 (boolean)"
   }

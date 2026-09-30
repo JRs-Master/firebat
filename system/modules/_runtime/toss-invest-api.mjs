@@ -12,9 +12,11 @@
 import { acquireSlot as acquireShared } from './rate-window.mjs';
 const BASE = 'https://openapi.tossinvest.com';
 
-// action → { method, path, query[], pathParams[], body[], needsAccount, name }
+// action → { method, path, query[], pathParams[], body[], wire{}, needsAccount, name }
 // {x} in path is filled from pathParams. query = GET query string, body = POST JSON body
 // (field names = data keys). needsAccount=true sends accountSeq(data) as X-Tossinvest-Account.
+// wire = data key → the name Toss uses, for the few params whose Toss name already means something
+// else in our schema (list-stocks' exchange is Toss `market`, which is KR/US for market-calendar).
 const API_TABLE = {
   // ── Market Data ── (token only)
   'orderbook':      { method: 'GET', path: '/api/v1/orderbook',    query: ['symbol'], name: '호가 조회' },
@@ -25,6 +27,13 @@ const API_TABLE = {
   // ── Stock Info ── (token only)
   'stocks':         { method: 'GET', path: '/api/v1/stocks',       query: ['symbols'], name: '종목 기본 정보' },
   'stock-warnings': { method: 'GET', path: '/api/v1/stocks/{symbol}/warnings', pathParams: ['symbol'], name: '매수 유의사항' },
+  'list-stocks':    { method: 'GET', path: '/api/v1/stocks/all', query: ['exchange', 'status', 'securityType', 'commonShare'], wire: { exchange: 'market' }, name: '거래소별 전체 종목' },
+  // ── Stock trading trends ── (token only — KR symbols; another market answers 400 unsupported-market)
+  'stock-investor-trading':   { method: 'GET', path: '/api/v1/stocks/{symbol}/investor-trading', pathParams: ['symbol'], query: ['count', 'until'], name: '종목 투자자별 매매동향' },
+  'stock-program-trades':     { method: 'GET', path: '/api/v1/stocks/{symbol}/program-trades', pathParams: ['symbol'], query: ['count', 'until'], name: '종목 프로그램매매 동향' },
+  'stock-short-selling':      { method: 'GET', path: '/api/v1/stocks/{symbol}/short-selling', pathParams: ['symbol'], query: ['count', 'until'], name: '종목 공매도 동향' },
+  'stock-credit-trades':      { method: 'GET', path: '/api/v1/stocks/{symbol}/credit-trades', pathParams: ['symbol'], query: ['count', 'until'], name: '종목 신용거래 동향' },
+  'stock-securities-lending': { method: 'GET', path: '/api/v1/stocks/{symbol}/securities-lending', pathParams: ['symbol'], query: ['count', 'until'], name: '종목 대차거래 동향' },
   // ── Market Info ── (token only)
   'exchange-rate':  { method: 'GET', path: '/api/v1/exchange-rate', query: ['baseCurrency', 'quoteCurrency', 'dateTime'], name: '환율' },
   'market-calendar':{ method: 'GET', path: '/api/v1/market-calendar/{market}', pathParams: ['market'], query: ['date'], name: '장 운영 정보' },
@@ -81,7 +90,7 @@ async function callApi(token, action, data, retry = 2) {
   const url = new URL(`${BASE}${path}`);
   for (const q of meta.query || []) {
     const v = data[q];
-    if (v !== undefined && v !== null && v !== '') url.searchParams.set(q, String(v));
+    if (v !== undefined && v !== null && v !== '') url.searchParams.set(meta.wire?.[q] ?? q, String(v));
   }
 
   const headers = {
@@ -221,14 +230,16 @@ function orderRow(o) {
   };
 }
 
-// Statuses after which an order's fill total no longer changes.
+// Statuses after which an order's fill total no longer changes. Not the whole test: the CLOSED
+// group also holds PARTIAL_FILLED — an order whose day ended part-filled (spec 1.2.19) — so where
+// an order was listed says more than its status does.
 const DONE = new Set(['FILLED', 'CANCELED', 'REJECTED', 'REPLACED', 'CANCEL_REJECTED', 'REPLACE_REJECTED']);
 
 /** An order's executions, restated as its running total — Toss has no per-execution id, so the
  * row is the order saying how much of it has filled so far. `orderDone` marks a total that will
  * not grow again: an amount order's filled quantity is whatever the dollars bought, so the order's
  * own requested quantity cannot say when it is complete. */
-function fillRow(o) {
+function fillRow(o, closed) {
   const ex = o?.execution || {};
   const qty = Number(ex.filledQuantity);
   if (!(qty > 0)) return null;
@@ -236,7 +247,7 @@ function fillRow(o) {
     orderId: o.orderId, symbol: o.symbol, side: lower(o.side), status: o.status,
     filledQuantity: ex.filledQuantity, avgPrice: ex.averageFilledPrice,
     filledAmount: ex.filledAmount, paid_fee: ex.commission ?? '0',
-    filledAt: ex.filledAt ?? null, currency: o.currency, orderDone: DONE.has(String(o.status)),
+    filledAt: ex.filledAt ?? null, currency: o.currency, orderDone: closed || DONE.has(String(o.status)),
   };
 }
 
@@ -291,7 +302,8 @@ async function neutral(token, action, data) {
     const since = { from: String(data.from || kstDate(3)), ...symbolFilter };
     const closed = await listOrders(token, accountSeq, 'CLOSED', { ...since, limit: 100 });
     const open = await listOrders(token, accountSeq, 'OPEN', symbolFilter);
-    const rows = [...closed, ...open].filter(inMarket).map(fillRow).filter(Boolean);
+    const rows = [...closed.map(o => [o, true]), ...open.map(o => [o, false])]
+      .filter(([o]) => inMarket(o)).map(([o, done]) => fillRow(o, done)).filter(Boolean);
     return { success: true, data: { action, rows, rowsField: 'result.orders[].execution', accountSeq } };
   }
 
@@ -380,7 +392,11 @@ async function main(data) {
       if (typeof data[k] === 'string') data = { ...data, [k]: data[k].toUpperCase() };
     }
     const meta = API_TABLE[action];
-    const res = await callApi(token, action, data);
+    // A missing path param or an unknown action throws inside callApi. Caught here it is this
+    // call's answer; left to index.mjs it came back as "입력을 읽지 못했습니다", which blames the input.
+    let res;
+    try { res = await callApi(token, action, data); }
+    catch (e) { res = { _ok: false, _error: e.message }; }
     if (!res._ok) {
       const out = { success: false, error: res._error, data: { action, status: res._status } };
       if (res._code) out.data.code = res._code;
