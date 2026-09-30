@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "api",
   "capability": "stock-symbol",
-  "description": "종목코드 검색 전용 — 회사명을 공식 종목코드(6자리)와 DART corp_code(8자리)로 바꿉니다. `{\"query\":\"회사명\"}` 하나면 되고, 6자리 코드를 넣으면 그 코드의 회사를 확인해 줍니다.",
+  "description": "종목코드 검색 전용 — 회사명을 공식 종목코드(6자리)와 DART corp_code(8자리)로, 미국 주식·ETF 는 티커로 바꿉니다. `{\"query\":\"회사명\"}` 하나면 되고, 6자리 코드나 미국 티커를 넣으면 그 종목을 확인해 줍니다.",
   "aliases": [
     "종목조회",
     "종목검색"
@@ -23,7 +23,9 @@
     "ticker",
     "lookup",
     "resolve",
-    "symbol"
+    "symbol",
+    "미국 티커",
+    "US ticker"
   ],
   "packages": [
     "requests==2.34.2"
@@ -39,7 +41,7 @@
     "properties": {
       "query": {
         "type": "string",
-        "description": "회사명(부분 일치 가능) 또는 확인할 종목코드(6자리)·DART corp_code(8자리). 예: \"LG에너지솔루션\", \"삼성전자\", \"005930\""
+        "description": "회사명(부분 일치 가능) 또는 확인할 종목코드(6자리)·DART corp_code(8자리). 미국 종목은 티커나 영문 회사명. 예: \"LG에너지솔루션\", \"삼성전자\", \"005930\", \"TQQQ\", \"Tesla\""
       },
       "limit": {
         "type": "integer",
@@ -52,15 +54,15 @@
     "properties": {
       "matched": {
         "type": "object",
-        "description": "최적 일치 — {corp_name, stock_code(6자리, 비상장이면 빈 문자열), corp_code(8자리 DART id)}"
+        "description": "최적 일치 — 국내 {corp_name, stock_code(6자리, 비상장이면 빈 문자열), corp_code(8자리 DART id)} · 미국 {symbol(티커), name, exchange(상장 거래소), etf, market:\"us\"}"
       },
       "candidates": {
         "type": "array",
-        "description": "복수 일치 시 후보 목록 (이름 짧은 순 = 정밀 우선). 확실하지 않으면 suggest 피커로 사용자에게 확인"
+        "description": "복수 일치 시 후보 목록 (티커 일치 → 이름 앞부분 일치 → 이름 부분 일치, 같은 단계면 이름 짧은 순). 확실하지 않으면 suggest 피커로 사용자에게 확인"
       },
       "count": {
         "type": "integer",
-        "description": "일치한 상장사 수"
+        "description": "일치한 종목 수"
       }
     }
   }
