@@ -125,9 +125,11 @@
         "type": "string",
         "enum": [
           "KR",
-          "US"
+          "US",
+          "kr",
+          "us"
         ],
-        "description": "market-calendar 시장. KR=국내(KRX+NXT) / US=미국."
+        "description": "시장. KR=국내(KRX+NXT) / US=미국. 대소문자 무관 — 중립 계약(place_order 등)은 소문자로 부른다."
       },
       "date": {
         "type": "string",
@@ -169,17 +171,21 @@
         "type": "string",
         "enum": [
           "BUY",
-          "SELL"
+          "SELL",
+          "buy",
+          "sell"
         ],
-        "description": "create-order 주문 방향. BUY=매수 / SELL=매도."
+        "description": "주문 방향. BUY=매수 / SELL=매도 (대소문자 무관)."
       },
       "orderType": {
         "type": "string",
         "enum": [
           "LIMIT",
-          "MARKET"
+          "MARKET",
+          "limit",
+          "market"
         ],
-        "description": "주문 호가 유형. LIMIT=지정가(price 필수) / MARKET=시장가. create-order/modify-order/조건주문(조건주문은 그룹 공통 — LIMIT 이면 각 조건 orderPrice 필수, OCO/OTO 는 LIMIT 만)."
+        "description": "주문 호가 유형. LIMIT=지정가(price 필수) / MARKET=시장가. create-order/modify-order/조건주문(조건주문은 그룹 공통 — LIMIT 이면 각 조건 orderPrice 필수, OCO/OTO 는 LIMIT 만). 대소문자 무관."
       },
       "quantity": {
         "type": "string",
@@ -304,6 +310,18 @@
       "conditionalOrderId": {
         "type": "string",
         "description": "조건주문 식별자 (등록/목록 응답의 conditionalOrderId). conditional-order-detail/modify/cancel 에 필수. ⚠️ 수정 후엔 응답의 새 ID 로 교체됨."
+      },
+      "qty": {
+        "type": "number",
+        "description": "중립 계약 place_order 의 수량. 미국은 소수 가능 — 매수는 qty × price 달러 금액 주문, 매도는 소수점 수량 시장가(6자리)."
+      },
+      "brokerOrderNo": {
+        "type": "string",
+        "description": "중립 계약 cancel_order 의 주문 식별자 (= orderId)."
+      },
+      "account": {
+        "type": "string",
+        "description": "중립 계약의 계좌 — accountNo 또는 accountSeq. 계좌가 하나면 생략."
       }
     }
   },

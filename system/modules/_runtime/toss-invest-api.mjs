@@ -132,6 +132,221 @@ async function callApi(token, action, data, retry = 2) {
   return { _ok: true, result: json && json.result !== undefined ? json.result : json };
 }
 
+// ── Neutral contract ─────────────────────────────────────────────────────────────────────────
+// The five calls every trading module answers in one shape — place_order · cancel_order ·
+// list_open_orders · list_fills · get_balance — so autotrade can trade here without knowing
+// Toss's own names. Rows come back as `data.rows` with the field names autotrade already reads
+// (orderId · symbol · quantity · avgPrice · filledQuantity · paid_fee).
+const NEUTRAL = new Set(['place_order', 'cancel_order', 'list_open_orders', 'list_fills', 'get_balance']);
+
+// US fractional trading, as the spec (1.2.19) states it: a fractional BUY is an amount order
+// (`orderAmount`, dollars, MARKET only), a fractional SELL is a MARKET order with a fractional
+// `quantity` (6 decimals at most), and both are accepted only from the regular open until one
+// hour before the regular close.
+const FRACTION_DP = 6;
+const MIN_AMOUNT_USD = 1;
+
+/** "us" | "kr" — from the call, else from the symbol's shape (6 characters led by a digit = Seoul). */
+function marketOf(data, symbol) {
+  const m = String(data.market ?? '').trim().toLowerCase();
+  if (m === 'us' || m === 'kr') return m;
+  return /^[0-9][0-9A-Z]{5}$/.test(String(symbol || '')) ? 'kr' : 'us';
+}
+
+/** A row's market, read off the row — holdings say `marketCountry`, orders only a currency. */
+function rowMarket(row) {
+  const c = String(row?.marketCountry ?? '').toUpperCase();
+  if (c === 'US' || c === 'KR') return c.toLowerCase();
+  const cur = String(row?.currency ?? '').toUpperCase();
+  return cur === 'USD' ? 'us' : cur === 'KRW' ? 'kr' : '';
+}
+
+/** Down to `dp` decimals, never up — selling one unit more than is held is refused. The small
+ * epsilon only absorbs binary representation (0.111283 × 1e6 = 111282.99999999999). */
+function floorDecimal(n, dp) {
+  const f = Math.pow(10, dp);
+  const v = Math.floor(n * f + 1e-7) / f;
+  return v.toFixed(dp).replace(/\.?0+$/, '');
+}
+
+/** US limit prices: two decimals from $1, four below, truncated (the spec's rule). KR: whole won. */
+function priceText(market, price) {
+  if (market === 'kr') return String(Math.round(price));
+  return floorDecimal(price, price >= 1 ? 2 : 4);
+}
+
+/** Toss takes 36 chars of [A-Za-z0-9_-]. A key that already fits goes through unchanged, so the
+ * same order key is the same idempotency key; anything else is hashed to one that does. */
+async function clientIdOf(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return undefined;
+  if (/^[A-Za-z0-9_-]{1,36}$/.test(s)) return s;
+  const { createHash } = await import('node:crypto');
+  return createHash('sha256').update(s).digest('hex').slice(0, 32);
+}
+
+const accountCache = new Map();
+
+/** The account a neutral call runs on: `accountSeq` if given, else the alias (`accountNo` or
+ * `accountSeq`) matched against the account list, else the only account there is. */
+async function accountSeqOf(token, data) {
+  if (data.accountSeq !== undefined && data.accountSeq !== null && data.accountSeq !== '') return data.accountSeq;
+  const alias = String(data.account ?? '').trim();
+  if (accountCache.has(alias)) return accountCache.get(alias);
+  const res = await callApi(token, 'accounts', {});
+  if (!res._ok) throw new Error(`accounts: ${res._error}`);
+  const list = Array.isArray(res.result) ? res.result : [];
+  let hit = null;
+  if (alias) hit = list.find(a => String(a?.accountNo) === alias || String(a?.accountSeq) === alias) || null;
+  else if (list.length === 1) hit = list[0];
+  if (!hit) {
+    throw new Error(alias
+      ? `계좌 '${alias}' 를 찾지 못했습니다 — accounts 응답의 accountNo 또는 accountSeq 로 적어 주세요.`
+      : `계좌가 ${list.length}개라 고를 수 없습니다 — account 에 accountNo 또는 accountSeq 를 적어 주세요.`);
+  }
+  accountCache.set(alias, hit.accountSeq);
+  return hit.accountSeq;
+}
+
+const lower = v => String(v ?? '').toLowerCase();
+
+/** A Toss order row, in the neutral vocabulary. */
+function orderRow(o) {
+  const ex = o?.execution || {};
+  return {
+    orderId: o?.orderId, symbol: o?.symbol, side: lower(o?.side), status: o?.status,
+    orderType: lower(o?.orderType), quantity: o?.quantity, orderAmount: o?.orderAmount,
+    price: o?.price, currency: o?.currency, orderedAt: o?.orderedAt,
+    filledQuantity: ex.filledQuantity ?? null,
+  };
+}
+
+// Statuses after which an order's fill total no longer changes.
+const DONE = new Set(['FILLED', 'CANCELED', 'REJECTED', 'REPLACED', 'CANCEL_REJECTED', 'REPLACE_REJECTED']);
+
+/** An order's executions, restated as its running total — Toss has no per-execution id, so the
+ * row is the order saying how much of it has filled so far. `orderDone` marks a total that will
+ * not grow again: an amount order's filled quantity is whatever the dollars bought, so the order's
+ * own requested quantity cannot say when it is complete. */
+function fillRow(o) {
+  const ex = o?.execution || {};
+  const qty = Number(ex.filledQuantity);
+  if (!(qty > 0)) return null;
+  return {
+    orderId: o.orderId, symbol: o.symbol, side: lower(o.side), status: o.status,
+    filledQuantity: ex.filledQuantity, avgPrice: ex.averageFilledPrice,
+    filledAmount: ex.filledAmount, paid_fee: ex.commission ?? '0',
+    filledAt: ex.filledAt ?? null, currency: o.currency, orderDone: DONE.has(String(o.status)),
+  };
+}
+
+/** Seoul date `daysAgo` days back — list-orders filters by the order's creation date in KST. */
+function kstDate(daysAgo) {
+  const t = new Date(Date.now() + 9 * 3600e3 - daysAgo * 86400e3);
+  return t.toISOString().slice(0, 10);
+}
+
+async function listOrders(token, accountSeq, status, extra = {}) {
+  const out = [];
+  let cursor;
+  for (let page = 0; page < 5; page++) {
+    const res = await callApi(token, 'list-orders', { accountSeq, status, ...extra, ...(cursor ? { cursor } : {}) });
+    if (!res._ok) throw new Error(`list-orders(${status}): ${res._error}`);
+    const r = res.result || {};
+    out.push(...(Array.isArray(r.orders) ? r.orders : []));
+    if (status !== 'CLOSED' || !r.hasNext || !r.nextCursor) break;
+    cursor = r.nextCursor;
+  }
+  return out;
+}
+
+async function neutral(token, action, data) {
+  const accountSeq = await accountSeqOf(token, data);
+  const wantMarket = data.market ? lower(data.market) : '';
+  const inMarket = row => !wantMarket || !rowMarket(row) || rowMarket(row) === wantMarket;
+  const symbolFilter = data.symbol ? { symbol: String(data.symbol) } : {};
+
+  if (action === 'get_balance') {
+    const res = await callApi(token, 'holdings', { accountSeq, ...symbolFilter });
+    if (!res._ok) return { success: false, error: res._error, data: { action, status: res._status, code: res._code } };
+    const items = Array.isArray(res.result?.items) ? res.result.items : [];
+    const rows = items.filter(inMarket).map(i => ({
+      symbol: i.symbol, name: i.name, quantity: i.quantity, avgPrice: i.averagePurchasePrice,
+      lastPrice: i.lastPrice, currency: i.currency, marketCountry: i.marketCountry,
+      purchaseAmount: i.marketValue?.purchaseAmount, marketValue: i.marketValue?.amount,
+      profitRate: i.profitLoss?.rate,
+    }));
+    return { success: true, data: { action, rows, rowsField: 'result.items', accountSeq } };
+  }
+
+  if (action === 'list_open_orders') {
+    const orders = await listOrders(token, accountSeq, 'OPEN', symbolFilter);
+    return { success: true, data: { action, rows: orders.filter(inMarket).map(orderRow), rowsField: 'result.orders', accountSeq } };
+  }
+
+  if (action === 'list_fills') {
+    // Closed orders from the last few Seoul days, plus open ones already partly filled. The
+    // window is wider than any order the ledger still waits on, and a row seen twice is a
+    // restatement, not a second fill.
+    const since = { from: String(data.from || kstDate(3)), ...symbolFilter };
+    const closed = await listOrders(token, accountSeq, 'CLOSED', { ...since, limit: 100 });
+    const open = await listOrders(token, accountSeq, 'OPEN', symbolFilter);
+    const rows = [...closed, ...open].filter(inMarket).map(fillRow).filter(Boolean);
+    return { success: true, data: { action, rows, rowsField: 'result.orders[].execution', accountSeq } };
+  }
+
+  if (action === 'cancel_order') {
+    const orderId = String(data.brokerOrderNo ?? data.orderId ?? '').trim();
+    if (!orderId) throw new Error('cancel_order: brokerOrderNo 가 필요합니다 (주문 응답의 orderId).');
+    const res = await callApi(token, 'cancel-order', { accountSeq, orderId });
+    if (!res._ok) return { success: false, error: res._error, data: { action, status: res._status, code: res._code, orderId } };
+    return { success: true, data: { action, orderId, ...(res.result && typeof res.result === 'object' ? res.result : {}) } };
+  }
+
+  // place_order
+  const side = lower(data.side);
+  if (side !== 'buy' && side !== 'sell') throw new Error("place_order: side 는 'buy' 또는 'sell' 이어야 합니다.");
+  const symbol = String(data.symbol ?? '').trim();
+  if (!symbol) throw new Error('place_order: symbol 이 필요합니다.');
+  const qty = Number(data.qty);
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: qty 는 0 보다 커야 합니다.');
+  const market = marketOf(data, symbol);
+  const type = lower(data.orderType || 'limit');
+  const whole = Math.abs(qty - Math.round(qty)) < 1e-9;
+  const body = { symbol, side: side.toUpperCase() };
+  const cid = await clientIdOf(data.clientOrderId);
+  if (cid) body.clientOrderId = cid;
+  if (whole) {
+    body.quantity = String(Math.round(qty));
+    if (type === 'market') {
+      body.orderType = 'MARKET';
+    } else {
+      const price = Number(data.price);
+      if (!(price > 0)) throw new Error('place_order: 지정가 주문에는 price 가 필요합니다.');
+      body.orderType = 'LIMIT';
+      body.price = priceText(market, price);
+    }
+  } else {
+    if (market !== 'us') throw new Error('place_order: 소수점 수량은 미국 주식만 주문할 수 있습니다.');
+    body.orderType = 'MARKET';
+    if (side === 'sell') {
+      body.quantity = floorDecimal(qty, FRACTION_DP);
+      if (!(Number(body.quantity) > 0)) throw new Error(`place_order: 매도 수량 ${qty} 이 소수점 ${FRACTION_DP}자리 아래라 주문할 수 없습니다.`);
+    } else {
+      const price = Number(data.price);
+      if (!(price > 0)) throw new Error('place_order: 소수점 매수는 금액 주문이라 price(현재가)가 필요합니다 — 금액 = qty × price.');
+      const amount = Math.round(qty * price * 100) / 100;
+      if (amount < MIN_AMOUNT_USD) throw new Error(`place_order: 금액 주문은 $${MIN_AMOUNT_USD} 이상이어야 합니다 (지금 $${amount.toFixed(2)}).`);
+      body.orderAmount = amount.toFixed(2);
+    }
+  }
+  const res = await callApi(token, 'create-order', { accountSeq, ...body });
+  if (!res._ok) {
+    return { success: false, error: res._error, data: { action, status: res._status, code: res._code, clientOrderId: data.clientOrderId ?? null, sentParams: body } };
+  }
+  return { success: true, data: { action, ...(res.result || {}), clientOrderId: data.clientOrderId ?? null, sentParams: body, market } };
+}
+
 async function main(data) {
 
     const action = data?.action;
@@ -152,6 +367,18 @@ async function main(data) {
       return;
     }
 
+    if (NEUTRAL.has(action)) {
+      let out;
+      try { out = await neutral(token, action, data); }
+      catch (e) { out = { success: false, error: e.message, data: { action } }; }
+      console.log(JSON.stringify(out));
+      return;
+    }
+    // The schema takes these case-insensitively (the neutral contract speaks lower case); Toss only
+    // accepts upper case, so a raw call is lifted here rather than refused there.
+    for (const k of ['side', 'orderType', 'market']) {
+      if (typeof data[k] === 'string') data = { ...data, [k]: data[k].toUpperCase() };
+    }
     const meta = API_TABLE[action];
     const res = await callApi(token, action, data);
     if (!res._ok) {

@@ -233,5 +233,67 @@
    "accountSeq": "계좌 식별자 (필수)",
    "conditionalOrderId": "조건주문 ID (필수)"
   }
+ },
+ {
+  "id": "place_order",
+  "approval": true,
+  "name": "주문 전송 place_order (중립 계약)",
+  "description": "[중립 계약] Buy or sell one symbol in the shape every broker module takes — the dialect picks Toss's own order form. A whole quantity is a plain order (limit needs price); a US fractional BUY becomes a dollar amount order (qty × price, MARKET, at least $1) and a US fractional SELL a MARKET order with the fractional quantity (6 decimals). Fractional and amount orders are accepted from the regular open until one hour before the regular close. 매수 매도 주문 소수점 금액주문 buy sell order",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "symbol": "종목 — 국내 6자리 코드, 미국 티커 (필수)",
+   "side": "buy | sell (필수)",
+   "qty": "수량 (필수). 미국은 소수 가능 — 매수는 qty × price 달러 금액 주문, 매도는 소수점 수량 시장가",
+   "orderType": "limit(기본) | market. 소수점 수량은 market 으로만 나간다",
+   "price": "지정가, 또는 소수점 매수의 금액 계산용 현재가",
+   "market": "us | kr — 생략 시 종목 모양으로 추론",
+   "account": "계좌 — accountNo 또는 accountSeq. 계좌가 하나면 생략",
+   "clientOrderId": "호출자 멱등 id — 36자 [A-Za-z0-9_-] 가 아니면 해시로 바뀐다"
+  }
+ },
+ {
+  "id": "cancel_order",
+  "approval": true,
+  "name": "주문 취소 cancel_order (중립 계약)",
+  "description": "[중립 계약] Cancel a resting order by its order id. 주문취소 미체결 취소",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "brokerOrderNo": "취소할 주문의 orderId (필수)",
+   "account": "계좌 — accountNo 또는 accountSeq. 계좌가 하나면 생략"
+  }
+ },
+ {
+  "id": "list_open_orders",
+  "name": "미체결 조회 list_open_orders (중립 계약)",
+  "description": "[중립 계약] Resting orders as rows {orderId, symbol, side, status, quantity, orderAmount, filledQuantity}. 미체결 주문 조회 대기 주문",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "us | kr — 그 시장 주문만",
+   "symbol": "종목 — 지정 시 그 종목만",
+   "account": "계좌 — accountNo 또는 accountSeq. 계좌가 하나면 생략"
+  }
+ },
+ {
+  "id": "list_fills",
+  "name": "체결 내역 list_fills (중립 계약)",
+  "description": "[중립 계약] Filled quantity per order as rows {orderId, symbol, side, filledQuantity, avgPrice, paid_fee, orderDone} — closed orders of the last three Seoul days plus open ones already partly filled. Each row restates its order's running total. 체결 내역 조회 execution history",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "us | kr — 그 시장 주문만",
+   "symbol": "종목 — 지정 시 그 종목만",
+   "from": "조회 시작일 YYYY-MM-DD (KST, 주문일 기준) — 생략 시 사흘 전",
+   "account": "계좌 — accountNo 또는 accountSeq. 계좌가 하나면 생략"
+  }
+ },
+ {
+  "id": "get_balance",
+  "name": "잔고 조회 get_balance (중립 계약)",
+  "description": "[중립 계약] Holdings as rows {symbol, quantity, avgPrice, lastPrice, currency} — US figures in dollars. 잔고 보유 종목 balance holdings",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "us | kr — 그 시장 보유만",
+   "symbol": "종목 — 지정 시 그 종목만",
+   "account": "계좌 — accountNo 또는 accountSeq. 계좌가 하나면 생략"
+  }
  }
 ]
