@@ -198,9 +198,66 @@ impl TokioCronAdapter {
     /// 표준 5-필드 cron(`min hour dom month dow`, 예: `0 22 * * *`)을 cron 크레이트(0.12)가 요구하는
     /// 6-필드(초 포함 `sec min hour dom month dow`)로 정규화. AI·사용자가 보내는 표준 Unix cron 수용 —
     /// cron 0.12 는 초 필드 필수라 5-필드를 "Invalid cron expression" 으로 거부하던 버그 fix. 6~7 필드는 그대로.
+    ///
+    /// The day-of-week field is translated too. The crate counts from Sunday = 1 (Quartz), while
+    /// everything written for this scheduler uses Unix numbering — the cron panel says
+    /// "요일(0-6, 0=일)" and "0 9 * * 1-5 = 평일 9시", the model writes Unix cron, and the module
+    /// loops were written the same way. Read by the crate, `1-5` was Sunday to Thursday: every
+    /// weekday job skipped Friday and ran on Sunday, and `0` (Sunday) was refused as invalid
+    /// (found 2026-10-01 through the Toss loop, `0 50 9-14 * * 1-5`). Names (`MON-FRI`) mean the same
+    /// in both and pass through untouched.
     fn normalize_cron(expr: &str) -> String {
-        let t = expr.trim();
-        if t.split_whitespace().count() == 5 { format!("0 {t}") } else { t.to_string() }
+        let mut fields: Vec<String> = expr.split_whitespace().map(str::to_string).collect();
+        if fields.len() == 5 {
+            fields.insert(0, "0".to_string());
+        }
+        if fields.len() >= 6 {
+            if let Some(dow) = Self::unix_dow_to_crate(&fields[5]) {
+                fields[5] = dow;
+            }
+        }
+        fields.join(" ")
+    }
+
+    /// A Unix day-of-week field (0 or 7 = Sunday, 1 = Monday … 6 = Saturday) in the crate's
+    /// numbering (1 = Sunday … 7 = Saturday), as an explicit list. `None` leaves the field as
+    /// written: `*`/`?`, and anything this does not read (`L`, `#`), which the crate then judges.
+    /// A named token passes through; a numeric one — point, range, step — becomes the days it
+    /// covers, so a range that would wrap in the crate's numbering (`5-7`, Friday to Sunday)
+    /// cannot come out backwards.
+    fn unix_dow_to_crate(field: &str) -> Option<String> {
+        if field == "*" || field == "?" {
+            return None;
+        }
+        let num = |t: &str| t.parse::<u32>().ok().filter(|n| *n <= 7);
+        let mut days: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        let mut named: Vec<&str> = Vec::new();
+        for token in field.split(',') {
+            if token.chars().any(|c| c.is_ascii_alphabetic()) {
+                named.push(token);
+                continue;
+            }
+            let (span, step) = match token.split_once('/') {
+                Some((span, step)) => (span, Some(step.parse::<u32>().ok().filter(|s| *s > 0)?)),
+                None => (token, None),
+            };
+            let (from, to) = match span {
+                "*" => (0, 6),
+                _ => match span.split_once('-') {
+                    Some((a, b)) => (num(a)?, num(b)?),
+                    // `3/2` runs from 3 to the end of the week; a bare `3` is that day alone.
+                    None => (num(span)?, if step.is_some() { 6 } else { num(span)? }),
+                },
+            };
+            if from > to {
+                return None;
+            }
+            days.extend((from..=to).step_by(step.unwrap_or(1) as usize));
+        }
+        let mut out: Vec<String> = named.iter().map(|t| t.to_string()).collect();
+        let crate_days: std::collections::BTreeSet<u32> = days.iter().map(|d| d % 7 + 1).collect();
+        out.extend(crate_days.iter().map(u32::to_string));
+        Some(out.join(","))
     }
 
     /// 복수 cron 표현식 — `|` 구분 ("0 2 * * * | 55 16 * * *" = 02:00 + 16:55, 한 잡).
@@ -1020,6 +1077,42 @@ mod tests {
             )
             .await;
         assert!(bad.is_err());
+    }
+
+    #[test]
+    fn a_weekday_field_means_what_unix_cron_means() {
+        // The crate counts Sunday = 1. Unix, the cron panel, the model and the module loops all
+        // count Sunday = 0, so `1-5` has to reach the crate as Monday to Friday.
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * 1-5"), "0 0 9 * * 2,3,4,5,6");
+        assert_eq!(TokioCronAdapter::normalize_cron("0 50 9-14 * * 1-5"), "0 50 9-14 * * 2,3,4,5,6");
+        // Sunday is 0 and 7 in Unix; the crate refused 0 outright.
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * 0"), "0 0 9 * * 1");
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * 7"), "0 0 9 * * 1");
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * 0,6"), "0 0 9 * * 1,7");
+        // A range that would wrap in the crate's numbering comes out as the days it covers.
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * 5-7"), "0 0 9 * * 1,6,7");
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * */2"), "0 0 9 * * 1,3,5,7");
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * 1-5/2"), "0 0 9 * * 2,4,6");
+        // Names mean the same in both numberings, and a wildcard is a wildcard.
+        assert_eq!(TokioCronAdapter::normalize_cron("0 50 9-14 * * MON-FRI"), "0 50 9-14 * * MON-FRI");
+        assert_eq!(TokioCronAdapter::normalize_cron("0 */5 * * * *"), "0 */5 * * * *");
+        // What this does not read is left for the crate to judge.
+        assert_eq!(TokioCronAdapter::normalize_cron("0 9 * * 8"), "0 0 9 * * 8");
+    }
+
+    #[test]
+    fn a_weekday_job_fires_monday_to_friday() {
+        use chrono::Datelike;
+        // 2026-10-02 is a Friday. From Thursday evening in New York, a weekday job's next firing
+        // is Friday; from Friday evening it is Monday, never Saturday or Sunday.
+        let tz: Tz = "America/New_York".parse().unwrap();
+        let schedule = Schedule::from_str(&TokioCronAdapter::normalize_cron("0 50 9-14 * * 1-5")).unwrap();
+        let thursday = tz.with_ymd_and_hms(2026, 10, 1, 16, 0, 0).unwrap();
+        let next = schedule.after(&thursday).next().unwrap();
+        assert_eq!(next.weekday(), chrono::Weekday::Fri);
+        let friday = tz.with_ymd_and_hms(2026, 10, 2, 16, 0, 0).unwrap();
+        let next = schedule.after(&friday).next().unwrap();
+        assert_eq!(next.weekday(), chrono::Weekday::Mon);
     }
 
     #[test]
