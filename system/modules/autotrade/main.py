@@ -1636,6 +1636,27 @@ def action_bind_bars(inp, settings):
     }}
 
 
+# The words the screen puts beside a dropped intent's side.
+_SIDE_WORD = {"buy": "매수", "sell": "매도"}
+
+
+def _decision_row(strategy, symbol, mode, verdict, price, pos, notes, **detail):
+    """One line of what a pass decided about one trade — the shape `store.record_decisions` keeps.
+
+    `pnl_pct` is the price this pass used against the average it saw, so a hold reads with the
+    number it was held at. Empty facts are left out of `detail` rather than stored as nulls.
+    """
+    qty = eng._num((pos or {}).get("qty"))
+    avg = eng._num((pos or {}).get("avg_price"))
+    price = eng._num(price)
+    return {"strategy_id": strategy.get("id"), "symbol": symbol, "mode": mode,
+            "verdict": verdict, "price": price if price > 0 else None, "qty": qty,
+            "avg_price": avg if avg > 0 else None,
+            "pnl_pct": ((price - avg) / avg * 100.0) if qty > 0 and avg > 0 and price > 0 else None,
+            "notes": list(notes or []),
+            "detail": {k: v for k, v in detail.items() if v not in (None, "", [], {})}}
+
+
 def action_cycle(inp, settings):
     symbol = inp.get("symbol")
     strategies = pick_strategies(settings, symbol=symbol, strategy_id=inp.get("strategyId"))
@@ -1777,6 +1798,10 @@ def action_cycle(inp, settings):
                 outside.append(s.get("id"))
         strategies = keep
     results, all_intents, ctxs = [], [], {}
+    # What this pass decided about each trade, keyed (strategy, symbol) — every exit below leaves
+    # one, including the ones that order nothing, and the order loop further down settles whether
+    # a decision to trade became an order. Written once, at the end.
+    decisions = {}
 
     for s in strategies:
         if s.get("id") in tripped_trades:
@@ -1804,6 +1829,9 @@ def action_cycle(inp, settings):
         if s_price <= 0:
             results.append({"strategyId": s["id"], "symbol": sym,
                             "error": "no price for this symbol — its candles did not arrive"})
+            decisions[(s["id"], sym)] = _decision_row(
+                s, sym, mode_hint, "error", 0.0, None,
+                [{"code": "no_price", "text": "이 종목의 가격이 오지 않아 판단하지 않음 — 봉·시세 단계를 확인"}])
             continue
         sides = eng.fired_sides(sig)
         cycle_id = eng.cycle_id_for(s, sig, now, inp.get("cycleId"))
@@ -1820,6 +1848,9 @@ def action_cycle(inp, settings):
             store.log_event(conn, "refused", {"why": mode_refusal},
                             strategy_id=s["id"], symbol=sym)
             results.append({"strategyId": s["id"], "symbol": sym, "refused": mode_refusal})
+            decisions[(s["id"], sym)] = _decision_row(
+                s, sym, mode_hint, "blocked", s_price, None,
+                [{"code": "refused", "text": mode_refusal}])
             continue
         # Resolved before anything is read or written, because it decides which ledger this
         # strategy's rows belong to.
@@ -1864,6 +1895,11 @@ def action_cycle(inp, settings):
         if float(pos.get("qty") or 0) <= 0 and store.cycle_already_ran(
                 sconn, s["id"], cycle_id, broker, account, sym):
             results.append({"strategyId": s["id"], "cycleId": cycle_id, "skipped": "already ran"})
+            decisions[(s["id"], sym)] = _decision_row(
+                s, sym, mode, "hold", s_price, pos,
+                [{"code": "already_ran",
+                  "text": f"이 창({cycle_id})에서 이미 진입 주문을 냄 — 같은 창에서 다시 사지 않음"}],
+                cycleId=cycle_id)
             continue
         # A scalping rule reacts to the arrival itself: the screen said this symbol qualifies now,
         # and that is the entry. Waiting for a separate indicator to agree would mean the condition
@@ -1888,7 +1924,21 @@ def action_cycle(inp, settings):
         except ValueError as e:
             store.log_event(conn, "error", str(e), strategy_id=s["id"], symbol=sym)
             results.append({"strategyId": s["id"], "error": str(e)})
+            decisions[(s["id"], sym)] = _decision_row(
+                s, sym, mode, "error", s_price, pos, [{"code": "error", "text": str(e)}])
             continue
+        # What the rule decided, before the gates have their say: an order-to-be is `buy`/`sell`
+        # until the order loop confirms or refuses it; a zero-sized intent carrying a reason is a
+        # rule that fired and could not trade.
+        sized = [i for i in intents if eng._num(i.get("qty")) > 0]
+        decisions[(s["id"], sym)] = _decision_row(
+            s, sym, mode,
+            ("sell" if any(i.get("side") == "sell" for i in sized)
+             else "buy" if sized else "blocked" if intents else "hold"),
+            s_price, pos,
+            ctx.get("notes") or [{"code": "quiet", "text": "규칙이 이번 판단에서 할 일을 내놓지 않음"}],
+            cycleId=cycle_id, bar=eng.signal_payload(sig).get("lastClosedBarDate"),
+            marketNow=(market_now.strftime("%Y-%m-%d %H:%M %Z").strip() if market_now else None))
         # The venue's clock, checked here rather than in the schedule: the same job carries the
         # bookkeeping — reconciling, collecting unfilled orders, checking stops — and that has to
         # keep running after the close or a closing-auction fill never reaches the ledger. So the
@@ -1906,6 +1956,8 @@ def action_cycle(inp, settings):
                                     strategy_id=s["id"], symbol=sym)
                 results.append({"strategyId": s["id"], "symbol": sym, "sessionClosed": closed,
                                 "dropped": len(intents)})
+                decisions[(s["id"], sym)]["verdict"] = "blocked"
+                decisions[(s["id"], sym)]["notes"].append({"code": "session", "text": closed})
                 continue
         for i in intents:
             i.update({"broker": broker, "account": account, "symbol": sym,
@@ -1918,6 +1970,17 @@ def action_cycle(inp, settings):
 
     # Offsetting pairs are settled in the ledger before anything reaches an order.
     transfers, remaining = eng.match_internal_transfers(all_intents)
+    moved = set()
+    for t in transfers:
+        for (sid, _sym), d in decisions.items():
+            if sid == t["from_strategy"]:
+                d["notes"].append({"code": "transfer",
+                                   "text": f"{eng._px(t['qty'])} 을 {t['to_strategy']} 에 내부 이전 — 주문 없음"})
+                moved.add(sid)
+            elif sid == t["to_strategy"]:
+                d["notes"].append({"code": "transfer",
+                                   "text": f"{t['from_strategy']} 에서 {eng._px(t['qty'])} 내부 이전 — 주문 없음"})
+                moved.add(sid)
     for t in transfers:
         ref = ctxs[t["from_strategy"]]["strategy"]
         store.record_transfer(
@@ -1928,6 +1991,12 @@ def action_cycle(inp, settings):
             fee_in_cost=settings.get("feeInCost", True))
 
     placed, dropped_all, calls = [], [], []
+    ordered = set()  # (strategy, symbol, side) that reached an order this pass
+
+    def _told(sid, sym, code, text):
+        d = decisions.get((sid, sym))
+        if d is not None:
+            d["notes"].append({"code": code, "text": text})
 
     # An exit signal says "do not be long", and a resting buy is a long that has not arrived yet.
     # In a fast market the order is entry → exit → the entry fills, and the sell that should have
@@ -1967,6 +2036,10 @@ def action_cycle(inp, settings):
             store.log_event(conn, "dropped",
                             {"side": d["side"], "qty": d.get("qty"), "why": d.get("dropReason")},
                             strategy_id=s["id"], symbol=d.get("symbol"))
+            # A zero-sized intent's reason is already the rule's own note.
+            if not d.get("skip"):
+                _told(s["id"], d.get("symbol"), "dropped",
+                      f"{_SIDE_WORD.get(d['side'], d['side'])} 막힘 — {d.get('dropReason')}")
         for intent in allowed:
             key = store.order_key(s["id"], intent["symbol"], intent["side"],
                                   intent["cycleId"], intent.get("seq", 0),
@@ -1989,6 +2062,8 @@ def action_cycle(inp, settings):
                                 "side": intent["side"], "qty": intent["qty"],
                                 "skipped": "already placed in this window",
                                 "cycleId": intent["cycleId"], "seq": intent.get("seq", 0)})
+                _told(s["id"], intent["symbol"], "already_placed",
+                      f"이 창({intent['cycleId']})에서 이미 낸 주문 — 다시 내지 않음")
                 continue
             if ctx["mode"] == "dryrun":
                 # Paper fill at the intent price. Optimistic on purpose and labelled as such: a
@@ -2017,6 +2092,12 @@ def action_cycle(inp, settings):
             placed.append({"strategyId": s["id"], "side": intent["side"], "qty": intent["qty"],
                            "price": intent["price"], "mode": ctx["mode"],
                            "reason": intent.get("reason"), "orderKey": key})
+            ordered.add((s["id"], intent["symbol"], intent["side"]))
+            _dec = decisions.get((s["id"], intent["symbol"]))
+            if _dec is not None:
+                _dec["detail"].setdefault("orders", []).append(
+                    {"side": intent["side"], "qty": intent["qty"], "price": intent["price"],
+                     "orderKey": key})
 
     # A limit order that never fills is the ordinary case, not an error: the price is the signal
     # bar's close and the market has moved on. Left alone it holds the money and blocks the next
@@ -2039,10 +2120,31 @@ def action_cycle(inp, settings):
     abandoned = _abandon_stale_orders(conn, settings, strategies, inp.get("openOrders"), calls,
                                       marks)
 
+    # A decision to trade that reached no order was stopped on the way — by a gate, by an order
+    # this window already placed — unless an internal transfer carried it out instead.
+    for (sid, dsym), d in decisions.items():
+        if d["verdict"] not in ("buy", "sell"):
+            continue
+        sent = {side for (a, b, side) in ordered if a == sid and b == dsym}
+        if sent:
+            d["verdict"] = "sell" if "sell" in sent else "buy"
+        elif sid not in moved:
+            d["verdict"] = "blocked"
+    books = {}
+    for d in decisions.values():
+        books.setdefault("dryrun" if d["mode"] == "dryrun" else "live", []).append(d)
+    for book, rows in books.items():
+        store.record_decisions(store_for(book), rows)
+
     positions = [r for c in conns.values() for r in store.read_positions(c)]
     for c in conns.values():
         c.close()
     return {"success": True, "data": {
+        # First, so the one line a log keeps of this answer is the one that says what was decided.
+        "decisions": [{"strategyId": d["strategy_id"], "symbol": d["symbol"],
+                       "verdict": d["verdict"],
+                       "why": " · ".join(n["text"] for n in d["notes"] if n.get("text"))}
+                      for d in decisions.values()] or None,
         "mode": mode_hint, "unattended": unattended(), "tripped": tripped,
         "ran": len(strategies), "price": price, "firedSides": sorted(sides),
         # Named rather than dropped quietly: a strategy that sat out because this cycle was not
@@ -2721,6 +2823,10 @@ def action_read(inp, settings, which):
     if which in ("ledger", "report"):
         data["ledger"] = store.read_ledger(conn, limit)
         data["transfers"] = store.read_transfers(conn, limit)
+    if which in ("decisions", "report"):
+        # Per trade: `limit` rows of each, so an hourly trade is not crowded out by a five-minute one.
+        data["decisions"] = store.read_decisions(conn, per_trade=limit,
+                                                 strategy_id=inp.get("strategyId") or None)
     if which == "report":
         data["events"] = store.read_events(conn, limit)
         # The screen, from its own database. Promising these would show up in the ledger's event
@@ -6220,6 +6326,39 @@ def action_selftest():
                    "want": ["p-fast"], "got": [x["strategyId"] for x in tc["placed"]],
                    "ok": [x["strategyId"] for x in tc["placed"]] == ["p-fast"]})
 
+    # ── Each pass says what it decided and why (2026-10-01) ─────────────────────────────────────
+    # The first TQQQ night held six times and nothing said so: the ledger records what was traded,
+    # and a hold traded nothing. Now every trade in a pass leaves one line — the one that bought
+    # and the one that sat out alike.
+    verdicts = {d["strategyId"]: d["verdict"] for d in (tc.get("decisions") or [])}
+    checks.append({"name": "every trade in a pass leaves a decision, the quiet one included",
+                   "want": {"p-fast": "buy", "p-slow": "hold"}, "got": verdicts,
+                   "ok": verdicts == {"p-fast": "buy", "p-slow": "hold"}})
+    checks.append({"name": "and the answer leads with them, so a clipped log line still says it",
+                   "want": "decisions", "got": next(iter(tc), None),
+                   "ok": next(iter(tc), None) == "decisions"})
+    read_back = action_read({"limit": 5}, two, "decisions")["data"].get("decisions") or []
+    slow = next((r for r in read_back if r["strategy_id"] == "p-slow"), {})
+    checks.append({"name": "a hold is stored with the price it was held at and the rule it read",
+                   "want": ["hold", "no_signal", True, True],
+                   "got": [slow.get("verdict"), slow.get("codes"), slow.get("price") == 10.0,
+                           "ma5 > ma20" in str(slow.get("why")) and "d4" in str(slow.get("why"))],
+                   "ok": slow.get("verdict") == "hold" and slow.get("codes") == "no_signal"
+                         and slow.get("price") == 10.0 and "ma5 > ma20" in str(slow.get("why"))
+                         and "d4" in str(slow.get("why"))})
+    fast = next((r for r in read_back if r["strategy_id"] == "p-fast"), {})
+    checks.append({"name": "and a buy carries the order it became",
+                   "want": ["buy", "rule_buy", "buy"],
+                   "got": [fast.get("verdict"), fast.get("codes"),
+                           ((fast.get("detail") or {}).get("orders") or [{}])[0].get("side")],
+                   "ok": fast.get("verdict") == "buy" and fast.get("codes") == "rule_buy"
+                         and ((fast.get("detail") or {}).get("orders") or [{}])[0].get("side")
+                         == "buy"})
+    in_report = {r["strategy_id"] for r in
+                 (action_read({"limit": 5}, two, "report")["data"].get("decisions") or [])}
+    checks.append({"name": "the report carries them too", "want": ["p-fast", "p-slow"],
+                   "got": sorted(in_report), "ok": {"p-fast", "p-slow"} <= in_report})
+
     # ── Infinite-buy on a broker that trades fractions (2026-09-30, TQQQ via Toss) ──────────────
     # The rule half of v1 lives here — one tranche when the price is under the average, inside a
     # time-of-day window — and the other half arrives from outside and is adopted into the book.
@@ -6274,6 +6413,60 @@ def action_selftest():
                           "market_now": at_1450, "settings": {}, "strategy": ib})
     checks.append({"name": "but one fed from outside waits for its holding to be adopted",
                    "want": [], "got": waiting, "ok": waiting == []})
+
+    # What each of those passes says about itself — the code is what folds identical holds on the
+    # screen, so it is the part that has to stay put.
+    def ib_said(pos, price, at, strategy=ib):
+        c = {"position": pos, "price": price, "sides": set(), "market_now": at,
+             "settings": {}, "strategy": strategy}
+        eng.decide(strategy, c)
+        return [n["code"] for n in c.get("notes") or []]
+
+    said = {
+        "outside the window": ib_said(held, 78.0, at_1350),
+        "inside, above the average": ib_said(held, 78.0, at_1450),
+        "inside, under the average": ib_said(held, 76.0, at_1450),
+        "at the target": ib_said(held, 84.8, at_1350),
+        "sold out today": ib_said({"qty": 0.05, "avg_price": 90.0, "exit_ms": 1,
+                                   "own_buys_since_exit": 0, "exit_day": "2026-09-30"},
+                                  85.0, at_1450),
+        "waiting to be fed": ib_said({"qty": 0.0, "avg_price": 0.0}, 76.0, at_1450,
+                                     {**ib, "adoptExternal": True}),
+    }
+    want_said = {
+        "outside the window": ["below_target", "window"],
+        "inside, above the average": ["below_target", "above_average"],
+        "inside, under the average": ["below_target", "split"],
+        "at the target": ["target"],
+        "sold out today": ["below_target", "sold_today"],
+        "waiting to be fed": ["awaiting_holding"],
+    }
+    checks.append({"name": "an infinite-buy pass names the gate that held it, and why it did not sell",
+                   "want": want_said, "got": said, "ok": said == want_said})
+    c_hold = {"position": held, "price": 78.0, "sides": set(), "market_now": at_1350,
+              "settings": {}, "strategy": ib}
+    eng.decide(ib, c_hold)
+    hold_text = " · ".join(n["text"] for n in c_hold["notes"])
+    checks.append({"name": "with the numbers a person checks it against — return, target price, window",
+                   "want": ["+1.30%", "84.7", "13:50 < 14:45"], "got": hold_text,
+                   "ok": all(x in hold_text for x in ("+1.30%", "84.7", "13:50 < 14:45"))})
+
+    rs = {"id": "r", "kind": "rules", "exits": {"stopLossPct": 12.0},
+          "money": {"perOrderKrw": 10000, "lotSize": 1e-08},
+          "rules": [{"side": "buy", "label": "ema9x21 (60일선 위)",
+                     "when": [{"a": "ema9", "op": "crossUp", "b": "ema21"}]},
+                    {"side": "sell", "when": [{"a": "close", "op": "crossDown", "b": "ma60"}]}]}
+    rc = {"position": {"qty": 0.001, "avg_price": 100.0}, "price": 97.0, "sides": set(),
+          "signal": {"firedOnLastClosedBar": [], "lastClosedBarDate": "2026-09-30 21:00"}}
+    eng.decide(rs, rc)
+    rtext = " · ".join(n["text"] for n in rc.get("notes") or [])
+    checks.append({"name": "a quiet rule pass says how far the stop is and which rules it read",
+                   "want": [["stop_room", "no_signal"], "ema9x21 (60일선 위)", "close crossDown ma60",
+                            "9.00%p", "2026-09-30 21:00"],
+                   "got": [[n["code"] for n in rc.get("notes") or []], rtext],
+                   "ok": [n["code"] for n in rc.get("notes") or []] == ["stop_room", "no_signal"]
+                         and all(x in rtext for x in ("ema9x21 (60일선 위)", "close crossDown ma60",
+                                                      "9.00%p", "2026-09-30 21:00"))})
 
     qp = _quote_prices({"count": 1, "results": [{"success": True, "data": {"result": [
         {"symbol": "TQQQ", "lastPrice": "77.51", "currency": "USD"}]}}]})
@@ -6335,6 +6528,25 @@ def action_selftest():
                            cm3["ownBuysSinceExit"]],
                    "ok": cm0["exitMs"] is None and cm1["exitMs"] and cm1["ownBuysSinceExit"] == 0
                          and cm2["ownBuysSinceExit"] == 0 and cm3["ownBuysSinceExit"] == 1})
+
+    # A busy loop must not crowd a quiet one out of the read, and a month is what is kept.
+    one = {"verdict": "hold", "notes": [{"code": "q", "text": "held"}]}
+    store.record_decisions(iconn, [{**one, "strategy_id": "busy"} for _ in range(3)]
+                           + [{**one, "strategy_id": "quiet"}])
+    per = {}
+    for r in store.read_decisions(iconn, per_trade=2):
+        per[r["strategy_id"]] = per.get(r["strategy_id"], 0) + 1
+    checks.append({"name": "decisions are read per trade, so a five-minute loop cannot hide an hourly one",
+                   "want": {"busy": 2, "quiet": 1},
+                   "got": {k: per.get(k) for k in ("busy", "quiet")},
+                   "ok": per.get("busy") == 2 and per.get("quiet") == 1})
+    iconn.execute("INSERT INTO decisions(ts_ms,strategy_id,verdict) VALUES(?,?,?)",
+                  (store.now_ms() - (store.DECISION_KEEP_DAYS + 1) * 86400000, "aged", "hold"))
+    iconn.commit()
+    store.record_decisions(iconn, [{**one, "strategy_id": "quiet"}])
+    kept = {r["strategy_id"] for r in store.read_decisions(iconn)}
+    checks.append({"name": "and one older than the keep window goes when the next pass lands",
+                   "want": False, "got": "aged" in kept, "ok": "aged" not in kept and "quiet" in kept})
     iconn.close()
 
     failed = [c for c in checks if not c["ok"]]
@@ -6433,7 +6645,7 @@ def main():
             return out(action_reconcile(inp, settings))
         if action == "record_orders":
             return out(action_record_orders(inp, settings))
-        if action in ("report", "positions", "orders", "ledger", "pnl"):
+        if action in ("report", "positions", "orders", "ledger", "pnl", "decisions"):
             return out(action_read(inp, settings, action))
         if action == "resume":
             return out(action_resume(settings))

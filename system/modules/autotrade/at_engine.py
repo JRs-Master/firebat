@@ -611,6 +611,60 @@ def ladder_sell_qty(ladder, change_pct, qty_held, peak_qty, lot, age_days=None):
     return floor_to_lot(want, lot), idx
 
 
+def note(ctx, code, text):
+    """Say why this pass decided what it did — the branch that returned, in words.
+
+    A pass that orders nothing used to leave nothing behind: an hourly loop that held six times
+    looked exactly like one that never got as far as deciding (2026-10-01, the first TQQQ night,
+    where only the order-less ledger could be read). `code` is stable, so a run of identical
+    holds can be folded into one line; `text` carries this pass's own numbers.
+    """
+    ctx.setdefault("notes", []).append({"code": code, "text": text})
+
+
+def _px(v):
+    """A price the way a person reads it: whole won, a few decimals for dollars, a coin's digits."""
+    v = _num(v)
+    if abs(v) >= 1000:
+        return f"{v:,.0f}"
+    if abs(v) >= 1:
+        return f"{v:,.4f}".rstrip("0").rstrip(".")
+    return f"{v:.6g}"
+
+
+def _cash(ctx, v):
+    """An amount of money in the trade's own currency, when the pass was told which it is."""
+    cur = str((ctx or {}).get("currency") or "").upper()
+    if cur == "USD":
+        return f"${_px(v)}"
+    if cur == "KRW":
+        return f"{_px(v)}원"
+    return _px(v)
+
+
+def _rule_text(rule):
+    """A rule by its label, or by its conditions when it has none."""
+    label = str((rule or {}).get("label") or "").strip()
+    if label:
+        return label
+    parts = [f"{c.get('a')} {c.get('op')} {c.get('b')}" for c in (rule or {}).get("when") or []
+             if isinstance(c, dict)]
+    return " & ".join(parts) or "?"
+
+
+def _quiet_rules(strategy, ctx):
+    """What a rule strategy says when no rule fired: which bar was read, and which rules it held."""
+    bar = signal_payload(ctx.get("signal")).get("lastClosedBarDate")
+    rules = [r for r in strategy.get("rules") or [] if isinstance(r, dict)]
+    said = []
+    for side, word in (("buy", "매수"), ("sell", "매도")):
+        mine = [f"「{_rule_text(r)}」" for r in rules if str(r.get("side") or "").lower() == side]
+        if mine:
+            said.append(f"{word} {' / '.join(mine)}")
+    head = f"닫힌 봉 {bar} 에서 발화한 규칙 없음" if bar else "발화한 규칙 없음"
+    return head + (f" — {' · '.join(said)} 불충족" if said else "")
+
+
 def strategy_rules(strategy, ctx):
     """Straight rule following: ta says buy, we buy; ta says sell, we sell what this strategy holds.
 
@@ -633,6 +687,7 @@ def strategy_rules(strategy, ctx):
         if stop > 0 and change_pct <= -stop:
             # A stop takes all of it. The ladder is for collecting a gain in pieces, not for
             # holding on to part of a loss.
+            note(ctx, "stop", f"수익률 {change_pct:+.2f}% ≤ 손절 -{stop:g}% — 전량 매도")
             return [{"side": "sell", "qty": qty_held, "price": price, "reason": "stop"}]
         ladder = exit_ladder(exits)
         part, rung = ladder_sell_qty(ladder, change_pct, qty_held,
@@ -640,6 +695,8 @@ def strategy_rules(strategy, ctx):
                                      money.get("lotSize", 1), age_days)
         if part > 0:
             whole = part >= qty_held - 1e-12
+            note(ctx, "take", f"수익률 {change_pct:+.2f}% — 익절 {(rung or 0) + 1}/{len(ladder)}단, "
+                              f"{'전량' if whole else '일부'} 매도")
             # The rung is the order's sequence within the window. Without it the second rung to
             # fire in the same bar collides with the first on the order key and is dropped —
             # safe, but it would look like the ladder simply stopped.
@@ -652,12 +709,27 @@ def strategy_rules(strategy, ctx):
         # A position already being distributed is excluded above, where the guard lives.
         step = _scale_in_step(strategy, pos, price, anchor, age_days)
         if step:
+            note(ctx, "add", f"진입가 {_px(anchor)} 대비 {(anchor - price) / anchor * 100.0:.2f}% "
+                             f"하락 — 추가 매수 {step.get('rung')}/{step.get('rungs')}단")
             return [step]
+        # Nothing fired on the position itself; how far the lines are is what "held" means here.
+        if stop > 0:
+            note(ctx, "stop_room", f"수익률 {change_pct:+.2f}% — 손절 -{stop:g}%까지 "
+                                   f"{change_pct + stop:.2f}%p")
+        peak = _num(pos.get("peak_qty")) or qty_held
+        done = max(0.0, 1.0 - qty_held / peak) if peak > 0 else 0.0
+        nxt = next((r for r in ladder if r.get("filled", 0) > done + 1e-9
+                    and r.get("move") is not None), None)
+        if nxt:
+            note(ctx, "take_room", f"다음 익절 +{nxt['move']:g}% (목표가 "
+                                   f"{_px(avg * (1 + nxt['move'] / 100.0))}) 미도달")
 
     sides = ctx["sides"]
     if "sell" in sides and qty_held > 0:
+        note(ctx, "rule_sell", "매도 규칙 발화 — 전량 매도")
         intents.append({"side": "sell", "qty": qty_held, "price": price, "reason": "rule"})
     elif "buy" in sides and _ladder_started(strategy, pos):
+        note(ctx, "ladder_started", "매수 규칙 발화 — 분할청산 중인 포지션이라 추가 매수 안 함")
         # Distributing and accumulating at the same time is not a strategy, it is two of them
         # arguing. And it does not merely look odd: the ladder measures its rungs against the
         # size the position reached, so a later buy re-bases it, the first rung reads as unfired,
@@ -675,8 +747,14 @@ def strategy_rules(strategy, ctx):
             room = max(0.0, cap - qty_held * price)
             want = min(want, floor_to_lot(room / price, lot) if price > 0 else 0)
         if want > 0:
+            note(ctx, "rule_buy", "매수 규칙 발화 — 매수")
             intents.append({"side": "buy", "qty": want, "price": price, "reason": "rule"})
         else:
+            at_cap = cap > 0 and price > 0 and floor_to_lot(
+                max(0.0, cap - qty_held * price) / price, lot) <= 0
+            note(ctx, "at_cap" if at_cap else "below_lot",
+                 "매수 규칙 발화 — 이미 한도(maxPosition)만큼 보유" if at_cap
+                 else "매수 규칙 발화 — 1회 금액이 최소 단위에 못 미침")
             # A zero that vanishes reads as "the rule did not fire". It did fire; the money did
             # not reach one tradeable unit, which is a settings problem and has to say so.
             intents.append({"side": "buy", "qty": 0, "price": price, "reason": "rule",
@@ -686,6 +764,10 @@ def strategy_rules(strategy, ctx):
                                      f"{money_of(money, 'perOrder', 'perOrderKrw') or money_of(money, 'budget', 'budgetKrw')}"
                                      + (" · 한도(maxPosition)에 이미 닿았을 수도 있습니다"
                                         if cap > 0 else ""))})
+    elif "sell" in sides:
+        note(ctx, "sell_flat", "매도 규칙 발화 — 보유가 없어 팔 것 없음")
+    else:
+        note(ctx, "no_signal", _quiet_rules(strategy, ctx))
     return intents
 
 
@@ -714,10 +796,13 @@ def _buy_window_refusal(rules, ctx):
     if at is None:
         return "매수 시간창을 판정할 시장 시각이 없습니다 — 매매의 market 과 tradingHours 의 zone 을 확인하세요"
     minutes = at.hour * 60 + at.minute
+    # The venue's zone beside its hour: the screen shows when a pass ran in the operator's clock,
+    # and "09:50 < 14:45" under a 22:50 Seoul row reads as a contradiction without it.
+    zone = f" {at.tzname()}" if at.tzinfo is not None and at.tzname() else ""
     if frm is not None and minutes < frm:
-        return f"매수 시간창 전 ({at.strftime('%H:%M')} < {rules.get('buyFrom')})"
+        return f"매수 시간창 전 ({at.strftime('%H:%M')} < {rules.get('buyFrom')}{zone})"
     if until is not None and minutes >= until:
-        return f"매수 시간창 지남 ({at.strftime('%H:%M')} ≥ {rules.get('buyUntil')})"
+        return f"매수 시간창 지남 ({at.strftime('%H:%M')} ≥ {rules.get('buyUntil')}{zone})"
     return None
 
 
@@ -751,17 +836,23 @@ def strategy_infinite_buy(strategy, ctx):
     target_pct = _num((strategy.get("exits") or {}).get("takeProfitPct"), 10.0)
 
     if qty_held > 0 and avg > 0 and price > 0:
-        if (price - avg) / avg * 100.0 >= target_pct:
+        change = (price - avg) / avg * 100.0
+        if change >= target_pct:
+            note(ctx, "target", f"수익률 {change:+.2f}% ≥ 목표 +{target_pct:g}% — 전량 매도")
             return [{"side": "sell", "qty": qty_held, "price": price, "reason": "target"}]
+        note(ctx, "below_target", f"수익률 {change:+.2f}% — 목표 +{target_pct:g}% (목표가 "
+                                  f"{_px(avg * (1 + target_pct / 100.0))}) 미만이라 매도 안 함")
 
     invested = qty_held * avg
     if budget > 0 and invested >= budget - 1:
+        note(ctx, "budget_full", f"예산 소진 ({_cash(ctx, invested)} / {_cash(ctx, budget)}) — 매수 안 함")
         return []
 
     at = ctx.get("market_now")
     today = at.date().isoformat() if at is not None else None
     exit_day = pos.get("exit_day")
     if exit_day and today and exit_day == today:
+        note(ctx, "sold_today", "오늘 전량 매도함 — 새 회차는 다음 거래일부터")
         return []  # sold out today — the next round starts tomorrow
     # A new cycle: this strategy sold everything and has not bought since, or it holds nothing and
     # never has. Either way the first round is bought regardless of the average — except that a
@@ -772,22 +863,42 @@ def strategy_infinite_buy(strategy, ctx):
                        and strategy.get("adoptExternal") is not True))
 
     when = rules["buyWhen"]
+    # The window first among the buy gates: every one of them returns nothing, so the order changes
+    # no outcome — only which reason is written down, and outside the window the time of day is
+    # the reason whatever the price is doing.
+    closed = _buy_window_refusal(rules, ctx)
+    if closed:
+        note(ctx, "window", f"{closed} — 매수 안 함")
+        return []
     if when == "signal" and "buy" not in ctx["sides"]:
+        note(ctx, "no_buy_signal", "매수 신호 없음 (buyWhen=signal)")
         return []
     if when == "belowAverage" and not first_round:
         if not (qty_held > 0 and avg > 0 and 0 < price < avg):
+            if qty_held > 0 and avg > 0:
+                note(ctx, "above_average", f"현재가 {_px(price)} ≥ 평단 {_px(avg)} — "
+                                           "평단 아래에서만 매수")
+            else:
+                note(ctx, "awaiting_holding", "보유 없음 — 바깥 적립분이 편입되면 시작 "
+                                              "(adoptExternal)")
             return []
-    closed = _buy_window_refusal(rules, ctx)
-    if closed:
-        return []
     if price <= 0 or per_order <= 0:
+        note(ctx, "no_money", "1회 금액(perOrder·budget)이 없어 매수 안 함")
         return []
     room = budget - invested if budget > 0 else per_order
-    qty = floor_to_lot(min(per_order, room) / price, money.get("lotSize", 1))
+    spend = min(per_order, room)
+    qty = floor_to_lot(spend / price, money.get("lotSize", 1))
     if qty <= 0:
+        note(ctx, "below_lot", f"1회 금액 {_cash(ctx, spend)} 으로 최소 단위를 못 삼")
         return []
-    intent = {"side": "buy", "qty": qty, "price": price,
-              "reason": "first" if first_round and when == "belowAverage" else "split"}
+    reason = "first" if first_round and when == "belowAverage" else "split"
+    if reason == "first":
+        note(ctx, "first", f"새 회차 첫 매수 — 평단과 무관하게 {_cash(ctx, spend)} 매수")
+    elif when == "belowAverage":
+        note(ctx, "split", f"현재가 {_px(price)} < 평단 {_px(avg)} — {_cash(ctx, spend)} 매수")
+    else:
+        note(ctx, "split", f"{_cash(ctx, spend)} 매수")
+    intent = {"side": "buy", "qty": qty, "price": price, "reason": reason}
     # One buy per market day when buys are held to a window: a re-run of the same cycle, or two
     # runs inside the window, land on the same order key instead of buying twice.
     if today and (rules.get("buyFrom") or rules.get("buyUntil")):
@@ -904,6 +1015,7 @@ def decide(strategy, ctx):
     if not any(i.get("side") == "sell" for i in out):
         why = holding_exit(strategy, ctx)
         if why:
+            note(ctx, "holding", why)
             out.append({"side": "sell", "qty": _num((ctx.get("position") or {}).get("qty")),
                         "price": _num(ctx.get("price")), "reason": why,
                         "strategyId": strategy["id"], "seq": len(out)})

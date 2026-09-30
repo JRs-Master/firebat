@@ -169,6 +169,20 @@ CREATE TABLE IF NOT EXISTS events(
   kind TEXT NOT NULL, strategy_id TEXT, symbol TEXT, detail TEXT);
 CREATE INDEX IF NOT EXISTS events_ts ON events(ts_ms);
 
+-- What each pass decided about each trade and why, the passes that ordered nothing included. An
+-- order row says a rule acted; this says it looked, at what price, and which gate held it. Its
+-- own table because a five-minute loop writes one per trade per pass, and in `events` that would
+-- bury the refusals and halts a person has to see. Kept by age (DECISION_KEEP_DAYS), not
+-- append-only: it is the reasoning beside the money, not the money.
+CREATE TABLE IF NOT EXISTS decisions(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts_ms INTEGER NOT NULL,
+  strategy_id TEXT NOT NULL, symbol TEXT, mode TEXT,
+  verdict TEXT NOT NULL,
+  price REAL, qty REAL, avg_price REAL, pnl_pct REAL,
+  codes TEXT, why TEXT, detail TEXT);
+CREATE INDEX IF NOT EXISTS decisions_trade ON decisions(strategy_id, id);
+CREATE INDEX IF NOT EXISTS decisions_ts ON decisions(ts_ms);
+
 -- Request/response pairs kept verbatim so the order acknowledgement schema can be read off real
 -- traffic later instead of guessed at now.
 CREATE TABLE IF NOT EXISTS api_log(
@@ -843,6 +857,60 @@ def read_ledger(conn, limit=200):
 def read_events(conn, limit=50):
     return [dict(r) for r in conn.execute(
         "SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))]
+
+
+# A month of reasoning. What this table answers — did the rule look, what did it see, which gate
+# held it — is asked about the last nights and weeks; the orders and the ledger are the permanent
+# record. A five-minute loop writes 288 rows a day per trade, so this is ~9k rows for the busiest.
+DECISION_KEEP_DAYS = 30
+
+
+def record_decisions(conn, rows):
+    """Append one pass's decisions and drop the ones that have aged out.
+
+    A row: `strategy_id`, `symbol`, `mode`, `verdict` (buy/sell/hold/blocked/error), the price the
+    pass used, the position it saw (`qty`, `avg_price`, `pnl_pct` = price against that average),
+    `notes` [{code, text}] in the order the branches spoke, and `detail` (small facts: bar, clock,
+    window). `codes` keeps the codes alone so identical holds fold into one line on the screen.
+    """
+    now = now_ms()
+    for r in rows:
+        notes = [n for n in (r.get("notes") or []) if isinstance(n, dict)]
+        conn.execute(
+            "INSERT INTO decisions(ts_ms,strategy_id,symbol,mode,verdict,price,qty,avg_price,"
+            "pnl_pct,codes,why,detail) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (now, r["strategy_id"], r.get("symbol"), r.get("mode"), r["verdict"],
+             r.get("price"), r.get("qty"), r.get("avg_price"), r.get("pnl_pct"),
+             ",".join(str(n.get("code") or "") for n in notes),
+             " · ".join(str(n.get("text")) for n in notes if n.get("text")),
+             json.dumps(r.get("detail") or {}, ensure_ascii=False)))
+    conn.execute("DELETE FROM decisions WHERE ts_ms < ?",
+                 (now - DECISION_KEEP_DAYS * 86400000,))
+    conn.commit()
+
+
+def read_decisions(conn, per_trade=50, strategy_id=None):
+    """The latest decisions of each trade, newest first.
+
+    Per trade rather than overall: a coin loop decides every five minutes and an hourly stock loop
+    six times a day, so the last hundred rows overall can hold nothing of the hourly one — exactly
+    the trade someone opens this to check.
+    """
+    ids = ([strategy_id] if strategy_id else
+           [r[0] for r in conn.execute("SELECT DISTINCT strategy_id FROM decisions")])
+    out = []
+    for sid in ids:
+        for r in conn.execute(
+                "SELECT * FROM decisions WHERE strategy_id=? ORDER BY id DESC LIMIT ?",
+                (sid, int(per_trade))):
+            row = dict(r)
+            try:
+                row["detail"] = json.loads(row.get("detail") or "{}")
+            except (TypeError, ValueError):
+                pass
+            out.append(row)
+    out.sort(key=lambda r: r["id"], reverse=True)
+    return out
 
 
 def read_transfers(conn, limit=50):

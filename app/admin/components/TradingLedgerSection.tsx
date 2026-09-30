@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Autotrade ledger viewer — positions, orders, fills, universe, events.
+ * Autotrade ledger viewer — positions, decisions, orders, fills, universe, events.
  *
  * The module already answers all of this (`report`); until now the only way to read it was to open
  * the sqlite on the server, which is what everyone actually did. The four tables are the four
@@ -37,6 +37,10 @@ interface Report {
   orders?: Row[];
   ledger?: Row[];
   events?: Row[];
+  /** What each pass decided about each trade and why, the passes that ordered nothing included.
+   *  Newest first and `limit` rows per trade, so an hourly trade is not crowded out by a
+   *  five-minute one. */
+  decisions?: Row[];
   transfers?: Row[];
   /** The screen, from the universe store — a different database, so it is fetched and shown
    *  separately rather than merged into the trading events. */
@@ -96,6 +100,29 @@ function tone(v: any): string {
   const n = Number(v);
   if (!Number.isFinite(n) || n === 0) return 'text-slate-500';
   return n > 0 ? 'text-rose-600' : 'text-blue-600';
+}
+
+/** The verdict a pass reached, as the screen says it. The two sides keep the Korean market colours
+ *  (buy red, sell blue); amber is a decision a gate stopped; a hold is quiet, because most passes
+ *  are holds. */
+const VERDICT: Record<string, { label: string; cls: string }> = {
+  buy: { label: '매수', cls: 'bg-rose-50 text-rose-700' },
+  sell: { label: '매도', cls: 'bg-blue-50 text-blue-700' },
+  hold: { label: '유지', cls: 'bg-slate-100 text-slate-600' },
+  blocked: { label: '막힘', cls: 'bg-amber-50 text-amber-700' },
+  error: { label: '오류', cls: 'bg-slate-700 text-white' },
+};
+
+function Verdict({ v }: { v: string }) {
+  const m = VERDICT[v] ?? { label: v, cls: 'bg-slate-100 text-slate-600' };
+  return <span className={`inline-block rounded px-1.5 py-0.5 font-bold ${m.cls}`}>{m.label}</span>;
+}
+
+/** Return against the average, signed — the sign is what the reader is looking for. */
+function pct(v: any): string {
+  const n = Number(v);
+  if (v == null || !Number.isFinite(n)) return '—';
+  return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
 }
 
 const STATE_TONE: Record<string, string> = {
@@ -208,6 +235,7 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
   const orders = data?.orders ?? [];
   const ledger = data?.ledger ?? [];
   const events = data?.events ?? [];
+  const decisions = data?.decisions ?? [];
   const watchlists = Object.entries(data?.watchlists ?? {});
   const screened: Row[] = watchlists.flatMap(([trade, rows]) =>
     (rows ?? []).map(r => ({ ...r, trade })));
@@ -522,6 +550,13 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
         )}
       </Section>
 
+      {/* Why each pass did what it did, the ones that ordered nothing included. Without it an
+          hourly loop that held six times read exactly like one that never got as far as deciding
+          (2026-10-01, the first TQQQ night): orders and fills only record what was traded. */}
+      <Section title="판단 기록" count={decisions.length}>
+        <DecisionLog rows={decisions} when={when} />
+      </Section>
+
       {/* Sold out, and the row stays because it is where that strategy's realised profit lives.
           It is not a holding, so it is not listed as one. */}
       <Section title="청산 완료" count={closed.length}>
@@ -626,6 +661,103 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
           onDone={load}
         />
       )}
+    </div>
+  );
+}
+
+/** One table per trade, and a run of passes that decided the same thing for the same reasons as one
+ *  line. A coin loop holds 288 times a day for one reason; listed pass by pass that is a wall, and
+ *  the change you came to find is somewhere in it. The folded line keeps the newest pass's numbers
+ *  and opens to show every pass with its own price. */
+function DecisionLog({ rows, when }: { rows: Row[]; when: (ms: any) => string }) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  if (!rows.length) {
+    return (
+      <p className="px-1 py-3 text-[11px] text-slate-400 italic">
+        판단 기록이 아직 없습니다 — 루프가 한 번 돌면 매매마다 한 줄씩 남습니다.
+      </p>
+    );
+  }
+  const toggle = (key: string) => setOpen(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const why = (text: any) => (
+    // Reasons are sentences with numbers in them; they wrap inside their column instead of
+    // stretching the row, and the table scrolls sideways for the rest as every table here does.
+    <span className="block min-w-[16rem] max-w-[32rem] whitespace-normal">{String(text ?? '')}</span>
+  );
+  const trades = new Map<string, Row[]>();
+  for (const r of rows) {
+    const key = `${r.strategy_id}|${r.symbol ?? ''}`;
+    if (!trades.has(key)) trades.set(key, []);
+    trades.get(key)!.push(r);
+  }
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {Array.from(trades.entries()).map(([key, list]) => {
+        // Newest first, so a run is consecutive rows with the same verdict and the same reasons.
+        const runs: Row[][] = [];
+        for (const r of list) {
+          const last = runs[runs.length - 1];
+          if (last && last[0].verdict === r.verdict && last[0].codes === r.codes) last.push(r);
+          else runs.push([r]);
+        }
+        const body: any[][] = [];
+        for (const run of runs) {
+          const head = run[0];
+          const runKey = `${key}|${head.id}`;
+          const folded = run.length > 1;
+          const isOpen = open.has(runKey);
+          body.push([
+            folded ? (
+              <button
+                key="t"
+                onClick={() => toggle(runKey)}
+                className="flex items-center gap-1 text-left text-slate-700 hover:text-blue-600"
+                aria-expanded={isOpen}
+              >
+                <span className="inline-block w-3 text-center text-slate-400">{isOpen ? '▾' : '▸'}</span>
+                {when(run[run.length - 1].ts_ms)} ~ {when(head.ts_ms)} · {run.length}회
+              </button>
+            ) : when(head.ts_ms),
+            <Verdict key="v" v={String(head.verdict ?? '')} />,
+            num(head.price),
+            num(head.avg_price),
+            <span key="p" className={tone(head.pnl_pct)}>{pct(head.pnl_pct)}</span>,
+            why(head.why),
+          ]);
+          if (folded && isOpen) {
+            for (const r of run) {
+              body.push([
+                <span key="t" className="pl-4 text-slate-400">{when(r.ts_ms)}</span>,
+                '',
+                num(r.price),
+                num(r.avg_price),
+                <span key="p" className={tone(r.pnl_pct)}>{pct(r.pnl_pct)}</span>,
+                <span key="w" className="block min-w-[16rem] max-w-[32rem] whitespace-normal text-slate-500">
+                  {String(r.why ?? '')}
+                </span>,
+              ]);
+            }
+          }
+        }
+        return (
+          <div key={key} className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-baseline gap-1.5 text-[11px]">
+              <span className="font-bold text-slate-600">{String(list[0].strategy_id ?? '')}</span>
+              <span className="text-slate-400">{String(list[0].symbol ?? '')}</span>
+            </div>
+            <Table
+              maxH="max-h-64"
+              head={['시각', '판단', '가격', '평단', '수익률', '이유']}
+              empty=""
+              rows={body}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
