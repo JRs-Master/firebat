@@ -33,7 +33,8 @@ export interface EditorFieldDef {
   key: string;                       // dotted (one level) reaches nested objects
   label: string;                     // human-facing, written in the module's config
   type: 'text' | 'textarea' | 'secret' | 'number' | 'toggle' | 'select' | 'ref' | 'json' | 'rules';
-  options?: Array<{ value: string; label: string }>;
+  // `tone` colours the value where it shows on the collapsed row (`rowFields`): good / warn / muted.
+  options?: Array<{ value: string; label: string; tone?: 'good' | 'warn' | 'muted' }>;
   required?: boolean;                // empty — or outside `options` — blocks the save path
   placeholder?: string;
   span?: number;                     // grid columns (1..3); `rules` always takes the full row
@@ -44,6 +45,14 @@ export interface EditorSchema {
   fields: EditorFieldDef[];
   summary?: string[];                // keys whose values compose the collapsed row line
   newItem?: Item;
+  /** Select fields drawn on the collapsed row itself and changeable there. The value a person
+   *  reaches for most — whether a trade runs — sat inside a closed card, and the row showed only
+   *  copy and delete (2026-10-01: a trade believed stopped had run every five minutes for weeks). */
+  rowFields?: string[];
+  /** Keys a copy starts with, over the original's. A copied trade was the original with `-copy`
+   *  on its id — same account, same symbol, live — one click beside delete from a second live
+   *  trade buying on every signal. */
+  duplicateWith?: Item;
 }
 
 const OPS = ['crossUp', 'crossDown', '>', '<', '>=', '<='];
@@ -187,6 +196,32 @@ function SelectField({ item, k, label, onSet, options }: {
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </Row>
+  );
+}
+
+const TONE_CLS: Record<string, string> = {
+  good: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  warn: 'border-amber-200 bg-amber-50 text-amber-700',
+  muted: 'border-slate-200 bg-slate-100 text-slate-500',
+};
+
+/** A `rowFields` select on the collapsed row. Native, so it is as wide as its longest option
+ *  whatever is chosen — changing it moves nothing beside it; only the colour follows the value. */
+function RowSelect({ item, field, onSet }: {
+  item: Item; field: EditorFieldDef; onSet: (k: string, v: any) => void;
+}) {
+  const v = String(getKey(item, field.key) ?? '');
+  const options = field.options ?? [];
+  const known = options.some(o => o.value === v);
+  const tone = options.find(o => o.value === v)?.tone;
+  return (
+    <select value={v} aria-label={field.label} title={field.label}
+      onChange={e => onSet(field.key, e.target.value)}
+      className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        (tone && TONE_CLS[tone]) || 'border-slate-200 bg-white text-slate-600'}`}>
+      {!known && <option value={v}>{v || '—'}</option>}
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
   );
 }
 
@@ -522,7 +557,8 @@ function summaryOf(
   item: Item, kind: Kind, t: (k: string, p?: any) => string, schema?: EditorSchema | null,
 ): string {
   if (schema?.summary?.length) {
-    return schema.summary.map(k => {
+    const onRow = new Set(schema.rowFields ?? []);
+    return schema.summary.filter(k => !onRow.has(k)).map(k => {
       const v = getKey(item, k);
       if (v === undefined || v === null || v === '') return null;
       const opt = schema.fields?.find(f => f.key === k)?.options
@@ -598,6 +634,11 @@ export function StructuredListEditor({ value, onChange, kind, schema, siblings }
 
   const setItem = (i: number, next: Item) => propagate(items.map((x, j) => (j === i ? next : x)));
 
+  // Only selects can sit on the row; a key naming anything else is left in the card.
+  const rowFields = (schema?.rowFields ?? [])
+    .map(k => schema?.fields?.find(f => f.key === k))
+    .filter((f): f is EditorFieldDef => !!f && f.type === 'select');
+
   return (
     <div className="flex flex-col gap-2">
       <datalist id="sle-operands">
@@ -670,9 +711,14 @@ export function StructuredListEditor({ value, onChange, kind, schema, siblings }
                       {summaryOf(item, kind, t, schema)}
                     </span>
                   </button>
+                  {rowFields.map(f => (
+                    <RowSelect key={f.key} item={item} field={f}
+                      onSet={(k, v) => setItem(i, withKey(item, k, v))} />
+                  ))}
                   <button type="button" aria-label={t('structured.duplicate')}
                     onClick={() => propagate([...items.slice(0, i + 1),
-                      { ...item, id: `${item.id ?? 'item'}-copy` }, ...items.slice(i + 1)])}
+                      { ...item, ...(schema?.duplicateWith ?? {}), id: `${item.id ?? 'item'}-copy` },
+                      ...items.slice(i + 1)])}
                     className="text-slate-300 hover:text-blue-600 shrink-0"><Copy size={13} /></button>
                   <button type="button" aria-label={t('structured.remove')}
                     onClick={() => propagate(items.filter((_, j) => j !== i))}

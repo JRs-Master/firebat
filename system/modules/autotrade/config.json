@@ -569,6 +569,12 @@
           "strategy",
           "loop"
         ],
+        "rowFields": [
+          "state"
+        ],
+        "duplicateWith": {
+          "state": "off"
+        },
         "newItem": {
           "id": "",
           "strategy": "",
@@ -591,15 +597,18 @@
             "options": [
               {
                 "value": "",
-                "label": "가동"
+                "label": "가동",
+                "tone": "good"
               },
               {
                 "value": "pauseEntries",
-                "label": "신규진입 중지"
+                "label": "신규진입 중지",
+                "tone": "warn"
               },
               {
                 "value": "off",
-                "label": "전체 중지"
+                "label": "전체 중지",
+                "tone": "muted"
               }
             ]
           },
