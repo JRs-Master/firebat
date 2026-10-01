@@ -271,8 +271,16 @@ impl ModuleService for ModuleServiceImpl {
         let settings: serde_json::Value = serde_json::from_str(&args.settings_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("set_settings args: {e}")))?;
         if self.manager.set_settings(&args.name, &settings) {
-            // enabled 토글 또는 시크릿 설정 변경 시 AI 도구 cache 즉시 무효화.
+            // An `enabled` flip or a changed secret changes what the AI can call — drop the
+            // tool cache now rather than at its TTL.
             self.invalidate_tools_cache().await;
+            // Settings can carry schedules (`schedulesFrom` — a trade row names its loop), so a
+            // save is reconciled onto the clock the way the enable toggle is. Without it a trade
+            // set to "off" on the screen kept its loop firing until the next restart, and one
+            // added there did not run at all until then (2026-10-01, btc-trend).
+            if let Some(core) = self.core.as_ref() {
+                core.sync_module_schedules(&args.name).await;
+            }
             Ok(Response::new(ModuleSetSettingsResponse {}))
         } else {
             Err(TonicStatus::internal(crate::i18n::t(
