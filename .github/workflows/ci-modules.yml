@@ -63,6 +63,51 @@ jobs:
           done
           exit $fail
 
+      # A config can parse and still be a schema the validator refuses: a property written as its
+      # description string instead of {type, description}. The framework then rejects EVERY call to
+      # the module before it runs ("schema itself malformed"), and nothing else notices — motion's
+      # `font` sat like that from 2026-09-09 to 10-02. Every place a schema is expected must hold one.
+      - name: input and output schemas are schemas
+        run: |
+          python - <<'EOF'
+          import glob, json, sys
+
+          def bad(node, path):
+              out = []
+              if not isinstance(node, dict):
+                  return out
+              for key in ("properties", "patternProperties", "definitions", "$defs"):
+                  for name, child in (node.get(key) or {}).items():
+                      if isinstance(child, (dict, bool)):
+                          out += bad(child, f"{path}.{key}.{name}")
+                      else:
+                          out.append(f"{path}.{key}.{name} is a {type(child).__name__}, not a schema")
+              for key in ("items", "additionalProperties", "not", "contains"):
+                  child = node.get(key)
+                  kids = child if (key == "items" and isinstance(child, list)) else ([] if child is None else [child])
+                  for i, c in enumerate(kids):
+                      where = f"{path}.{key}" + (f"[{i}]" if isinstance(child, list) else "")
+                      out += bad(c, where) if isinstance(c, (dict, bool)) else [f"{where} is a {type(c).__name__}, not a schema"]
+              for key in ("anyOf", "oneOf", "allOf"):
+                  for i, c in enumerate(node.get(key) or []):
+                      where = f"{path}.{key}[{i}]"
+                      out += bad(c, where) if isinstance(c, (dict, bool)) else [f"{where} is a {type(c).__name__}, not a schema"]
+              return out
+
+          fail = 0
+          for f in sorted(glob.glob("system/modules/*/config.json")):
+              c = json.load(open(f, encoding="utf-8"))
+              for section in ("input", "output"):
+                  s = c.get(section)
+                  if s is None:
+                      continue
+                  msgs = bad(s, section) if isinstance(s, (dict, bool)) else [f"{section} is a {type(s).__name__}, not a schema"]
+                  for m in msgs:
+                      print(f"::error file={f}::{m} - the validator would reject every call to this module")
+                      fail = 1
+          sys.exit(fail)
+          EOF
+
       # The trading module carries its own assertions — ledger invariants, the exit ladder, order
       # keys, the gate. They caught three real defects the night they were written and then went
       # back to running only when asked.

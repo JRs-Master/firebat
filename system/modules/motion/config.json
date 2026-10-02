@@ -156,8 +156,12 @@
         "type": "array",
         "description": "[render] Timestamps in seconds. When present, exports still PNGs at these times INSTEAD of a video — seconds instead of minutes, use it to iterate on a scene before the final render."
       },
-      "font": "[render] 'sans' (default) or 'serif' for the whole scene. Every readable surface — ink, dim, the shadow behind text, the plate under a caption/panel/card — is derived from the declared background instead, so a light gradient needs no per-layer colours.",
-        "quality": {
+      "font": {
+        "type": "string",
+        "enum": ["sans", "serif"],
+        "description": "[render] 'sans' (default) or 'serif' for the whole scene. Every readable surface — ink, dim, the shadow behind text, the plate under a caption/panel/card — is derived from the declared background instead, so a light gradient needs no per-layer colours."
+      },
+      "quality": {
         "type": "string",
         "description": "[render] 'final' (default, 1.5x supersampled) or 'draft' (1x, roughly twice as fast) for quick previews."
       },
