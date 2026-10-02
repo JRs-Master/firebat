@@ -146,7 +146,7 @@
   {
     "id": "decisions",
     "name": "decisions — 판단 기록",
-    "description": "What each cycle decided for each trade and why, the passes that placed nothing included: the price it used, the position's average and return against it, the verdict (buy / sell / hold / blocked / error) and the reasons in the order they applied. 판단 기록 매수 안 한 이유 매도 안 한 이유 보유 유지 사유",
+    "description": "What each cycle decided for each trade and why, the passes that placed nothing included: the price it used, the position's average and return against it, the verdict (buy / sell / hold / blocked / error) and the reasons in the order they applied, and for a pass that placed orders, where each order is now — accepted, filled, withdrawn unfilled and why, refused and why. 판단 기록 매수 안 한 이유 매도 안 한 이유 보유 유지 사유",
     "domain": "",
     "params": {
       "strategyId": "one trade only (omit = every trade)",

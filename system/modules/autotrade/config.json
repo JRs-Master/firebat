@@ -407,7 +407,7 @@
   },
   "output": {
     "type": "object",
-    "description": "Shape depends on the action. cycle -> {decisions[{strategyId, symbol, verdict, why}], mode, ran, price, firedSides, placed[], dropped[], transfers[], positions[]}; reconcile -> {reconcile, ledgerDrift}; report/positions/orders/ledger/decisions -> the requested rows (decisions: ts_ms, strategy_id, symbol, verdict, price, qty, avg_price, pnl_pct, codes, why, detail) (report also returns `blocks` for a page); selftest -> {checks[], passed, failed}.",
+    "description": "Shape depends on the action. cycle -> {decisions[{strategyId, symbol, verdict, why}], mode, ran, price, firedSides, placed[], dropped[], transfers[], positions[]}; reconcile -> {reconcile, ledgerDrift}; report/positions/orders/ledger/decisions -> the requested rows (decisions: ts_ms, strategy_id, symbol, verdict, price, qty, avg_price, pnl_pct, codes, why, detail, and `orders` [{orderKey, side, state, stage, text}] — where each order the pass placed is now, read from the order book) (report also returns `blocks` for a page); selftest -> {checks[], passed, failed}.",
     "additionalProperties": true
   },
   "settings_fields": [

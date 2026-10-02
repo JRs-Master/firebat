@@ -2792,6 +2792,133 @@ def action_reconcile(inp, settings):
     }}
 
 
+def _for_a_person(seconds):
+    """A wait in the units a person says it in: 45초, 10분 3초, 1시간 5분."""
+    sec = max(0, int(round(float(seconds or 0))))
+    if sec < 60:
+        return f"{sec}초"
+    if sec < 3600:
+        m, s = divmod(sec, 60)
+        return f"{m}분" + (f" {s}초" if s else "")
+    h, rest = divmod(sec, 3600)
+    return f"{h}시간" + (f" {rest // 60}분" if rest // 60 else "")
+
+
+def _venue_said(error):
+    """The venue's own sentence out of a refusal, when one is in there."""
+    text = str(error or "").strip()
+    m = re.search(r'"message"\s*:\s*"([^"]+)"', text)
+    if m:
+        return m.group(1)
+    return re.sub(r"^TOOL_CALL 모듈 실패 \([^)]*\):\s*", "", text)[:200] or "사유 없음"
+
+
+# Events that say why an order stopped resting, and what a person calls each reason.
+_ENDINGS = ("order_abandoned", "order_expired", "entry_withdrawn")
+
+
+def _order_outcome(o, money):
+    """Where one order is now, as `{stage, text}` — the order book's state put into a sentence.
+
+    `stage` is one word a screen can colour: pending / partial / filled / canceled / rejected /
+    unknown / void. The thresholds behind a withdrawal (how long, how far) are the strategy's
+    declaration; this only says which one fired and what was measured when it did.
+    """
+    state = str(o.get("state") or "")
+    req = eng._num(o.get("req_qty"))
+    got = eng._num(o.get("filled_qty"))
+    avg = eng._num(o.get("filled_avg"))
+    filled = f"{eng._px(got)} @ {money(avg)}" if got > 0 else ""
+    trail = o.get("trail") or []
+    if state == "filled":
+        return {"stage": "filled", "text": f"체결 {filled}"}
+    if state == "partial":
+        return {"stage": "partial",
+                "text": f"일부 체결 {eng._px(got)}/{eng._px(req)} @ {money(avg)} — 나머지 대기"}
+    if state == "intent":
+        return {"stage": "pending", "text": "주문 준비 — 아직 거래소로 안 보냄"}
+    if state == "sent":
+        return {"stage": "pending", "text": "전송 — 거래소 응답 대기"}
+    if state in ("acked", "open"):
+        return {"stage": "pending", "text": "접수 — 체결 대기"}
+    if state == "rejected":
+        return {"stage": "rejected", "text": f"거절 — {_venue_said(o.get('error'))}"}
+    if state == "unknown":
+        return {"stage": "unknown",
+                "text": "확인 불가 — 거래소가 기한 안에 이 주문을 확인해 주지 않음"}
+    if state == "void":
+        return {"stage": "void", "text": "무효 처리"}
+    if state in ("canceling", "canceled"):
+        ending = next((e for e in reversed(trail) if e.get("kind") in _ENDINGS), None)
+        why = (ending or {}).get("why")
+        if (ending or {}).get("kind") == "entry_withdrawn":
+            text = "회수 — 매도 신호가 나서 대기 중이던 진입 주문을 거둠"
+        elif why == "time":
+            text = f"미체결 취소 — {_for_a_person(ending.get('waitedSec'))} 경과"
+        elif why == "price":
+            text = (f"미체결 취소 — 시세가 주문가에서 {eng._num(ending.get('driftPct')):.2f}% 벗어남 "
+                    f"(주문가 {money(ending.get('limit'))} · 시세 {money(ending.get('mark'))})")
+        elif why == "session":
+            text = "만료 — 장이 닫혀 당일 주문이 사라짐"
+        else:
+            text = "취소"
+        refused = [e for e in trail if e.get("kind") == "cancel_failed"]
+        if state == "canceling":
+            text += (f" · 취소 요청 거절됨: {_venue_said(refused[-1].get('why'))}" if refused
+                     else " · 취소 확인 대기")
+        if got > 0:
+            text += f" · 체결분 {filled}"
+        return {"stage": "canceled", "text": text}
+    return {"stage": state or "unknown", "text": state or "상태 없음"}
+
+
+def _with_order_outcomes(conn, rows, settings):
+    """Each decision that became orders, with where those orders are now (`orders`)."""
+    keys = [o.get("orderKey") for r in rows
+            for o in ((r.get("detail") or {}).get("orders") or [])
+            if isinstance(o, dict) and o.get("orderKey")]
+    if not keys:
+        return rows
+    found = store.order_trail(conn, keys)
+    markets = market_map(settings)
+    for r in rows:
+        placed = [o for o in ((r.get("detail") or {}).get("orders") or [])
+                  if isinstance(o, dict) and o.get("orderKey")]
+        if not placed:
+            continue
+        cur = store.currency_of(None, r.get("symbol"), markets, r.get("strategy_id"))
+        for o in placed:
+            row = found.get(o["orderKey"])
+            if row is not None:
+                cur = store.currency_of(row.get("broker"), row.get("symbol"), markets,
+                                        row.get("strategy_id")) or cur
+                break
+
+        def money(v, cur=cur):
+            v = eng._num(v)
+            if cur == "USD":
+                return f"${eng._px(v)}"
+            if cur == "KRW":
+                return f"{eng._px(v)}원"
+            return eng._px(v)
+
+        outcomes = []
+        for o in placed:
+            row = found.get(o["orderKey"])
+            if row is None:
+                # Not in this book — a decision and its order are written to the same one, so
+                # this is a book read under the wrong name, and it says so rather than guess.
+                outcomes.append({"orderKey": o["orderKey"], "side": o.get("side"),
+                                 "stage": "missing", "text": "이 장부에 주문 기록 없음"})
+                continue
+            outcomes.append({"orderKey": o["orderKey"], "side": row.get("side"),
+                             "reqQty": row.get("req_qty"), "filledQty": row.get("filled_qty"),
+                             "filledAvg": row.get("filled_avg"), "state": row.get("state"),
+                             **_order_outcome(row, money)})
+        r["orders"] = outcomes
+    return rows
+
+
 def action_read(inp, settings, which):
     # Which ledger to read. The two are separate files on purpose — a paper fill in the live book
     # poisons the reconciliation invariant — so a reader has to be able to name one. Defaults to
@@ -2825,8 +2952,10 @@ def action_read(inp, settings, which):
         data["transfers"] = store.read_transfers(conn, limit)
     if which in ("decisions", "report"):
         # Per trade: `limit` rows of each, so an hourly trade is not crowded out by a five-minute one.
-        data["decisions"] = store.read_decisions(conn, per_trade=limit,
-                                                 strategy_id=inp.get("strategyId") or None)
+        # Each with where its orders are now — decided, ordered and filled are three facts.
+        data["decisions"] = _with_order_outcomes(
+            conn, store.read_decisions(conn, per_trade=limit,
+                                       strategy_id=inp.get("strategyId") or None), settings)
     if which == "report":
         data["events"] = store.read_events(conn, limit)
         # The screen, from its own database. Promising these would show up in the ledger's event
@@ -6354,6 +6483,12 @@ def action_selftest():
                    "ok": fast.get("verdict") == "buy" and fast.get("codes") == "rule_buy"
                          and ((fast.get("detail") or {}).get("orders") or [{}])[0].get("side")
                          == "buy"})
+    fast_order = (fast.get("orders") or [{}])[0]
+    checks.append({"name": "and where that order is now — a paper buy reads back filled",
+                   "want": ["filled", "체결 600 @ 10"],
+                   "got": [fast_order.get("stage"), fast_order.get("text")],
+                   "ok": fast_order.get("stage") == "filled"
+                         and fast_order.get("text") == "체결 600 @ 10"})
     in_report = {r["strategy_id"] for r in
                  (action_read({"limit": 5}, two, "report")["data"].get("decisions") or [])}
     checks.append({"name": "the report carries them too", "want": ["p-fast", "p-slow"],
@@ -6528,6 +6663,75 @@ def action_selftest():
                            cm3["ownBuysSinceExit"]],
                    "ok": cm0["exitMs"] is None and cm1["exitMs"] and cm1["ownBuysSinceExit"] == 0
                          and cm2["ownBuysSinceExit"] == 0 and cm3["ownBuysSinceExit"] == 1})
+
+    # Decided, ordered, filled are three facts (2026-10-02). A decision keeps the keys of the
+    # orders it became; where each order is now is the order book's to say when it is asked, and
+    # every ending the engine writes — and the numbers it measured — is put into words.
+    lc = dict(broker="tb", account="", symbol="LC", mode="dryrun", side="buy", req_qty=1.0,
+              req_price=100.0, cycle_id="c-lc", strategy_id="lc")
+
+    def lc_order(key, **fields):
+        store.insert_order(iconn, {"order_key": key, **lc, "state": "sent"})
+        if fields:
+            store.update_order(iconn, key, **fields)
+
+    lc_order("lc-acked", state="acked", broker_order_no="N1")
+    lc_order("lc-filled", state="filled", filled_qty=1.0, filled_avg=99.5)
+    lc_order("lc-partial", state="partial", filled_qty=0.4, filled_avg=99.0)
+    lc_order("lc-time", state="canceled")
+    store.log_event(iconn, "order_abandoned", {"orderKey": "lc-time", "why": "time",
+                                               "waitedSec": 603, "driftPct": 0.0, "limit": 100.0,
+                                               "mark": 100.2, "partial": False})
+    lc_order("lc-price", state="canceling", filled_qty=0.3, filled_avg=99.8)
+    store.log_event(iconn, "order_abandoned", {"orderKey": "lc-price", "why": "price",
+                                               "waitedSec": 120, "driftPct": 1.234, "limit": 100.0,
+                                               "mark": 101.234, "partial": True})
+    lc_order("lc-refused", state="canceling")
+    store.log_event(iconn, "order_abandoned", {"orderKey": "lc-refused", "why": "time",
+                                               "waitedSec": 700})
+    store.log_event(iconn, "cancel_failed", {"orderKey": "lc-refused",
+                                             "why": '{"message":"이미 체결된 주문입니다."}'})
+    lc_order("lc-session", state="canceled")
+    store.log_event(iconn, "order_expired", {"orderKey": "lc-session", "why": "session"})
+    lc_order("lc-withdrawn", state="canceled")
+    store.log_event(iconn, "entry_withdrawn", {"orderKey": "lc-withdrawn",
+                                               "why": "the rule turned to sell"})
+    lc_order("lc-rejected", state="rejected",
+             error='TOOL_CALL 모듈 실패 (sysmod_upbit-trade): error.api_status '
+                   '{"message":"주문 가능한 금액(KRW)이 부족합니다.","status":"400"}')
+    lc_order("lc-unknown", state="unknown")
+    want_lc = {
+        "lc-acked": ("pending", "접수 — 체결 대기"),
+        "lc-filled": ("filled", "체결 1 @ 99.5"),
+        "lc-partial": ("partial", "일부 체결 0.4/1 @ 99 — 나머지 대기"),
+        "lc-time": ("canceled", "미체결 취소 — 10분 3초 경과"),
+        "lc-price": ("canceled", "미체결 취소 — 시세가 주문가에서 1.23% 벗어남 (주문가 100 · 시세 "
+                                 "101.234) · 취소 확인 대기 · 체결분 0.3 @ 99.8"),
+        "lc-refused": ("canceled", "미체결 취소 — 11분 40초 경과 · 취소 요청 거절됨: 이미 체결된 "
+                                   "주문입니다."),
+        "lc-session": ("canceled", "만료 — 장이 닫혀 당일 주문이 사라짐"),
+        "lc-withdrawn": ("canceled", "회수 — 매도 신호가 나서 대기 중이던 진입 주문을 거둠"),
+        "lc-rejected": ("rejected", "거절 — 주문 가능한 금액(KRW)이 부족합니다."),
+        "lc-unknown": ("unknown", "확인 불가 — 거래소가 기한 안에 이 주문을 확인해 주지 않음"),
+        "lc-gone": ("missing", "이 장부에 주문 기록 없음"),
+    }
+    store.record_decisions(iconn, [
+        {"strategy_id": "lc", "symbol": "LC", "mode": "dryrun", "verdict": "buy",
+         "notes": [{"code": "rule_buy", "text": "매수 규칙 발화 — 매수"}],
+         "detail": {"orders": [{"side": "buy", "qty": 1.0, "price": 100.0, "orderKey": k}]}}
+        for k in want_lc])
+    got_lc = {}
+    for r in action_read({"store": "dryrun", "strategyId": "lc", "limit": 20}, {"mode": "dryrun"},
+                         "decisions")["data"]["decisions"]:
+        o = (r.get("orders") or [{}])[0]
+        got_lc[o.get("orderKey")] = (o.get("stage"), o.get("text"))
+    checks.append({"name": "a decision reads where each of its orders ended, in words, with the "
+                           "numbers measured",
+                   "want": want_lc, "got": got_lc, "ok": got_lc == want_lc})
+    checks.append({"name": "and the decision itself stays what the rule decided",
+                   "want": "buy",
+                   "got": sorted({r["verdict"] for r in store.read_decisions(iconn, 20, "lc")}),
+                   "ok": {r["verdict"] for r in store.read_decisions(iconn, 20, "lc")} == {"buy"}})
 
     # A busy loop must not crowd a quiet one out of the read, and a month is what is kept.
     one = {"verdict": "hold", "notes": [{"code": "q", "text": "held"}]}

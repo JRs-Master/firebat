@@ -889,6 +889,36 @@ def record_decisions(conn, rows):
     conn.commit()
 
 
+def order_trail(conn, keys):
+    """The order rows behind these keys, each with every event that names it, oldest first.
+
+    Read at the moment of asking: a decision keeps only the keys of the orders it became, and
+    where those orders are now — acknowledged, filled, withdrawn and why, refused and why — is the
+    order book's to say. A copy kept on the decision would freeze at whatever was true when the
+    pass ended, which for an order is almost never the end of the story.
+    """
+    keys = [k for k in dict.fromkeys(keys) if k]
+    if not keys:
+        return {}
+    marks = ",".join("?" * len(keys))
+    out = {r["order_key"]: dict(r) for r in conn.execute(
+        f"SELECT * FROM orders WHERE order_key IN ({marks})", keys)}
+    for key, row in out.items():
+        trail = []
+        # Every event that names an order carries it as `orderKey` in its detail. The keys are
+        # hex digests (or a test's plain words), so the pattern needs no escaping.
+        for ev in conn.execute("SELECT kind, detail, ts_ms FROM events WHERE detail LIKE ? "
+                               "ORDER BY id", (f"%{key}%",)):
+            try:
+                d = json.loads(ev["detail"] or "{}")
+            except (TypeError, ValueError):
+                d = {}
+            if isinstance(d, dict) and d.get("orderKey") == key:
+                trail.append({"kind": ev["kind"], "ts_ms": ev["ts_ms"], **d})
+        row["trail"] = trail
+    return out
+
+
 def read_decisions(conn, per_trade=50, strategy_id=None):
     """The latest decisions of each trade, newest first.
 

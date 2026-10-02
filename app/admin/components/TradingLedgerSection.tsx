@@ -39,7 +39,8 @@ interface Report {
   events?: Row[];
   /** What each pass decided about each trade and why, the passes that ordered nothing included.
    *  Newest first and `limit` rows per trade, so an hourly trade is not crowded out by a
-   *  five-minute one. */
+   *  five-minute one. A decision that became orders carries `orders` — where each one is now
+   *  ({stage, text}), read from the order book when the report is asked for. */
   decisions?: Row[];
   transfers?: Row[];
   /** The screen, from the universe store — a different database, so it is fetched and shown
@@ -116,6 +117,38 @@ const VERDICT: Record<string, { label: string; cls: string }> = {
 function Verdict({ v }: { v: string }) {
   const m = VERDICT[v] ?? { label: v, cls: 'bg-slate-100 text-slate-600' };
   return <span className={`inline-block rounded px-1.5 py-0.5 font-bold ${m.cls}`}>{m.label}</span>;
+}
+
+/** Where an order is now. Filled is the trade done; pending is still out at the venue; refused and
+ *  unconfirmed need a look; the rest ended without a trade. */
+const STAGE_TONE: Record<string, string> = {
+  filled: 'bg-emerald-50 text-emerald-700',
+  partial: 'bg-amber-50 text-amber-700',
+  pending: 'bg-blue-50 text-blue-700',
+  canceled: 'bg-slate-100 text-slate-600',
+  void: 'bg-slate-100 text-slate-500',
+  missing: 'bg-slate-100 text-slate-500',
+  rejected: 'bg-rose-50 text-rose-700',
+  unknown: 'bg-rose-50 text-rose-700',
+};
+
+function hasOrders(r: Row): boolean {
+  return Array.isArray(r.orders) && r.orders.length > 0;
+}
+
+/** The orders a decision became, each as the sentence the module wrote for where it is now. */
+function Outcome({ row }: { row: Row }) {
+  if (!hasOrders(row)) return <span className="text-slate-300">—</span>;
+  return (
+    <span className="flex min-w-[12rem] max-w-[24rem] flex-col gap-0.5 whitespace-normal">
+      {(row.orders as Row[]).map((o, i) => (
+        <span key={i}
+          className={`self-start rounded px-1.5 py-0.5 font-bold ${STAGE_TONE[String(o.stage)] ?? 'bg-slate-100 text-slate-600'}`}>
+          {String(o.text ?? o.stage ?? '')}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 /** Return against the average, signed — the sign is what the reader is looking for. */
@@ -698,10 +731,12 @@ function DecisionLog({ rows, when }: { rows: Row[]; when: (ms: any) => string })
     <div className="flex min-w-0 flex-col gap-2">
       {Array.from(trades.entries()).map(([key, list]) => {
         // Newest first, so a run is consecutive rows with the same verdict and the same reasons.
+        // A pass that became orders stands alone: each order has its own ending to show.
         const runs: Row[][] = [];
         for (const r of list) {
           const last = runs[runs.length - 1];
-          if (last && last[0].verdict === r.verdict && last[0].codes === r.codes) last.push(r);
+          if (last && !hasOrders(r) && !hasOrders(last[0])
+            && last[0].verdict === r.verdict && last[0].codes === r.codes) last.push(r);
           else runs.push([r]);
         }
         const body: any[][] = [];
@@ -723,6 +758,7 @@ function DecisionLog({ rows, when }: { rows: Row[]; when: (ms: any) => string })
               </button>
             ) : when(head.ts_ms),
             <Verdict key="v" v={String(head.verdict ?? '')} />,
+            <Outcome key="o" row={head} />,
             num(head.price),
             num(head.avg_price),
             <span key="p" className={tone(head.pnl_pct)}>{pct(head.pnl_pct)}</span>,
@@ -732,6 +768,7 @@ function DecisionLog({ rows, when }: { rows: Row[]; when: (ms: any) => string })
             for (const r of run) {
               body.push([
                 <span key="t" className="pl-4 text-slate-400">{when(r.ts_ms)}</span>,
+                '',
                 '',
                 num(r.price),
                 num(r.avg_price),
@@ -751,7 +788,7 @@ function DecisionLog({ rows, when }: { rows: Row[]; when: (ms: any) => string })
             </div>
             <Table
               maxH="max-h-64"
-              head={['시각', '판단', '가격', '평단', '수익률', '이유']}
+              head={['시각', '판단', '주문·체결', '가격', '평단', '수익률', '이유']}
               empty=""
               rows={body}
             />
