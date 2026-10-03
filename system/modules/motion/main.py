@@ -431,6 +431,9 @@ def validate_asset_decl(name, parts):
 def validate_bones(bones, parts):
     """Bone chains for FK: {name: {pivot:[x,y], parent?}} — parents first at draw."""
     if bones is None:
+        for i, p in enumerate(parts or []):
+            if isinstance(p, dict) and p.get("bend"):
+                raise SceneError(f"parts[{i}].bend names bones, but no bones are declared")
         return {}
     if not isinstance(bones, dict) or len(bones) > 40:
         raise SceneError("bones must be an object of at most 40 named bones")
@@ -457,7 +460,23 @@ def validate_bones(bones, parts):
         if isinstance(p, dict) and p.get("bone") is not None \
                 and str(p["bone"]) not in declared:
             raise SceneError(f"parts[{i}].bone {p['bone']!r} is not declared in bones")
+        _check_bend_chain(i, p, norm)
     return norm
+
+
+def _check_bend_chain(i, p, norm):
+    """A bending picture follows ONE chain: every bone declared, each the child of the
+    one before it - the weights blend neighbours along that chain and nothing else."""
+    if not isinstance(p, dict) or not p.get("bend"):
+        return
+    chain = [str(b) for b in p["bend"]]
+    for b in chain:
+        if b not in norm:
+            raise SceneError(f"parts[{i}].bend {b!r} is not declared in bones")
+    for a, b in zip(chain, chain[1:]):
+        if norm[b].get("parent") != a:
+            raise SceneError(f"parts[{i}].bend: {b!r} must be the child of {a!r} "
+                             f"(bones.{b}.parent) - a bend runs down one chain, root first")
 
 
 def _affine_apply(m, x, y):
@@ -554,6 +573,25 @@ def validate_parts(parts):
                 q["flip"] = True
             if role in ("swing", "flap", "mouth"):
                 q["pivot"] = _pt(p.get("pivot", q["at"]), f"parts[{i}].pivot")
+            # One drawing of a whole limb, bent at its joints instead of cut there: cut
+            # pieces overlap at every joint and the overlap shows (a ball, a plate, a line
+            # - three looks of one seam), and pieces drawn apart do not share their folds.
+            bend = p.get("bend")
+            if bend is not None:
+                if not (isinstance(bend, list) and 2 <= len(bend) <= 4
+                        and all(isinstance(b, str) and b.strip() for b in bend)):
+                    raise SceneError(
+                        f"parts[{i}].bend must be a chain of 2..4 bone names, root first, "
+                        "each the parent of the next - e.g. [\"thighR\", \"shinR\"]")
+                if q.get("bone") is not None:
+                    raise SceneError(f"parts[{i}]: bend already names the bones this "
+                                     "picture follows - give bend or bone, not both")
+                if role is not None:
+                    raise SceneError(f"parts[{i}]: a bending picture moves with its bones "
+                                     f"only - role {role!r} does not apply")
+                q["bend"] = [b.strip() for b in bend]
+                if p.get("bendBand") is not None:
+                    q["bendBand"] = _num(p["bendBand"], f"parts[{i}].bendBand", 0.05, 0.45)
             # Alternate crops of the SAME picture, named. A character generated as
             # one expression sheet gives four faces that cannot disagree about the
             # jaw, the skin or the line weight, because they are four rectangles of
@@ -1343,6 +1381,134 @@ def _cutout_piece(q, crop=None):
     return piece
 
 
+BEND_BAND = 0.28    # blend half-width at a joint, as a share of the shorter stretch beside it
+
+
+def _bend_weights(P, J, band):
+    """Linear-blend-skinning weights (n, N) of rest points P (N, 2) for a bone chain
+    whose pivots are J (n, 2), root first. A point belongs to the bone whose stretch
+    of the chain it lies on - its position projected onto the polyline through the
+    pivots, the first and last stretches running on past the ends - and is shared
+    between the two bones of a joint across a smoothstep band there."""
+    n = len(J)
+    s = np.zeros(len(P))
+    best = np.full(len(P), np.inf)
+    seg, cum = [], 0.0
+    for k in range(n - 1):
+        a, d = J[k], J[k + 1] - J[k]
+        L = max(1e-6, float(math.hypot(d[0], d[1])))
+        t = ((P - a) @ d) / (L * L)
+        t = np.clip(t, -np.inf if k == 0 else 0.0, np.inf if k == n - 2 else 1.0)
+        dist = np.hypot(*(P - (a + t[:, None] * d)).T)
+        near = dist < best
+        s = np.where(near, cum + t * L, s)
+        best = np.where(near, dist, best)
+        seg.append(L)
+        cum += L
+    joint_s = np.cumsum([0.0] + seg)
+    # the last bone's stretch is however far the picture runs past its pivot
+    stretch = seg + [max(1e-3, float(s.max() - joint_s[-1]))]
+    w = np.zeros((n, len(P)))
+    t_prev = np.ones(len(P))
+    for k in range(n):
+        if k + 1 < n:
+            bw = band * min(stretch[k], stretch[k + 1])
+            x = np.clip((s - (joint_s[k + 1] - bw)) / (2 * bw), 0.0, 1.0)
+            t_next = x * x * (3 - 2 * x)
+        else:
+            t_next = np.zeros(len(P))
+        w[k] = t_prev - t_next
+        t_prev = t_next
+    return w
+
+
+def _bend_picture(im, q, bones, bone_ms, to_px, kx, ky):
+    """Draw an image part that bends along its chain of bones (`bend`) instead of
+    turning rigidly with one. A grid goes over the picture in its rest place; every
+    vertex is carried by the bones of its stretch of the chain, blended across each
+    joint (`_bend_weights`), and every triangle is mapped from the rest picture to its
+    bent place. kx, ky = canvas px per viewBox unit across and down.
+
+    Returns (RGBA image, left, top) for the canvas, or (None, 0, 0) if nothing lands.
+    numpy + PIL only: the triangles are rasterised by number, and each pixel samples
+    the picture through its own triangle's inverse map - premultiplied bilinear, so an
+    edge against transparency keeps its colour instead of darkening."""
+    pad = 3     # transparent margin, so the grid's own border never cuts the drawing
+    src = Image.new("RGBA", (im.width + 2 * pad, im.height + 2 * pad), (0, 0, 0, 0))
+    src.paste(im, (pad, pad))
+    w, h = src.size
+    nx = 8
+    ny = int(min(64, max(10, round(nx * h / max(1, w) * 1.4))))
+    gx, gy = np.meshgrid(np.linspace(0, w, nx + 1), np.linspace(0, h, ny + 1))
+    S = np.stack([gx.ravel(), gy.ravel()], 1)
+    ax, ay = q["at"]
+    P = np.stack([ax + (S[:, 0] - w / 2) / kx, ay + (S[:, 1] - h / 2) / ky], 1)
+    chain = q["bend"]
+    J = np.array([bones[b]["pivot"] for b in chain], dtype=float)
+    wts = _bend_weights(P, J, float(q.get("bendBand", BEND_BAND)))
+    Q = np.zeros_like(P)
+    for k, b in enumerate(chain):
+        m = bone_ms[b]
+        Q[:, 0] += wts[k] * (m[0] * P[:, 0] + m[1] * P[:, 1] + m[2])
+        Q[:, 1] += wts[k] * (m[3] * P[:, 0] + m[4] * P[:, 1] + m[5])
+    o0x, o0y = to_px(0.0, 0.0)
+    D = np.stack([o0x + Q[:, 0] * kx, o0y + Q[:, 1] * ky], 1)
+    x0 = int(math.floor(D[:, 0].min())) - 1
+    y0 = int(math.floor(D[:, 1].min())) - 1
+    Wd = int(math.ceil(D[:, 0].max())) + 2 - x0
+    Hd = int(math.ceil(D[:, 1].max())) + 2 - y0
+    if Wd < 2 or Hd < 2 or Wd * Hd > 30_000_000:
+        return None, 0, 0
+    D = D - np.array([x0, y0], dtype=float)
+    idx = np.arange((ny + 1) * (nx + 1)).reshape(ny + 1, nx + 1)
+    a, b, c, d = (idx[:-1, :-1].ravel(), idx[:-1, 1:].ravel(),
+                  idx[1:, 1:].ravel(), idx[1:, :-1].ravel())
+    # cell by cell, top row first: where the inside of a bent joint folds over itself,
+    # the lower stretch is drawn over the upper one
+    tris = np.stack([np.stack([a, b, c], 1), np.stack([a, c, d], 1)], 1).reshape(-1, 3)
+    Dh = np.ones((len(tris), 3, 3))
+    Dh[:, 0, :], Dh[:, 1, :] = D[tris, 0], D[tris, 1]
+    Sh = np.stack([S[tris, 0], S[tris, 1]], 1)
+    ok = np.abs(np.linalg.det(Dh)) > 1e-6
+    M = np.zeros((len(tris), 2, 3))
+    M[ok] = Sh[ok] @ np.linalg.inv(Dh[ok])
+    ids = Image.new("RGB", (Wd, Hd), (0, 0, 0))
+    dr = ImageDraw.Draw(ids)
+    for k in np.nonzero(ok)[0]:
+        v = int(k) + 1
+        col = (v & 255, (v >> 8) & 255, (v >> 16) & 255)
+        dr.polygon([(float(D[j, 0]), float(D[j, 1])) for j in tris[k]], fill=col, outline=col)
+    ia = np.asarray(ids, dtype=np.int64)
+    tid = ia[..., 0] + (ia[..., 1] << 8) + (ia[..., 2] << 16)
+    rr, cc = np.nonzero(tid)
+    if not len(rr):
+        return None, 0, 0
+    k = tid[rr, cc] - 1
+    X, Y = cc.astype(float), rr.astype(float)
+    sx = M[k, 0, 0] * X + M[k, 0, 1] * Y + M[k, 0, 2]
+    sy = M[k, 1, 0] * X + M[k, 1, 1] * Y + M[k, 1, 2]
+    pic = np.asarray(src, dtype=np.float32).copy()
+    pic[..., :3] *= pic[..., 3:4] / 255.0
+    xf, yf = np.floor(sx), np.floor(sy)
+    fx = (sx - xf).astype(np.float32)[:, None]
+    fy = (sy - yf).astype(np.float32)[:, None]
+    xi0, yi0 = xf.astype(np.int64), yf.astype(np.int64)
+    acc = np.zeros((len(sx), 4), np.float32)
+    for ddx, ddy, wgt in ((0, 0, (1 - fx) * (1 - fy)), (1, 0, fx * (1 - fy)),
+                          (0, 1, (1 - fx) * fy), (1, 1, fx * fy)):
+        xi, yi = xi0 + ddx, yi0 + ddy
+        inside = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
+        v = np.zeros((len(sx), 4), np.float32)
+        v[inside] = pic[yi[inside], xi[inside]]
+        acc += v * wgt
+    al = acc[:, 3]
+    rgb = acc[:, :3] * (255.0 / np.maximum(al, 1e-6))[:, None]
+    out = np.zeros((Hd, Wd, 4), np.uint8)
+    out[rr, cc, :3] = np.clip(np.where(al[:, None] > 0.5, rgb, 0), 0, 255).astype(np.uint8)
+    out[rr, cc, 3] = np.clip(al, 0, 255).astype(np.uint8)
+    return Image.fromarray(out, "RGBA"), x0, y0
+
+
 def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
                 sy=1.0, blink_t=None, g=None, text="", fonts=None, canvas=None,
                 bones=None, bone_angles=None, express=None):
@@ -1377,6 +1543,11 @@ def draw_custom(d, cx, cy, s, t, parts, mouth=0.0, wave=0.0, walk=0.0,
             if role == "eye":
                 hpx = max(2, int(hpx * eh))
             im = piece.resize((wpx, hpx), Image.LANCZOS)
+            if q.get("bend") and bone_ms:
+                bent, bx, by = _bend_picture(im, q, bones, bone_ms, to_px, u * sxw, u * sy)
+                if bent is not None:
+                    canvas.paste(bent, (bx, by), bent)
+                continue
             ang, dx_u, dy_u = 0.0, 0.0, 0.0
             if role == "swing":
                 ang = swing_ang
@@ -5797,7 +5968,14 @@ def action_assets(inp=None):
                        "glow:true mirrors the part onto the scene glow layer. Extra "
                        "shapes: roundedrect {radius}, text {height, bind:'text'|value}, "
                        "and image {media, crop:[[x,y]..] 3..60 pairs in 0..1 IMAGE "
-                       "coords, at:[vx,vy], width in viewBox units, pivot?, flip?, variants?:{name: crop}} — "
+                       "coords, at:[vx,vy], width in viewBox units, pivot?, flip?, variants?:{name: crop}, "
+                       "bend?:[bone..], bendBand?} — "
+                       "(bend = a chain of 2..4 bones, root first, each the parent of the "
+                       "next: the picture bends along it, each point following the bone "
+                       "whose stretch it lies on and blended across each joint over "
+                       "bendBand 0.05..0.45 of the shorter stretch, default 0.28 - one "
+                       "drawing of a whole leg bends at the knee with no seam; bend takes "
+                       "the place of bone) — "
                        "(variants = named alternate crops of the SAME picture; the "
                        "express act picks one, so generate the character as ONE "
                        "expression sheet and cut each face from it) — "
@@ -5807,7 +5985,8 @@ def action_assets(inp=None):
                        "the jaw piece with the voice). "
                        "Top level may set aspect (canvas h/w for stickers, 0.3..2) and "
                        "bones: {name: {pivot:[x,y], parent?}} (max 40) — FK chains: a "
-                       "part tagged bone:'name' follows its bone, children follow "
+                       "part tagged bone:'name' follows its bone, an image part with "
+                       "bend:[root..child] bends along that chain, children follow "
                        "parents (shoulder→elbow→fist). Drive angles with the pose act "
                        "or sticker pose.bones {name: degrees}",
         },
@@ -7118,6 +7297,72 @@ def action_selftest():
         cut_note = f"{type(e).__name__}: {e}"
     ck("an image-cutout part crops, rigs and draws in scene and sticker",
        "blue body visible + sticker ok", cut_note, cut_ok)
+
+    # A picture that bends along a bone chain: at rest it is the rigid picture, bent it
+    # carries its far end where FK says, and no hole opens at the joint.
+    bend_note, bend_ok = "", False
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        bpic = os.path.join(OUT_DIR, "selftest-bend.png")
+        src = Image.new("RGBA", (40, 200), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(src)
+        dd.rectangle([8, 0, 31, 199], fill=(90, 140, 220, 255), outline=(20, 20, 20, 255),
+                     width=2)
+        dd.rectangle([8, 180, 31, 199], fill=(230, 120, 60, 255))
+        src.save(bpic)
+        piece = {"shape": "image", "media": bpic, "crop": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                 "at": [50, 50], "width": 12}
+        bparts = validate_parts([dict(piece, bend=["up", "low"])])
+        rparts = validate_parts([dict(piece, bone="up")])
+        bb = validate_bones({"up": {"pivot": [50, 20]},
+                             "low": {"pivot": [50, 50], "parent": "up"}}, bparts)
+
+        def bent_at(prts, deg):
+            cv = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+            draw_custom(ImageDraw.Draw(cv), 200, 400, 1.0, 0.0, prts, canvas=cv, bones=bb,
+                        bone_angles={"low": math.radians(deg)})
+            a = np.asarray(cv).astype(int)
+            solid = a[..., 3] > 128
+            orange = solid & (a[..., 0] - a[..., 2] > 80)
+            ys, xs = np.nonzero(orange)
+            # a hole = transparent pixels the outside cannot reach (4-connected flood)
+            reach = np.zeros_like(solid)
+            reach[0, :] = reach[-1, :] = reach[:, 0] = reach[:, -1] = True
+            reach &= ~solid
+            while True:
+                grown = reach.copy()
+                grown[1:] |= reach[:-1]
+                grown[:-1] |= reach[1:]
+                grown[:, 1:] |= reach[:, :-1]
+                grown[:, :-1] |= reach[:, 1:]
+                grown &= ~solid
+                if (grown == reach).all():
+                    break
+                reach = grown
+            holes = int((~solid & ~reach).sum())
+            return int(solid.sum()), xs.mean(), ys.mean(), holes
+
+        r_area, r_x, r_y, _ = bent_at(rparts, 0)
+        b_area, b_x, b_y, _ = bent_at(bparts, 0)
+        n_area, n_x, n_y, n_holes = bent_at(bparts, 90)
+        try:
+            validate_bones({"up": {"pivot": [50, 20]}, "low": {"pivot": [50, 50]}}, bparts)
+            chain_refused = False
+        except SceneError:
+            chain_refused = True
+        os.remove(bpic)
+        # +90 deg turns the shin clockwise on screen: the end 27 units below the knee
+        # goes 27 units left of it (4 px a unit here)
+        bend_ok = (abs(b_area - r_area) <= r_area * 0.02 and abs(b_y - r_y) < 2
+                   and abs(n_x - (200 - 27 * 4)) < 10 and abs(n_y - 200) < 10
+                   and n_holes == 0 and chain_refused)
+        bend_note = (f"rest area {b_area} vs rigid {r_area}; end at 90deg "
+                     f"({n_x:.0f},{n_y:.0f}); holes {n_holes}; broken chain refused "
+                     f"{chain_refused}")
+    except Exception as e:  # noqa: BLE001
+        bend_note = f"{type(e).__name__}: {e}"
+    ck("a picture bent along a bone chain: rigid at rest, follows FK, no hole",
+       "rest = rigid, end at (92,200), 0 holes, chain checked", bend_note, bend_ok)
 
     mv_note, mv_ok = "", False
     try:

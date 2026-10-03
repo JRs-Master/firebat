@@ -212,11 +212,11 @@
       },
       "bones": {
         "type": "object",
-        "description": "[save_asset] Optional FK bone chains {name: {pivot:[x,y], parent?}} (max 40). Parts tagged bone:'name' follow their bone; children follow parents (shoulder->elbow->fist). Drive with the pose act {do:'pose', bones:{name:degrees}} or sticker pose.bones."
+        "description": "[save_asset] Optional FK bone chains {name: {pivot:[x,y], parent?}} (max 40). Parts tagged bone:'name' follow their bone; an image part with bend:[a,b] bends along the chain a->b; children follow parents (shoulder->elbow->fist). Drive with the pose act {do:'pose', bones:{name:degrees}} or sticker pose.bones."
       },
       "parts": {
         "type": "array",
-        "description": "[save_asset] The clip art's shape parts — the ORIGINAL that scenes and stickers redraw from. 100x100 viewBox, feet at (50,100), y down. Each part: {shape: ellipse|rect|polygon|capsule|heart|star, at/size or points or ends+width, fill:[r,g,b], outline?, role: swing (waves) | mouth (opens on talk) | eye (blinks)}. shape 'image' = cutout rigging: {media, crop polygon in 0..1 image coords, at, width, pivot?, role?} turns a piece of an attached picture into a joint. Full grammar: the assets action. Alternative to sheets — a drawn character needs no parts."
+        "description": "[save_asset] The clip art's shape parts — the ORIGINAL that scenes and stickers redraw from. 100x100 viewBox, feet at (50,100), y down. Each part: {shape: ellipse|rect|polygon|capsule|heart|star, at/size or points or ends+width, fill:[r,g,b], outline?, role: swing (waves) | mouth (opens on talk) | eye (blinks)}. shape 'image' = cutout rigging: {media, crop polygon in 0..1 image coords, at, width, pivot?, role?} turns a piece of an attached picture into a joint. An image part may take bend:[bone,..] instead of bone - a chain of 2..4 declared bones, root first, each the parent of the next: the picture bends along the chain, each point following the bone whose stretch it lies on, blended across each joint (bendBand 0.05..0.45 of the shorter stretch, default 0.28), so one drawing of a whole limb bends at the knee with no seam. Full grammar: the assets action. Alternative to sheets — a drawn character needs no parts."
       },
       "refs": {
         "type": "object",
