@@ -504,7 +504,7 @@ function parseLawDetail(root) {
           : rawHang
       );
       if (hangs.length > 0) {
-        art.항 = hangs.map(h => {
+        const parsed = hangs.map(h => {
           const hang = { 항번호: h['항번호'] || '', 항내용: h['항내용'] || '' };
           // 호
           const hos = toArray(h['호']);
@@ -516,7 +516,13 @@ function parseLawDetail(root) {
             return hoObj;
           }).filter(h => h.호내용);
           return hang;
-        }).filter(h => h.항내용);
+        });
+        // An article whose 호 sit directly under it (no 항 — most 정의 articles) arrives as one 항 with no text that carries
+        // the 호. Keep those 호 on the article itself: filtering 항 on 항내용 alone dropped them, so 사회서비스원법 제2조 and
+        // 평생교육법 제2조 came back as their lead sentence only (2026-11-04).
+        const loose = parsed.filter(h => !h.항내용 && h.호 && h.호.length > 0).flatMap(h => h.호);
+        if (loose.length > 0) art.호 = loose;
+        art.항 = parsed.filter(h => h.항내용);
       }
       return art;
     }).filter(a => a.조문내용 || a.조문제목);
