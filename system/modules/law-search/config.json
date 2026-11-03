@@ -49,6 +49,7 @@
         "type": "string",
         "enum": [
           "law",
+          "eflaw",
           "prec",
           "admrul",
           "ordin",
@@ -58,7 +59,7 @@
           "lsHistory"
         ],
         "default": "law",
-        "description": "대상. law=법령, prec=판례, admrul=행정규칙, ordin=자치법규, detc=헌재결정례, expc=법령해석례, trty=조약, lsHistory=연혁법령"
+        "description": "대상. law=법령, eflaw=시행일 기준 법령(detail 에서 MST 와 함께면 efYd 필수 — 그날 시행 중이던 판), prec=판례, admrul=행정규칙, ordin=자치법규, detc=헌재결정례, expc=법령해석례, trty=조약, lsHistory=연혁법령"
       },
       "query": {
         "type": "string",
