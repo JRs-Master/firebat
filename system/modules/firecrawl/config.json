@@ -225,7 +225,7 @@
           },
           "systemPrompt": {
             "type": "string",
-            "description": "LLM system prompt"
+            "description": "Instructions placed before the prompt"
           }
         },
         "description": "[scrape] Options for LLM-based structured extraction when formats includes 'json'"
@@ -265,7 +265,7 @@
       "allowExternalLinks": {
         "type": "boolean",
         "default": false,
-        "description": "[crawl/extract] Follow external links"
+        "description": "[crawl] Follow external links"
       },
       "sitemap": {
         "type": "string",
@@ -274,7 +274,7 @@
           "skip",
           "only"
         ],
-        "description": "[crawl] Sitemap handling. include=include, skip=ignore, only=sitemap only"
+        "description": "[crawl/map] Sitemap handling. include=include, skip=ignore, only=sitemap only"
       },
       "ignoreQueryParameters": {
         "type": "boolean",
@@ -307,7 +307,7 @@
       },
       "systemPrompt": {
         "type": "string",
-        "description": "[extract] LLM system prompt"
+        "description": "[extract] Instructions placed before the prompt"
       },
       "enableWebSearch": {
         "type": "boolean",

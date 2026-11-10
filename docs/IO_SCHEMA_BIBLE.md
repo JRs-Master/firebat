@@ -788,7 +788,7 @@ interface JsonSchemaProperty {
 
 ### firecrawl (web-scrape, api)
 
-Firecrawl API v1 기준 전체 파라미터 반영:
+Firecrawl API v2 (2026-11-11 v1 → v2 — 모듈이 받는 칸은 v1 시절 꼴 그대로, 보낼 때 v2 꼴로 바꾼다). 아래는 옛 v1 기준 표:
 
 ```json
 {

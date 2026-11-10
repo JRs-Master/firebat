@@ -1,11 +1,14 @@
 /**
  * Firebat System Module: firecrawl (web-scrape)
- * Firecrawl API v1 — scrape / crawl / map / extract
+ * Firecrawl API v2 — scrape / crawl / map / extract
  *
  * 공식 문서: https://docs.firecrawl.dev
+ * v1 shuts down 2026-12-10 15:00 UTC (HTTP 410). The module's input keeps its v1-era shape —
+ * saved pipelines and cron plans call it that way — and is translated to v2 here:
+ * https://docs.firecrawl.dev/migrate-to-v2
  */
 
-const API = 'https://api.firecrawl.dev/v1';
+const API = 'https://api.firecrawl.dev/v2';
 
 let raw = '';
 process.stdin.setEncoding('utf-8');
@@ -39,6 +42,39 @@ function authHeaders(apiKey) {
   return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
 }
 
+/** v2 has no systemPrompt (scrape json format, extract): it goes in front of the prompt. */
+function mergePrompt(systemPrompt, prompt) {
+  return [systemPrompt, prompt].filter(s => typeof s === 'string' && s.trim() !== '').join('\n\n') || undefined;
+}
+
+/**
+ * v1-era formats → v2 formats. v2 takes the json options inside the format itself
+ * ({type:'json', prompt, schema}) instead of a separate jsonOptions, and a full-page
+ * screenshot as {type:'screenshot', fullPage:true} instead of "screenshot@fullPage".
+ * Objects (already v2) pass through.
+ */
+function v2Formats(formats, jsonOptions) {
+  return formats.map(f => {
+    if (f === 'json') {
+      const j = { type: 'json' };
+      const prompt = mergePrompt(jsonOptions?.systemPrompt, jsonOptions?.prompt);
+      if (prompt) j.prompt = prompt;
+      if (jsonOptions?.schema) j.schema = jsonOptions.schema;
+      return j;
+    }
+    if (f === 'screenshot@fullPage') return { type: 'screenshot', fullPage: true };
+    return f;
+  });
+}
+
+/** crawl's per-page scrapeOptions carry the same v1-era formats/jsonOptions. */
+function v2ScrapeOptions(opts) {
+  if (!opts || typeof opts !== 'object') return opts;
+  const { jsonOptions, ...rest } = opts;
+  if (Array.isArray(rest.formats)) rest.formats = v2Formats(rest.formats, jsonOptions);
+  return rest;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  1. scrape — 단일 URL 스크래핑
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -48,9 +84,8 @@ async function handleScrape(apiKey, data) {
 
   const body = { url };
 
-  // 포맷
-  if (data.formats) body.formats = data.formats;
-  else body.formats = ['markdown'];
+  // 포맷 — json 추출 옵션(jsonOptions)은 v2 에서 json 포맷 안에 들어간다
+  body.formats = v2Formats(Array.isArray(data.formats) ? data.formats : ['markdown'], data.jsonOptions);
 
   // 콘텐츠 옵션
   if (data.onlyMainContent !== undefined) body.onlyMainContent = data.onlyMainContent;
@@ -80,9 +115,6 @@ async function handleScrape(apiKey, data) {
 
   // 브라우저 액션
   if (data.actions) body.actions = data.actions;
-
-  // LLM JSON 추출
-  if (data.jsonOptions) body.jsonOptions = data.jsonOptions;
 
   const resp = await fetch(`${API}/scrape`, {
     method: 'POST', headers: authHeaders(apiKey),
@@ -142,7 +174,7 @@ async function handleCrawl(apiKey, data) {
   if (data.ignoreQueryParameters !== undefined) body.ignoreQueryParameters = data.ignoreQueryParameters;
   if (data.delay !== undefined) body.delay = data.delay;
   if (data.maxConcurrency !== undefined) body.maxConcurrency = data.maxConcurrency;
-  if (data.scrapeOptions) body.scrapeOptions = data.scrapeOptions;
+  if (data.scrapeOptions) body.scrapeOptions = v2ScrapeOptions(data.scrapeOptions);
 
   // 크롤 시작
   const startResp = await fetch(`${API}/crawl`, {
@@ -222,7 +254,9 @@ async function handleMap(apiKey, data) {
   const json = await resp.json();
   if (!json.success) return outErr('error.map_failed', { message: json.error || '' });
 
-  out(true, { links: json.links || [] });
+  // v2 links are {url, title, description}; the output stays a list of URLs as in v1
+  const links = (json.links || []).map(l => (typeof l === 'string' ? l : l?.url)).filter(Boolean);
+  out(true, { links });
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -235,10 +269,11 @@ async function handleExtract(apiKey, data) {
   }
 
   const body = { urls };
-  if (data.prompt) body.prompt = data.prompt;
+  // extract has no systemPrompt or allowExternalLinks (v1 and v2 specs alike) — systemPrompt
+  // goes in front of the prompt, external links are a crawl option only
+  const prompt = mergePrompt(data.systemPrompt, data.prompt);
+  if (prompt) body.prompt = prompt;
   if (data.schema) body.schema = data.schema;
-  if (data.systemPrompt) body.systemPrompt = data.systemPrompt;
-  if (data.allowExternalLinks !== undefined) body.allowExternalLinks = data.allowExternalLinks;
   if (data.enableWebSearch !== undefined) body.enableWebSearch = data.enableWebSearch;
   if (data.showSources !== undefined) body.showSources = data.showSources;
 
