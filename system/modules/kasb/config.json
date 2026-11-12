@@ -1,0 +1,151 @@
+{
+  "name": "kasb",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "한국회계기준원 회계기준 열람(db.kasb.or.kr) — K-IFRS · 일반기업회계기준의 낱말 검색 · 기준서 목차 · 절 · 문단 본문을 읽습니다.",
+  "aliases": [
+    "KASB",
+    "한국회계기준원",
+    "회계기준원",
+    "kifrs"
+  ],
+  "runtime": "node",
+  "capability": "accounting-standards",
+  "providerType": "api",
+  "tags": [
+    "회계기준",
+    "K-IFRS",
+    "한국채택국제회계기준",
+    "기업회계기준서",
+    "일반기업회계기준",
+    "IFRS",
+    "회계학",
+    "기준서 문단",
+    "금융상품",
+    "수익인식",
+    "리스"
+  ],
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "What to do. The catalog rows (search_module_actions / get_action_schema) say what each action takes and returns — they are the original."
+      },
+      "query": {
+        "type": "string",
+        "description": "[search paragraphs] A word or phrase as written in the standards, e.g. 상각후원가, 기대신용손실, 수행의무."
+      },
+      "std": {
+        "type": "integer",
+        "description": "[paragraphs toc section paragraph] Standard number as the site numbers it: K-IFRS 기업회계기준서 제1109호 = 1109, 제1115호 = 1115. search returns these numbers."
+      },
+      "part": {
+        "type": "string",
+        "description": "[paragraphs toc] A part of the standard, chosen by name: the part whose name contains this text. Parts are 본문, 부록 B. 적용지침, 적용사례 실무적용지침, 결론도출근거, 기타 참고사항 and the like — toc and paragraphs list the ones a standard has. paragraphs keeps only hits in that part; toc lists that part's contents instead of 본문."
+      },
+      "doc": {
+        "type": "string",
+        "description": "[section] The `doc` id of one entry in toc's reply."
+      },
+      "para": {
+        "type": "string",
+        "description": "[paragraph] Paragraph number exactly as paragraphs or section returns it, e.g. 4.1.2, B4.1.1, BC4.150."
+      }
+    }
+  },
+  "actionCatalog": [
+    {
+      "id": "search",
+      "name": "회계기준 낱말 검색 — 기준서별 건수",
+      "description": "낱말이 나오는 문단 수를 기준서 번호별로 돌려준다(많은 순). 어느 기준서에 그 개념이 있는지 찾는 첫걸음이다.",
+      "params": [
+        "query"
+      ],
+      "required": [
+        "query"
+      ],
+      "tags": [
+        "기준서 찾기",
+        "용어 검색"
+      ]
+    },
+    {
+      "id": "paragraphs",
+      "name": "기준서 안 낱말 문단 목록",
+      "description": "한 기준서에서 낱말이 든 문단을 문서 차례로 돌려준다 — 문단 번호 · 부분(본문 · 적용지침 · 결론도출근거 · 적용사례) · 장절 경로 · 본문 조각.",
+      "params": [
+        "query",
+        "std",
+        "part"
+      ],
+      "required": [
+        "query",
+        "std"
+      ],
+      "tags": [
+        "문단 찾기",
+        "근거 문단"
+      ]
+    },
+    {
+      "id": "toc",
+      "name": "기준서 목차",
+      "description": "기준서 이름과 본문의 장 · 절 목차(문단 범위와 절 id)를 돌려준다. 부분 이름(본문 · 적용사례 · 결론도출근거 · 기타 참고사항)도 함께.",
+      "params": [
+        "std",
+        "part"
+      ],
+      "required": [
+        "std"
+      ],
+      "tags": [
+        "기준서 이름",
+        "장절 목차"
+      ]
+    },
+    {
+      "id": "section",
+      "name": "기준서 절 본문",
+      "description": "목차의 한 절에 든 문단을 차례대로 전부 돌려준다(문단 번호와 글).",
+      "params": [
+        "std",
+        "doc"
+      ],
+      "required": [
+        "std",
+        "doc"
+      ],
+      "tags": [
+        "절 읽기",
+        "장절 본문"
+      ]
+    },
+    {
+      "id": "paragraph",
+      "name": "기준서 문단 본문",
+      "description": "문단 하나의 글 전체와 그 문단이 가리키는 다른 문단 번호, 연결된 질의회신 번호를 돌려준다.",
+      "params": [
+        "std",
+        "para"
+      ],
+      "required": [
+        "std",
+        "para"
+      ],
+      "tags": [
+        "문단 원문",
+        "조문 원문"
+      ]
+    }
+  ],
+  "output": {
+    "type": "object",
+    "description": "search → {query, total, standards[{std, count}]} · paragraphs → {identity, total, paragraphs[{para, part, path, text}]} · toc → {identity, name, parts[], toc[{level, title, ref, doc}]} · section → {identity, title, paragraphs[{para, text}]} · paragraph → {identity, text, refs[], qna[]}"
+  }
+}

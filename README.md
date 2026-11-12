@@ -221,6 +221,7 @@ Group multiple modules that perform the same capability, manage priority and fal
 | `stock-data` | yfinance (api) |
 | `notification` | kakao-talk (api), telegram (api, bidirectional bot) |
 | `law-search` | law-search (api) |
+| `accounting-standards` | kasb (api) |
 | `disclosure` | dart (api) |
 | `real-estate` | molit-realestate (api) |
 | `weather` | kma-weather (api) |

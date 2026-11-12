@@ -65,6 +65,10 @@
       "label": "법령·판례 검색",
       "description": "국가법령정보 — 법령/판례/행정규칙/헌재결정례"
     },
+    "accounting-standards": {
+      "label": "회계기준 열람",
+      "description": "K-IFRS · 일반기업회계기준의 낱말 검색 · 목차 · 문단 본문"
+    },
     "weather": {
       "label": "날씨·기상",
       "description": "예보·실황·기상특보·태풍·지진"
