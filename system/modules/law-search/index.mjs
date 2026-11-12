@@ -596,10 +596,11 @@ function parseAdmrulDetail(root) {
     현행여부: root['현행여부'] || '',
   };
 
-  // 조문
+  // 조문 — every article. A rule often arrives as an array of strings (one per 조); keeping only
+  // the first dropped 제2조 onward (e.g. 우정사업본부 고시 제2023-29호 returned 제1조 정의 only).
   const articles = toArray(root['조문내용'] || root['조문']);
   if (articles.length > 0) {
-    info.조문내용 = typeof articles[0] === 'string' ? articles[0] : articles.map(cleanObject);
+    info.조문내용 = articles.map(a => (typeof a === 'string' ? a : cleanObject(a)));
   }
 
   // 부칙
