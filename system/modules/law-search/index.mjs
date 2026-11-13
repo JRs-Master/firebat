@@ -539,17 +539,7 @@ function parseLawDetail(root) {
   }
 
   // 별표
-  const tables = toArray(r['별표']);
-  if (tables.length > 0 && tables[0]) {
-    info.별표 = tables.map(t => ({
-      별표번호: t['별표번호'] || '',
-      별표구분: t['별표구분'] || '',
-      별표제목: t['별표제목'] || '',
-      별표내용: t['별표내용'] || '',
-      별표HWP: t['별표서식파일링크'] || t['별표HWP파일명'] || '',
-      별표PDF: t['별표서식PDF파일링크'] || t['별표PDF파일명'] || '',
-    })).filter(t => t.별표제목 || t.별표내용);
-  }
+  putTables(info, r);
 
   // 개정문/제개정이유
   if (r['개정문내용']) info.개정문내용 = r['개정문내용'];
@@ -613,7 +603,64 @@ function parseAdmrulDetail(root) {
     })).filter(a => a.부칙내용);
   }
 
+  // 별표 · 첨부파일 — a rule's tables and forms used to be dropped here entirely (the 법령 parser kept
+  // them). For many 고시 the 별표 itself only says "see the attachment", so the attachment list
+  // (name + download link) is what actually leads to the content.
+  putTables(info, root);
+
   return cleanObject(info);
+}
+
+// ── 별표 · 첨부파일 (법령 · 행정규칙 공통) ──────────────────────────────────
+// The DRF guide lists these fields without saying how they nest, and the same API nests 조문 as
+// { 조문: { 조문단위: [...] } }. Accept every shape: { 별표: { 별표단위: [...] } }, a bare list or one
+// object under 별표, or the fields flat on the body itself (one value or parallel arrays). What
+// cannot be mapped is passed through as-is (별표원문 · 첨부파일원문) rather than dropped.
+const LAW_SITE = 'https://www.law.go.kr';
+
+function absLink(v) {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s.startsWith('/') ? LAW_SITE + s : s;
+}
+
+function unitsOf(root, field, unitKey, flatKeys) {
+  const v = root[field];
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    if (v[unitKey] !== undefined) return toArray(v[unitKey]);
+    if (flatKeys.some(k => v[k] !== undefined)) return zipFlat(v, flatKeys);
+  }
+  if (Array.isArray(v) && v.some(x => x && typeof x === 'object')) return v.filter(x => x && typeof x === 'object');
+  if (flatKeys.some(k => root[k] !== undefined)) return zipFlat(root, flatKeys);
+  return [];
+}
+
+function zipFlat(o, keys) {
+  const n = Math.max(...keys.map(k => (Array.isArray(o[k]) ? o[k].length : o[k] !== undefined ? 1 : 0)));
+  return Array.from({ length: n }, (_, i) => Object.fromEntries(keys.map(k => [k, Array.isArray(o[k]) ? o[k][i] : o[k]])));
+}
+
+const TABLE_KEYS = ['별표번호', '별표가지번호', '별표구분', '별표제목', '별표내용', '별표서식파일링크', '별표서식PDF파일링크', '별표HWP파일명', '별표PDF파일명'];
+const ATTACH_KEYS = ['첨부파일명', '첨부파일링크'];
+
+function putTables(info, root) {
+  const tables = unitsOf(root, '별표', '별표단위', TABLE_KEYS).map(t => ({
+    별표번호: t['별표번호'] || '',
+    별표가지번호: t['별표가지번호'] || '',
+    별표구분: t['별표구분'] || '',
+    별표제목: t['별표제목'] || '',
+    별표내용: t['별표내용'] || '',
+    별표HWP: absLink(t['별표서식파일링크']) || t['별표HWP파일명'] || '',
+    별표PDF: absLink(t['별표서식PDF파일링크']) || t['별표PDF파일명'] || '',
+  })).filter(t => t.별표제목 || t.별표내용 || t.별표HWP || t.별표PDF);
+  if (tables.length > 0) info.별표 = tables;
+  else if (root['별표'] && (typeof root['별표'] === 'object' || String(root['별표']).trim())) info.별표원문 = root['별표'];
+
+  const files = unitsOf(root, '첨부파일', '첨부파일단위', ATTACH_KEYS).map(f => ({
+    첨부파일명: f['첨부파일명'] || '',
+    첨부파일링크: absLink(f['첨부파일링크']),
+  })).filter(f => f.첨부파일명 || f.첨부파일링크);
+  if (files.length > 0) info.첨부파일 = files;
+  else if (root['첨부파일'] && (typeof root['첨부파일'] === 'object' || String(root['첨부파일']).trim())) info.첨부파일원문 = root['첨부파일'];
 }
 
 // ── 자치법규 본문 ────────────────────────────────────────────────────────────
