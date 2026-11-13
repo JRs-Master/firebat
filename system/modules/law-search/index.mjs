@@ -85,9 +85,13 @@ async function apiFetch(url) {
     }
     if (!resp.ok) {
       const t = await resp.text().catch(() => '');
+      const down = maintenanceNotice(t);
+      if (down) throw new I18nError('error.maintenance', { notice: down });
       throw new I18nError('error.api_status', { status: String(resp.status), body: t });
     }
     const text = await resp.text();
+    const down = maintenanceNotice(text);
+    if (down) throw new I18nError('error.maintenance', { notice: down });
     try {
       const json = JSON.parse(text);
       if (json.result) throw new I18nError('error.api_result', { result: String(json.result), message: json.msg || '' });
@@ -101,6 +105,23 @@ async function apiFetch(url) {
   // 루프가 정상 종료될 일은 없지만(성공 return / throw), 타입 안전망.
   const cause = lastErr?.cause?.code || lastErr?.cause?.message || '';
   throw new I18nError('error.network', { message: lastErr?.message || 'fetch failed', cause });
+}
+
+// During scheduled work law.go.kr answers every API call with its maintenance page (HTML, status 200,
+// <title>시스템 점검</title>) instead of data. The non-JSON path below passes HTML through as rawText, so
+// that page used to come back as a successful result. It is not one: name it, with the window the
+// page states ("시스템 작업(중단) 시간 : 11월 13일(금) 21:00 ~ 11월 14일(토) 21:00"), or the title when
+// the page states no window. Anything else stays as it was.
+function maintenanceNotice(text) {
+  if (typeof text !== 'string' || !/^\s*</.test(text)) return null;
+  const title = (/<title[^>]*>([^<]*)<\/title>/i.exec(text)?.[1] || '').trim();
+  if (!title.includes('점검')) return null;
+  const plain = text
+    .replace(/<!--[\s\S]*?-->|<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ');
+  const period = /시간\s*:\s*([^~]{1,40}?~[^~]{1,40}?\d{1,2}:\d{2})/.exec(plain)?.[1]?.trim();
+  return period || title;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

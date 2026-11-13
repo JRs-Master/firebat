@@ -9,6 +9,7 @@
     "article_jo_required": "article action requires JO (article number, 6 digits). Examples: Article 2=000200, Article 10=001000",
     "law_not_found": "Law \"{{lm}}\" not found.",
     "network": "law.go.kr connection failed: {{message}} ({{cause}}). Please retry later.",
+    "maintenance": "law.go.kr is under scheduled maintenance ({{notice}}) and sent its notice page instead of data — no result. Query again after the window ends.",
     "api_status": "API {{status}}: {{body}}",
     "api_result": "{{result}}: {{message}}",
     "runtime": "{{message}}"
