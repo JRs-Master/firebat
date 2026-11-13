@@ -337,19 +337,19 @@ impl SysmodCacheAdapter {
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
                 match op {
-                    "eq" | "==" => actual == *value,
-                    "ne" | "!=" => actual != *value,
+                    "eq" | "==" => same(&actual, value),
+                    "ne" | "!=" => !same(&actual, value),
                     "gt" | ">" => num_cmp(&actual, value).map(|o| o > 0).unwrap_or(false),
                     "gte" | ">=" => num_cmp(&actual, value).map(|o| o >= 0).unwrap_or(false),
                     "lt" | "<" => num_cmp(&actual, value).map(|o| o < 0).unwrap_or(false),
                     "lte" | "<=" => num_cmp(&actual, value).map(|o| o <= 0).unwrap_or(false),
-                    "contains" => actual
-                        .as_str()
-                        .map(|s| s.contains(value.as_str().unwrap_or("")))
-                        .unwrap_or(false),
+                    "contains" => match (scalar_text(&actual), scalar_text(value)) {
+                        (Some(hay), Some(needle)) => hay.contains(needle.as_str()),
+                        _ => false,
+                    },
                     "in" => value
                         .as_array()
-                        .map(|arr| arr.contains(&actual))
+                        .map(|arr| arr.iter().any(|v| same(&actual, v)))
                         .unwrap_or(false),
                     _ => false,
                 }
@@ -545,6 +545,28 @@ impl SysmodCacheAdapter {
 /// Lexicographic order is the correct order for the formats this actually meets — ISO dates and
 /// timestamps (`YYYY-MM-DD`, `YYYY-MM-DD HH:MM`) sort chronologically as text. It is only compared
 /// when both sides are strings, so a numeric field keeps numeric semantics ("9" < "10").
+/// A scalar as text — strings as they are, numbers and booleans as written; arrays, objects and null
+/// have none. Tool arguments lose their type in transit: a model that writes "2026" can hand over the
+/// number 2026. Measured 2026-11-13: `contains` read that value with `as_str()`, got "", and matched
+/// all 130 rows of a cached page, because every string contains "". Comparing by the text form makes
+/// the argument's type irrelevant, and a missing value now matches nothing instead of everything.
+fn scalar_text(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+/// Equal as JSON, or — when exactly one side is a string — equal as text ("2026" and 2026), for the
+/// same reason as `scalar_text`. Two numbers or two strings still compare as themselves.
+fn same(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    a == b
+        || (a.is_string() != b.is_string()
+            && matches!((scalar_text(a), scalar_text(b)), (Some(x), Some(y)) if x == y))
+}
+
 fn num_cmp(a: &serde_json::Value, b: &serde_json::Value) -> Option<i32> {
     let to_num = |v: &serde_json::Value| -> Option<f64> {
         match v {
@@ -725,6 +747,51 @@ mod tests {
         let r = c.grep(&key, "qty", "gt", &serde_json::json!("9")).unwrap();
         assert_eq!(r["matched"], 1);
         assert_eq!(r["records"][0]["qty"], "10");
+    }
+
+    #[test]
+    fn grep_contains_does_not_match_everything_when_the_value_arrives_as_a_number() {
+        let (c, _dir) = cache();
+        let records = vec![
+            serde_json::json!({"line": 1, "text": "2026년 시험"}),
+            serde_json::json!({"line": 2, "text": "<html>"}),
+            serde_json::json!({"line": 3, "text": "11월 13일"}),
+        ];
+        let key = c
+            .data("test", "list", serde_json::json!({}), records, None)
+            .unwrap();
+        let r = c.grep(&key, "text", "contains", &serde_json::json!(2026)).unwrap();
+        assert_eq!(r["matched"], 1, "{r}");
+        assert_eq!(r["records"][0]["line"], 1);
+        let r = c.grep(&key, "text", "contains", &serde_json::json!(13)).unwrap();
+        assert_eq!(r["matched"], 1, "{r}");
+        // no value = nothing, not everything
+        let r = c.grep(&key, "text", "contains", &serde_json::json!(null)).unwrap();
+        assert_eq!(r["matched"], 0, "{r}");
+        // a number field can be searched by its digits too
+        let r = c.grep(&key, "line", "contains", &serde_json::json!("3")).unwrap();
+        assert_eq!(r["matched"], 1, "{r}");
+    }
+
+    #[test]
+    fn grep_eq_ne_in_match_a_numeric_string_given_as_a_number() {
+        let (c, _dir) = cache();
+        let records = vec![
+            serde_json::json!({"code": "005930", "year": 2025}),
+            serde_json::json!({"code": "2026", "year": 2026}),
+        ];
+        let key = c
+            .data("test", "list", serde_json::json!({}), records, None)
+            .unwrap();
+        assert_eq!(c.grep(&key, "code", "eq", &serde_json::json!(2026)).unwrap()["matched"], 1);
+        assert_eq!(c.grep(&key, "year", "eq", &serde_json::json!("2026")).unwrap()["matched"], 1);
+        assert_eq!(c.grep(&key, "code", "ne", &serde_json::json!(2026)).unwrap()["matched"], 1);
+        assert_eq!(
+            c.grep(&key, "code", "in", &serde_json::json!([2026, "005930"])).unwrap()["matched"],
+            2
+        );
+        // leading zeros are text: the number 5930 is not "005930"
+        assert_eq!(c.grep(&key, "code", "eq", &serde_json::json!(5930)).unwrap()["matched"], 0);
     }
 
     #[test]
