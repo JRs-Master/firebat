@@ -106,25 +106,30 @@ pub fn compose_hangul(s: &str) -> String {
     out
 }
 
+/// `[n]` / `[-n]` → `.n`. Walks characters, not bytes: walking bytes and pushing each one back
+/// as a `char` turned every multi-byte character into Latin-1 garbage (one Hangul syllable = three
+/// UTF-8 bytes = three Latin letters), so no non-ASCII field name could ever match — measured
+/// 2026-11-12 with exact NFC bytes on both sides (law-search `조문번호` · `조문내용`, 0 rows). The
+/// composed-Hangul comparison above ran on that garbage too, so it never helped either.
 fn normalize_brackets(path: &str) -> String {
+    let chars: Vec<char> = path.chars().collect();
     let mut out = String::with_capacity(path.len());
-    let bytes = path.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i] as char;
+    while i < chars.len() {
+        let c = chars[i];
         if c == '[' {
-            // [-?123] 캡처 후 .123 으로 변환
+            // capture [-?123] and turn it into .123
             let mut j = i + 1;
             let mut num = String::new();
-            if j < bytes.len() && bytes[j] as char == '-' {
+            if j < chars.len() && chars[j] == '-' {
                 num.push('-');
                 j += 1;
             }
-            while j < bytes.len() && (bytes[j] as char).is_ascii_digit() {
-                num.push(bytes[j] as char);
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                num.push(chars[j]);
                 j += 1;
             }
-            if j < bytes.len() && bytes[j] as char == ']' && !num.is_empty() {
+            if j < chars.len() && chars[j] == ']' && !num.is_empty() {
                 out.push('.');
                 out.push_str(&num);
                 i = j + 1;
@@ -180,5 +185,33 @@ mod tests {
         let v = json!({"grid": [[1, 2], [3, 4]]});
         let r = resolve_field_path(&v, "grid[1][0]").unwrap();
         assert_eq!(r, &Value::Number(3.into()));
+    }
+
+    // Non-ASCII field names — the keys and paths are this test's own data, written as escapes so
+    // the bytes are fixed whatever the editor does (조 = U+C870 · 문 = U+BB38 · 번 = U+BC88 · 호 = U+D638).
+    #[test]
+    fn resolve_korean_field_name() {
+        let v = json!({"\u{c870}\u{bb38}": "x"});
+        assert_eq!(resolve_field_path(&v, "\u{c870}\u{bb38}"), Some(&Value::String("x".to_string())));
+    }
+
+    #[test]
+    fn resolve_korean_field_name_after_an_index() {
+        let v = json!({"rows": [{"\u{bc88}\u{d638}": "1"}, {"\u{bc88}\u{d638}": "2"}]});
+        assert_eq!(resolve_field_path(&v, "rows[1].\u{bc88}\u{d638}"), Some(&Value::String("2".to_string())));
+        assert_eq!(resolve_field_path(&v, "rows.0.\u{bc88}\u{d638}"), Some(&Value::String("1".to_string())));
+    }
+
+    #[test]
+    fn resolve_decomposed_korean_path_against_a_composed_key() {
+        // 조문 as jamo (ᄌ ᅩ · ᄆ ᅮ ᆫ) — the branch that compares composed forms
+        let v = json!({"\u{c870}\u{bb38}": "x"});
+        assert_eq!(resolve_field_path(&v, "\u{110c}\u{1169}\u{1106}\u{116e}\u{11ab}"), Some(&Value::String("x".to_string())));
+    }
+
+    #[test]
+    fn normalize_brackets_keeps_non_ascii() {
+        assert_eq!(normalize_brackets("\u{c870}\u{bb38}[2]"), "\u{c870}\u{bb38}.2");
+        assert_eq!(normalize_brackets("a[-1].\u{bc88}\u{d638}"), "a.-1.\u{bc88}\u{d638}");
     }
 }
