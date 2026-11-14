@@ -419,9 +419,14 @@ function parseSearchResult(target, json) {
   const totalCnt = parseInt(root.totalCnt || root.totalCount || '0', 10);
   const page = parseInt(root.page || '1', 10);
 
-  let rawItems = root.law || root.prec || root.admrul || root.ordin
-    || root.detc || root.expc || root.trty || root.lsHistory || [];
-  rawItems = toArray(rawItems);
+  // The list field is named after the target, but not always in the same case — 헌재결정례 comes back as
+  // `DetcSearch.Detc` (2026-11-14: totalCnt 29 with an empty list, because only `root.detc` was read).
+  // Match the target first, then the known list names, all case-insensitively.
+  const keys = Object.keys(root);
+  const listKey = [target, 'law', 'prec', 'admrul', 'ordin', 'detc', 'expc', 'trty', 'lsHistory']
+    .map((name) => keys.find((k) => k.toLowerCase() === String(name).toLowerCase()))
+    .find((k) => k && root[k] != null && typeof root[k] === 'object');
+  const rawItems = toArray(listKey ? root[listKey] : []);
 
   const items = rawItems.map(cleanObject);
   return { totalCnt, page, items };
