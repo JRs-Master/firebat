@@ -554,17 +554,8 @@ function parseLawDetail(root) {
     }).filter(a => a.조문내용 || a.조문제목);
   }
 
-  // 부칙
-  const addenda = toArray(r['부칙']);
-  if (addenda.length > 0 && addenda[0]) {
-    info.부칙 = addenda.map(a => ({
-      부칙공포일자: a['부칙공포일자'] || '',
-      부칙공포번호: a['부칙공포번호'] || '',
-      부칙내용: a['부칙내용'] || '',
-    })).filter(a => a.부칙내용);
-  }
-
-  // 별표
+  // 부칙 · 별표
+  putAddenda(info, r);
   putTables(info, r);
 
   // 개정문/제개정이유
@@ -620,14 +611,7 @@ function parseAdmrulDetail(root) {
   }
 
   // 부칙
-  const addenda = toArray(root['부칙']);
-  if (addenda.length > 0 && addenda[0]) {
-    info.부칙 = addenda.map(a => ({
-      부칙공포일자: a['부칙공포일자'] || '',
-      부칙공포번호: a['부칙공포번호'] || '',
-      부칙내용: a['부칙내용'] || '',
-    })).filter(a => a.부칙내용);
-  }
+  putAddenda(info, root);
 
   // 별표 · 첨부파일 — a rule's tables and forms used to be dropped here entirely (the 법령 parser kept
   // them). For many 고시 the 별표 itself only says "see the attachment", so the attachment list
@@ -689,6 +673,28 @@ function putTables(info, root) {
   else if (root['첨부파일'] && (typeof root['첨부파일'] === 'object' || String(root['첨부파일']).trim())) info.첨부파일원문 = root['첨부파일'];
 }
 
+// ── 부칙 (법령 · 행정규칙 · 자치법규 공통) ──────────────────────────────────────
+// DRF nests 부칙 the way it nests 조문 and 별표: { 부칙: { 부칙단위: [ { 부칙공포일자, 부칙공포번호, 부칙내용: [line …] } … ] } }.
+// Reading 부칙 as a bare list found no 부칙내용 and dropped every unit, so the 시행일 article never arrived — e.g.
+// 소방공무원 임용령 시행규칙 제597호 「다만, 제24조 … 및 별표 6의 개정규정은 2027년 9월 1일부터 시행한다」 (2026-11-16).
+// Same shapes as 별표 (unitsOf) plus a list of plain strings (자치법규). 부칙내용 lines are joined; newest 부칙 first —
+// one law carries every past amendment's 부칙 (41 units for that rule). What cannot be mapped is passed through.
+const ADDENDA_KEYS = ['부칙공포일자', '부칙공포번호', '부칙내용'];
+const linesOf = v => (Array.isArray(v) ? v.flatMap(linesOf) : v == null ? [] : [String(v)]);
+
+function putAddenda(info, root) {
+  const raw = root['부칙'];
+  let units = unitsOf(root, '부칙', '부칙단위', ADDENDA_KEYS);
+  if (units.length === 0 && raw != null) units = toArray(raw).filter(x => typeof x === 'string').map(x => ({ 부칙내용: x }));
+  const list = units.map(a => ({
+    부칙공포일자: a['부칙공포일자'] || '',
+    부칙공포번호: a['부칙공포번호'] || '',
+    부칙내용: linesOf(a['부칙내용']).map(x => x.trim()).filter(Boolean).join('\n'),
+  })).filter(a => a.부칙내용);
+  if (list.length > 0) info.부칙 = list.sort((x, y) => String(y.부칙공포일자).localeCompare(String(x.부칙공포일자)));
+  else if (raw && (typeof raw === 'object' || String(raw).trim())) info.부칙원문 = raw;
+}
+
 // ── 자치법규 본문 ────────────────────────────────────────────────────────────
 function parseOrdinDetail(root) {
   const info = {
@@ -714,12 +720,7 @@ function parseOrdinDetail(root) {
     })).filter(a => typeof a === 'string' ? a : (a.조문내용 || a.조문제목));
   }
 
-  const addenda = toArray(root['부칙']);
-  if (addenda.length > 0 && addenda[0]) {
-    info.부칙 = addenda.map(a => ({
-      부칙내용: a['부칙내용'] || (typeof a === 'string' ? a : ''),
-    })).filter(a => a.부칙내용);
-  }
+  putAddenda(info, root);
 
   return cleanObject(info);
 }
