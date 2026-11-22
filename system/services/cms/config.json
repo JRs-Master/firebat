@@ -27,20 +27,20 @@
       ]
     },
 
-    { "key": "layoutShowHeader", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": true },
-    { "key": "layoutSiteName", "type": "text", "tab": "레이아웃", "group": "헤더", "placeholder": "(비우면 일반 탭의 사이트 제목 사용)" },
-    { "key": "layoutLogoUrl", "type": "text", "tab": "레이아웃", "group": "헤더", "placeholder": "/user/media/...png 또는 https://..." },
-    { "key": "layoutNavLinks", "type": "textarea", "tab": "레이아웃", "group": "헤더", "placeholder": "홈 | /\n블로그 | /blog\n소개 | /about\n문의 | /contact" },
-    { "key": "layoutHeaderSticky", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
-    { "key": "layoutHeaderTransparentOnTop", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
-    { "key": "layoutHeaderMobileDrawer", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
-    { "key": "layoutHeaderMobileDrawerIncludeSidebar", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
-    { "key": "headerWidgetsLeft", "type": "widget-list", "widgetArea": "header", "tab": "레이아웃", "group": "헤더" },
-    { "key": "headerWidgetsCenter", "type": "widget-list", "widgetArea": "header", "tab": "레이아웃", "group": "헤더" },
-    { "key": "headerWidgetsRight", "type": "widget-list", "widgetArea": "header", "tab": "레이아웃", "group": "헤더" },
+    { "key": "layoutShowHeader", "path": "layout.header.show", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": true },
+    { "key": "layoutSiteName", "path": "layout.header.siteName", "type": "text", "tab": "레이아웃", "group": "헤더", "placeholder": "(비우면 일반 탭의 사이트 제목 사용)" },
+    { "key": "layoutLogoUrl", "path": "layout.header.logoUrl", "type": "text", "tab": "레이아웃", "group": "헤더", "placeholder": "/user/media/...png 또는 https://..." },
+    { "key": "layoutNavLinks", "path": "layout.header.navLinks", "format": "label-href-lines", "type": "textarea", "tab": "레이아웃", "group": "헤더", "placeholder": "홈 | /\n블로그 | /blog\n소개 | /about\n문의 | /contact" },
+    { "key": "layoutHeaderSticky", "path": "layout.header.sticky", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
+    { "key": "layoutHeaderTransparentOnTop", "path": "layout.header.transparentOnTop", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
+    { "key": "layoutHeaderMobileDrawer", "path": "layout.header.mobileDrawer", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
+    { "key": "layoutHeaderMobileDrawerIncludeSidebar", "path": "layout.header.mobileDrawerIncludeSidebar", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": false },
+    { "key": "headerWidgetsLeft", "path": "layout.header.widgets.left", "type": "widget-list", "widgetArea": "header", "tab": "레이아웃", "group": "헤더" },
+    { "key": "headerWidgetsCenter", "path": "layout.header.widgets.center", "type": "widget-list", "widgetArea": "header", "tab": "레이아웃", "group": "헤더" },
+    { "key": "headerWidgetsRight", "path": "layout.header.widgets.right", "type": "widget-list", "widgetArea": "header", "tab": "레이아웃", "group": "헤더" },
 
     {
-      "key": "layoutMode",
+      "key": "layoutMode", "path": "layout.mode",
       "type": "select",
       "tab": "레이아웃",
       "group": "사이드바",
@@ -53,33 +53,17 @@
         { "value": "boxed", "label": "Boxed — 사이드바 없음 + 본문 boxed" }
       ]
     },
-    { "key": "sidebarWidgets", "type": "widget-list", "widgetArea": "sidebar", "tab": "레이아웃", "group": "사이드바" },
-    { "key": "sidebarShowSearchBox", "type": "toggle", "tab": "레이아웃", "group": "사이드바", "defaultValue": false },
-    { "key": "sidebarShowRecentPosts", "type": "toggle", "tab": "레이아웃", "group": "사이드바", "defaultValue": true },
-    { "key": "sidebarRecentPostsCount", "type": "number", "tab": "레이아웃", "group": "사이드바", "placeholder": "5", "defaultValue": 5 },
-    { "key": "sidebarShowCategoryList", "type": "toggle", "tab": "레이아웃", "group": "사이드바", "defaultValue": false },
-    { "key": "sidebarShowTagCloud", "type": "toggle", "tab": "레이아웃", "group": "사이드바", "defaultValue": false },
-    { "key": "sidebarTagCloudLimit", "type": "number", "tab": "레이아웃", "group": "사이드바", "placeholder": "20", "defaultValue": 20 },
-    { "key": "sidebarShowSubscribe", "type": "toggle", "tab": "레이아웃", "group": "사이드바", "defaultValue": false },
-    { "key": "sidebarHtmlWidget", "type": "textarea", "tab": "레이아웃", "group": "사이드바", "placeholder": "<div>광고 코드 / 연락처 / 소개 등</div>" },
+    { "key": "sidebarWidgets", "path": "layout.sidebar.widgets", "type": "widget-list", "widgetArea": "sidebar", "tab": "레이아웃", "group": "사이드바" },
 
-    { "key": "layoutShowFooter", "type": "toggle", "tab": "레이아웃", "group": "푸터", "defaultValue": true },
-    { "key": "layoutFooterText", "type": "textarea", "tab": "레이아웃", "group": "푸터", "placeholder": "© 2026 사이트명. All rights reserved." },
-    { "key": "footerWidgetsCol1", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
-    { "key": "footerWidgetsCol2", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
-    { "key": "footerWidgetsCol3", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
-    { "key": "footerWidgetsCol4", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
-    { "key": "footerColumn1Heading", "type": "text", "tab": "레이아웃", "group": "푸터", "placeholder": "회사 소개" },
-    { "key": "footerColumn1Content", "type": "textarea", "tab": "레이아웃", "group": "푸터", "placeholder": "<a href=\"/about\">소개</a><br><a href=\"/contact\">연락처</a>" },
-    { "key": "footerColumn2Heading", "type": "text", "tab": "레이아웃", "group": "푸터", "placeholder": "카테고리" },
-    { "key": "footerColumn2Content", "type": "textarea", "tab": "레이아웃", "group": "푸터", "placeholder": "<a href=\"/blog\">블로그</a>" },
-    { "key": "footerColumn3Heading", "type": "text", "tab": "레이아웃", "group": "푸터", "placeholder": "구독" },
-    { "key": "footerColumn3Content", "type": "textarea", "tab": "레이아웃", "group": "푸터", "placeholder": "<a href=\"/feed.xml\">RSS</a>" },
-    { "key": "footerColumn4Heading", "type": "text", "tab": "레이아웃", "group": "푸터", "placeholder": "소셜" },
-    { "key": "footerColumn4Content", "type": "textarea", "tab": "레이아웃", "group": "푸터", "placeholder": "<a href=\"https://x.com/me\">X</a>" },
+    { "key": "layoutShowFooter", "path": "layout.footer.show", "type": "toggle", "tab": "레이아웃", "group": "푸터", "defaultValue": true },
+    { "key": "layoutFooterText", "path": "layout.footer.text", "type": "textarea", "tab": "레이아웃", "group": "푸터", "placeholder": "© 2026 사이트명. All rights reserved." },
+    { "key": "footerWidgetsCol1", "path": "layout.footer.widgets.0", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
+    { "key": "footerWidgetsCol2", "path": "layout.footer.widgets.1", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
+    { "key": "footerWidgetsCol3", "path": "layout.footer.widgets.2", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
+    { "key": "footerWidgetsCol4", "path": "layout.footer.widgets.3", "type": "widget-list", "widgetArea": "footer", "tab": "레이아웃", "group": "푸터" },
 
     {
-      "key": "pageListCardVariant",
+      "key": "pageListCardVariant", "path": "layout.pageList.cardVariant",
       "type": "select",
       "tab": "레이아웃",
       "group": "본문 · 글 list",
@@ -91,21 +75,21 @@
         { "value": "magazine", "label": "Magazine — 잡지 (hero + 2열 카드)" }
       ]
     },
-    { "key": "pageListPerPage", "type": "number", "tab": "레이아웃", "group": "본문 · 글 list", "placeholder": "20", "defaultValue": 20 },
-    { "key": "layoutShowReadingProgress", "type": "toggle", "tab": "레이아웃", "group": "본문 · 글 list", "defaultValue": false },
-    { "key": "layoutShowRelatedPosts", "type": "toggle", "tab": "레이아웃", "group": "본문 · 글 list", "defaultValue": true },
-    { "key": "layoutRelatedPostsCount", "type": "number", "tab": "레이아웃", "group": "본문 · 글 list", "placeholder": "5", "defaultValue": 5 },
+    { "key": "pageListPerPage", "path": "layout.pageList.perPage", "type": "number", "tab": "레이아웃", "group": "본문 · 글 list", "placeholder": "10", "defaultValue": 10 },
+    { "key": "layoutShowReadingProgress", "path": "layout.showReadingProgress", "type": "toggle", "tab": "레이아웃", "group": "본문 · 글 list", "defaultValue": false },
+    { "key": "layoutShowRelatedPosts", "path": "layout.showRelatedPosts", "type": "toggle", "tab": "레이아웃", "group": "본문 · 글 list", "defaultValue": false },
+    { "key": "layoutRelatedPostsCount", "path": "layout.relatedPostsCount", "type": "number", "tab": "레이아웃", "group": "본문 · 글 list", "placeholder": "5", "defaultValue": 5 },
 
-    { "key": "adsensePublisherId", "type": "text", "tab": "광고", "placeholder": "ca-pub-1234567890123456" },
-    { "key": "adsenseSlotHeaderBottom", "type": "text", "tab": "광고", "placeholder": "1234567890" },
-    { "key": "adsenseSlotPostTop", "type": "text", "tab": "광고", "placeholder": "1234567890" },
-    { "key": "adsenseSlotPostBottom", "type": "text", "tab": "광고", "placeholder": "1234567890" },
-    { "key": "adsenseSlotFooterTop", "type": "text", "tab": "광고", "placeholder": "1234567890" },
+    { "key": "adsensePublisherId", "path": "adsense.publisherId", "type": "text", "tab": "광고", "placeholder": "ca-pub-1234567890123456" },
+    { "key": "adsenseSlotHeaderBottom", "path": "adsense.slotHeaderBottom", "type": "text", "tab": "광고", "placeholder": "1234567890" },
+    { "key": "adsenseSlotPostTop", "path": "adsense.slotPostTop", "type": "text", "tab": "광고", "placeholder": "1234567890" },
+    { "key": "adsenseSlotPostBottom", "path": "adsense.slotPostBottom", "type": "text", "tab": "광고", "placeholder": "1234567890" },
+    { "key": "adsenseSlotFooterTop", "path": "adsense.slotFooterTop", "type": "text", "tab": "광고", "placeholder": "1234567890" },
 
-    { "key": "themePreset", "type": "color-presets", "tab": "테마", "group": "색", "defaultValue": "slate-pro" },
-    { "key": "__themeColorOverrides", "type": "color-overrides", "tab": "테마", "group": "색" },
+    { "key": "themePreset", "path": "theme.preset", "type": "color-presets", "tab": "테마", "group": "색", "defaultValue": "slate-pro" },
+    { "key": "__themeColorOverrides", "path": "theme.colors", "type": "color-overrides", "tab": "테마", "group": "색" },
     {
-      "key": "themeFont",
+      "key": "themeFont", "path": "theme.fontPreset",
       "type": "select",
       "tab": "테마",
       "group": "폰트",
@@ -119,19 +103,19 @@
       ]
     },
     { "key": "customFontUrls", "type": "textarea", "tab": "테마", "group": "폰트", "placeholder": "https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" },
-    { "key": "themeFont_body", "type": "text", "tab": "테마", "group": "폰트", "placeholder": "'Inter', sans-serif" },
-    { "key": "themeFont_heading", "type": "text", "tab": "테마", "group": "폰트", "placeholder": "'Cal Sans', sans-serif" },
-    { "key": "themeFont_mono", "type": "text", "tab": "테마", "group": "폰트", "placeholder": "'JetBrains Mono', monospace" },
+    { "key": "themeFont_body", "path": "theme.fonts.body", "type": "text", "tab": "테마", "group": "폰트", "placeholder": "'Inter', sans-serif" },
+    { "key": "themeFont_heading", "path": "theme.fonts.heading", "type": "text", "tab": "테마", "group": "폰트", "placeholder": "'Cal Sans', sans-serif" },
+    { "key": "themeFont_mono", "path": "theme.fonts.mono", "type": "text", "tab": "테마", "group": "폰트", "placeholder": "'JetBrains Mono', monospace" },
 
-    { "key": "themeBaseFontSize", "type": "text", "tab": "테마", "group": "타이포그래피", "placeholder": "16px" },
-    { "key": "themeScaleRatio", "type": "number", "tab": "테마", "group": "타이포그래피", "placeholder": "1.25" },
-    { "key": "themeBodyLineHeight", "type": "number", "tab": "테마", "group": "타이포그래피", "placeholder": "1.7" },
-    { "key": "themeHeadingLineHeight", "type": "number", "tab": "테마", "group": "타이포그래피", "placeholder": "1.25" },
-    { "key": "themeHeadingLetterSpacing", "type": "text", "tab": "테마", "group": "타이포그래피", "placeholder": "-0.01em" },
-    { "key": "themeBodyLetterSpacing", "type": "text", "tab": "테마", "group": "타이포그래피", "placeholder": "normal" },
+    { "key": "themeBaseFontSize", "path": "theme.typography.baseFontSize", "type": "text", "tab": "테마", "group": "타이포그래피", "placeholder": "16px" },
+    { "key": "themeScaleRatio", "path": "theme.typography.scaleRatio", "type": "number", "tab": "테마", "group": "타이포그래피", "placeholder": "1.25" },
+    { "key": "themeBodyLineHeight", "path": "theme.typography.bodyLineHeight", "type": "number", "tab": "테마", "group": "타이포그래피", "placeholder": "1.7" },
+    { "key": "themeHeadingLineHeight", "path": "theme.typography.headingLineHeight", "type": "number", "tab": "테마", "group": "타이포그래피", "placeholder": "1.25" },
+    { "key": "themeHeadingLetterSpacing", "path": "theme.typography.headingLetterSpacing", "type": "text", "tab": "테마", "group": "타이포그래피", "placeholder": "-0.01em" },
+    { "key": "themeBodyLetterSpacing", "path": "theme.typography.bodyLetterSpacing", "type": "text", "tab": "테마", "group": "타이포그래피", "placeholder": "normal" },
 
     {
-      "key": "themeH1Style",
+      "key": "themeH1Style", "path": "theme.heading.h1",
       "type": "select",
       "tab": "테마",
       "group": "제목 스타일",
@@ -146,7 +130,7 @@
       ]
     },
     {
-      "key": "themeH2Style",
+      "key": "themeH2Style", "path": "theme.heading.h2",
       "type": "select",
       "tab": "테마",
       "group": "제목 스타일",
@@ -161,7 +145,7 @@
       ]
     },
     {
-      "key": "themeH3Style",
+      "key": "themeH3Style", "path": "theme.heading.h3",
       "type": "select",
       "tab": "테마",
       "group": "제목 스타일",
@@ -176,11 +160,11 @@
       ]
     },
 
-    { "key": "themeContentMaxWidth", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "1200px", "defaultValue": "1200px" },
-    { "key": "themePaddingMobile", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "16px", "defaultValue": "16px" },
-    { "key": "themePaddingTablet", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "24px", "defaultValue": "24px" },
-    { "key": "themePaddingDesktop", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "32px", "defaultValue": "32px" },
-    { "key": "themeRadius", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "8px", "defaultValue": "8px" },
+    { "key": "themeContentMaxWidth", "path": "theme.layout.contentMaxWidth", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "1200px", "defaultValue": "1200px" },
+    { "key": "themePaddingMobile", "path": "theme.layout.paddingMobile", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "16px", "defaultValue": "16px" },
+    { "key": "themePaddingTablet", "path": "theme.layout.paddingTablet", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "24px", "defaultValue": "24px" },
+    { "key": "themePaddingDesktop", "path": "theme.layout.paddingDesktop", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "32px", "defaultValue": "32px" },
+    { "key": "themeRadius", "path": "theme.layout.radius", "type": "text", "tab": "테마", "group": "본문 폭 · 여백 · 모서리", "placeholder": "8px", "defaultValue": "8px" },
 
     { "key": "sitemapEnabled", "type": "toggle", "tab": "SEO", "defaultValue": true },
     { "key": "rssEnabled", "type": "toggle", "tab": "SEO", "defaultValue": true },
@@ -207,7 +191,6 @@
 
     { "key": "headScripts", "type": "textarea", "tab": "스크립트", "placeholder": "<!-- Google Analytics 등 -->" },
     { "key": "bodyScripts", "type": "textarea", "tab": "스크립트", "placeholder": "<!-- 채팅 위젯 등 -->" },
-    { "key": "adsTxt", "type": "textarea", "tab": "스크립트", "placeholder": "google.com, pub-XXXXXXXX, DIRECT, f08c47fec0942fa0" },
     { "key": "verifications", "type": "verifications", "tab": "스크립트" }
   ]
 }

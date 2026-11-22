@@ -58,7 +58,7 @@
     },
     "layoutNavLinks": {
       "label": "네비 링크",
-      "description": "한 줄당 \"라벨 | 경로\" 형식입니다. 헤더 우측에 가로로 나열됩니다.",
+      "description": "한 줄당 \"라벨 | 경로\" 형식입니다. 헤더 위젯 「네비 링크」(글로벌 nav 사용)와 모바일 햄버거 메뉴가 이 목록을 씁니다.",
       "group": "헤더"
     },
     "layoutHeaderSticky": {
@@ -113,46 +113,6 @@
       "description": "위젯 카탈로그에서 추가·순서 변경·삭제·표시 대상(PC/모바일)·props 편집이 가능합니다. 설정되어 있으면 아래 legacy toggle 은 무시됩니다. 빈 상태이면 toggle 호환 폴백이 사용됩니다.",
       "group": "사이드바"
     },
-    "sidebarShowSearchBox": {
-      "label": "검색 박스 (legacy)",
-      "description": "[옛 toggle, widgets 미설정 시] 사이드바에 검색 입력창을 표시합니다. /search 로 GET.",
-      "group": "사이드바"
-    },
-    "sidebarShowRecentPosts": {
-      "label": "최근 글 (legacy)",
-      "description": "[옛 toggle] 사이드바에 최근 글 list 를 표시합니다.",
-      "group": "사이드바"
-    },
-    "sidebarRecentPostsCount": {
-      "label": "최근 글 개수 (legacy)",
-      "description": "[옛 toggle] 최근 글 개수입니다.",
-      "group": "사이드바"
-    },
-    "sidebarShowCategoryList": {
-      "label": "카테고리 목록 (legacy)",
-      "description": "[옛 toggle] 프로젝트별 글 수를 표시합니다.",
-      "group": "사이드바"
-    },
-    "sidebarShowTagCloud": {
-      "label": "태그 cloud (legacy)",
-      "description": "[옛 toggle] head.keywords 빈도수를 기반으로 합니다.",
-      "group": "사이드바"
-    },
-    "sidebarTagCloudLimit": {
-      "label": "태그 cloud 개수 (legacy)",
-      "description": "[옛 toggle] 태그 cloud 표시 개수입니다.",
-      "group": "사이드바"
-    },
-    "sidebarShowSubscribe": {
-      "label": "구독 안내 (legacy)",
-      "description": "[옛 toggle] RSS feed.xml 링크를 표시합니다.",
-      "group": "사이드바"
-    },
-    "sidebarHtmlWidget": {
-      "label": "HTML 위젯 (legacy)",
-      "description": "[옛 toggle] 자유 HTML 위젯입니다. sanitize 후 inline DOM 으로 삽입됩니다.",
-      "group": "사이드바"
-    },
     "layoutShowFooter": {
       "label": "푸터 표시",
       "description": "사용자 페이지 하단 푸터 표시 여부입니다. 기본 ON.",
@@ -183,46 +143,6 @@
       "description": "푸터 네 번째 컬럼입니다.",
       "group": "푸터"
     },
-    "footerColumn1Heading": {
-      "label": "컬럼 1 — 제목 (legacy)",
-      "description": "[legacy] widgets 미설정 시 자동 widget 으로 변환됩니다.",
-      "group": "푸터"
-    },
-    "footerColumn1Content": {
-      "label": "컬럼 1 — 본문 (legacy)",
-      "description": "[legacy] HTML 이 허용됩니다.",
-      "group": "푸터"
-    },
-    "footerColumn2Heading": {
-      "label": "컬럼 2 — 제목 (legacy)",
-      "description": "[legacy]",
-      "group": "푸터"
-    },
-    "footerColumn2Content": {
-      "label": "컬럼 2 — 본문 (legacy)",
-      "description": "[legacy] HTML 이 허용됩니다.",
-      "group": "푸터"
-    },
-    "footerColumn3Heading": {
-      "label": "컬럼 3 — 제목 (legacy)",
-      "description": "[legacy]",
-      "group": "푸터"
-    },
-    "footerColumn3Content": {
-      "label": "컬럼 3 — 본문 (legacy)",
-      "description": "[legacy] HTML 이 허용됩니다.",
-      "group": "푸터"
-    },
-    "footerColumn4Heading": {
-      "label": "컬럼 4 — 제목 (legacy)",
-      "description": "[legacy]",
-      "group": "푸터"
-    },
-    "footerColumn4Content": {
-      "label": "컬럼 4 — 본문 (legacy)",
-      "description": "[legacy] HTML 이 허용됩니다.",
-      "group": "푸터"
-    },
     "pageListCardVariant": {
       "label": "글 카드 변형",
       "description": "홈·프로젝트·태그·검색 페이지의 글 list 표시 방식입니다. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축) / magazine (잡지 — 첫 글 hero 큰 이미지 + 나머지 2열 카드, featured image + excerpt 자동 추출).",
@@ -246,7 +166,7 @@
     },
     "layoutShowRelatedPosts": {
       "label": "관련 글 추천",
-      "description": "콘텐츠 페이지(project 가 설정된) 본문 끝에 head.keywords 기반 매칭 글 list 를 표시합니다. score = 공유 keyword 개수입니다. 키워드가 0건이거나 매칭 0건이면 자동으로 미표시됩니다. 기본 ON.",
+      "description": "콘텐츠 페이지(project 가 설정된) 본문 끝에 head.keywords 기반 매칭 글 list 를 표시합니다. score = 공유 keyword 개수입니다. 키워드가 0건이거나 매칭 0건이면 자동으로 미표시됩니다. 기본 OFF.",
       "group": "본문 · 글 list"
     },
     "layoutRelatedPostsCount": {
@@ -497,10 +417,6 @@
     "bodyScripts": {
       "label": "</body> 스크립트",
       "description": "모든 페이지 </body> 앞에 삽입할 HTML 입니다."
-    },
-    "adsTxt": {
-      "label": "ads.txt (legacy — verifications 권장)",
-      "description": "/ads.txt 응답 내용입니다. 이 필드는 비워두고 아래 \"사이트 인증 파일\" 의 ads.txt 항목 사용을 권장합니다 (verifications 시스템 통합)."
     },
     "verifications": {
       "label": "사이트 인증 파일",

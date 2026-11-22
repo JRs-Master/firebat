@@ -10,6 +10,7 @@ import { StructuredListEditor, type EditorSchema } from './StructuredListEditor'
 import { HubPanel } from './HubPanel';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
+import { screenFromStored, storedFromScreen, type FieldFormat, type FieldPlace } from '../../../lib/settings-path';
 import { WidgetListField } from './WidgetListField';
 import { useTranslations, useLang } from '../../../lib/i18n';
 import type { Lang } from '../../../lib/i18n';
@@ -44,6 +45,8 @@ interface SettingField {
   widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
   editor?: 'trades' | 'strategies'; // structured-list 전용: 카드 편집기 종류 (editorSchema 없을 때의 폴백)
   editorSchema?: EditorSchema;      // structured-list 전용: config 선언형 카드 레이아웃 — 있으면 이것이 이긴다
+  path?: string;            // 값이 사는 자리(점 경로) — 없으면 맨 윗단 key. lib/settings-path.ts
+  format?: FieldFormat;     // 화면 값 ↔ 저장 꼴 변환(선언). lib/settings-path.ts FORMATS
 }
 
 /**
@@ -87,6 +90,8 @@ interface ConfigSettingField {
   widgetArea?: 'header' | 'sidebar' | 'footer';
   editor?: 'trades' | 'strategies';
   editorSchema?: EditorSchema;
+  path?: string;
+  format?: FieldFormat;
   i18n?: Partial<Record<Lang, ConfigI18nText>>;
 }
 
@@ -161,6 +166,9 @@ function resolveConfigField(
     widgetArea: cf.widgetArea,
     editor: cf.editor,
     editorSchema: cf.editorSchema,
+    // 값이 사는 자리 · 변환 — 이름을 적지 않으면 여기서 떨어져 화면이 맨 윗단 key 로 저장한다
+    path: cf.path,
+    format: cf.format,
   };
 }
 
@@ -255,6 +263,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   // "which credentials does this module use".
   const [declaresAccounts, setDeclaresAccounts] = useState(false);
   const [settings, setSettings] = useState<Record<string, any>>({});
+  // 저장돼 있던 객체 그대로 — 저장은 통째로 바꾸기라, 선언되지 않은 값(머리 줄 rows 등)을 잃지 않게 여기서 시작한다
+  const [storedSettings, setStoredSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -393,18 +403,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           const title = (fetchedLang?.title as string | undefined) || moduleName;
           setSchema({ title, fields: allFields });
 
-          // 기본값과 저장된 값 병합
-          const merged: Record<string, any> = {};
-          for (const field of allFields) {
-            if (field.defaultValue !== undefined) merged[field.key] = field.defaultValue;
-          }
-          const savedData = data.settings ?? {};
-          for (const [key, val] of Object.entries(savedData)) {
-            if (val !== null && val !== undefined) {
-              merged[key] = val;
-            }
-          }
-          setSettings(merged);
+          // 기본값과 저장된 값 병합 — 칸이 선언한 자리(path)에서 읽는다(lib/settings-path.ts)
+          const savedData = (data.settings ?? {}) as Record<string, any>;
+          setStoredSettings(savedData);
+          setSettings(screenFromStored(fieldPlaces(allFields), savedData));
         }
       })
       .catch(() => {})
@@ -502,19 +504,18 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
       // defaults, so writing back an untouched field freezes it at whatever the default happened
       // to be that day — press save once on a fresh module and its shipped values can never
       // appear again, not even when a later version changes them.
-      const toSave: Record<string, any> = {};
-      const defaults = new Map((schema?.fields ?? []).map(f => [f.key, f.defaultValue]));
-      for (const [key, val] of Object.entries(settings)) {
-        const def = defaults.get(key);
-        if (def !== undefined && JSON.stringify(def) === JSON.stringify(val)) continue;
-        toSave[key] = val;
-      }
+      // Each field goes to the place it declares (`path`), starting from what was stored — the
+      // save replaces the stored object, so undeclared values must ride along (lib/settings-path.ts).
+      const toSave = storedFromScreen(fieldPlaces(schema?.fields ?? []), settings, storedSettings);
       const data = await apiPatch<{ success: boolean }>(
         '/api/settings/modules',
         { name: resolvedName, settings: toSave },
         { category: 'system-module' },
       );
-      if (data.success) flashSaved();
+      if (data.success) {
+        setStoredSettings(toSave);
+        flashSaved();
+      }
     } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
     finally { setSaving(false); }
   };
@@ -1667,6 +1668,33 @@ const COLOR_OVERRIDE_FIELDS: Array<{
   { key: 'themeColor_bgCard',    langKey: 'bg_card',    fallback: 'Card background',   defaultPresetKey: 'bgCard' },
   { key: 'themeColor_border',    langKey: 'border',     fallback: 'Border',            defaultPresetKey: 'border' },
 ];
+
+/** Where each field's value is stored. Secret / OAuth fields keep their values in the vault, not in
+ *  settings, so they have no place here. A color-overrides field with a `path` stores one entry per
+ *  colour token under it (themeColor_primary → <path>.primary); without a path its screen keys stay
+ *  top-level as before. */
+function fieldPlaces(fields: SettingField[]): FieldPlace[] {
+  const out: FieldPlace[] = [];
+  for (const f of fields) {
+    if (f.type === 'oauth' || f.type === 'secret' || f.type === 'shared-secret') continue;
+    if (f.type === 'color-overrides') {
+      if (f.path) {
+        for (const c of COLOR_OVERRIDE_FIELDS) {
+          out.push({ screenKey: c.key, path: `${f.path}.${String(c.defaultPresetKey)}`, movedFrom: c.key });
+        }
+      }
+      continue;
+    }
+    out.push({
+      screenKey: f.key,
+      path: f.path ?? f.key,
+      defaultValue: f.defaultValue,
+      format: f.format,
+      movedFrom: f.path ? f.key : undefined,
+    });
+  }
+  return out;
+}
 
 /** 색 입력 — hex(#RRGGBB) / rgb(...) / rgba(...) 모두 받아 정규화.
  *  반환: { hex: '#RRGGBB', alpha: 0~1 }. alpha 1 이면 hex 그대로 저장, <1 이면 rgba() 형식 저장.

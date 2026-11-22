@@ -362,7 +362,8 @@ async function SiteNameWidget({ area }: { area: WidgetArea }) {
       className="text-base sm:text-lg font-bold tracking-tight"
       style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
     >
-      {cms.siteTitle}
+      {/* CMS 레이아웃 › 헤더 「사이트명」(layout.header.siteName) — 비우면 일반 탭의 사이트 제목 */}
+      {(typeof cms.layout?.header?.siteName === 'string' && cms.layout.header.siteName.trim()) || cms.siteTitle}
     </span>
   );
   if (area === 'header') {

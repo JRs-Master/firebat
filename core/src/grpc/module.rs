@@ -639,24 +639,14 @@ fn cms_defaults() -> serde_json::Value {
             "slotFooterTop": "",
             "slotCardFeed": ""
         },
+        // Colours and fonts are named presets plus per-token overrides; the frontend resolves the
+        // preset (lib/design-tokens.ts mergeTokens). Defaulting the override maps to the full preset
+        // values made them win over any preset the admin picked — empty means "use the preset".
         "theme": {
             "preset": "slate-pro",
-            "colors": {
-                "primary": "#0f172a",
-                "accent": "#f59e0b",
-                "up": "#ef4444",
-                "down": "#3b82f6",
-                "text": "#0f172a",
-                "textMuted": "#64748b",
-                "bg": "#ffffff",
-                "bgCard": "#f8fafc",
-                "border": "#e2e8f0"
-            },
-            "fonts": {
-                "body": "'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, sans-serif",
-                "heading": "'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, sans-serif",
-                "mono": "'JetBrains Mono', 'Fira Code', Consolas, monospace"
-            },
+            "fontPreset": "pretendard",
+            "colors": {},
+            "fonts": {},
             "layout": {
                 "contentMaxWidth": "1200px",
                 "paddingMobile": "16px",
@@ -706,7 +696,7 @@ fn cms_defaults() -> serde_json::Value {
                 "columns": []
             },
             "pageList": {
-                "variant": "list",
+                "cardVariant": "list",
                 "showFeaturedImage": true,
                 "showExcerpt": true,
                 "showReadingTime": false,

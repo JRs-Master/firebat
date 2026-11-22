@@ -347,13 +347,29 @@ export function tokensToCss(tokens: DesignTokens): string {
 
 /** Partial<DesignTokens> 를 default 와 deep merge — 사용자 일부 override 시 결합.
  *  CMS settings 에서 사용자가 일부 필드만 설정한 경우 default 와 병합. */
-export function mergeTokens(partial?: Partial<DesignTokens>): DesignTokens {
+export function mergeTokens(
+  partial?: Partial<DesignTokens> & { preset?: string; fontPreset?: string },
+): DesignTokens {
   if (!partial) return DEFAULT_TOKENS;
+  // CMS 테마 = 고른 프리셋(색 preset · 폰트 fontPreset) 위에 칸별 덮어쓰기(colors · fonts). 빈 덮어쓰기는 프리셋 값.
+  // 예전엔 프리셋 이름을 아무도 안 읽어, 관리 화면에서 프리셋을 바꿔도 사이트 색이 그대로였다(2026-11-23).
+  const presetColors = (partial.preset && COLOR_PRESETS[partial.preset]?.colors) || DEFAULT_TOKENS.colors;
+  const presetFonts = (partial.fontPreset && FONT_PRESETS[partial.fontPreset]) || DEFAULT_TOKENS.fonts;
   return {
-    colors: { ...DEFAULT_TOKENS.colors, ...(partial.colors ?? {}) },
-    fonts: { ...DEFAULT_TOKENS.fonts, ...(partial.fonts ?? {}) },
+    colors: { ...presetColors, ...filled(partial.colors) },
+    fonts: { ...presetFonts, ...filled(partial.fonts) },
     layout: { ...DEFAULT_TOKENS.layout, ...(partial.layout ?? {}) },
     heading: { ...DEFAULT_TOKENS.heading, ...(partial.heading ?? {}) },
     typography: { ...DEFAULT_TOKENS.typography, ...(partial.typography ?? {}) },
   };
+}
+
+/** 덮어쓰기 중 값이 있는 칸만 — '' · null 은 「덮어쓰지 않음」이다. */
+function filled<T extends object>(o: T | undefined): Partial<T> {
+  const out: Partial<T> = {};
+  if (!o) return out;
+  for (const [k, v] of Object.entries(o)) {
+    if (v !== '' && v !== null && v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
 }

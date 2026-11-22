@@ -2,7 +2,8 @@
  * CMS Header — Phase B widget 빌더 + sticky / transparent-on-top.
  *
  * Layout: 좌 / 중 / 우 3 col flex. 각 col 의 widget 배열을 CmsWidget 으로 horizontal 렌더.
- * widgets 미설정 시 composeLayout 가 legacy (siteName/logoUrl/navLinks) 에서 자동 derive.
+ * 그리는 것은 widgets 뿐이다(옛 composeLayout 자동 derive 는 없어졌다 — 2026-11-23 확인). 사이트명 · 로고 · 네비 링크는
+ * 위젯(site-name · site-logo · nav-links)이 layout.header.siteName · logoUrl · navLinks 를 읽어 그린다.
  *
  * Sticky: position: sticky + top: 0 + z-index: 30 (모달 z-index 보다 낮게).
  * Transparent on top: scrollY=0 일 때 배경 투명. scroll → 배경색 + border + 그림자 transition.

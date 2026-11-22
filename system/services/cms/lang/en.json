@@ -61,7 +61,7 @@
     },
     "layoutNavLinks": {
       "label": "Nav links",
-      "description": "One line per \"label | path\". Rendered horizontally on the right of the header.",
+      "description": "One line per \"label | path\". Used by the header \"Nav links\" widget (global nav) and the mobile hamburger menu.",
       "placeholder": "Home | /\nBlog | /blog\nAbout | /about\nContact | /contact",
       "group": "Header"
     },
@@ -117,47 +117,6 @@
       "description": "Add / reorder / remove / set visibility (desktop / mobile) / edit props from the widget catalog. When set, the legacy toggles below are ignored. When empty, falls back to the legacy toggles.",
       "group": "Sidebar"
     },
-    "sidebarShowSearchBox": {
-      "label": "Search box (legacy)",
-      "description": "[Legacy toggle — used only when widgets are unset] Shows a search input in the sidebar. GET to /search.",
-      "group": "Sidebar"
-    },
-    "sidebarShowRecentPosts": {
-      "label": "Recent posts (legacy)",
-      "description": "[Legacy toggle] Shows a recent-posts list in the sidebar.",
-      "group": "Sidebar"
-    },
-    "sidebarRecentPostsCount": {
-      "label": "Recent posts count (legacy)",
-      "description": "[Legacy toggle] Number of recent posts.",
-      "group": "Sidebar"
-    },
-    "sidebarShowCategoryList": {
-      "label": "Category list (legacy)",
-      "description": "[Legacy toggle] Shows post counts per project.",
-      "group": "Sidebar"
-    },
-    "sidebarShowTagCloud": {
-      "label": "Tag cloud (legacy)",
-      "description": "[Legacy toggle] Based on head.keywords frequency.",
-      "group": "Sidebar"
-    },
-    "sidebarTagCloudLimit": {
-      "label": "Tag cloud size (legacy)",
-      "description": "[Legacy toggle] Number of tags shown in the cloud.",
-      "group": "Sidebar"
-    },
-    "sidebarShowSubscribe": {
-      "label": "Subscribe widget (legacy)",
-      "description": "[Legacy toggle] Shows an RSS feed.xml link.",
-      "group": "Sidebar"
-    },
-    "sidebarHtmlWidget": {
-      "label": "HTML widget (legacy)",
-      "description": "[Legacy toggle] Free-form HTML widget. Sanitized and inserted as inline DOM.",
-      "placeholder": "<div>Ad code / contact / about / etc.</div>",
-      "group": "Sidebar"
-    },
     "layoutShowFooter": {
       "label": "Show footer",
       "description": "Whether to render the bottom footer on user pages. Default ON.",
@@ -189,52 +148,6 @@
       "description": "The fourth footer column.",
       "group": "Footer"
     },
-    "footerColumn1Heading": {
-      "label": "Col 1 — heading (legacy)",
-      "description": "[Legacy] Auto-converted to a widget when widgets are unset.",
-      "placeholder": "About",
-      "group": "Footer"
-    },
-    "footerColumn1Content": {
-      "label": "Col 1 — content (legacy)",
-      "description": "[Legacy] HTML allowed.",
-      "placeholder": "<a href=\"/about\">About</a><br><a href=\"/contact\">Contact</a>",
-      "group": "Footer"
-    },
-    "footerColumn2Heading": {
-      "label": "Col 2 — heading (legacy)",
-      "description": "[Legacy]",
-      "placeholder": "Categories",
-      "group": "Footer"
-    },
-    "footerColumn2Content": {
-      "label": "Col 2 — content (legacy)",
-      "description": "[Legacy] HTML allowed.",
-      "placeholder": "<a href=\"/blog\">Blog</a>",
-      "group": "Footer"
-    },
-    "footerColumn3Heading": {
-      "label": "Col 3 — heading (legacy)",
-      "description": "[Legacy]",
-      "placeholder": "Subscribe",
-      "group": "Footer"
-    },
-    "footerColumn3Content": {
-      "label": "Col 3 — content (legacy)",
-      "description": "[Legacy] HTML allowed.",
-      "group": "Footer"
-    },
-    "footerColumn4Heading": {
-      "label": "Col 4 — heading (legacy)",
-      "description": "[Legacy]",
-      "placeholder": "Social",
-      "group": "Footer"
-    },
-    "footerColumn4Content": {
-      "label": "Col 4 — content (legacy)",
-      "description": "[Legacy] HTML allowed.",
-      "group": "Footer"
-    },
     "pageListCardVariant": {
       "label": "Post-card variant",
       "description": "How post lists are displayed on the home / project / tag / search pages. list (vertical cards) / grid (2-3 column grid) / compact (title + date) / magazine (first post as a hero with large image, others as 2-column cards; featured image and excerpt are auto-extracted).",
@@ -258,7 +171,7 @@
     },
     "layoutShowRelatedPosts": {
       "label": "Related posts",
-      "description": "Shows a related-post list at the end of content pages (with project set), matched on head.keywords. Score = number of shared keywords. Auto-hidden when there are no keywords or no matches. Default ON.",
+      "description": "Shows a related-post list at the end of content pages (with project set), matched on head.keywords. Score = number of shared keywords. Auto-hidden when there are no keywords or no matches. Default OFF.",
       "group": "Content · Post list"
     },
     "layoutRelatedPostsCount": {
@@ -512,10 +425,6 @@
       "label": "</body> scripts",
       "description": "HTML inserted just before every page's </body>.",
       "placeholder": "<!-- Chat widget, etc. -->"
-    },
-    "adsTxt": {
-      "label": "ads.txt (legacy — verifications recommended)",
-      "description": "Response body for /ads.txt. Prefer leaving this empty and using the ads.txt entry under \"Site verification files\" below (unified verifications system)."
     },
     "verifications": {
       "label": "Site verification files",
