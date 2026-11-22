@@ -15,6 +15,18 @@
     { "key": "siteLang", "type": "text", "tab": "일반", "placeholder": "ko", "defaultValue": "ko" },
     { "key": "faviconUrl", "type": "text", "tab": "일반", "placeholder": "/user/media/...png 또는 https://..." },
 
+    {
+      "key": "homeLayout",
+      "type": "select",
+      "tab": "레이아웃",
+      "group": "첫 화면",
+      "defaultValue": "full",
+      "options": [
+        { "value": "full", "label": "목록 — 제목 · 프로젝트 · 최근 글 (기본)" },
+        { "value": "brand", "label": "브랜드 — 아이콘 · 제목 · 설명만 (머리 · 바닥 줄 없이)" }
+      ]
+    },
+
     { "key": "layoutShowHeader", "type": "toggle", "tab": "레이아웃", "group": "헤더", "defaultValue": true },
     { "key": "layoutSiteName", "type": "text", "tab": "레이아웃", "group": "헤더", "placeholder": "(비우면 일반 탭의 사이트 제목 사용)" },
     { "key": "layoutLogoUrl", "type": "text", "tab": "레이아웃", "group": "헤더", "placeholder": "/user/media/...png 또는 https://..." },

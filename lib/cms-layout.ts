@@ -118,6 +118,15 @@ export interface LayoutConfig {
   pageList: PageListConfig;
 }
 
+/** 홈(/)의 꼴 — CMS 설정 `homeLayout`(system/services/cms/config.json · 맨 윗단 칸이라 저장된 이름 그대로 읽힌다).
+ *  full = 제목 · 프로젝트 · 최근 글(기본) / brand = 아이콘 · 제목 · 설명만, 홈에서는 머리 · 바닥 줄 없이. */
+export type HomeLayout = 'full' | 'brand';
+
+/** 홈이 brand 꼴인가 — 홈 페이지(본문)와 사용자 layout(머리 · 바닥 줄 빼기)이 같은 판정을 쓴다. 모르는 값 · 빈 값 = full. */
+export function isBrandHome(cms: { homeLayout?: unknown } | null | undefined): boolean {
+  return cms?.homeLayout === 'brand';
+}
+
 /** "label | href" 줄별 형식 → NavLink[] 파싱.
  *  예: "홈 | /\n블로그 | /stock-blog\n소개 | /about" */
 export function parseNavLinks(raw: string | undefined | null): NavLink[] {

@@ -3,6 +3,8 @@ import { listPages } from '../../lib/api-gen/page';
 import { BASE_URL } from '../../lib/base-url';
 import { CmsPageList, CmsPagination } from './cms-page-list';
 import { toPageListItem } from '../../lib/util/page-pb-convert';
+import { BrandHero } from '../components/BrandHero';
+import { isBrandHome } from '../../lib/cms-layout';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +41,17 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function HomePage({ searchParams }: Props) {
   const cmsRes = await getCmsSettings();
   const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
+
+  // CMS 「첫 화면」 = brand — 아이콘 · 사이트 제목 · 설명만. 머리 · 바닥 줄은 layout.tsx 가 같은 설정으로 뺀다.
+  // 글자 · 아이콘은 모두 CMS 설정(siteTitle · siteDescription · faviconUrl)에서 — 이 사이트 값은 코드에 없다.
+  if (isBrandHome(cms)) {
+    return (
+      <main className="min-h-[100dvh] flex items-center justify-center px-4" style={{ background: 'var(--cms-bg)' }}>
+        <BrandHero title={cms.siteTitle ?? ''} tagline={cms.siteDescription || undefined} iconUrl={cms.faviconUrl || undefined} />
+      </main>
+    );
+  }
+
   const sp = await searchParams;
   const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
   const perPage = cms.layout?.pageList?.perPage ?? 10;

@@ -17,6 +17,7 @@ import { BASE_URL } from '../../lib/base-url';
 import { tokensToCss, mergeTokens } from '../../lib/design-tokens';
 import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';
+import { isBrandHome } from '../../lib/cms-layout';
 import { parsePageRecord } from '../../lib/util/page-pb-convert';
 import { readDeclaration } from '../../lib/page-app';
 
@@ -110,6 +111,9 @@ export default async function UserLayout({ children }: { children: React.ReactNo
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const siteUrl = seo.siteUrl || BASE_URL;
+  // 홈이 brand 꼴(CMS 「첫 화면」)이면 홈에서만 머리 · 바닥 줄 · 광고 칸 · 읽기 진행 막대를 그리지 않는다 — 홈 본문이 브랜드 블록 하나다.
+  // 다른 페이지는 그대로. 판정은 홈 페이지와 같은 함수(isBrandHome).
+  const bareHome = isBrandHome(seo) && (await headers()).get('x-firebat-pathname') === '/';
   // Page-level overrides — spec.head.layoutMode / contentMaxWidth 설정되어 있으면 글로벌 무시.
   const pageOverrides = await resolvePageOverrides();
   const layoutMode: LayoutMode = pageOverrides.layoutMode ?? seo.layout?.mode;
@@ -182,12 +186,12 @@ export default async function UserLayout({ children }: { children: React.ReactNo
           crossOrigin="anonymous"
         />
       )}
-      {seo.layout?.showReadingProgress && <CmsReadingProgress />}
-      {seo.layout?.header?.show && <CmsHeader header={seo.layout.header} sidebar={seo.layout.sidebar} />}
-      {seo.adsense?.publisherId && seo.adsense.slotHeaderBottom && (
+      {!bareHome && seo.layout?.showReadingProgress && <CmsReadingProgress />}
+      {!bareHome && seo.layout?.header?.show && <CmsHeader header={seo.layout.header} sidebar={seo.layout.sidebar} />}
+      {!bareHome && seo.adsense?.publisherId && seo.adsense.slotHeaderBottom && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotHeaderBottom} />
       )}
-      {seo.adsense?.publisherId && seo.adsense.slotPostTop && (
+      {!bareHome && seo.adsense?.publisherId && seo.adsense.slotPostTop && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotPostTop} />
       )}
       {/* Layout Mode 5종 — full / right-sidebar / left-sidebar / both-sidebar / boxed.
@@ -209,13 +213,13 @@ export default async function UserLayout({ children }: { children: React.ReactNo
       ) : (
         children
       )}
-      {seo.adsense?.publisherId && seo.adsense.slotPostBottom && (
+      {!bareHome && seo.adsense?.publisherId && seo.adsense.slotPostBottom && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotPostBottom} />
       )}
-      {seo.adsense?.publisherId && seo.adsense.slotFooterTop && (
+      {!bareHome && seo.adsense?.publisherId && seo.adsense.slotFooterTop && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotFooterTop} />
       )}
-      {seo.layout?.footer?.show && <CmsFooter footer={seo.layout.footer} />}
+      {!bareHome && seo.layout?.footer?.show && <CmsFooter footer={seo.layout.footer} />}
     </>
   );
 }

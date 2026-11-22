@@ -33,6 +33,15 @@
       "description": "Custom favicon. Enter a gallery image URL or external URL. Leave blank to use the default icon.",
       "placeholder": "/user/media/...png or https://..."
     },
+    "homeLayout": {
+      "label": "Home page",
+      "description": "What the home page (/) shows. List = site title, projects and recent posts (default). Brand = only the icon, site title and site description, centred, with no header or footer on the home page (icon = the favicon from the General tab; empty = the default icon).",
+      "group": "Home page",
+      "options": [
+        "List — title, projects, recent posts (default)",
+        "Brand — icon, title and description only (no header or footer)"
+      ]
+    },
     "layoutShowHeader": {
       "label": "Show header",
       "description": "Whether to render the top header on user pages. Default ON.",
