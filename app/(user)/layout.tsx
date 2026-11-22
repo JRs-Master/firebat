@@ -13,7 +13,7 @@ import { CmsFooter } from './cms-footer';
 import { CmsAdSlot } from './cms-ad-slot';
 import { CmsReadingProgress } from './cms-reading-progress';
 import { CmsSidebar } from './cms-sidebar';
-import { BASE_URL } from '../../lib/base-url';
+import { resolveSiteUrl } from '../../lib/site-url';
 import { tokensToCss, mergeTokens } from '../../lib/design-tokens';
 import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';
@@ -110,7 +110,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
   }
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
-  const siteUrl = seo.siteUrl || BASE_URL;
+  const siteUrl = await resolveSiteUrl(seo.siteUrl);
   // 홈이 brand 꼴(CMS 「첫 화면」)이면 홈에서만 머리 · 바닥 줄 · 광고 칸 · 읽기 진행 막대를 그리지 않는다 — 홈 본문이 브랜드 블록 하나다.
   // 다른 페이지는 그대로. 판정은 홈 페이지와 같은 함수(isBrandHome).
   const bareHome = isBrandHome(seo) && (await headers()).get('x-firebat-pathname') === '/';

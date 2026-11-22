@@ -1,6 +1,6 @@
 import { getCmsSettings } from '../../lib/api-gen/module';
 import { listPages, get as getPage } from '../../lib/api-gen/page';
-import { getBaseUrl } from '../../lib/base-url';
+import { siteOrigin } from '../../lib/base-url';
 import { specBodyToHtml, wrapCdata } from '../../lib/spec-to-rss-html';
 
 /** GET /feed.xml — RSS 2.0 피드.
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
     return new Response('RSS feed is disabled', { status: 404 });
   }
 
-  const baseUrl = seo.siteUrl || getBaseUrl(req);
+  const baseUrl = siteOrigin(seo.siteUrl, req.headers);
 
   // ?project= 파라미터 — rewrite 로 /{project}/feed.xml 형태도 여기로 라우팅됨.
   const reqUrl = new URL(req.url);

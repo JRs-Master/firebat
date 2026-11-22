@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { getShare } from '../../../lib/api-gen/conversation';
 import { SharedMessageList } from './client';
-import { headers } from 'next/headers';
+import { resolveSiteUrl } from '../../../lib/site-url';
 import { safeJsonParse } from '../../../lib/util/json';
 
 export const dynamic = 'force-dynamic'; // 매 요청마다 DB 조회 (공유 만료 실시간 반영)
@@ -44,19 +44,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // 첫 user 메시지로 설명 자동 생성
   const firstUser = share.messages.find(m => m.role === 'user');
   const description = typeof firstUser?.content === 'string' ? firstUser.content.slice(0, 200) : 'Firebat 에서 공유된 대화';
-  const hdrs = await headers();
-  // baseUrl 우선순위: NEXT_PUBLIC_BASE_URL → 요청 host (nginx 자동 전달) → localhost 폴백
-  let baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? '';
-  if (!baseUrl) {
-    const host = hdrs.get('x-forwarded-host') || hdrs.get('host');
-    if (host) {
-      const proto = hdrs.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
-      baseUrl = `${proto}://${host}`;
-    } else {
-      baseUrl = 'http://localhost:3000';
-    }
-  }
-  baseUrl = baseUrl.replace(/\/$/, '');
+  // No CMS siteUrl here — the share link itself is minted from the request (api/share getBaseUrl).
+  const baseUrl = await resolveSiteUrl();
   const shareUrl = `${baseUrl}/share/${slug}`;
   return {
     title: `${share.title} — Firebat 공유`,

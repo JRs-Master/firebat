@@ -12,22 +12,7 @@ import { getCmsSettings } from '../../../lib/api-gen/module';
 import { toPageListItem } from '../../../lib/util/page-pb-convert';
 import { CmsPageList, CmsPagination } from '../cms-page-list';
 import { CmsBreadcrumb } from '../breadcrumb';
-import { headers } from 'next/headers';
-import { BASE_URL } from '../../../lib/base-url';
-
-async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
-  if (seoSiteUrl) return seoSiteUrl.replace(/\/$/, '');
-  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, '');
-  try {
-    const h = await headers();
-    const host = h.get('x-forwarded-host') || h.get('host');
-    if (host) {
-      const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
-      return `${proto}://${host}`;
-    }
-  } catch { /* polyfill */ }
-  return BASE_URL;
-}
+import { resolveSiteUrl } from '../../../lib/site-url';
 
 export async function ProjectRootView({ projectName, pageSlugs, currentPage = 1 }: {
   projectName: string;
@@ -49,7 +34,7 @@ export async function ProjectRootView({ projectName, pageSlugs, currentPage = 1 
   const pagedPosts = projectPages.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   // CollectionPage JSON-LD — Google rich result + item list 표현 (글 list 가시화).
-  const siteUrl = await resolveBaseUrl(cms.siteUrl);
+  const siteUrl = await resolveSiteUrl(cms.siteUrl);
   const projectUrl = `${siteUrl}/${encodeURIComponent(projectName)}`;
   const collectionLd = cms.jsonLdEnabled ? {
     '@context': 'https://schema.org',

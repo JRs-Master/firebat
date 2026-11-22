@@ -1,7 +1,6 @@
 import type { MetadataRoute } from 'next';
-import { headers } from 'next/headers';
 import { getCmsSettings } from '../lib/api-gen/module';
-import { BASE_URL } from '../lib/base-url';
+import { resolveSiteUrl } from '../lib/site-url';
 
 // Rust Core gRPC 호출하므로 prerender 우회 — sitemap/feed 와 같은 패턴.
 export const dynamic = 'force-dynamic';
@@ -56,24 +55,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     });
   }
 
-  // baseUrl 우선순위:
-  //  1. SEO 설정 siteUrl (관리자 입력)
-  //  2. NEXT_PUBLIC_BASE_URL env
-  //  3. 요청 host (nginx Host / X-Forwarded-Host 자동 전달)
-  //  4. BASE_URL (env 폴백, 최종적으로 localhost)
-  let baseUrl = seo.siteUrl || process.env.NEXT_PUBLIC_BASE_URL || '';
-  if (!baseUrl) {
-    try {
-      const h = await headers();
-      const host = h.get('x-forwarded-host') || h.get('host');
-      if (host) {
-        const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
-        baseUrl = `${proto}://${host}`;
-      }
-    } catch { /* headers 접근 실패 */ }
-  }
-  if (!baseUrl) baseUrl = BASE_URL;
-  baseUrl = baseUrl.replace(/\/$/, '');
+  const baseUrl = await resolveSiteUrl(seo.siteUrl);
 
   return {
     rules,

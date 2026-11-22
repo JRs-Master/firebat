@@ -12,6 +12,7 @@ import type { Metadata, Viewport } from 'next';
 // runtime (production server) 에서 Rust core 가 떠 있어 정상 응답.
 export const dynamic = 'force-dynamic';
 import { getCmsSettings, getComponentVendorKeys } from '../lib/api-gen/module';
+import { resolveSiteUrl } from '../lib/site-url';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -19,18 +20,14 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-// metadataBase — Next.js 가 OG 이미지·Twitter 카드 URL 을 절대경로로 해석할 때 기준.
-// 범용 플랫폼이라 특정 도메인 하드코딩 X. 우선순위:
-//   1. NEXT_PUBLIC_BASE_URL env (배포 시 명시)
-//   2. dev fallback (localhost:3000)
-// 동적 페이지 (blog/slug 등) 는 자체 generateMetadata 에서 SEO.siteUrl 기준 override 가능.
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-
+// metadataBase — the origin Next resolves relative OG image / Twitter card URLs against.
+// Same origin as every other page (resolveSiteUrl: CMS siteUrl → env → request host → dev fallback),
+// so a bare deployment behind a domain doesn't advertise localhost.
 export async function generateMetadata(): Promise<Metadata> {
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
   return {
-    metadataBase: new URL(BASE_URL),
+    metadataBase: new URL(await resolveSiteUrl(seo.siteUrl)),
     title: seo.siteTitle,
     description: seo.siteDescription,
     // 커스텀 favicon — /user/media/... 또는 외부 URL. 미지정 시 Next.js 기본 (app/icon.svg).

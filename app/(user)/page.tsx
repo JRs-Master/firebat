@@ -1,6 +1,6 @@
 import { getCmsSettings } from '../../lib/api-gen/module';
 import { listPages } from '../../lib/api-gen/page';
-import { BASE_URL } from '../../lib/base-url';
+import { resolveSiteUrl } from '../../lib/site-url';
 import { CmsPageList, CmsPagination } from './cms-page-list';
 import { toPageListItem } from '../../lib/util/page-pb-convert';
 import { BrandHero } from '../components/BrandHero';
@@ -17,7 +17,7 @@ interface Props {
 export async function generateMetadata(): Promise<Metadata> {
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
-  const siteUrl = seo.siteUrl || BASE_URL;
+  const siteUrl = await resolveSiteUrl(seo.siteUrl);
 
   const ogImage = `${siteUrl}/api/og?title=${encodeURIComponent(seo.siteTitle ?? '')}&description=${encodeURIComponent(seo.siteDescription ?? '')}`;
 

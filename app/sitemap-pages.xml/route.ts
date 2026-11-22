@@ -1,6 +1,6 @@
 import { getCmsSettings } from '../../lib/api-gen/module';
 import { listPages, listStatic } from '../../lib/api-gen/page';
-import { getBaseUrl } from '../../lib/base-url';
+import { siteOrigin } from '../../lib/base-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     return new Response('Sitemap is disabled', { status: 404 });
   }
 
-  const baseUrl = seo.siteUrl || getBaseUrl(req);
+  const baseUrl = siteOrigin(seo.siteUrl, req.headers);
   const result = await listPages();
   const dbPages = result.ok ? (result.data ?? []) : [];
   const staticRes = await listStatic();

@@ -9,7 +9,7 @@ import { getCmsSettings } from '../../../lib/api-gen/module';
 import { isReady as isMediaReady } from '../../../lib/api-gen/media';
 import { parsePageRecord } from '../../../lib/util/page-pb-convert';
 import { ComponentRenderer } from './components';
-import { BASE_URL } from '../../../lib/base-url';
+import { resolveSiteUrl } from '../../../lib/site-url';
 import { SESSION_COOKIE_NAME } from '../../../lib/config';
 import { headers } from 'next/headers';
 import { estimateReadingTime } from '../reading-time';
@@ -17,26 +17,6 @@ import { CmsBreadcrumb } from '../breadcrumb';
 import { CmsRelatedPosts } from '../cms-related-posts';
 import { safeJsonParse } from '../../../lib/util/json';
 import { resolveRequestBindings } from '../../../lib/page-binding-gate';
-
-/** 실제 사용할 base URL 해석 —
- *   1. SEO 설정의 siteUrl (관리자가 Firebat 설정에서 입력, 최우선)
- *   2. NEXT_PUBLIC_BASE_URL env
- *   3. 요청 헤더 host (nginx X-Forwarded-Host / Host)
- *   4. infra/config BASE_URL (env 폴백 또는 localhost:3000)
- * 범용 플랫폼이라 특정 도메인 하드코딩 배제 — 배포 환경이 자체적으로 값 제공. */
-async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
-  if (seoSiteUrl) return seoSiteUrl.replace(/\/$/, '');
-  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, '');
-  try {
-    const h = await headers();
-    const host = h.get('x-forwarded-host') || h.get('host');
-    if (host) {
-      const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
-      return `${proto}://${host}`;
-    }
-  } catch { /* headers() 접근 실패 — 폴백 */ }
-  return BASE_URL;
-}
 import { PasswordGate } from './password-gate';
 import { ProjectRootView } from './project-root';
 import { pageOrAbsent } from '../../../lib/page-lookup';
@@ -125,7 +105,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const head = spec.head ?? {};
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
-  const baseUrl = await resolveBaseUrl(seo.siteUrl);
+  const baseUrl = await resolveSiteUrl(seo.siteUrl);
 
   const ogTitle = head.og?.title ?? head.title ?? slug;
   const ogDesc = head.og?.description ?? head.description ?? seo.siteDescription;
@@ -324,7 +304,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     && (/<script/i.test(String((appBlock.props as any)?.content ?? '')) || ((appBlock.props as any)?.dependencies?.length > 0));
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
-  const siteUrl = await resolveBaseUrl(seo.siteUrl);
+  const siteUrl = await resolveSiteUrl(seo.siteUrl);
 
   // CMS Phase 3 — 프로젝트별 theme override.
   // user/projects/{name}/config.json 의 theme 가 글로벌 cms theme 위에 override.

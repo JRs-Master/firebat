@@ -8,32 +8,38 @@ import type { NextRequest } from 'next/server';
  */
 export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
-/**
- * 런타임 Base URL 해석.
- *
- * 우선순위:
- *   1. NEXT_PUBLIC_BASE_URL 환경변수 (명시 설정)
- *   2. 요청 헤더 (`x-forwarded-proto` + `host`) — Nginx/프록시 뒤에서도 정확
- *   3. BASE_URL 폴백 (http://localhost:3000)
- *
- * 서로 다른 도메인·서버로 배포해도 같은 코드가 동작하도록 요청 기반 해석을 지원한다.
- */
-export function getBaseUrl(req?: NextRequest | Request): string {
-  // env 우선 — 명시 설정은 무조건 존중
-  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL;
+/** Anything with a header getter — a Request's `headers`, or `await headers()` in a server component. */
+type HeaderReader = { get(name: string): string | null };
 
-  if (req) {
+const stripSlash = (url: string) => url.replace(/\/+$/, '');
+
+/**
+ * The site's public origin, no trailing slash. The one place this order lives:
+ *   1. the CMS `siteUrl` setting (what the admin typed)
+ *   2. NEXT_PUBLIC_BASE_URL
+ *   3. the request — `x-forwarded-host`/`host` + `x-forwarded-proto` (correct behind Caddy/nginx)
+ *   4. BASE_URL (dev fallback)
+ * Server components go through `resolveSiteUrl` (lib/site-url.ts), which supplies the headers.
+ */
+export function siteOrigin(siteUrl: string | undefined, h?: HeaderReader): string {
+  const configured = typeof siteUrl === 'string' ? siteUrl.trim() : '';
+  if (configured) return stripSlash(configured);
+  if (process.env.NEXT_PUBLIC_BASE_URL) return stripSlash(process.env.NEXT_PUBLIC_BASE_URL);
+  if (h) {
     try {
-      const headers = req.headers;
-      const host = headers.get('x-forwarded-host') || headers.get('host');
+      const host = h.get('x-forwarded-host') || h.get('host');
       if (host) {
-        const proto = headers.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
+        const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
         return `${proto}://${host}`;
       }
     } catch {
-      // headers 접근 실패 — 폴백 사용
+      // header access failed — fall through
     }
   }
+  return stripSlash(BASE_URL);
+}
 
-  return BASE_URL;
+/** Request-based origin for API routes that don't take the CMS setting (share links). */
+export function getBaseUrl(req?: NextRequest | Request): string {
+  return siteOrigin(undefined, req?.headers);
 }
