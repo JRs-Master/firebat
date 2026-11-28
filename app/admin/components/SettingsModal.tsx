@@ -152,6 +152,11 @@ export function SettingsModal(props: Props) {
   );
 }
 
+/** Where the 모듈 tab's list was scrolled when a module's settings were opened. The modal closes for that window and
+ *  is mounted again on 뒤로 — fresh state, scrolled to the top — so the place is kept here, outside it (owner,
+ *  2026-11-28: "모듈 설정 갔다가 뒤로가기 하면 제일 위로 올라가버리노 거기에 멈춰잇어야 하는데"). */
+let systemTabScroll = 0;
+
 function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab, hubContext }: Props) {
   const t = useTranslations();
   // hub tenant mode: limit tabs to prompt/memory and route data through owner-scoped /api/hub/<slug>/*.
@@ -761,6 +766,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     contentRef.current?.scrollTo(0, 0);
   };
 
+  // A module's settings open in their own window: remember where the list was, and on coming back (the 모듈 tab
+  // mounted again) return there once the list has loaded — before that the list is too short to scroll to it.
+  const openModuleSettings = (name: string) => {
+    systemTabScroll = contentRef.current?.scrollTop ?? 0;
+    onOpenModuleSettings?.(name);
+  };
+  const pendingScroll = useRef(initialTab === 'system' ? systemTabScroll : 0);
+
 
   // 탭 전환 시 데이터 로드
   useEffect(() => {
@@ -768,6 +781,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     if (settingsTab === 'mcp') fetchMcpServers();
     if (settingsTab === 'system') fetchSysModules();
   }, [settingsTab, fetchSecrets, fetchMcpServers, fetchSysModules]);
+
+  useEffect(() => {
+    if (settingsTab !== 'system' || pendingScroll.current <= 0 || sysModules.length === 0) return;
+    const top = pendingScroll.current;
+    pendingScroll.current = 0;
+    requestAnimationFrame(() => contentRef.current?.scrollTo(0, top));
+  }, [settingsTab, sysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const [mainSaveState, setMainSaveState] = useState<'ok' | 'err' | 'loading' | null>(null);
@@ -2343,7 +2363,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   <div className="space-y-1">
                     {sysModules.filter(m => (m.entryType ?? m.type) === 'service').map(m => (
                       <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
-                        <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                        <button onClick={() => openModuleSettings(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                           <Server size={16} className="text-emerald-500 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
@@ -2375,7 +2395,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   <div className="space-y-1">
                     {group.rows.map(m => (
                       <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
-                        <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                        <button onClick={() => openModuleSettings(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                           <Blocks size={16} className="text-indigo-500 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
