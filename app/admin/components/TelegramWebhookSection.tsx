@@ -14,7 +14,7 @@ import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
  *   1. TELEGRAM_BOT_TOKEN 등록 (위 secret 입력 필드)
  *   2. TELEGRAM_OWNER_IDS 등록 (위 secret 입력 필드, comma-sep)
  *   3. 도메인 입력 + "웹훅 등록" 버튼 → POST /api/telegram/setup
- *   4. 등록 후 텔레그램 봇이 사용자 메시지 받음 → /api/telegram/webhook → AI 처리 → 응답
+ *   4. 등록 후 텔레그램 봇이 사용자 메시지 받음 → /api/hooks/telegram → AI 처리 → 응답
  *
  * 등록 해제: "비활성화" 버튼 → DELETE /api/telegram/setup
  */

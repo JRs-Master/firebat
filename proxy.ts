@@ -126,8 +126,11 @@ export async function proxy(request: NextRequest) {
   // 답하는 것은 「이 페이지를 어떻게 배달하나」뿐이고, 「누가 볼 수 있나」는 바이트를 내주는
   // 라우트의 gatePage 가 그대로 판정한다 — 권한을 여는 칸이 아니다.
   if (pathname === '/api/page-entry' && request.method === 'GET') return NextResponse.next();
-  // Telegram webhook — 텔레그램 Bot API 가 호출. X-Telegram-Bot-Api-Secret-Token 헤더로 자체 검증.
-  if (pathname === '/api/telegram/webhook' && request.method === 'POST') return NextResponse.next();
+  // Module webhooks (a module's `webhook` declaration — Telegram today): the vendor's server posts with no cookie and no Bearer.
+  // The route checks the secret header the module declared and answers 401 itself (app/api/hooks/[module]/route.ts); a module
+  // with no declaration has no secret to match. The old /api/telegram/webhook route is gone — this line used to name it, and
+  // nothing let /api/hooks/* through, so every update came back 401 before the route ran.
+  if (pathname.startsWith('/api/hooks/') && request.method === 'POST') return NextResponse.next();
   // 사이트 소유권 인증 파일 — Google/AdSense/Naver/Bing crawler 가 토큰 없이 접근.
   // (next.config.mjs rewrites 로 /:file.txt|html|xml → /api/verifications/:file 라우팅)
   if (pathname.startsWith('/api/verifications/') && request.method === 'GET') return NextResponse.next();

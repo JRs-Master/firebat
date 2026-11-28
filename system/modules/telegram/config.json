@@ -64,7 +64,7 @@
       },
       "url": {
         "type": "string",
-        "description": "[set-webhook] 공개 수신 URL — https://<domain>/hooks/telegram"
+        "description": "[set-webhook] The public URL Telegram posts updates to — https://<domain>/api/hooks/telegram"
       },
       "payload": {
         "type": "object",
