@@ -526,10 +526,12 @@ impl ModuleService for ModuleServiceImpl {
         };
         let llm_opts = crate::ports::LlmCallOpts::default();
         let ai_opts = crate::ports::AiRequestOpts::default();
+        use crate::managers::ai::render_exec::{fence_to_message, MessageMarkup};
+        let markup = if decl.reply_html.is_some() { MessageMarkup::Html } else { MessageMarkup::Plain };
         let reply = match ai.process_with_tools_opts(&prompt, &[], &llm_opts, &ai_opts).await {
             // A message renders no block: its render fences go out as lines a person reads (2026-11-28 — a 날씨 table
-            // reached Telegram as raw JSON).
-            Ok(r) => crate::managers::ai::render_exec::fence_to_message_text(&r.reply).trim().to_string(),
+            // reached Telegram as raw JSON), capped at what the vendor shows.
+            Ok(r) => fence_to_message(&r.reply, markup, decl.reply_max_chars),
             Err(e) => {
                 return reply_err(serde_json::json!({"success": false, "error": format!("AI turn failed: {e}")}))
             }
@@ -537,7 +539,6 @@ impl ModuleService for ModuleServiceImpl {
         if reply.is_empty() {
             return reply_err(serde_json::json!({"success": false, "error": "AI turn produced no reply"}));
         }
-        let capped: String = reply.chars().take(decl.reply_max_chars).collect();
         let mut send_input = serde_json::Map::new();
         send_input.insert("action".into(), serde_json::Value::String(reply_action.to_string()));
         if let Some(extra) = parsed.get("replyArgs").and_then(|v| v.as_object()) {
@@ -545,7 +546,13 @@ impl ModuleService for ModuleServiceImpl {
                 send_input.insert(k.clone(), v.clone());
             }
         }
-        send_input.insert(decl.reply_text_param.clone(), serde_json::Value::String(capped));
+        // The reply is HTML now — say so in the vendor's words the module declared.
+        if let Some(html) = &decl.reply_html {
+            for (k, v) in html {
+                send_input.insert(k.clone(), v.clone());
+            }
+        }
+        send_input.insert(decl.reply_text_param.clone(), serde_json::Value::String(reply));
         match self.manager.run(&args.module, &serde_json::Value::Object(send_input)).await {
             Ok(out) if out.success => {
                 reply_err(serde_json::json!({"success": true, "replied": true}))

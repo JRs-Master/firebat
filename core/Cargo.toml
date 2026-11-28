@@ -48,6 +48,7 @@ url = "2"
 sha1 = "0.10"       # ConversationManager cache 무효화 키
 sha2 = "0.10"       # tool_cache cache key
 hex = "0.4"
+unicode-width = "0.2"  # 메시지 표를 고정폭으로 맞출 때 글자 폭(넓은 글자 / 좁은 글자)
 
 # 에러 / 로그
 anyhow = "1"

@@ -35,7 +35,10 @@
     "parseAction": "parse-webhook",
     "replyAction": "send-message",
     "replyTextParam": "text",
-    "replyMaxChars": 4000
+    "replyMaxChars": 4000,
+    "replyHtml": {
+      "parseMode": "HTML"
+    }
   },
   "settings_fields": [
     {

@@ -1284,27 +1284,193 @@ pub fn fence_to_plaintext(text: &str) -> String {
 /// this keeps the numbers and the lines: a table is its head and a line a row, cells joined by `|`;
 /// a heading or a passage its own line; a list a bullet a line; a long data series (a chart's points)
 /// one folded line. By shape, not by component name — a new component needs nothing here.
-pub fn fence_to_message_text(text: &str) -> String {
-    if !text.contains(FENCE_OPEN) && !text.contains(TAG_OPEN) {
-        return text.to_string();
-    }
-    let mut out = String::with_capacity(text.len());
+///
+/// `markup` is the vendor's message format, declared by the module (`webhook.replyHtml`): in HTML a
+/// table goes in `<pre>` with its columns lined up (owner, same day: "줄을 꼭 맞춰야 한다면 고정폭 글꼴로
+/// … 이것도 해줘"), and the rest is escaped. `max_chars` caps what a person sees — the vendor's limit
+/// counts the text, not the tags — and a table cut short still closes its `</pre>`.
+pub fn fence_to_message(text: &str, markup: MessageMarkup, max_chars: usize) -> String {
+    let mut segs: Vec<Seg> = Vec::new();
     let mut rest = text;
-    while let Some(region) = find_fence_region(rest) {
-        out.push_str(&rest[..region.start]);
-        let body = &rest[region.body_start..region.body_end];
-        match parse_fence_json(body) {
-            Some(v) => {
-                let mut lines = Vec::new();
-                message_lines(&v, &mut lines);
-                out.push_str(&lines.join("\n"));
+    if text.contains(FENCE_OPEN) || text.contains(TAG_OPEN) {
+        while let Some(region) = find_fence_region(rest) {
+            push_text(&mut segs, &rest[..region.start]);
+            let body = &rest[region.body_start..region.body_end];
+            match parse_fence_json(body) {
+                Some(v) => {
+                    let mut pieces = Vec::new();
+                    message_pieces(&v, &mut pieces);
+                    for (i, piece) in pieces.into_iter().enumerate() {
+                        if i > 0 {
+                            push_text(&mut segs, "\n");
+                        }
+                        match (piece, markup) {
+                            (Piece::Line(l), _) => push_text(&mut segs, &l),
+                            (Piece::Table { head, rows }, MessageMarkup::Plain) => {
+                                push_text(&mut segs, &plain_table(head.as_deref(), &rows))
+                            }
+                            (Piece::Table { head, rows }, MessageMarkup::Html) => {
+                                segs.push(Seg::Pre(aligned_table(head.as_deref(), &rows)))
+                            }
+                        }
+                    }
+                }
+                None => push_text(&mut segs, body.trim()),
             }
-            None => out.push_str(body.trim()),
+            rest = &rest[region.end..];
         }
-        rest = &rest[region.end..];
     }
-    out.push_str(rest);
+    push_text(&mut segs, rest);
+    render_segments(segs, markup, max_chars)
+}
+
+/// How a message's text is marked up — the vendor's format, declared by the module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageMarkup {
+    /// Plain lines; a table's cells joined by ` | `.
+    Plain,
+    /// HTML: `&` `<` `>` escaped, a table in `<pre>` with its columns lined up.
+    Html,
+}
+
+/// A stretch of a message: words, or a table set in the fixed-width font.
+enum Seg {
+    Text(String),
+    Pre(String),
+}
+
+/// What a block says, in message form.
+enum Piece {
+    Line(String),
+    Table { head: Option<Vec<String>>, rows: Vec<Vec<String>> },
+}
+
+fn push_text(segs: &mut Vec<Seg>, s: &str) {
+    if s.is_empty() {
+        return;
+    }
+    match segs.last_mut() {
+        Some(Seg::Text(t)) => t.push_str(s),
+        _ => segs.push(Seg::Text(s.to_string())),
+    }
+}
+
+fn render_segments(mut segs: Vec<Seg>, markup: MessageMarkup, max_chars: usize) -> String {
+    // What a person sees starts and ends with words, not blank lines.
+    if let Some(Seg::Text(t)) = segs.first_mut() {
+        *t = t.trim_start().to_string();
+    }
+    if let Some(Seg::Text(t)) = segs.last_mut() {
+        *t = t.trim_end().to_string();
+    }
+    let mut left = max_chars;
+    let mut out = String::new();
+    for seg in segs {
+        if left == 0 {
+            break;
+        }
+        let (s, pre) = match seg {
+            Seg::Text(s) => (s, false),
+            Seg::Pre(s) => (s, true),
+        };
+        let kept: String = s.chars().take(left).collect();
+        left -= kept.chars().count();
+        match (markup, pre) {
+            (MessageMarkup::Plain, _) => out.push_str(&kept),
+            (MessageMarkup::Html, false) => out.push_str(&escape_html(&kept)),
+            (MessageMarkup::Html, true) => {
+                out.push_str("<pre>");
+                out.push_str(&escape_html(&kept));
+                out.push_str("</pre>");
+            }
+        }
+    }
     out
+}
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn plain_table(head: Option<&[String]>, rows: &[Vec<String>]) -> String {
+    head.into_iter()
+        .chain(rows.iter().map(Vec::as_slice))
+        .map(|r| r.join(" | "))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A table in the fixed-width font, its columns lined up. A phone draws a Hangul syllable or an emoji
+/// neither one nor exactly two Latin cells wide, so a column is not padded to one width: each cell is
+/// padded to the column's most wide characters (with U+3000, a wide space) AND its most narrow ones
+/// (with spaces). Every cell of a column then holds the same count of each kind and lines up in any
+/// font whose wide characters share one advance. Numbers sit right, words left.
+fn aligned_table(head: Option<&[String]>, rows: &[Vec<String>]) -> String {
+    let lines: Vec<Vec<String>> = head
+        .into_iter()
+        .chain(rows.iter().map(Vec::as_slice))
+        .map(|r| r.iter().map(|c| c.replace('\n', " ")).collect())
+        .collect();
+    let cols = lines.iter().map(Vec::len).max().unwrap_or(0);
+    let body_from = usize::from(head.is_some());
+    let mut wide = vec![0usize; cols];
+    let mut narrow = vec![0usize; cols];
+    let mut numeric = vec![true; cols];
+    for (li, line) in lines.iter().enumerate() {
+        for (ci, cell) in line.iter().enumerate() {
+            let (w, n) = cell_widths(cell);
+            wide[ci] = wide[ci].max(w);
+            narrow[ci] = narrow[ci].max(n);
+            if li >= body_from && !cell.is_empty() && !looks_numeric(cell) {
+                numeric[ci] = false;
+            }
+        }
+    }
+    lines
+        .iter()
+        .map(|line| {
+            let mut out = String::new();
+            for ci in 0..cols {
+                let cell = line.get(ci).map(String::as_str).unwrap_or("");
+                let (w, n) = cell_widths(cell);
+                let pad = "\u{3000}".repeat(wide[ci] - w) + &" ".repeat(narrow[ci] - n);
+                if ci > 0 {
+                    out.push_str("  ");
+                }
+                if numeric[ci] {
+                    out.push_str(&pad);
+                    out.push_str(cell);
+                } else {
+                    out.push_str(cell);
+                    out.push_str(&pad);
+                }
+            }
+            out.trim_end().to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// (wide, narrow) character counts. A character followed by U+FE0F is drawn as an emoji — wide.
+fn cell_widths(s: &str) -> (usize, usize) {
+    use unicode_width::UnicodeWidthChar;
+    let (mut wide, mut narrow) = (0, 0);
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        let emoji = chars.peek() == Some(&'\u{FE0F}');
+        match (emoji, UnicodeWidthChar::width(c)) {
+            (true, _) | (_, Some(2)) => wide += 1,
+            (_, Some(1)) => narrow += 1,
+            _ => {}
+        }
+    }
+    (wide, narrow)
+}
+
+fn looks_numeric(s: &str) -> bool {
+    let t = s.trim().trim_end_matches('%');
+    let t = t.strip_prefix(|c: char| matches!(c, '+' | '-' | '−')).unwrap_or(t);
+    t.chars().any(|c| c.is_ascii_digit()) && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')
 }
 
 /// Props that say how a block looks, not what it says.
@@ -1327,29 +1493,32 @@ fn message_cell(v: &Value) -> String {
     }
 }
 
-fn message_lines(v: &Value, out: &mut Vec<String>) {
+fn message_pieces(v: &Value, out: &mut Vec<Piece>) {
     match v {
         Value::Array(items) => {
             for item in items {
-                message_lines(item, out);
+                message_pieces(item, out);
             }
         }
         Value::Object(o) => {
             // A component keeps what it says in `props`; a bare block says it in itself.
             let props = o.get("props").and_then(|p| p.as_object()).unwrap_or(o);
-            // A table: its head, then a line a row.
+            // A table: its head, then a row a line.
             if let Some(rows) = props.get("rows").and_then(|r| r.as_array()) {
-                if let Some(head) = props.get("headers").and_then(|h| h.as_array()).filter(|h| !h.is_empty()) {
-                    out.push(head.iter().map(message_cell).collect::<Vec<_>>().join(" | "));
-                }
-                for row in rows {
-                    let cells: Vec<String> = match row {
+                let head = props
+                    .get("headers")
+                    .and_then(|h| h.as_array())
+                    .filter(|h| !h.is_empty())
+                    .map(|h| h.iter().map(message_cell).collect());
+                let rows = rows
+                    .iter()
+                    .map(|row| match row {
                         Value::Array(c) => c.iter().map(message_cell).collect(),
                         Value::Object(m) => m.values().map(message_cell).collect(),
                         other => vec![message_cell(other)],
-                    };
-                    out.push(cells.join(" | "));
-                }
+                    })
+                    .collect();
+                out.push(Piece::Table { head, rows });
                 return;
             }
             // Its words on one line (heading, passage, a figure and its label), then what it holds.
@@ -1371,30 +1540,34 @@ fn message_lines(v: &Value, out: &mut Vec<String>) {
                 }
             }
             if !said.is_empty() {
-                out.push(said.join(" · "));
+                out.push(Piece::Line(said.join(" · ")));
             }
             for val in held {
                 match val {
                     // A data series (a chart's points) folds to one line; a short list is a bullet a line.
                     Value::Array(a) if a.len() >= SERIES_MIN_ROWS && val.to_string().len() > SERIES_MAX_CHARS => {
-                        out.push(crate::i18n::t("core.render.series_folded", None, &[("n", &a.len().to_string())]));
+                        out.push(Piece::Line(crate::i18n::t(
+                            "core.render.series_folded",
+                            None,
+                            &[("n", &a.len().to_string())],
+                        )));
                     }
                     Value::Array(a) if a.iter().all(|x| !x.is_object() && !x.is_array()) => {
                         for x in a {
                             let c = message_cell(x);
                             if !c.is_empty() {
-                                out.push(format!("• {c}"));
+                                out.push(Piece::Line(format!("• {c}")));
                             }
                         }
                     }
-                    other => message_lines(other, out),
+                    other => message_pieces(other, out),
                 }
             }
         }
         scalar => {
             let c = message_cell(scalar);
             if !c.is_empty() {
-                out.push(c);
+                out.push(Piece::Line(c));
             }
         }
     }
@@ -2033,13 +2206,13 @@ mod tests {
     #[test]
     fn a_message_gets_the_table_as_lines_with_its_numbers() {
         let reply = "서울 기준 오늘은 맑아요.\n\n```firebat-render\n[{\"name\":\"Header\",\"props\":{\"level\":3,\"text\":\"서울 시간대별 예보 (11/28)\"},\"type\":\"component\"},{\"name\":\"Table\",\"props\":{\"headers\":[\"시각\",\"하늘\",\"기온(℃)\"],\"rows\":[[\"12시\",\"☀️ 맑음\",\"8\"],[\"13시\",\"☀️ 맑음\",9]],\"stickyCol\":null},\"type\":\"component\"}]\n```\n\n우산은 필요 없어요.";
-        let out = fence_to_message_text(reply);
+        let out = fence_to_message(reply, MessageMarkup::Plain, usize::MAX);
         assert_eq!(
             out,
             "서울 기준 오늘은 맑아요.\n\n서울 시간대별 예보 (11/28)\n시각 | 하늘 | 기온(℃)\n12시 | ☀️ 맑음 | 8\n13시 | ☀️ 맑음 | 9\n\n우산은 필요 없어요."
         );
         // Without a fence, nothing changes.
-        assert_eq!(fence_to_message_text("그냥 글"), "그냥 글");
+        assert_eq!(fence_to_message("그냥 글", MessageMarkup::Plain, usize::MAX), "그냥 글");
     }
 
     /// A list is a bullet a line; a long data series (a chart's points) folds to one line, its rows not spilled into the message.
@@ -2050,10 +2223,51 @@ mod tests {
             {"type": "component", "name": "List", "props": {"items": ["하나", "둘"]}},
             {"type": "component", "name": "Chart", "props": {"title": "종가", "striped": true, "data": points}},
         ]);
-        let out = fence_to_message_text(&format!("```firebat-render\n{blocks}\n```"));
+        let out = fence_to_message(&format!("```firebat-render\n{blocks}\n```"), MessageMarkup::Plain, usize::MAX);
         assert!(out.contains("• 하나\n• 둘"), "{out}");
         assert!(out.contains("종가"), "{out}");
         assert!(out.contains("series_folded") || out.contains("20"), "the fold line: {out}");
         assert!(!out.contains("2026-11-05") && !out.contains("true"), "no rows, no flags: {out}");
+    }
+
+    /// In HTML (Telegram's `parseMode: HTML`) a table goes in `<pre>`, each column padded to its most
+    /// wide characters with U+3000 and its most narrow ones with spaces, numbers to the right; the words
+    /// around it are escaped. Expected lines worked out by hand: every line reaches the third column
+    /// after 5 wide + 7 narrow characters.
+    #[test]
+    fn a_message_in_html_sets_a_table_in_pre_with_its_columns_lined_up() {
+        let table = serde_json::json!([
+            {"type": "component", "name": "Header", "props": {"level": 3, "text": "서울 예보"}},
+            {"type": "component", "name": "Table", "props": {
+                "headers": ["시각", "하늘", "기온"],
+                "rows": [["12시", "\u{2600}\u{FE0F} 맑음", "8"], ["13시", "\u{1F327}\u{FE0F} 비", 11]],
+            }},
+        ]);
+        let reply = format!("오늘 날씨예요.\n\n```firebat-render\n{table}\n```\n\n비 < 1mm & 바람 약함");
+        let out = fence_to_message(&reply, MessageMarkup::Html, usize::MAX);
+        let pre = [
+            "시각    하늘\u{3000}     기온",
+            "12시\u{3000}  \u{2600}\u{FE0F} 맑음  \u{3000}\u{3000} 8",
+            "13시\u{3000}  \u{1F327}\u{FE0F} 비\u{3000}  \u{3000}\u{3000}11",
+        ]
+        .join("\n");
+        assert_eq!(out, format!("오늘 날씨예요.\n\n서울 예보\n<pre>{pre}</pre>\n\n비 &lt; 1mm &amp; 바람 약함"));
+        // Plain keeps the old lines, unescaped.
+        let plain = fence_to_message(&reply, MessageMarkup::Plain, usize::MAX);
+        assert!(plain.contains("13시 | \u{1F327}\u{FE0F} 비 | 11") && plain.ends_with("비 < 1mm & 바람 약함"), "{plain}");
+        // No fence: HTML still escapes, both trim.
+        assert_eq!(fence_to_message("  <b>굵게</b> \n", MessageMarkup::Html, usize::MAX), "&lt;b&gt;굵게&lt;/b&gt;");
+    }
+
+    /// The cap counts what a person sees, not the tags, and a table cut short still closes `</pre>`.
+    #[test]
+    fn a_capped_html_message_closes_its_pre() {
+        let rows: Vec<Value> = (0..30).map(|i| serde_json::json!([format!("항목{i}"), i])).collect();
+        let table = serde_json::json!([{"type": "component", "name": "Table", "props": {"headers": ["이름", "값"], "rows": rows}}]);
+        let out = fence_to_message(&format!("표\n```firebat-render\n{table}\n```"), MessageMarkup::Html, 10);
+        assert!(out.starts_with("표\n<pre>") && out.ends_with("</pre>"), "{out}");
+        let inner = &out["표\n<pre>".len()..out.len() - "</pre>".len()];
+        assert_eq!(inner.chars().count(), 8, "2 seen before the table, 8 of it: {out}");
+        assert_eq!(fence_to_message("가나다라마바사", MessageMarkup::Plain, 5), "가나다라마");
     }
 }

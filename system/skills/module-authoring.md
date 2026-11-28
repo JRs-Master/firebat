@@ -266,9 +266,14 @@ depends on what the operator has configured, do not keep a second list — let t
   "parseAction": "parse-webhook",      // payload → {proceed, prompt?, replyArgs?, note?}
   "replyAction": "send-message",       // omit for a receive-only hook
   "replyTextParam": "text",            // your reply action's parameter that carries the answer
-  "replyMaxChars": 4000                // the vendor's message limit is yours to declare
+  "replyMaxChars": 4000,               // the vendor's message limit is yours to declare
+  "replyHtml": { "parseMode": "HTML" } // optional: the arguments under which your reply action reads HTML
 }
 ```
+
+With `replyHtml` the answer goes out as HTML (`&` `<` `>` escaped) and a table the AI drew goes in
+`<pre>` with its columns lined up; without it, plain lines with a table's cells joined by ` | `.
+`replyMaxChars` counts the text a person sees, not the tags.
 
 Declaring this makes `POST /api/hooks/<module>` yours. The framework compares the declared
 header against the secret (machine-generated on your module's first run, injected as env like

@@ -125,6 +125,7 @@ pub fn parse_webhook_decl(cfg: &serde_json::Value) -> Option<WebhookDecl> {
         reply_action: s("replyAction"),
         reply_text_param: s("replyTextParam").unwrap_or_else(|| "text".to_string()),
         reply_max_chars: w.get("replyMaxChars").and_then(|v| v.as_u64()).unwrap_or(4000) as usize,
+        reply_html: w.get("replyHtml").and_then(|v| v.as_object()).cloned(),
     })
 }
 
@@ -143,6 +144,10 @@ pub struct WebhookDecl {
     pub reply_text_param: String,
     /// Cap on the reply text in chars — the vendor's message limit is the module's to declare.
     pub reply_max_chars: usize,
+    /// The arguments under which the reply action reads HTML (Telegram: `{"parseMode": "HTML"}`).
+    /// Declared → the reply goes out as HTML, a table in `<pre>` with its columns lined up; absent →
+    /// plain lines. The vendor's word for "HTML" is the module's; the framework only writes the markup.
+    pub reply_html: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 /// One registered realtime watch (user intent) — the transport status lives in the port.
