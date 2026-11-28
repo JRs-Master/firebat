@@ -241,7 +241,7 @@ const FCST_LEGEND = {
 const ASOS_PAGE = 365;
 const ASOS_LEGEND = {
   tm: '날짜', stnNm: '지점', avgTa: '평균 기온(℃)', minTa: '최저 기온(℃)', maxTa: '최고 기온(℃)',
-  sumRn: '일강수량(mm — null 이면 비 없음)', hr1MaxRn: '1시간 최다강수량(mm)', avgRhm: '평균 상대습도(%)',
+  sumRn: '일강수량(mm — null = 비 없음 · 0 = 비가 왔지만 0.1mm 미만)', hr1MaxRn: '1시간 최다강수량(mm)', avgRhm: '평균 상대습도(%)',
   avgWs: '평균 풍속(m/s)', maxInsWs: '최대 순간풍속(m/s)', sumSsHr: '합계 일조 시간(hr)', avgTca: '평균 전운량(10분위)',
   ddMefs: '일 최심신적설(cm)', ddMes: '일 최심적설(cm)', iscs: '일기현상',
 };
