@@ -111,13 +111,65 @@ impl McpManager {
         self.client.list_all_tools().await
     }
 
+    /// The servers as a model needs them: each one's name and how it is reached, and an enabled one's tools as it publishes them
+    /// (name · description · inputSchema) — what `mcp_call` takes. Listing the servers alone left the model guessing tool names
+    /// (2026-11-28: seven guesses at 맑곰, every one "not found", while its nine tools stood ready). A server that cannot be
+    /// reached says why in place of its tools. The config's `env` is not listed: a stdio server's secrets live there.
+    pub async fn servers_with_tools(&self) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for cfg in self.client.list_servers() {
+            let mut entry = serde_json::json!({
+                "name": cfg.name,
+                "transport": cfg.transport,
+                "enabled": cfg.enabled,
+            });
+            if let Some(url) = &cfg.url {
+                entry["url"] = serde_json::json!(url);
+            }
+            if let Some(command) = &cfg.command {
+                entry["command"] = serde_json::json!(command);
+            }
+            if cfg.enabled {
+                match self.client.list_tools(&cfg.name).await {
+                    Ok(tools) => {
+                        entry["tools"] = serde_json::Value::Array(
+                            tools
+                                .into_iter()
+                                .map(|t| serde_json::json!({ "name": t.name, "description": t.description, "inputSchema": t.input_schema }))
+                                .collect(),
+                        );
+                    }
+                    Err(e) => entry["error"] = serde_json::json!(e),
+                }
+            }
+            out.push(entry);
+        }
+        out
+    }
+
+    /// A tool of an outside server. Called by a name the server does not have, the answer names the ones it does — the next
+    /// call can be the right one instead of another guess.
     pub async fn call_tool(
         &self,
         server_name: &str,
         tool_name: &str,
         args: &serde_json::Value,
     ) -> InfraResult<serde_json::Value> {
-        self.client.call_tool(server_name, tool_name, args).await
+        match self.client.call_tool(server_name, tool_name, args).await {
+            Ok(value) => Ok(value),
+            Err(e) => {
+                if let Ok(tools) = self.client.list_tools(server_name).await {
+                    if !tools.iter().any(|t| t.name == tool_name) {
+                        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+                        return Err(format!(
+                            "MCP {server_name} has no tool `{tool_name}` — its tools: {}. list_mcp_servers gives each one's description and arguments.",
+                            names.join(", ")
+                        ));
+                    }
+                }
+                Err(e)
+            }
+        }
     }
 
     pub async fn disconnect_all(&self) {

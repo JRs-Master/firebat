@@ -317,3 +317,97 @@ async fn a_login_refusal_is_not_taken_for_an_old_server() {
     let _ = t.mgr.list_tools("m").await.unwrap_err();
     assert_eq!(methods(&heads.lock().unwrap()), vec!["POST"]);
 }
+
+/// A small Streamable-HTTP MCP server on 127.0.0.1 with two tools — `get_sites` and `get_sales` — that answers a tool it does
+/// not have the way 맑곰 (laravel/mcp) does: HTTP 400 with a JSON-RPC error.
+fn fake_mcp_server() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming().take(40) {
+            let Ok(mut stream) = stream else { break };
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 8192];
+            let body = loop {
+                let n = stream.read(&mut chunk).unwrap_or(0);
+                if n == 0 {
+                    break String::new();
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                let text = String::from_utf8_lossy(&buf).to_string();
+                if let Some(end) = text.find("\r\n\r\n") {
+                    let len = text[..end]
+                        .lines()
+                        .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                        .unwrap_or(0);
+                    if buf.len() >= end + 4 + len {
+                        break String::from_utf8_lossy(&buf[end + 4..end + 4 + len]).to_string();
+                    }
+                }
+            };
+            let req: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+            let id = req.get("id").cloned().unwrap_or(serde_json::Value::Null);
+            let (status, reply) = match req["method"].as_str().unwrap_or("") {
+                "initialize" => (200, serde_json::json!({"jsonrpc": "2.0", "id": id, "result": {
+                    "protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "fake", "version": "0"}}})),
+                "tools/list" => (200, serde_json::json!({"jsonrpc": "2.0", "id": id, "result": {"tools": [
+                    {"name": "get_sites", "description": "The sites.", "inputSchema": {"type": "object", "properties": {}}},
+                    {"name": "get_sales", "description": "Sales by day.", "inputSchema": {"type": "object", "properties": {"from": {"type": "string"}}}}]}})),
+                "tools/call" if req["params"]["name"] == "get_sites" => (200, serde_json::json!({"jsonrpc": "2.0", "id": id,
+                    "result": {"content": [{"type": "text", "text": "본사"}], "isError": false}})),
+                "tools/call" => (400, serde_json::json!({"jsonrpc": "2.0", "id": id,
+                    "error": {"code": -32602, "message": format!("Tool [{}] not found.", req["params"]["name"].as_str().unwrap_or(""))}})),
+                _ => (202, serde_json::Value::Null), // a notification
+            };
+            let text = if reply.is_null() { String::new() } else { reply.to_string() };
+            let _ = stream.write_all(format!(
+                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                text.len()
+            ).as_bytes());
+        }
+    });
+    url
+}
+
+#[tokio::test]
+async fn the_server_list_carries_each_servers_tools_and_no_env() {
+    let t = make_with_vault();
+    let url = fake_mcp_server();
+    t.mgr.add_server(remote("맑곰", &url), Some("tok".to_string())).await.unwrap();
+    let mut local = stdio("local", true);
+    local.env.insert("API_KEY".to_string(), "secret-value".to_string());
+    local.enabled = false; // nothing to spawn in a test
+    t.mgr.add_server(local, None).await.unwrap();
+
+    let listed = serde_json::Value::Array(t.mgr.servers_with_tools().await);
+    let text = listed.to_string();
+    assert!(!text.contains("secret-value") && !text.contains("API_KEY"), "env must not be listed: {text}");
+    let malkgom = listed.as_array().unwrap().iter().find(|s| s["name"] == "맑곰").unwrap();
+    let names: Vec<&str> = malkgom["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["get_sites", "get_sales"]);
+    assert_eq!(malkgom["tools"][1]["inputSchema"]["properties"]["from"]["type"], "string");
+    assert_eq!(malkgom["tools"][0]["description"], "The sites.");
+}
+
+#[tokio::test]
+async fn a_tool_name_the_server_lacks_is_answered_with_the_ones_it_has() {
+    let t = make_with_vault();
+    let url = fake_mcp_server();
+    t.mgr.add_server(remote("맑곰", &url), None).await.unwrap();
+
+    let ok = t.mgr.call_tool("맑곰", "get_sites", &serde_json::json!({})).await.unwrap();
+    assert_eq!(ok["content"][0]["text"], "본사");
+
+    let err = t.mgr.call_tool("맑곰", "get_menus", &serde_json::json!({})).await.unwrap_err();
+    assert!(err.contains("no tool `get_menus`") && err.contains("get_sites, get_sales") && err.contains("list_mcp_servers"), "{err}");
+}
+
+#[tokio::test]
+async fn an_unreachable_server_says_why_in_place_of_its_tools() {
+    let t = make_with_vault();
+    let (url, _) = refusing_server();
+    t.mgr.add_server(remote("down", &url), None).await.unwrap();
+    let listed = t.mgr.servers_with_tools().await;
+    assert!(listed[0].get("tools").is_none());
+    assert!(listed[0]["error"].as_str().unwrap().contains("401"), "{}", listed[0]);
+}

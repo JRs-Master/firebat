@@ -3220,7 +3220,7 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // list_mcp_servers
     tools.register(ToolDefinition {
         name: "list_mcp_servers".to_string(),
-        description: "등록된 외부 MCP 서버 목록.".to_string(),
+        description: "The registered outside MCP servers, each with its tools as it publishes them: name, description, inputSchema — what mcp_call takes.".to_string(),
         parameters: serde_json::json!({"type": "object", "properties": {}}),
         source: "core".to_string(),
     });
@@ -3229,7 +3229,7 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         "list_mcp_servers",
         make_handler(move |_args| {
             let mcp = mcp.clone();
-            async move { Ok(serde_json::to_value(mcp.list_servers()).unwrap_or_default()) }
+            async move { Ok(serde_json::Value::Array(mcp.servers_with_tools().await)) }
         }),
     );
 
@@ -3237,7 +3237,7 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // MCP 서버 핸들러(McpCallHandler)와 이름 통일 — 옛 call_mcp_tool 명칭 폐기 (양 경로 mcp_call).
     tools.register(ToolDefinition {
         name: "mcp_call".to_string(),
-        description: "외부 MCP 서버의 도구 호출 (stdio 또는 SSE transport).".to_string(),
+        description: "Calls a tool of an outside MCP server: server and tool as list_mcp_servers names them, arguments per that tool's inputSchema.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
