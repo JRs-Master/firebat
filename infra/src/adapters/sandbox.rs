@@ -38,8 +38,11 @@ fn pypi_cache() -> &'static TokioMutex<HashMap<String, (Instant, Option<String>)
     CACHE.get_or_init(|| TokioMutex::new(HashMap::new()))
 }
 
-/// PyPI JSON API 안 최신 stable 버전 조회. 1시간 캐시. 호출 site = `get_package_status_for_module`.
-async fn fetch_latest_pypi_version(pkg_name: &str) -> Option<String> {
+/// The newest version pip would install here — asked of pip itself (`pip index versions`), so this machine's Python and
+/// platform decide, the way they do for the install. PyPI's headline version (`info.version`) is not that: pyworld 0.3.6
+/// ships Windows wheels only, so the server offered an upgrade it could never install, and the job kept "failing" on the
+/// 0.3.5 it already had (2026-11-28). 1 hour cache; None (no pip answer) = no badge, not a guess. Same pip as the install.
+async fn fetch_latest_installable_version(pkg_name: &str) -> Option<String> {
     {
         let cache = pypi_cache().lock().await;
         if let Some((stored_at, version)) = cache.get(pkg_name) {
@@ -48,27 +51,44 @@ async fn fetch_latest_pypi_version(pkg_name: &str) -> Option<String> {
             }
         }
     }
-    let url = format!("https://pypi.org/pypi/{}/json", pkg_name);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .ok()?;
-    let result: Option<String> = match client.get(&url).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(json) => json
-                    .get("info")
-                    .and_then(|v| v.get("version"))
-                    .and_then(|v| v.as_str())
-                    .map(String::from),
-                Err(_) => None,
+    let result = match get_working_python().await {
+        Some(py) => {
+            let pip = resolve_pip_command(py).await;
+            let cmd = format!("{pip} index versions {pkg_name} --disable-pip-version-check");
+            let run = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
+                .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
+                .arg(&cmd)
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output();
+            match tokio::time::timeout(Duration::from_secs(20), run).await {
+                Ok(Ok(out)) if out.status.success() => parse_pip_index_latest(&String::from_utf8_lossy(&out.stdout)),
+                _ => None,
             }
         }
-        _ => None,
+        None => None,
     };
     let mut cache = pypi_cache().lock().await;
     cache.insert(pkg_name.to_string(), (Instant::now(), result.clone()));
     result
+}
+
+/// `pip index versions` answers "pyworld (0.3.5)" on its first line — the newest installable here.
+fn parse_pip_index_latest(stdout: &str) -> Option<String> {
+    let line = stdout.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let open = line.find('(')?;
+    let close = line[open..].find(')')? + open;
+    let version = line[open + 1..close].trim();
+    (!version.is_empty()).then(|| version.to_string())
+}
+
+/// One pip at a time: every Python module installs into the one `python_modules` (`--target`), and packages share
+/// dependencies — sing's numpy · soundfile · pyworld · mido each bring numpy, and four jobs at once replaced the same
+/// `numpy/` together, so whichever lost the race "failed" and old `numpy-*.dist-info` piled up (2026-11-28). npm installs
+/// into each module's own folder and stays parallel.
+fn pip_lock() -> &'static TokioMutex<()> {
+    static LOCK: OnceLock<TokioMutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| TokioMutex::new(()))
 }
 
 /// semver-like 비교 — `2.32.3` vs `2.32.4` 형식 안 dot 분리 + 숫자 ordering.
@@ -834,7 +854,7 @@ impl ProcessSandboxAdapter {
         let install_cmd = format!(
             "{pip} install --target \"{target_arg}\"{upgrade_flag} {install_target} --quiet"
         );
-        self.spawn_install_job(display_name, install_cmd, pkg.post_install.clone())
+        self.spawn_install_job(display_name, install_cmd, pkg.post_install.clone(), true)
             .await
     }
 
@@ -854,7 +874,7 @@ impl ProcessSandboxAdapter {
         let install_cmd = format!(
             "npm install --prefix \"{dir}\" --no-fund --no-audit --loglevel=error \"{target}\""
         );
-        self.spawn_install_job(name, install_cmd, pkg.post_install.clone())
+        self.spawn_install_job(name, install_cmd, pkg.post_install.clone(), false)
             .await
     }
 
@@ -870,6 +890,8 @@ impl ProcessSandboxAdapter {
         display_name: String,
         install_cmd: String,
         post_install: Option<String>,
+        // pip: one at a time into the shared python_modules (pip_lock); npm: its module's own folder, parallel.
+        serial: bool,
     ) -> Option<String> {
         let Some(status) = self.status.clone() else {
             return None;
@@ -901,6 +923,8 @@ impl ProcessSandboxAdapter {
         let display_for_bg = display_name.clone();
         let job_id_bg = job_id.clone();
         tokio::spawn(async move {
+            // Held through the install and its postInstall: the next pip waits (the job stays Running meanwhile).
+            let _one_pip = if serial { Some(pip_lock().lock().await) } else { None };
             let install_status = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
                 .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
                 .arg(&install_cmd)
@@ -1204,7 +1228,7 @@ impl ProcessSandboxAdapter {
             // 매 polling 시 network 호출 부담 차단. npm 레지스트리 최신 조회는 미구현 —
             // node 패키지는 latest 없음(배지 대신 설치 버전만 표시).
             let latest_version = if !is_node && matches!(kind, PackageStatusKind::Installed) {
-                fetch_latest_pypi_version(&display).await
+                fetch_latest_installable_version(&display).await
             } else {
                 None
             };
@@ -2368,6 +2392,18 @@ mod tests {
         );
         // pip names never contain '/', so the python job ids are byte-identical to before
         assert_eq!(ProcessSandboxAdapter::install_job_id("playwright"), "install-playwright");
+    }
+
+    /// The newest installable version is pip's first line — pyworld on the Linux server answered 0.3.5 while PyPI's headline
+    /// was the Windows-only 0.3.6 (2026-11-28).
+    #[test]
+    fn pip_index_answer_gives_the_newest_installable() {
+        let out = "pyworld (0.3.5)\nAvailable versions: 0.3.5, 0.3.4, 0.3.3\n  INSTALLED: 0.3.5\n  LATEST:    0.3.5\n";
+        assert_eq!(parse_pip_index_latest(out), Some("0.3.5".to_string()));
+        assert_eq!(parse_pip_index_latest("\n  numpy (2.5.5)\n"), Some("2.5.5".to_string()));
+        assert_eq!(parse_pip_index_latest(""), None);
+        assert_eq!(parse_pip_index_latest("ERROR: No matching distribution found for nothing-here"), None);
+        assert!(!is_version_newer("0.3.5", "0.3.5")); // so no badge on what is already installed
     }
 
     #[test]
