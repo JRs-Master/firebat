@@ -12,13 +12,13 @@
 use firebat_core::llm::registry::{init, LlmRegistry};
 use std::path::PathBuf;
 
-/// 옛 builtin_models() 호환 — 폴백 stub registry (모델 0개, default = gemini-3.1-flash-lite).
+/// 옛 builtin_models() 호환 — 폴백 stub registry (모델 0개 · default 값은 models.json 이 정한 것과 같게 — 2026-11-28).
 fn stub_registry() -> LlmRegistry {
     LlmRegistry {
-        default_assistant_model: "gemini-3.1-flash-lite".to_string(),
+        default_assistant_model: "current".to_string(),
         assistant_models: Vec::new(),
-        default_library_extraction_model: "gemini-3.5-flash".to_string(),
-        library_extraction_pro_model: "gemini-3.1-pro-preview".to_string(),
+        default_library_extraction_model: "gemini-4-hydrogen".to_string(),
+        library_extraction_pro_model: "gemini-4-carbon".to_string(),
         models: Vec::new(),
     }
     // 실제 값은 models.json 에서 로드 — 이건 파일 부재 시 폴백 stub.

@@ -416,10 +416,24 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// An Anthropic API model from the loaded list. The test is about the adapter (no key → it says so before any call), so it
+    /// takes whichever one the list has, not a name: models.json goes out by pull with no CI, and renaming claude-sonnet-5 there
+    /// (2026-11-28) turned this red on the next, unrelated Rust commit.
+    fn an_anthropic_api_model() -> String {
+        ensure_registry();
+        firebat_core::llm::registry::current()
+            .models
+            .iter()
+            .find(|m| m.format == "anthropic-messages")
+            .expect("system/llm/models.json lists no anthropic-messages model — this test needs one")
+            .id
+            .clone()
+    }
+
     #[tokio::test]
     async fn anthropic_without_api_key_returns_error() {
         let (vault, _dir) = vault();
-        let adapter = ConfigDrivenAdapter::new(vault, "claude-sonnet-5".to_string());
+        let adapter = ConfigDrivenAdapter::new(vault, an_anthropic_api_model());
         let result = adapter.ask_text("hi", &LlmCallOpts::default()).await;
         // API 키 없으니 핸들러가 명시 에러 반환 (실 LLM 호출 안 함)
         assert!(result.is_err());

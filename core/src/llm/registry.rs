@@ -11,7 +11,7 @@
 //!
 //!   // core/manager 안:
 //!   let registry = firebat_core::llm::registry::current();
-//!   let model = registry.find_model("gemini-3.1-flash-lite");
+//!   let model = registry.find_model("gemini-3.5-flash-lite");
 //!
 //! 새 모델 추가:
 //!   1. system/llm/models.json 수정 (모델 entry 추가)
@@ -44,11 +44,12 @@ pub struct LlmRegistry {
     pub models: Vec<LlmModelConfig>,
 }
 
+// The fallbacks for a models.json that leaves these out — the same values it sets (system/llm/models.json, 2026-11-28).
 fn default_library_extraction_model() -> String {
-    "gemini-3.5-flash".to_string()
+    "gemini-4-hydrogen".to_string()
 }
 fn default_library_extraction_pro_model() -> String {
-    "gemini-3.1-pro-preview".to_string()
+    "gemini-4-carbon".to_string()
 }
 
 impl LlmRegistry {
@@ -68,11 +69,11 @@ pub fn init(reg: LlmRegistry) {
 
 /// 현재 registry 접근. infra `init` 미호출 시 빈 폴백 반환 (테스트 + early boot 안전망).
 ///
-/// 운영 코드는 항상 init 후 호출. 빈 폴백 = 모델 list 0 / default = `gemini-3.1-flash-lite`.
+/// 운영 코드는 항상 init 후 호출. 빈 폴백 = 모델 list 0 / default = `current`(메인 모델을 따름 — models.json 과 같은 값).
 pub fn current() -> &'static LlmRegistry {
     REGISTRY.get_or_init(|| LlmRegistry {
         models: Vec::new(),
-        default_assistant_model: "gemini-3.1-flash-lite".to_string(),
+        default_assistant_model: "current".to_string(),
         assistant_models: Vec::new(),
         default_library_extraction_model: default_library_extraction_model(),
         library_extraction_pro_model: default_library_extraction_pro_model(),
