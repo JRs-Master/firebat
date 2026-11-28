@@ -64,6 +64,28 @@ A caller reaches an action through `search_module_actions` → `get_action_schem
   with zero extra authoring. Declare one only when a row needs its own name, description, tags
   or aliases.
 
+## How you are found — name, tags, descriptions
+
+Each action is one search row. Its text is **Name** (the action id) + **Tags** (the module's `tags`)
++ **Desc** (the module name and the action's own fragment of the `action` description, plus its
+params' enum values). A query is ranked by meaning against that text, and lifted when one of its
+words **is** a declared tag word for word or names the action. Write all three for the request a
+person will type:
+
+- **`name`** — what the module is, kebab-case: `series-stats`, `kma-weather`.
+- **`tags`** — the words people ask with, Korean **and** English, one noun each: `["상관계수",
+  "상관관계", "correlation", "피어슨"]`. A tag lifts only when a query word equals it, so write the
+  word itself, not a phrase. No generic words (조회 · 검색 · 계산 · 데이터) — they would lift you
+  for every request.
+- **`action` description** — `id=what it does` for each action, in the words a request uses;
+  Korean and English both help (this text is searched, not shown as prose). It is the row's
+  description: an action with no fragment is described by the module's first sentence alone.
+- **`description`** — one line: what goes in → what comes out.
+
+Measured 2026-11-28: `series-stats` had an English description and Korean tags. 「correlation
+between two series」 found it first; 「상관계수」 did not reach the top ten, because nothing in
+its action text was Korean and tags were not yet a lift. Both halves are yours to write.
+
 ## actionCatalog — the discovery original
 
 ```jsonc
