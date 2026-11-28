@@ -871,6 +871,9 @@ mod tests {
             async fn embed_passage(&self, _: &str) -> InfraResult<Vec<f32>> {
                 Ok(vec![1.0, 0.0])
             }
+            fn dimension(&self) -> usize {
+                2
+            }
         }
         struct NoCache;
         impl IEmbedderCachePort for NoCache {
