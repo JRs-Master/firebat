@@ -37,7 +37,7 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 use firebat_core::ports::{
-    IMcpClientPort, InfraResult, McpServerConfig, McpToolInfo, McpTransport,
+    IMcpClientPort, IVaultPort, InfraResult, McpServerConfig, McpToolInfo, McpTransport,
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -363,6 +363,34 @@ impl Connection for StdioConnection {
     }
 }
 
+/// The client a remote transport sends everything through. A server's token rides on every
+/// request — the opening GET of the old SSE transport too — as `Authorization: Bearer`, marked
+/// sensitive so a debug print of a request never shows it.
+fn remote_client(server: &str, bearer: Option<&str>) -> InfraResult<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(token) = bearer {
+        let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|_| format!("MCP {server}: the token has characters a header cannot carry"))?;
+        value.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(60 * 5)) // streaming response — 큰 timeout
+        .default_headers(headers)
+        .build()
+        .map_err(|e| format!("reqwest 빌드 실패: {e}"))
+}
+
+/// What a 401 · 403 means for the next move — the server wants a login, or turned the token down.
+fn login_hint(status: reqwest::StatusCode, has_token: bool) -> &'static str {
+    match (status.as_u16(), has_token) {
+        (401, false) => " — the server wants a login: register it again with its token",
+        (401, true) => " — the server turned the token down (expired or revoked?): register it again with a new token",
+        (403, _) => " — the server knows who is asking and refuses (that person's access, or their account is off)",
+        _ => "",
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // HTTP+SSE transport (옛 MCP spec)
 // ──────────────────────────────────────────────────────────────────────────
@@ -385,7 +413,7 @@ struct SseConnection {
 }
 
 impl SseConnection {
-    async fn connect(config: &McpServerConfig) -> InfraResult<Arc<Self>> {
+    async fn connect(config: &McpServerConfig, bearer: Option<&str>) -> InfraResult<Arc<Self>> {
         use futures_util::StreamExt;
 
         let url = config
@@ -394,10 +422,7 @@ impl SseConnection {
             .ok_or_else(|| format!("MCP {} sse transport url 누락", config.name))?
             .clone();
 
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60 * 5)) // streaming response — 큰 timeout
-            .build()
-            .map_err(|e| format!("reqwest 빌드 실패: {e}"))?;
+        let http = remote_client(&config.name, bearer)?;
 
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         let post_url: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -413,9 +438,10 @@ impl SseConnection {
 
         if !response.status().is_success() {
             return Err(format!(
-                "MCP {} SSE connect 실패 (HTTP {})",
+                "MCP {} SSE connect 실패 (HTTP {}){}",
                 config.name,
-                response.status()
+                response.status(),
+                login_hint(response.status(), bearer.is_some())
             ));
         }
 
@@ -684,20 +710,28 @@ struct StreamableHttpConnection {
     /// 서버가 발급한 세션 id. 주는 서버에만 생기고, 생긴 뒤로는 매 요청에 실어 되돌려준다.
     session_id: Mutex<Option<String>>,
     server_name: String,
+    /// Whether a token rides on the requests — a 401 then means a rejected token, not a missing one.
+    has_token: bool,
+    /// The HTTP status of the last refused POST (0 = none) — how `get_or_connect` tells an old
+    /// HTTP+SSE server at the same address (`says_old_transport`).
+    refused_status: std::sync::atomic::AtomicU16,
 }
 
 impl StreamableHttpConnection {
-    async fn connect(config: &McpServerConfig) -> InfraResult<Arc<Self>> {
+    /// The spec's sign of an old HTTP+SSE server at this address (2025-03-26, "Backwards
+    /// Compatibility"): it turned the initialize POST down with 400 · 404 · 405.
+    fn says_old_transport(&self) -> bool {
+        matches!(self.refused_status.load(Ordering::SeqCst), 400 | 404 | 405)
+    }
+
+    async fn connect(config: &McpServerConfig, bearer: Option<&str>) -> InfraResult<Arc<Self>> {
         let url = config
             .url
             .as_ref()
             .ok_or_else(|| format!("MCP {} http transport url 누락", config.name))?
             .clone();
 
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60 * 5))
-            .build()
-            .map_err(|e| format!("reqwest 빌드 실패: {e}"))?;
+        let http = remote_client(&config.name, bearer)?;
 
         // 여는 왕복이 없다 — 첫 POST(`initialize`)가 곧 첫 접촉이라 여기서 할 I/O 가 없다.
         Ok(Arc::new(Self {
@@ -706,6 +740,8 @@ impl StreamableHttpConnection {
             http,
             session_id: Mutex::new(None),
             server_name: config.name.clone(),
+            has_token: bearer.is_some(),
+            refused_status: std::sync::atomic::AtomicU16::new(0),
         }))
     }
 
@@ -823,10 +859,14 @@ impl Connection for StreamableHttpConnection {
         };
 
         if !status.is_success() {
+            self.refused_status.store(status.as_u16(), Ordering::SeqCst);
             // 본문을 같이 싣는다 — 신판 서버는 여기에 왜 거절했는지를 JSON-RPC 에러로 적는다.
             return Err(format!(
-                "MCP {} POST HTTP {} — body: {}",
-                self.server_name, status, text
+                "MCP {} POST HTTP {}{} — body: {}",
+                self.server_name,
+                status,
+                login_hint(status, self.has_token),
+                text
             ));
         }
 
@@ -916,6 +956,15 @@ async fn initialize_connection(conn: &dyn Connection) -> InfraResult<()> {
     Ok(())
 }
 
+/// A fresh connection, initialized — or shut and its failure named.
+async fn initialized(conn: Arc<dyn Connection>, server_name: &str) -> InfraResult<Arc<dyn Connection>> {
+    if let Err(e) = initialize_connection(conn.as_ref()).await {
+        conn.shutdown().await;
+        return Err(format!("MCP {} initialize 실패: {e}", server_name));
+    }
+    Ok(conn)
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // McpClientFileAdapter — 메인 어댑터
 // ──────────────────────────────────────────────────────────────────────────
@@ -924,6 +973,8 @@ pub struct McpClientFileAdapter {
     config_path: PathBuf,
     servers: Mutex<HashMap<String, McpServerConfig>>,
     connections: Mutex<HashMap<String, Arc<dyn Connection>>>,
+    /// Where a server's token is read from when it connects (`McpServerConfig::token_secret`).
+    vault: Option<Arc<dyn IVaultPort>>,
 }
 
 impl McpClientFileAdapter {
@@ -943,6 +994,30 @@ impl McpClientFileAdapter {
             config_path,
             servers: Mutex::new(servers),
             connections: Mutex::new(HashMap::new()),
+            vault: None,
+        })
+    }
+
+    pub fn with_vault(mut self, vault: Arc<dyn IVaultPort>) -> Self {
+        self.vault = Some(vault);
+        self
+    }
+
+    /// The token a remote server is sent, read fresh at each connect — replacing it in the vault
+    /// takes effect on the next connection. A stdio server holds none.
+    fn bearer_for(&self, config: &McpServerConfig) -> InfraResult<Option<String>> {
+        let Some(key) = &config.token_secret else { return Ok(None) };
+        if config.transport == McpTransport::Stdio {
+            return Ok(None);
+        }
+        let vault = self.vault.as_ref().ok_or_else(|| {
+            format!("MCP {}: it has a token, but no vault is wired to read it", config.name)
+        })?;
+        vault.get_secret(key).map(Some).ok_or_else(|| {
+            format!(
+                "MCP {}: its token is not in the vault ({key}) — register the server again with its token",
+                config.name
+            )
         })
     }
 
@@ -978,26 +1053,42 @@ impl McpClientFileAdapter {
             return Err(format!("MCP 서버 {} 비활성", server_name));
         }
 
+        let bearer = self.bearer_for(&config)?;
         let conn: Arc<dyn Connection> = match config.transport {
             McpTransport::Stdio => {
                 let conn = StdioConnection::spawn(&config).await?;
-                conn as Arc<dyn Connection>
+                initialized(conn, server_name).await?
             }
             McpTransport::Sse => {
-                let conn = SseConnection::connect(&config).await?;
-                conn as Arc<dyn Connection>
+                let conn = SseConnection::connect(&config, bearer.as_deref()).await?;
+                initialized(conn, server_name).await?
             }
             McpTransport::Http => {
-                let conn = StreamableHttpConnection::connect(&config).await?;
-                conn as Arc<dyn Connection>
+                // An address may serve either transport — the settings screen takes just the
+                // address. Try the current one; if the server turns the initialize POST down the
+                // way an old HTTP+SSE server does, open its GET stream instead (the spec's own
+                // backwards-compatibility rule), with the same token.
+                let conn = StreamableHttpConnection::connect(&config, bearer.as_deref()).await?;
+                match initialize_connection(conn.as_ref()).await {
+                    Ok(()) => conn as Arc<dyn Connection>,
+                    Err(e) if conn.says_old_transport() => {
+                        conn.shutdown().await;
+                        let old = SseConnection::connect(&config, bearer.as_deref())
+                            .await
+                            .map_err(|old_err| {
+                                format!(
+                                    "MCP {server_name} initialize 실패: {e} — and as an old HTTP+SSE server: {old_err}"
+                                )
+                            })?;
+                        initialized(old, server_name).await?
+                    }
+                    Err(e) => {
+                        conn.shutdown().await;
+                        return Err(format!("MCP {} initialize 실패: {e}", server_name));
+                    }
+                }
             }
         };
-
-        if let Err(e) = initialize_connection(conn.as_ref()).await {
-            // initialize 실패 → connection 폐기
-            conn.shutdown().await;
-            return Err(format!("MCP {} initialize 실패: {e}", server_name));
-        }
 
         let mut guard = self.connections.lock().await;
         guard.insert(server_name.to_string(), conn.clone());
@@ -1167,6 +1258,7 @@ mod tests {
                 args: vec!["@modelcontextprotocol/server-gmail".to_string()],
                 env: HashMap::new(),
                 url: None,
+                token_secret: None,
                 enabled: true,
             })
             .await
@@ -1263,6 +1355,7 @@ data: \"result\": {}}
                     args: vec![],
                     env: HashMap::new(),
                     url: Some("https://example.com/mcp".to_string()),
+                    token_secret: None,
                     enabled: true,
                 })
                 .await

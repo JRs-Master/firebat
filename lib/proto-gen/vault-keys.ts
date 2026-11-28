@@ -55,3 +55,8 @@ export function vkCapabilitySettings(capId: string): string {
 export function vkModuleSettings(name: string): string {
   return `system:module:${name}:settings`;
 }
+
+/** 외부 MCP 서버 로그인 토큰 key — `system:mcp:<서버 이름>:token`. McpManager 가 쓰고 지우고, MCP 클라이언트가 연결할 때 읽어 Authorization: Bearer 로 보낸다. 서버 설정(mcp-servers.json)엔 이 key 이름만. */
+export function vkMcpServerToken(name: string): string {
+  return `system:mcp:${name}:token`;
+}

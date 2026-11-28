@@ -57,6 +57,12 @@
       "ts": "system:module:${name}:settings",
       "args": [{ "name": "name", "type": "string" }],
       "doc": "Module 설정 key — `system:module:<name>:settings` 형식. ModuleManager / CapabilityManager 활성화 검사 시 사용."
+    },
+    "vk_mcp_server_token": {
+      "rust": "system:mcp:{name}:token",
+      "ts": "system:mcp:${name}:token",
+      "args": [{ "name": "name", "type": "string" }],
+      "doc": "외부 MCP 서버 로그인 토큰 key — `system:mcp:<서버 이름>:token`. McpManager 가 쓰고 지우고, MCP 클라이언트가 연결할 때 읽어 Authorization: Bearer 로 보낸다. 서버 설정(mcp-servers.json)엔 이 key 이름만."
     }
   },
 

@@ -2343,6 +2343,11 @@ pub struct McpServerConfig {
     pub env: std::collections::HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// The vault key holding the token a remote (sse · http) server is sent as
+    /// `Authorization: Bearer`. The token itself never sits in this config — the config is
+    /// listed to the settings screen and written to `mcp-servers.json`. Set by `McpManager`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_secret: Option<String>,
     pub enabled: bool,
 }
 

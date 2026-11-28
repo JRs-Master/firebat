@@ -81,11 +81,13 @@ export type Conversation = ConversationMeta & { messages: Message[] };
 
 export type McpServer = {
   name: string;
-  transport: 'stdio' | 'sse';
+  transport: 'stdio' | 'sse' | 'http';
   command?: string;
   args?: string[];
   env?: Record<string, string>;
   url?: string;
+  /** The vault key holding its login token — the name only; the token never comes back. */
+  tokenSecret?: string;
   enabled: boolean;
 };
 

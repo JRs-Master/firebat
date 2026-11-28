@@ -122,6 +122,28 @@ function useDragScrollBar() {
   return { ref: refCb, canLeft: state.canLeft, canRight: state.canRight, scroll };
 }
 
+/** An MCP server is reached at an address, or is a program this server runs. One field takes
+ *  either and the shape says which: http(s):// = an address (the core tries the current transport
+ *  and falls back to the old HTTP+SSE one), anything else = a command line. */
+type McpTarget = { kind: 'address'; url: string } | { kind: 'command'; command: string; args: string[] };
+function mcpTargetOf(input: string): McpTarget | null {
+  const v = input.trim();
+  if (!v) return null;
+  if (/^https?:\/\//i.test(v)) return { kind: 'address', url: v };
+  const [command, ...args] = v.split(/\s+/);
+  return { kind: 'command', command, args };
+}
+/** The field's text for a registered server — the inverse of mcpTargetOf. */
+function mcpTargetText(s: McpServer): string {
+  return s.transport === 'stdio' ? [s.command ?? '', ...(s.args ?? [])].join(' ').trim() : (s.url ?? '');
+}
+/** The register request — a token only for an address; left empty, a server keeps the one it has. */
+function mcpBodyOf(name: string, target: McpTarget, token: string) {
+  return target.kind === 'address'
+    ? { name, transport: 'http' as const, url: target.url, enabled: true, ...(token.trim() ? { token: token.trim() } : {}) }
+    : { name, transport: 'stdio' as const, command: target.command, args: target.args, enabled: true };
+}
+
 export function SettingsModal(props: Props) {
   return (
     <ErrorBoundary>
@@ -163,13 +185,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const newSecretNameId = useId();
   const newSecretValueId = useId();
   const moduleSecretIdBase = useId();
-  const mcpEditCommandId = useId();
-  const mcpEditArgsId = useId();
-  const mcpEditUrlId = useId();
+  const mcpEditTargetId = useId();
+  const mcpEditTokenId = useId();
   const mcpNewNameId = useId();
-  const mcpNewCommandId = useId();
-  const mcpNewArgsId = useId();
-  const mcpNewUrlId = useId();
+  const mcpNewTargetId = useId();
+  const mcpNewTokenId = useId();
   const openaiKeyId = useId();
   const googleKeyId = useId();
   const anthropicKeyId = useId();
@@ -397,15 +417,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpLoading, setMcpLoading] = useState(false);
   const [mcpNewName, setMcpNewName] = useState('');
-  const [mcpNewTransport, setMcpNewTransport] = useState<'stdio' | 'sse' | 'http'>('stdio');
-  const [mcpNewCommand, setMcpNewCommand] = useState('');
-  const [mcpNewArgs, setMcpNewArgs] = useState('');
-  const [mcpNewUrl, setMcpNewUrl] = useState('');
+  // One field: an address (https://…) or a command this server runs — mcpTargetOf tells which.
+  const [mcpNewTarget, setMcpNewTarget] = useState('');
+  const [mcpNewToken, setMcpNewToken] = useState('');
   const [mcpSaving, setMcpSaving] = useState(false);
   const [mcpEditing, setMcpEditing] = useState<string | null>(null);
-  const [mcpEditCommand, setMcpEditCommand] = useState('');
-  const [mcpEditArgs, setMcpEditArgs] = useState('');
-  const [mcpEditUrl, setMcpEditUrl] = useState('');
+  const [mcpEditTarget, setMcpEditTarget] = useState('');
+  const [mcpEditToken, setMcpEditToken] = useState('');
   const [mcpEditSaving, setMcpEditSaving] = useState(false);
   const [mcpEditFeedback, setMcpEditFeedback] = useState<'ok' | 'err' | null>(null);
   const [mcpAuth, setMcpAuth] = useState<{ server: string; step: 'starting' | 'waiting' | 'done' | 'error'; authUrl?: string; error?: string } | null>(null);
@@ -615,16 +633,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   const addMcpServer = async () => {
     const name = mcpNewName.trim();
-    if (!name) return;
+    const target = mcpTargetOf(mcpNewTarget);
+    if (!name || !target) return;
     setMcpSaving(true);
     try {
-      const body: any = { name, transport: mcpNewTransport, enabled: true };
-      if (mcpNewTransport === 'stdio') {
-        body.command = mcpNewCommand.trim();
-        body.args = mcpNewArgs.trim() ? mcpNewArgs.trim().split(/\s+/) : [];
-      } else {
-        body.url = mcpNewUrl.trim();
-      }
+      const body = mcpBodyOf(name, target, mcpNewToken);
       try {
         await apiPost('/api/mcp/servers', body, { category: 'settings' });
       } catch {
@@ -637,10 +650,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       ).catch(() => ({ success: false, error: t('settings_modal.mcp_fetch_failed') }));
 
       if (testData.success) {
-        setMcpNewName(''); setMcpNewCommand(''); setMcpNewArgs(''); setMcpNewUrl('');
+        setMcpNewName(''); setMcpNewTarget(''); setMcpNewToken('');
       } else {
         await apiDelete(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { category: 'settings' });
-        await alertDialog({ title: t('settings_modal.mcp_connect_failed_title'), message: t('settings_modal.mcp_connect_failed_message', { error: String(testData.error ?? '') }), danger: true });
+        const error = String(testData.error ?? '');
+        // The server wants a login (HTTP 401) — say what to do in the screen's words, then the detail.
+        const message = /HTTP 401/.test(error)
+          ? `${t('settings_modal.mcp_login_needed')}\n\n${error}`
+          : t('settings_modal.mcp_connect_failed_message', { error });
+        await alertDialog({ title: t('settings_modal.mcp_connect_failed_title'), message, danger: true });
       }
       fetchMcpServers();
     } finally { setMcpSaving(false); }
@@ -655,23 +673,19 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   const startEditMcp = (server: McpServer) => {
     setMcpEditing(server.name);
-    setMcpEditCommand(server.command ?? '');
-    setMcpEditArgs((server.args ?? []).join(' '));
-    setMcpEditUrl(server.url ?? '');
+    setMcpEditTarget(mcpTargetText(server));
+    setMcpEditToken('');
   };
 
   const saveEditMcp = async (server: McpServer) => {
+    const target = mcpTargetOf(mcpEditTarget);
+    if (!target) return;
     setMcpEditSaving(true);
     try {
-      // 삭제 후 재등록 (서버 설정 업데이트 API가 없으므로)
-      await apiDelete(`/api/mcp/servers?name=${encodeURIComponent(server.name)}`, { category: 'settings' });
-      const body: any = { name: server.name, transport: server.transport, enabled: true };
-      if (server.transport === 'stdio') {
-        body.command = mcpEditCommand.trim();
-        body.args = mcpEditArgs.trim() ? mcpEditArgs.trim().split(/\s+/) : [];
-      } else {
-        body.url = mcpEditUrl.trim();
-      }
+      // Registering under the same name replaces the server in place. Deleting it first would also
+      // drop its login token (removing a server forgets the token), so editing never deletes; an
+      // empty token field keeps the token it has.
+      const body = mcpBodyOf(server.name, target, mcpEditToken);
       try {
         await apiPost('/api/mcp/servers', body, { category: 'settings' });
         setMcpEditing(null);
@@ -2156,8 +2170,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           <div className="min-w-0 flex-1">
                             <span className="text-[13px] font-bold text-slate-700">{s.name}</span>
                             <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded font-medium ${s.transport === 'stdio' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {s.transport}
+                              {s.transport === 'stdio' ? t('settings_modal.mcp_kind_command') : t('settings_modal.mcp_kind_address')}
                             </span>
+                            {s.tokenSecret && (
+                              <span className="ml-1 text-[11px] px-1.5 py-0.5 rounded font-medium bg-slate-200 text-slate-600">
+                                {t('settings_modal.mcp_token_badge')}
+                              </span>
+                            )}
                             {!isEditing && (
                               <p className="text-[11px] text-slate-400 truncate mt-0.5">
                                 {s.transport === 'stdio' ? `${s.command} ${(s.args ?? []).join(' ')}` : s.url}
@@ -2192,33 +2211,22 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         {/* 인라인 편집 */}
                         {isEditing && (
                           <div className="mt-2 flex flex-col gap-1.5 border-t border-slate-200 pt-2">
-                            {s.transport === 'stdio' ? (
-                              <>
-                                <input
-                                  type="text"
-                                  value={mcpEditCommand}
-                                  onChange={e => setMcpEditCommand(e.target.value)}
-                                  placeholder={t('settings_modal.command_placeholder')}
-                                  aria-label={t('settings_modal.mcp_command_label')}
-                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditCommand" autoComplete="off" id={mcpEditCommandId}
-                                />
-                                <input
-                                  type="text"
-                                  value={mcpEditArgs}
-                                  onChange={e => setMcpEditArgs(e.target.value)}
-                                  placeholder={t('settings_modal.args_placeholder')}
-                                  aria-label={t('settings_modal.mcp_args_label')}
-                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditArgs" autoComplete="off" id={mcpEditArgsId}
-                                />
-                              </>
-                            ) : (
+                            <input
+                              type="text"
+                              value={mcpEditTarget}
+                              onChange={e => setMcpEditTarget(e.target.value)}
+                              placeholder={t('settings_modal.mcp_target_placeholder')}
+                              aria-label={t('settings_modal.mcp_target_label')}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditTarget" autoComplete="off" id={mcpEditTargetId}
+                            />
+                            {mcpTargetOf(mcpEditTarget)?.kind === 'address' && (
                               <input
-                                type="text"
-                                value={mcpEditUrl}
-                                onChange={e => setMcpEditUrl(e.target.value)}
-                                placeholder="SSE URL"
-                                aria-label={t('settings_modal.mcp_sse_url_aria')}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditUrl" autoComplete="off" id={mcpEditUrlId}
+                                type="password"
+                                value={mcpEditToken}
+                                onChange={e => setMcpEditToken(e.target.value)}
+                                placeholder={t(s.tokenSecret ? 'settings_modal.mcp_token_keep_placeholder' : 'settings_modal.mcp_token_placeholder')}
+                                aria-label={t('settings_modal.mcp_token_label')}
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditToken" autoComplete="new-password" id={mcpEditTokenId}
                               />
                             )}
                             <div className="flex gap-1.5 justify-end">
@@ -2291,58 +2299,27 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   placeholder={t('settings_modal.server_name_placeholder')}
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewName" autoComplete="off" id={mcpNewNameId}
                 />
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setMcpNewTransport('stdio')}
-                    className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${mcpNewTransport === 'stdio' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
-                  >
-                    {t('settings_modal.mcp_transport_stdio')}
-                  </button>
-                  <button
-                    onClick={() => setMcpNewTransport('sse')}
-                    className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${mcpNewTransport === 'sse' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
-                  >
-                    {t('settings_modal.mcp_transport_sse')}
-                  </button>
-                  <button
-                    onClick={() => setMcpNewTransport('http')}
-                    className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${mcpNewTransport === 'http' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
-                  >
-                    {t('settings_modal.mcp_transport_http')}
-                  </button>
-                </div>
-                {mcpNewTransport === 'stdio' ? (
-                  <>
-                    <input
-                      type="text"
-                      value={mcpNewCommand}
-                      onChange={e => setMcpNewCommand(e.target.value)}
-                      placeholder={t('settings_modal.mcp_command_placeholder')}
-                      aria-label={t('settings_modal.mcp_command_label')}
-                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewCommand" autoComplete="off" id={mcpNewCommandId}
-                    />
-                    <input
-                      type="text"
-                      value={mcpNewArgs}
-                      onChange={e => setMcpNewArgs(e.target.value)}
-                      placeholder={t('settings_modal.mcp_args_placeholder')}
-                      aria-label={t('settings_modal.mcp_args_label')}
-                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewArgs" autoComplete="off" id={mcpNewArgsId}
-                    />
-                  </>
-                ) : (
+                <input
+                  type="text"
+                  value={mcpNewTarget}
+                  onChange={e => setMcpNewTarget(e.target.value)}
+                  placeholder={t('settings_modal.mcp_target_placeholder')}
+                  aria-label={t('settings_modal.mcp_target_label')}
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewTarget" autoComplete="off" id={mcpNewTargetId}
+                />
+                {mcpTargetOf(mcpNewTarget)?.kind === 'address' && (
                   <input
-                    type="text"
-                    value={mcpNewUrl}
-                    onChange={e => setMcpNewUrl(e.target.value)}
-                    placeholder={t('settings_modal.mcp_sse_url_placeholder')}
-                    aria-label={t('settings_modal.mcp_sse_url_label')}
-                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewUrl" autoComplete="off" id={mcpNewUrlId}
+                    type="password"
+                    value={mcpNewToken}
+                    onChange={e => setMcpNewToken(e.target.value)}
+                    placeholder={t('settings_modal.mcp_token_placeholder')}
+                    aria-label={t('settings_modal.mcp_token_label')}
+                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewToken" autoComplete="new-password" id={mcpNewTokenId}
                   />
                 )}
                 <button
                   onClick={addMcpServer}
-                  disabled={!mcpNewName.trim() || (mcpNewTransport === 'stdio' ? !mcpNewCommand.trim() : !mcpNewUrl.trim()) || mcpSaving}
+                  disabled={!mcpNewName.trim() || !mcpTargetOf(mcpNewTarget) || mcpSaving}
                   className="w-full px-3 py-2 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
                 >
                   {mcpSaving ? t('settings_modal.mcp_add_testing') : t('settings_modal.mcp_add_button')}

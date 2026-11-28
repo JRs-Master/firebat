@@ -21,7 +21,7 @@ export const GET = withAuth(async () => {
 /** POST — MCP 서버 추가/수정 */
 export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json();
-  const { name, transport, command, args, env, url, enabled } = body;
+  const { name, transport, command, args, env, url, enabled, token } = body;
 
   if (!name || typeof name !== 'string') {
     return NextResponse.json({ success: false, error: 'name 필수' }, { status: 400 });
@@ -38,6 +38,9 @@ export const POST = withAuth(async (req: NextRequest) => {
     envJson: JSON.stringify(env ?? {}),
     url: url ?? undefined,
     enabled: enabled !== false,
+    // A remote server's login token — the core keeps it in the vault; left out, a server
+    // registered again keeps the one it has.
+    token: typeof token === 'string' && token.trim() ? token.trim() : undefined,
   });
 
   return res.ok

@@ -1125,12 +1125,15 @@ message McpListServersResponse {
 }
 message McpAddServerRequest {
   string name = 1;
-  string transport = 2;                  // "stdio" / "sse"
+  string transport = 2;                  // "stdio" / "sse" / "http"
   optional string command = 3;
   repeated string args = 4;
   string env_json = 5;                   // env 객체 JSON
   optional string url = 6;
   bool enabled = 7;
+  // A remote server's login token, sent as `Authorization: Bearer`. Kept in the vault — never
+  // listed back. Unset on a server registered again = keep the token it already has.
+  optional string token = 8;
 }
 message McpAddServerResponse {}
 message McpRemoveServerRequest {

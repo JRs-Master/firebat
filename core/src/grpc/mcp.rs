@@ -109,10 +109,11 @@ impl McpService for McpServiceImpl {
             args: args.args,
             env,
             url: args.url,
+            token_secret: None, // the manager sets it — a request names a token, never a vault key
             enabled: args.enabled,
         };
         self.manager
-            .add_server(config)
+            .add_server(config, args.token)
             .await
             .map_err(TonicStatus::internal)?;
         self.invalidate_tools_cache().await;

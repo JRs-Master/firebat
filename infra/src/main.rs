@@ -211,10 +211,12 @@ async fn main() -> Result<()> {
     );
     // Sandbox 어댑터는 status_manager 의존 (heavy 패키지 background install 진행 상태 노출) —
     // event_manager + status_manager wiring 후 생성.
+    // A remote MCP server's login token lives in the vault; the client reads it when it connects.
     let mcp_client: Arc<dyn IMcpClientPort> = Arc::new(
         McpClientFileAdapter::new(mcp_servers_path)
             .map_err(anyhow::Error::msg)
-            .context("failed to open MCP servers file")?,
+            .context("failed to open MCP servers file")?
+            .with_vault(vault.clone()),
     );
     // IEmbedderPort — env `FIREBAT_EMBEDDER` 으로 swap:
     //   - `e5` (운영 default, 2026-05-17 정정): candle + intfloat/multilingual-e5-small
@@ -668,7 +670,7 @@ async fn main() -> Result<()> {
                 "conversation",
             ))),
     );
-    let mcp_manager = Arc::new(McpManager::new(mcp_client));
+    let mcp_manager = Arc::new(McpManager::new(mcp_client).with_vault(vault.clone()));
     let consolidation_manager = Arc::new(ConsolidationManager::new(memory_facade.clone()));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
     // MediaManager — Step 2d 설정. 이미지 파이프라인 (generate/regenerate/variants/blurhash) 활성.

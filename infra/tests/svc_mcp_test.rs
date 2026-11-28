@@ -32,6 +32,7 @@ async fn add_then_list_via_grpc() {
         env_json: "{}".to_string(),
         url: None,
         enabled: true,
+        token: None,
     }))
     .await
     .unwrap();
@@ -59,6 +60,7 @@ async fn add_invalid_config_returns_error_status() {
             env_json: "{}".to_string(),
             url: None,
             enabled: true,
+            token: None,
         }))
         .await
         .err()
