@@ -69,6 +69,8 @@ function kindOf(contentType: string, ext?: string): MediaKind {
   if (DOC_CONTENT_TYPES.has(ct)) return 'document';
   return 'other';
 }
+/** A file's identity in the panel — a slug is unique within its scope, not across both. */
+const mediaKey = (i: MediaItem) => `${i.scope ?? 'user'}/${i.slug}`;
 const MUSIC_KINDS: KindChip[] = ['music', 'audio', 'score', 'lyrics'];
 const IMAGE_KINDS: KindChip[] = ['image', 'generated', 'clipart', 'photo'];
 
@@ -79,8 +81,13 @@ function ScorePreview({ path, t }: { path: string; t: (k: string) => string }) {
   const [state, setState] = useState<'idle' | 'busy' | 'ready' | 'error'>('idle');
   const [url, setUrl] = useState('');
   const [err, setErr] = useState('');
+  // The path now shown — a render that finishes after the viewer moved to another file must not
+  // put its audio under that file.
+  const shown = useRef(path);
+  shown.current = path;
   useEffect(() => { setState('idle'); setUrl(''); setErr(''); }, [path]);
   const listen = async () => {
+    const asked = path;
     setState('busy'); setErr('');
     try {
       const res = await fetch('/api/module/run', {
@@ -92,9 +99,11 @@ function ScorePreview({ path, t }: { path: string; t: (k: string) => string }) {
       // 만들어진 파일은 media 로 들어오고(첫 번째), 이미 있던 것이면 url 이 바로 온다.
       const got = j?.data?.url
         || (Array.isArray(j?.data?.media) ? j.data.media[0]?.url : j?.data?.media?.url);
+      if (shown.current !== asked) return;
       if (!j?.success || !got) throw new Error(j?.error || 'preview failed');
       setUrl(got); setState('ready');
     } catch (e) {
+      if (shown.current !== asked) return;
       setErr(e instanceof Error ? e.message : String(e));
       setState('error');
     }
@@ -211,9 +220,13 @@ export function MediaPanel({
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Track the selection by index so prev/next navigation works.
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const selected = selectedIndex !== null && selectedIndex < items.length ? items[selectedIndex] : null;
+  // The selection is the FILE (scope + slug), not its place in the list. A refresh puts new cards
+  // in front (newest first) — a score's 들어보기 imports its audio, and an index remembered across
+  // that refresh pointed at the neighbour: the open score turned into the next one mid-render
+  // (2026-11-28). prev/next and the "21 / 31" counter derive the index from the file.
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const selectedIndex = selectedKey === null ? -1 : items.findIndex(i => mediaKey(i) === selectedKey);
+  const selected = selectedIndex >= 0 ? items[selectedIndex] : null;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Owner-injected backend — admin REST (/api/media/*) vs hub op (GET/DELETE/POST{op}) diverge inside each method only.
@@ -376,12 +389,16 @@ export function MediaPanel({
     try {
       const data = await backend.remove(slug);
       if (data.success) {
-        // 지운 자리로 다음 파일이 당겨진다 — 인덱스를 그대로 두면 상세가 그 다음 것을
-        // 보여주므로 연속 삭제가 된다. 닫는 것은 **마지막 한 장을 지웠을 때뿐**.
-        const left = items.length - 1;
+        // The detail moves on to the file that slides into the deleted one's place, so deleting
+        // runs on through the list; it closes only when the last file is gone. Read the list as it
+        // is now (the ref) — a refresh may have landed during the request.
+        const now = itemsRef.current;
+        const at = now.findIndex(i => i.slug === slug);
+        const rest = now.filter(i => i.slug !== slug);
+        const next = rest.length > 0 ? rest[Math.min(Math.max(at, 0), rest.length - 1)] : undefined;
         setItems(prev => prev.filter(i => i.slug !== slug));
         setTotal(prev => Math.max(0, prev - 1));
-        setSelectedIndex(cur => (cur === null || left <= 0) ? null : Math.min(cur, left - 1));
+        setSelectedKey(next ? mediaKey(next) : null);
       } else {
         await alertDialog({ title: t('media.delete_failed'), message: data.error || 'unknown', danger: true });
       }
@@ -401,7 +418,7 @@ export function MediaPanel({
         await alertDialog({ title: t('media.regen_failed'), message: data.error || 'unknown', danger: true });
       }
       // Success or failure, SSE media:refresh refreshes the grid. Close the modal either way.
-      setSelectedIndex(null);
+      setSelectedKey(null);
     } catch (err: any) {
       await alertDialog({ title: t('media.regen_failed'), message: err.message, danger: true });
     } finally {
@@ -515,7 +532,7 @@ export function MediaPanel({
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-1.5">
-            {items.map((item, idx) => {
+            {items.map(item => {
               const isError = item.status === 'error';
               const isRendering = item.status === 'rendering';
               const itemKind = kindOf(item.contentType, item.ext);
@@ -527,7 +544,7 @@ export function MediaPanel({
               return (
                 <Tooltip key={`${item.scope}-${item.slug}`} label={tooltipLabel}>
                 <button
-                  onClick={() => setSelectedIndex(idx)}
+                  onClick={() => setSelectedKey(mediaKey(item))}
                   className={`group relative aspect-square rounded-md overflow-hidden transition-all ${
                     isError
                       ? 'bg-red-50 ring-2 ring-red-300 hover:ring-red-500'
@@ -605,16 +622,16 @@ export function MediaPanel({
       </div>
 
       {/* detail modal — rendered into document.body via Portal (escapes the sidebar/parent containing block) */}
-      {selected && selectedIndex !== null && (
+      {selected && (
         <MediaDetailModal
           item={selected}
           index={selectedIndex}
           total={items.length}
           hasPrev={selectedIndex > 0}
           hasNext={selectedIndex < items.length - 1}
-          onPrev={() => setSelectedIndex(i => (i !== null && i > 0 ? i - 1 : i))}
-          onNext={() => setSelectedIndex(i => (i !== null && i < items.length - 1 ? i + 1 : i))}
-          onClose={() => setSelectedIndex(null)}
+          onPrev={() => { const p = items[selectedIndex - 1]; if (p) setSelectedKey(mediaKey(p)); }}
+          onNext={() => { const n = items[selectedIndex + 1]; if (n) setSelectedKey(mediaKey(n)); }}
+          onClose={() => setSelectedKey(null)}
           onDelete={() => handleDelete(selected.slug)}
           deleting={deleting === selected.slug}
           onRegenerate={() => handleRegenerate(selected.slug)}
