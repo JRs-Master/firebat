@@ -383,10 +383,9 @@ async fn the_server_list_carries_each_servers_tools_and_no_env() {
     let text = listed.to_string();
     assert!(!text.contains("secret-value") && !text.contains("API_KEY"), "env must not be listed: {text}");
     let malkgom = listed.as_array().unwrap().iter().find(|s| s["name"] == "맑곰").unwrap();
-    let names: Vec<&str> = malkgom["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["get_sites", "get_sales"]);
-    assert_eq!(malkgom["tools"][1]["inputSchema"]["properties"]["from"]["type"], "string");
-    assert_eq!(malkgom["tools"][0]["description"], "The sites.");
+    // Names here; descriptions and arguments in one place — the action index (`mcp.<server>`).
+    assert_eq!(malkgom["tools"], serde_json::json!(["get_sites", "get_sales"]));
+    assert_eq!(malkgom["module"], "mcp.맑곰");
 }
 
 #[tokio::test]
@@ -399,7 +398,7 @@ async fn a_tool_name_the_server_lacks_is_answered_with_the_ones_it_has() {
     assert_eq!(ok["content"][0]["text"], "본사");
 
     let err = t.mgr.call_tool("맑곰", "get_menus", &serde_json::json!({})).await.unwrap_err();
-    assert!(err.contains("no tool `get_menus`") && err.contains("get_sites, get_sales") && err.contains("list_mcp_servers"), "{err}");
+    assert!(err.contains("no tool `get_menus`") && err.contains("get_sites, get_sales") && err.contains("get_action_schema(module: \"mcp.맑곰\""), "{err}");
 }
 
 #[tokio::test]
@@ -410,4 +409,58 @@ async fn an_unreachable_server_says_why_in_place_of_its_tools() {
     let listed = t.mgr.servers_with_tools().await;
     assert!(listed[0].get("tools").is_none());
     assert!(listed[0]["error"].as_str().unwrap().contains("401"), "{}", listed[0]);
+}
+
+/// An outside server's tools ride the action index the modules' actions are in (owner, 2026-11-28: "이거 우리 원래 로직있지않나
+/// 태그랑 디스크립션"): found by what they do, described by get_action_schema, called through mcp_call — the module rung's steps.
+#[tokio::test]
+async fn an_outside_servers_tools_are_found_and_described_like_module_actions() {
+    use firebat_core::managers::ai::action_catalog::ModuleActionCatalog;
+    use firebat_core::managers::capability::CapabilityManager;
+    use firebat_core::managers::module::ModuleManager;
+    use firebat_core::ports::{IEmbedderCachePort, IEmbedderPort, ILogPort, ISandboxPort, IStoragePort};
+    use firebat_infra::adapters::embedder::stub::StubEmbedderAdapter;
+    use firebat_infra::adapters::embedder_cache::FileEmbedderCacheAdapter;
+    use firebat_infra::adapters::log::ConsoleLogAdapter;
+    use firebat_infra::adapters::sandbox::ProcessSandboxAdapter;
+    use firebat_infra::adapters::storage::LocalStorageAdapter;
+
+    init_i18n_once();
+    let dir = tempfile::tempdir().unwrap();
+    let client: Arc<dyn IMcpClientPort> = Arc::new(McpClientFileAdapter::new(dir.path().join("mcp.json")).unwrap());
+    let mcp = Arc::new(McpManager::new(client));
+    mcp.add_server(remote("맑곰", &fake_mcp_server()), None).await.unwrap();
+
+    let sandbox: Arc<dyn ISandboxPort> = Arc::new(ProcessSandboxAdapter::new(dir.path().to_path_buf()));
+    let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));
+    let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
+    let module = Arc::new(ModuleManager::new(sandbox, storage.clone(), vault.clone()));
+    let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+    let capability = Arc::new(CapabilityManager::new(storage, vault, log));
+    let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+    let cache: Arc<dyn IEmbedderCachePort> = Arc::new(FileEmbedderCacheAdapter::new(dir.path()));
+    let catalog = ModuleActionCatalog::new(module, embedder, cache, capability).with_mcp(mcp.clone());
+
+    // Found: a row of module mcp.맑곰, called through mcp_call, with its schema call assembled.
+    let rows = catalog.search("sales by day", None, 5).await.unwrap();
+    let row = rows.iter().find(|r| r["action"] == "get_sales").unwrap_or_else(|| panic!("get_sales not found: {rows:?}"));
+    assert_eq!(row["module"], "mcp.맑곰");
+    assert_eq!(row["tool"], "mcp_call");
+    assert_eq!(row["schemaCall"]["arguments"], serde_json::json!({"module": "mcp.맑곰", "action": "get_sales"}));
+    assert!(catalog.module_enabled("mcp.맑곰"), "no module by that name — the server's own on/off decides");
+
+    // Described: its arguments, and the call to make.
+    let schema = catalog.schema("mcp.맑곰", "get_sales").await.expect("schema");
+    assert_eq!(schema["tool"], "mcp_call");
+    assert_eq!(schema["call"]["tool"], "mcp_call");
+    assert_eq!(schema["call"]["arguments"]["server"], "맑곰");
+    assert_eq!(schema["call"]["arguments"]["tool"], "get_sales");
+    assert_eq!(schema["params"]["from"], "string");
+    // A tool that takes nothing says so — not "parameter docs are not available".
+    let sites = catalog.schema("mcp.맑곰", "get_sites").await.expect("schema");
+    assert_eq!(sites["paramsNote"], "Takes no arguments.");
+
+    // And the call the schema assembled works.
+    let ok = mcp.call_tool("맑곰", "get_sites", &serde_json::json!({})).await.unwrap();
+    assert_eq!(ok["content"][0]["text"], "본사");
 }

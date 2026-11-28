@@ -28,11 +28,14 @@ pub struct McpServiceImpl {
     /// of the module directories — which says nothing about MCP servers — the documented trigger
     /// has to be a real one.
     dynamic_tools: Option<Arc<crate::managers::ai::dynamic_tools::DynamicToolRegistry>>,
+    /// The discovery index — it carries the servers' tools beside the modules' actions, and a
+    /// server added or removed has to be told to it as well.
+    action_catalog: Option<Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>>,
 }
 
 impl McpServiceImpl {
     pub fn new(manager: Arc<McpManager>) -> Self {
-        Self { manager, dynamic_tools: None }
+        Self { manager, dynamic_tools: None, action_catalog: None }
     }
 
     pub fn with_dynamic_tools(
@@ -43,9 +46,20 @@ impl McpServiceImpl {
         self
     }
 
+    pub fn with_action_catalog(
+        mut self,
+        catalog: Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>,
+    ) -> Self {
+        self.action_catalog = Some(catalog);
+        self
+    }
+
     async fn invalidate_tools_cache(&self) {
         if let Some(reg) = &self.dynamic_tools {
             reg.invalidate().await;
+        }
+        if let Some(catalog) = &self.action_catalog {
+            catalog.invalidate().await;
         }
     }
 }

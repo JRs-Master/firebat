@@ -849,7 +849,9 @@ async fn main() -> Result<()> {
             catalog_embedder.clone(),
             component_cache_port.clone(),
             capability_manager.clone(),
-        );
+        )
+        // Outside MCP servers' tools ride the same index (mcp.<server>) — found, described, called like actions.
+        .with_mcp(mcp_manager.clone());
         let cat = match &catalog_secondary {
             Some(sec) => cat.with_secondary(sec.clone()),
             None => cat,
@@ -1428,7 +1430,8 @@ async fn main() -> Result<()> {
     // Adding or removing a server changes the published tool list, and the registry's rescan is
     // now gated on the module tree's fingerprint, which says nothing about MCP servers.
     let mcp_service = grpc::mcp::McpServiceImpl::new(mcp_manager.clone())
-        .with_dynamic_tools(dynamic_tools_registry.clone());
+        .with_dynamic_tools(dynamic_tools_registry.clone())
+        .with_action_catalog(action_catalog.clone());
     let entity_service = grpc::entity::EntityServiceImpl::new(entity_manager.clone());
     let episodic_service = grpc::episodic::EpisodicServiceImpl::new(episodic_manager.clone());
     let consolidation_service =

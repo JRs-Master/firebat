@@ -25,6 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::managers::ai::semantic_catalog::{CatalogEntry, CatalogSource, RefreshingCatalog};
+use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 use crate::ports::{IEmbedderCachePort, IEmbedderPort};
 use crate::utils::pending_tools::requires_approval_value;
@@ -95,6 +96,88 @@ fn module_tags(config: &serde_json::Value) -> Vec<String> {
 
 struct ModuleActionSource {
     module: Arc<ModuleManager>,
+    /// Outside MCP servers, whose tools are indexed beside the modules' actions (set after
+    /// construction — `ModuleActionCatalog::with_mcp`).
+    mcp: Arc<std::sync::OnceLock<Arc<McpManager>>>,
+}
+
+/// An outside MCP server's place in this index: its tools are the actions of a module named
+/// `mcp.<server>` — a dot no module name carries, so the two can never collide, and no `:` so the
+/// id still splits into module and action at its first colon.
+pub const MCP_MODULE_PREFIX: &str = "mcp.";
+
+/// The tool an outside MCP server's tool is called through.
+pub const MCP_CALL_TOOL: &str = "mcp_call";
+
+pub fn mcp_module_name(server: &str) -> String {
+    format!("{MCP_MODULE_PREFIX}{server}")
+}
+
+fn is_mcp_module(module: &str) -> bool {
+    module.starts_with(MCP_MODULE_PREFIX)
+}
+
+/// An outside MCP server's tools as entries of the same index the modules' actions are in — found by
+/// what they do, described by `get_action_schema`, called through `mcp_call` (owner, 2026-11-28:
+/// "이거 우리 원래 로직있지않나 태그랑 디스크립션"). Until then the model reached a connected server
+/// and guessed its tool names: search_module_actions knew only modules. The server's own words
+/// (its tool's description) are the searchable text; the server name rides as a tag.
+async fn mcp_entries(mcp: &McpManager) -> Vec<CatalogEntry> {
+    let mut out = Vec::new();
+    for cfg in mcp.list_servers().into_iter().filter(|s| s.enabled) {
+        let tools = match mcp.list_tools(&cfg.name).await {
+            Ok(tools) => tools,
+            Err(e) => {
+                tracing::warn!(target: "action_catalog", server = %cfg.name, error = %e, "outside MCP server not indexed — its tools could not be listed");
+                continue;
+            }
+        };
+        let module = mcp_module_name(&cfg.name);
+        for tool in tools {
+            let schema = tool
+                .input_schema
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+            // name → what it is, the shape the schema rung reads for a module's params.
+            let params: serde_json::Map<String, serde_json::Value> = schema
+                .get("properties")
+                .and_then(|p| p.as_object())
+                .map(|props| {
+                    props
+                        .iter()
+                        .map(|(name, spec)| {
+                            let said = spec
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .or_else(|| spec.get("type").and_then(|t| t.as_str()))
+                                .unwrap_or("");
+                            (name.clone(), serde_json::Value::String(said.to_string()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut extra = serde_json::json!({
+                "module": module,
+                "action": tool.name,
+                "kind": "action",
+                "mcp": { "server": cfg.name, "tool": tool.name },
+                "params": serde_json::Value::Object(params.clone()),
+                "required": schema.get("required").cloned().unwrap_or_else(|| serde_json::json!([])),
+                "inputSchema": schema,
+            });
+            if params.is_empty() {
+                extra["paramsNote"] = serde_json::Value::String("Takes no arguments.".to_string());
+            }
+            out.push(CatalogEntry {
+                id: format!("{module}:{}", tool.name),
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                extra,
+                vocab: vec![cfg.name.clone(), module.clone(), tool.name.clone()],
+            });
+        }
+    }
+    out
 }
 
 impl ModuleActionSource {
@@ -1196,12 +1279,29 @@ impl CatalogSource for ModuleActionSource {
         for m in self.module.list_user_modules().await {
             entries.extend(self.module_entries("user", &m.name).await);
         }
+        if let Some(mcp) = self.mcp.get() {
+            entries.extend(mcp_entries(mcp).await);
+        }
         entries
     }
 
-    /// Everything `load` reads lives in the module directories, so their listing is the answer.
+    /// What `load` reads: the module directories, and which outside MCP servers are registered and
+    /// where. A server's own tool list is not read here (that is a network call); adding, removing or
+    /// re-pointing a server changes this, and `McpService` invalidates on those as well.
     async fn fingerprint(&self) -> Option<String> {
-        Some(self.module.module_dirs_fingerprint().await)
+        let dirs = self.module.module_dirs_fingerprint().await;
+        let servers = self
+            .mcp
+            .get()
+            .map(|mcp| {
+                mcp.list_servers()
+                    .iter()
+                    .map(|s| format!("{}={}@{}", s.name, s.enabled, s.url.as_deref().or(s.command.as_deref()).unwrap_or("")))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        Some(format!("{dirs}|mcp:{servers}"))
     }
 }
 
@@ -1282,6 +1382,8 @@ pub struct ModuleActionCatalog {
     /// Which providers substitute for each other, and the order the user put them in. Read here
     /// because this is where two of them are on screen together being compared.
     capability: Arc<crate::managers::capability::CapabilityManager>,
+    /// The outside MCP servers whose tools are indexed too — the same slot the source reads.
+    mcp: Arc<std::sync::OnceLock<Arc<McpManager>>>,
 }
 
 impl ModuleActionCatalog {
@@ -1291,6 +1393,7 @@ impl ModuleActionCatalog {
         cache_port: Arc<dyn IEmbedderCachePort>,
         capability: Arc<crate::managers::capability::CapabilityManager>,
     ) -> Self {
+        let mcp = Arc::new(std::sync::OnceLock::new());
         Self {
             catalog: RefreshingCatalog::new(
                 "module-actions",
@@ -1298,12 +1401,20 @@ impl ModuleActionCatalog {
                 cache_port,
                 Arc::new(ModuleActionSource {
                     module: module.clone(),
+                    mcp: mcp.clone(),
                 }),
                 REBUILD_TTL,
             ),
             module,
             capability,
+            mcp,
         }
+    }
+
+    /// Index the outside MCP servers' tools beside the modules' actions (`mcp_entries`).
+    pub fn with_mcp(self, mcp: Arc<McpManager>) -> Self {
+        let _ = self.mcp.set(mcp);
+        self
     }
 
     /// Local fallback embedder passthrough (dual-embed) — primary(remote) 장애 시 로컬 세트로
@@ -1442,7 +1553,12 @@ impl ModuleActionCatalog {
                     // 달라서, 이게 없으면 모델이 자기 도구 목록을 뒤져 이름을 맞춘다(2026-07-27 실측:
                     // 두 턴 모두 `ALL_TOOLS.filter(x => x.name.includes("sysmod_..."))` 로 한 라운드
                     // 소모). stream 행은 이미 `tool` 을 주고 있었는데 action 행에만 없었다.
-                    "tool": sysmod_tool_name(module_name.as_str().unwrap_or_default()),
+                    "tool": if m.extra.get("mcp").is_some() {
+                        // an outside MCP server's tool — called through mcp_call, not the module rung
+                        MCP_CALL_TOOL.to_string()
+                    } else {
+                        sysmod_tool_name(module_name.as_str().unwrap_or_default())
+                    },
                     "name": m.name,
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
                     "score": score,
@@ -1736,7 +1852,18 @@ impl ModuleActionCatalog {
         // A stream is not called on the module tool at all — it is subscribed, and the row that
         // sent the model here said so. Same handoff, different last step.
         let is_stream = entry.extra.get("kind").and_then(|v| v.as_str()) == Some("stream");
-        out["call"] = if is_stream {
+        let mcp_tool = entry.extra.get("mcp").cloned();
+        if mcp_tool.is_some() {
+            out["tool"] = serde_json::Value::String(MCP_CALL_TOOL.to_string());
+        }
+        out["call"] = if let Some(target) = &mcp_tool {
+            // An outside MCP server's tool: mcp_call, its values under `arguments` as its inputSchema says.
+            serde_json::json!({
+                "tool": MCP_CALL_TOOL,
+                "arguments": { "server": target["server"], "tool": target["tool"], "arguments": {} },
+                "fill": fill.iter().map(|n| format!("arguments.{n}")).collect::<Vec<_>>(),
+            })
+        } else if is_stream {
             serde_json::json!({
                 "tool": "stream_watch_start",
                 "arguments": { "module": module, "stream": action },
@@ -1822,7 +1949,9 @@ impl ModuleActionCatalog {
     /// this type, and a check copied into four handlers is a check that drifts — which is exactly
     /// how the hub scope filter drifted from the dispatch gate before it was centralized.
     pub fn module_enabled(&self, module: &str) -> bool {
-        self.module.is_enabled(module)
+        // An outside MCP server is no module — its own on/off is in its config, and a server that
+        // is off is not indexed at all (`mcp_entries`).
+        is_mcp_module(module) || self.module.is_enabled(module)
     }
 
     /// Force the next read to rebuild — for a change the fingerprint cannot see because it is not

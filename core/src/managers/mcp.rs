@@ -111,15 +111,17 @@ impl McpManager {
         self.client.list_all_tools().await
     }
 
-    /// The servers as a model needs them: each one's name and how it is reached, and an enabled one's tools as it publishes them
-    /// (name · description · inputSchema) — what `mcp_call` takes. Listing the servers alone left the model guessing tool names
-    /// (2026-11-28: seven guesses at 맑곰, every one "not found", while its nine tools stood ready). A server that cannot be
-    /// reached says why in place of its tools. The config's `env` is not listed: a stdio server's secrets live there.
+    /// The servers as a model needs them: each one's name, how it is reached, its name in the action index (`mcp.<server>` —
+    /// its tools are found and described there like any module's actions: search_module_actions · get_action_schema), and an
+    /// enabled one's tool names. Listing the servers alone left the model guessing tool names (2026-11-28: seven guesses at
+    /// 맑곰, every one "not found", while its nine tools stood ready). A server that cannot be reached says why in place of its
+    /// tools. The config's `env` is not listed: a stdio server's secrets live there.
     pub async fn servers_with_tools(&self) -> Vec<serde_json::Value> {
         let mut out = Vec::new();
         for cfg in self.client.list_servers() {
             let mut entry = serde_json::json!({
                 "name": cfg.name,
+                "module": crate::managers::ai::action_catalog::mcp_module_name(&cfg.name),
                 "transport": cfg.transport,
                 "enabled": cfg.enabled,
             });
@@ -131,14 +133,7 @@ impl McpManager {
             }
             if cfg.enabled {
                 match self.client.list_tools(&cfg.name).await {
-                    Ok(tools) => {
-                        entry["tools"] = serde_json::Value::Array(
-                            tools
-                                .into_iter()
-                                .map(|t| serde_json::json!({ "name": t.name, "description": t.description, "inputSchema": t.input_schema }))
-                                .collect(),
-                        );
-                    }
+                    Ok(tools) => entry["tools"] = serde_json::json!(tools.into_iter().map(|t| t.name).collect::<Vec<_>>()),
                     Err(e) => entry["error"] = serde_json::json!(e),
                 }
             }
@@ -162,8 +157,9 @@ impl McpManager {
                     if !tools.iter().any(|t| t.name == tool_name) {
                         let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
                         return Err(format!(
-                            "MCP {server_name} has no tool `{tool_name}` — its tools: {}. list_mcp_servers gives each one's description and arguments.",
-                            names.join(", ")
+                            "MCP {server_name} has no tool `{tool_name}` — its tools: {}. get_action_schema(module: \"{}\", action: <tool>) gives a tool's arguments.",
+                            names.join(", "),
+                            crate::managers::ai::action_catalog::mcp_module_name(server_name)
                         ));
                     }
                 }

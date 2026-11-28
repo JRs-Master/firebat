@@ -3220,7 +3220,7 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // list_mcp_servers
     tools.register(ToolDefinition {
         name: "list_mcp_servers".to_string(),
-        description: "The registered outside MCP servers, each with its tools as it publishes them: name, description, inputSchema — what mcp_call takes.".to_string(),
+        description: "The registered outside MCP servers: how each is reached, its name in the action index (mcp.<server>) and its tools' names.".to_string(),
         parameters: serde_json::json!({"type": "object", "properties": {}}),
         source: "core".to_string(),
     });
@@ -3237,7 +3237,7 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // MCP 서버 핸들러(McpCallHandler)와 이름 통일 — 옛 call_mcp_tool 명칭 폐기 (양 경로 mcp_call).
     tools.register(ToolDefinition {
         name: "mcp_call".to_string(),
-        description: "Calls a tool of an outside MCP server: server and tool as list_mcp_servers names them, arguments per that tool's inputSchema.".to_string(),
+        description: "Calls a tool of an outside MCP server: its server and tool, and its arguments as that tool's schema (get_action_schema, module mcp.<server>) gives them.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
