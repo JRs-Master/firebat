@@ -185,10 +185,15 @@ async function handleSetWebhook(token, data) {
   if (!url) return out(false, 'url 이 필요합니다 — https://<도메인>/api/hooks/telegram');
   const secret = process.env['TELEGRAM_WEBHOOK_SECRET'];
   if (!secret) return out(false, 'TELEGRAM_WEBHOOK_SECRET 이 비어 있습니다 — 프레임워크가 아직 발급 전이면 이 호출을 한 번 더 하세요.');
+  // ip_address: Telegram posts to this IP without resolving the host — its resolver could not resolve firebat.co.kr
+  // (2026-11-28, 「Failed to resolve host」 while every public resolver answered). TLS still checks the host's certificate.
+  const ip = String(data?.ipAddress || '').trim();
+  if (ip && !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return out(false, 'ipAddress 는 IPv4 주소입니다 — 예: 158.247.202.96');
   const r = await tgRequest(token, 'setWebhook', {
     url,
     secret_token: secret,
     drop_pending_updates: true,
+    ...(ip ? { ip_address: ip } : {}),
   });
   return r.ok ? out(true, null, { registered: url }) : outErr(r.errorKey, r.errorParams);
 }

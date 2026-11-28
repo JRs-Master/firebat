@@ -66,6 +66,10 @@
         "type": "string",
         "description": "[set-webhook] The public URL Telegram posts updates to — https://<domain>/api/hooks/telegram"
       },
+      "ipAddress": {
+        "type": "string",
+        "description": "[set-webhook] The server's IPv4 address Telegram posts to instead of resolving the URL's host (Telegram's ip_address). The TLS certificate is still checked against the host."
+      },
       "payload": {
         "type": "object",
         "description": "[parse-webhook] 텔레그램이 보낸 update 원문 — 프레임워크 수신부가 채운다"
