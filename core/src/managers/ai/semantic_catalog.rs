@@ -518,16 +518,27 @@ impl SemanticCatalog {
             }
             let Some(v) = vector_set.get(&e.id) else { continue };
             let mut score = cosine(&q, v);
-            // lexical boost — id is "{scope}:{key}"; match on the key part + the name.
+            // lexical boost — id is "{scope}:{key}"; match on the key part + the name, and a query word that IS one of
+            // the entry's declared tags. The tags ride the embedded text too, but an embedder can read them weakly: a
+            // module that declared 「상관계수」 did not reach the top 10 for a query of that very word, while its
+            // English description came first in English (2026-11-28 — series-stats, local E5). A declared word,
+            // asked for word for word, counts as the name does.
             let key = e.id.rsplit(':').next().unwrap_or(&e.id).to_lowercase();
             let name_lower = e.name.to_lowercase();
+            let tagged = || {
+                e.vocab.iter().any(|t| {
+                    let t = t.to_lowercase();
+                    t.chars().count() >= 2 && q_lower.split_whitespace().any(|w| w == t)
+                })
+            };
             if key == q_lower || name_lower == q_lower {
                 score += 0.5;
-            } else if q_lower.len() >= 2
+            } else if (q_lower.len() >= 2
                 && (q_lower.contains(&key)
                     || key.contains(&q_lower)
                     || name_lower.contains(&q_lower)
-                    || (name_lower.len() >= 2 && q_lower.contains(&name_lower)))
+                    || (name_lower.len() >= 2 && q_lower.contains(&name_lower))))
+                || tagged()
             {
                 score += 0.15;
             }
@@ -843,6 +854,48 @@ impl RefreshingCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A query word that is one of an entry's declared tags lifts it as a name does. Every vector alike here, so the
+    /// tag alone decides the order (2026-11-28: 「상관계수」 never reached series-stats, which declared it).
+    #[tokio::test]
+    async fn a_query_word_that_is_a_declared_tag_lifts_the_entry() {
+        struct Same;
+        #[async_trait::async_trait]
+        impl IEmbedderPort for Same {
+            fn version(&self) -> &str {
+                "same"
+            }
+            async fn embed_query(&self, _: &str) -> InfraResult<Vec<f32>> {
+                Ok(vec![1.0, 0.0])
+            }
+            async fn embed_passage(&self, _: &str) -> InfraResult<Vec<f32>> {
+                Ok(vec![1.0, 0.0])
+            }
+        }
+        struct NoCache;
+        impl IEmbedderCachePort for NoCache {
+            fn load(&self, _: &str) -> Option<String> {
+                None
+            }
+            fn save(&self, _: &str, _: &str) {}
+        }
+        let entry = |id: &str, tag: &str| CatalogEntry {
+            id: id.into(),
+            name: id.rsplit(':').next().unwrap_or(id).into(),
+            description: "계산".into(),
+            extra: serde_json::Value::Null,
+            vocab: vec![tag.into()],
+        };
+        let cat = SemanticCatalog::new("tag-boost-test", Arc::new(Same), Arc::new(NoCache));
+        cat.set_entries(vec![entry("fa:ratios", "재무비율"), entry("series-stats:correlate", "상관계수")]).await;
+        let found = cat.query("상관계수 계산", 2, None).await.unwrap();
+        let order: Vec<(&str, f32)> = found.iter().map(|m| (m.id.as_str(), m.score)).collect();
+        assert_eq!(order[0].0, "series-stats:correlate", "{order:?}");
+        assert!(order[0].1 > order[1].1, "{order:?}");
+        // A tag only counts as a whole word: 「상관」 is not 「상관계수」.
+        let partial = cat.query("상관 계산", 2, None).await.unwrap();
+        assert_eq!(partial[0].score, partial[1].score, "no lift for part of a tag");
+    }
 
     #[test]
     fn cosine_basic() {
