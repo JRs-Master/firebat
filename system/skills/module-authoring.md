@@ -15,6 +15,9 @@ the declaration surface is missing something and that is a Firebat bug, not your
 
 - **I/O** — stdin JSON in, the **last line of stdout** is the envelope. No argv.
   Python writes `True/False/None`, not `true/false/null`.
+  The input arrives wrapped: stdin is `{"correlationId": "…", "data": {<the call's input>}}`, so read
+  `data` — `json.load(sys.stdin)["data"]` / `JSON.parse(raw).data`. (2026-11-28: a module read the
+  top level, found no input and failed three calls before printing what it received.)
 
   ```jsonc
   {"success": true,  "data": {…}}                       // success

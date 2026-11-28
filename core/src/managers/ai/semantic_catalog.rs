@@ -783,6 +783,14 @@ impl RefreshingCatalog {
         *self.built_at.lock().await = Some(std::time::Instant::now());
     }
 
+    /// Look at the source now instead of at the end of the debounce — the fingerprint still decides
+    /// whether anything is rebuilt, so an unchanged source costs one stat-walk. For a reader that
+    /// was just told about something the index does not have yet.
+    pub async fn recheck(&self) {
+        *self.built_at.lock().await = None;
+        self.ensure().await;
+    }
+
     /// Drop the build so the next read reloads — for changes the fingerprint cannot see, which is
     /// anything not on disk. The enable toggle is a vault write; `ModuleService` already calls the
     /// dynamic-tool registry's `invalidate` on it and this is its other half.

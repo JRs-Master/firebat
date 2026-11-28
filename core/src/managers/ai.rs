@@ -1091,17 +1091,16 @@ impl AiManager {
                     if !cat.module_enabled(m) {
                         return Ok(crate::managers::ai::action_catalog::disabled_module_response(m));
                     }
-                    if !cataloged.contains(&m.to_string()) {
-                        return Ok(serde_json::json!({
-                            "actions": [],
-                            "count": 0,
-                            "catalogedModules": cataloged,
-                            "note": format!(
-                                "module '{m}' has NO action catalog — searching will NEVER find its actions. \
-                                 Call the module tool (sysmod_{m}) directly; its own description/enum + input \
-                                 validation errors will guide you (or consult get_module_config)."
-                            ),
-                        }));
+                    // A name the index does not have yet may be a module written a moment ago —
+                    // `has_module_now` looks at the tree before anything is concluded.
+                    if !cataloged.contains(&m.to_string())
+                        && !(crate::utils::hub_context::module_permitted_for_args(&args, m)
+                            && cat.has_module_now(m).await)
+                    {
+                        let mut out = cat.unindexed_module_response(m, cataloged).await;
+                        out["actions"] = serde_json::json!([]);
+                        out["count"] = serde_json::json!(0);
+                        return Ok(out);
                     }
                 }
                 // 목록 모드 — module 만 주고 query 를 비우면 그 모듈의 액션 색인을 그대로 준다.
@@ -1302,21 +1301,21 @@ impl AiManager {
                     return Ok(crate::managers::ai::action_catalog::disabled_module_response(&module));
                 }
                 let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                match cat.schema(&module, &action).await {
+                let mut found = cat.schema(&module, &action).await;
+                // A module written a moment ago is on disk before the index's next look — look now
+                // (2026-11-28: series-stats, asked for 34s after it was written).
+                if found.is_none() && !cat.has_module(&module).await && cat.has_module_now(&module).await {
+                    found = cat.schema(&module, &action).await;
+                }
+                match found {
                     Some(s) => Ok(s),
-                    // Two very different misses (2026-07-07 실측): an uncataloged MODULE must not
-                    // be pointed back at search — search can never find it, so that hint created
-                    // an infinite schema→search→schema loop. Only a bad ACTION of a cataloged
-                    // module should re-search.
-                    None if !cat.has_module(&module).await => Ok(serde_json::json!({
-                        "success": false,
-                        "error": format!(
-                            "module '{m}' has NO action catalog — do NOT search for it (search_module_actions will never list it). \
-                             Call the module tool (sysmod_{m}) directly with its documented action; its input validation errors \
-                             will guide you, and get_module_config('{m}') shows the full input schema.",
-                            m = module
-                        ),
-                    })),
+                    // Two very different misses (2026-07-07 실측): a MODULE with no rows must not be
+                    // pointed back at search — that hint created a schema→search→schema loop. It is
+                    // run by its input when installed, and named as absent when not. Only a bad
+                    // ACTION of an indexed module re-searches (below).
+                    None if !cat.has_module(&module).await => {
+                        Ok(cat.unindexed_module_response(&module, cat.cataloged_modules().await).await)
+                    }
                     None => {
                         // Did-you-mean — a bad action id of a cataloged module used to bounce the
                         // model back to search (another round, more loop fuel). Resolve the near

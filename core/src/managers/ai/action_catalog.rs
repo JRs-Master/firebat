@@ -1493,6 +1493,24 @@ impl ModuleActionCatalog {
         let embedder = outcome.embedder;
         // Discovery must not offer what dispatch will refuse — see `module_enabled`.
         let mut matches = outcome.matches;
+        // The named module's own best rows, when the wide ranking left it short of its share: the
+        // floor below can only promote rows the ranking returned, so a module scored under the
+        // wide window (2026-11-28: series-stats — an English description, Korean tags — under the
+        // 9th row for 「상관계수 계산」) came back absent even though it was named.
+        if let Some(m) = module {
+            let quota = (limit / GUARANTEE_SHARE).max(1);
+            let prefix = format!("{m}:");
+            let have = matches.iter().filter(|x| x.id.starts_with(&prefix)).count();
+            if have < quota {
+                if let Ok(own) = self.catalog.query_analyzed(query, quota, Some(std::slice::from_ref(&prefix))).await {
+                    for x in own.matches {
+                        if !matches.iter().any(|y| y.id == x.id) {
+                            matches.push(x);
+                        }
+                    }
+                }
+            }
+        }
         matches.retain(|m| {
             m.extra
                 .get("module")
@@ -1937,6 +1955,43 @@ impl ModuleActionCatalog {
     /// Whether any catalog entries exist for this module — error-hint branching (S3).
     pub async fn has_module(&self, module: &str) -> bool {
         self.catalog.has_prefix(&format!("{}:", module)).await
+    }
+
+    /// `has_module`, looked up NOW when the answer is no and the module is installed. The tree is
+    /// looked at on a debounce (`REBUILD_TTL`), so a module written a moment ago is on disk before
+    /// the index knows it: 2026-11-28 a model wrote `user/modules/series-stats`, asked for its
+    /// schema 34 seconds later and was told the module would never be found — it went round the
+    /// ladder through `execute`. A name that is installed but not indexed rechecks the tree here.
+    pub async fn has_module_now(&self, module: &str) -> bool {
+        if self.has_module(module).await {
+            return true;
+        }
+        if !self.installed(module).await {
+            return false;
+        }
+        self.catalog.recheck().await;
+        self.has_module(module).await
+    }
+
+    /// Whether a module of that name is installed at all — on disk, indexed or not.
+    pub async fn installed(&self, module: &str) -> bool {
+        self.module.module_config(module).await.is_some()
+    }
+
+    /// The answer for a module name the index has no rows for, even after `has_module_now`: one
+    /// that is installed declares nothing to describe, so it is run by its input; one that is not
+    /// installed does not exist under that name.
+    pub async fn unindexed_module_response(&self, module: &str, cataloged: Vec<String>) -> serde_json::Value {
+        let error = if self.installed(module).await {
+            format!(
+                "Module '{module}' is installed but declares no actions to describe. Run it with \
+                 run_module_action({{module: \"{module}\", …}}) and the input that \
+                 get_module_config(\"{module}\") shows."
+            )
+        } else {
+            format!("No module is named '{module}'. `catalogedModules` lists the modules there are.")
+        };
+        serde_json::json!({ "success": false, "error": error, "catalogedModules": cataloged })
     }
 
     /// Whether the owner has this module switched on. Discovery must not offer what dispatch will

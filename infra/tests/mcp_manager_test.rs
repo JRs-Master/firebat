@@ -464,3 +464,70 @@ async fn an_outside_servers_tools_are_found_and_described_like_module_actions() 
     let ok = mcp.call_tool("맑곰", "get_sites", &serde_json::json!({})).await.unwrap();
     assert_eq!(ok["content"][0]["text"], "본사");
 }
+
+/// A module written a moment ago is described by name at once — the index's debounce does not answer for it (2026-11-28: a
+/// model wrote user/modules/series-stats, asked for its schema 34 seconds later and was told the module would never be
+/// found, so it went round through `execute`). And a module named in a search comes back even when the wide ranking scored
+/// its rows under the page — there, under twelve rows whose names carry the query.
+#[tokio::test]
+async fn a_module_written_a_moment_ago_is_described_at_once_and_found_when_named() {
+    use firebat_core::managers::ai::action_catalog::ModuleActionCatalog;
+    use firebat_core::managers::capability::CapabilityManager;
+    use firebat_core::managers::module::ModuleManager;
+    use firebat_core::ports::{IEmbedderCachePort, IEmbedderPort, ILogPort, ISandboxPort, IStoragePort};
+    use firebat_infra::adapters::embedder::stub::StubEmbedderAdapter;
+    use firebat_infra::adapters::embedder_cache::FileEmbedderCacheAdapter;
+    use firebat_infra::adapters::log::ConsoleLogAdapter;
+    use firebat_infra::adapters::sandbox::ProcessSandboxAdapter;
+    use firebat_infra::adapters::storage::LocalStorageAdapter;
+
+    init_i18n_once();
+    let dir = tempfile::tempdir().unwrap();
+    let write_module = |name: &str, config: serde_json::Value| {
+        let m = dir.path().join("user").join("modules").join(name);
+        std::fs::create_dir_all(&m).unwrap();
+        std::fs::write(m.join("config.json"), config.to_string()).unwrap();
+        std::fs::write(m.join("main.py"), "print('{\"success\": True}')\n").unwrap();
+    };
+    // Twelve actions whose names carry the query — they fill the wide window.
+    let lunch: Vec<String> = (1..=12).map(|i| format!("lunch-menu-{i}")).collect();
+    write_module("noise", serde_json::json!({
+        "name": "noise", "runtime": "python", "description": "lunch menu lookups",
+        "input": {"type": "object", "required": ["action"], "properties": {
+            "action": {"type": "string", "enum": lunch, "description": "lunch menu"}}}
+    }));
+
+    let sandbox: Arc<dyn ISandboxPort> = Arc::new(ProcessSandboxAdapter::new(dir.path().to_path_buf()));
+    let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));
+    let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
+    let module = Arc::new(ModuleManager::new(sandbox, storage.clone(), vault.clone()));
+    let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+    let capability = Arc::new(CapabilityManager::new(storage, vault, log));
+    let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+    let cache: Arc<dyn IEmbedderCachePort> = Arc::new(FileEmbedderCacheAdapter::new(dir.path()));
+    let catalog = ModuleActionCatalog::new(module, embedder, cache, capability);
+
+    // The index is built before the module exists; a name that is nowhere is said to be nowhere.
+    assert!(catalog.has_module("noise").await);
+    assert!(!catalog.has_module_now("series-stats").await);
+    let absent = catalog.unindexed_module_response("series-stats", vec![]).await;
+    assert!(absent["error"].as_str().unwrap().starts_with("No module is named 'series-stats'"), "{absent}");
+
+    // Written now — and described at once, by its input, called through run_module_action.
+    write_module("series-stats", serde_json::json!({
+        "name": "series-stats", "runtime": "python", "description": "Equal-length numeric series in -> correlation",
+        "tags": ["상관계수"],
+        "input": {"type": "object", "required": ["action", "series"], "properties": {
+            "action": {"type": "string", "enum": ["correlate"]},
+            "series": {"type": "object", "description": "[correlate] name -> numbers"}}}
+    }));
+    assert!(!catalog.has_module("series-stats").await, "the debounce has not looked yet");
+    assert!(catalog.has_module_now("series-stats").await, "looked for now, not at the end of the debounce");
+    let schema = catalog.schema("series-stats", "correlate").await.expect("derived schema");
+    assert_eq!(schema["tool"], "run_module_action");
+    assert_eq!(schema["call"]["arguments"]["module"], "series-stats");
+
+    // Named in a search for words only the noise names carry: its own row still comes back.
+    let rows = catalog.search("lunch menu", Some("series-stats"), 3).await.unwrap();
+    assert!(rows.iter().any(|r| r["module"] == "series-stats"), "the named module's row: {rows:?}");
+}
