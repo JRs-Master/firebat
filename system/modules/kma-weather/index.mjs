@@ -236,6 +236,25 @@ const FCST_LEGEND = {
   T1H: '기온(℃)', RN1: '1시간 강수량', LGT: '낙뢰(kA)',
 };
 
+// asos-daily — the fields a day's row keeps out of the ~60 the service sends (a page is capped at 1,000KB, so 365 rows a
+// page), numbers as numbers and an empty value as null (no rain is an empty sumRn).
+const ASOS_PAGE = 365;
+const ASOS_LEGEND = {
+  tm: '날짜', stnNm: '지점', avgTa: '평균 기온(℃)', minTa: '최저 기온(℃)', maxTa: '최고 기온(℃)',
+  sumRn: '일강수량(mm — null 이면 비 없음)', hr1MaxRn: '1시간 최다강수량(mm)', avgRhm: '평균 상대습도(%)',
+  avgWs: '평균 풍속(m/s)', maxInsWs: '최대 순간풍속(m/s)', sumSsHr: '합계 일조 시간(hr)', avgTca: '평균 전운량(10분위)',
+  ddMefs: '일 최심신적설(cm)', ddMes: '일 최심적설(cm)', iscs: '일기현상',
+};
+const ASOS_TEXT = new Set(['tm', 'stnNm', 'iscs']);
+function asosRow(item) {
+  const row = { stnId: Number(item.stnId) };
+  for (const k of Object.keys(ASOS_LEGEND)) {
+    const v = item[k];
+    row[k] = ASOS_TEXT.has(k) ? (v || null) : (v === '' || v == null ? null : Number(v));
+  }
+  return row;
+}
+
 async function main() {
   const raw = await readStdin();
   let input;
@@ -437,6 +456,40 @@ async function main() {
     // 옛 = outErr 박은 영역 → AI 입장 "에러" 해석 → 사용자에게 잘못된 안내. 정공 = 빈 items 박는 영역.
     // 기상청 API 영역 NO_DATA = resultCode='03' + resultMsg='NO_DATA' (callApi line 169).
     const isNoData = (r) => !r.ok && r.errorKey === 'error.api_error' && r.errorParams?.code === '03';
+
+    // Past observations — 지상(종관, ASOS) 일자료 (AsosDalyInfoService: the same data.go.kr key, its own 활용신청). One
+    // station, a row a day. The day before is published at 11:00 KST (the agency's guide), so `endDt` is cut to the
+    // latest day there is (owner, 2026-11-28: "기상청모듈에 과거 데이터 없나" — a 날씨 × 매출 analysis had to use
+    // Open-Meteo's forecast archive instead).
+    if (action === 'asos-daily') {
+      const ymd = (v) => String(v ?? '').replace(/\D/g, '').slice(0, 8);
+      const stn = String(data.stnIds ?? '108').replace(/\D/g, '') || '108';
+      const start = ymd(data.startDt);
+      if (start.length !== 8) {
+        return out(false, undefined, 'asos-daily needs startDt (YYYYMMDD or YYYY-MM-DD); endDt defaults to the latest day published.');
+      }
+      const latest = kmaNow().hour >= 11 ? shiftYmd(-1) : shiftYmd(-2);
+      let end = ymd(data.endDt) || latest;
+      const clipped = end > latest;
+      if (clipped) end = latest;
+      if (start > end) {
+        return out(false, undefined, `asos-daily: startDt ${start} is after ${end}, the latest day published (the day before appears at 11:00 KST).`);
+      }
+      const rows = [];
+      for (let page = 1; page <= 40; page++) {
+        const r = await callApi(serviceKey, '/AsosDalyInfoService/getWthrDataList', {
+          numOfRows: ASOS_PAGE, pageNo: page, dataCd: 'ASOS', dateCd: 'DAY', startDt: start, endDt: end, stnIds: stn,
+        });
+        if (isNoData(r)) break;
+        if (!r.ok) return outErr(r.errorKey, r.errorParams);
+        rows.push(...r.items.map(asosRow));
+        if (r.items.length < ASOS_PAGE) break;
+      }
+      return out(true, {
+        items: rows, stnIds: stn, stnNm: rows[0]?.stnNm ?? null, startDt: start, endDt: end, legend: ASOS_LEGEND,
+        ...(clipped ? { note: `endDt was cut to ${end}, the latest day published (the day before appears at 11:00 KST).` } : {}),
+      });
+    }
 
     if (action === 'typhoon-list') {
       const t = tmFc || todayYmd();
