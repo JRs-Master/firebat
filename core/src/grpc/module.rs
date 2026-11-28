@@ -527,7 +527,9 @@ impl ModuleService for ModuleServiceImpl {
         let llm_opts = crate::ports::LlmCallOpts::default();
         let ai_opts = crate::ports::AiRequestOpts::default();
         let reply = match ai.process_with_tools_opts(&prompt, &[], &llm_opts, &ai_opts).await {
-            Ok(r) => r.reply.trim().to_string(),
+            // A message renders no block: its render fences go out as lines a person reads (2026-11-28 — a 날씨 table
+            // reached Telegram as raw JSON).
+            Ok(r) => crate::managers::ai::render_exec::fence_to_message_text(&r.reply).trim().to_string(),
             Err(e) => {
                 return reply_err(serde_json::json!({"success": false, "error": format!("AI turn failed: {e}")}))
             }

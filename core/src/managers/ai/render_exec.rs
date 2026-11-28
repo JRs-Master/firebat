@@ -1278,6 +1278,128 @@ pub fn fence_to_plaintext(text: &str) -> String {
     out
 }
 
+/// `firebat-render` fences as text a person reads in a message — a webhook's reply (Telegram), where
+/// nothing renders a block (owner, 2026-11-28: a 날씨 answer arrived as its raw Header · Table JSON —
+/// "이건 좀 아쉽노"). Unlike `fence_to_plaintext`, which feeds memory and keeps only words on one line,
+/// this keeps the numbers and the lines: a table is its head and a line a row, cells joined by `|`;
+/// a heading or a passage its own line; a list a bullet a line; a long data series (a chart's points)
+/// one folded line. By shape, not by component name — a new component needs nothing here.
+pub fn fence_to_message_text(text: &str) -> String {
+    if !text.contains(FENCE_OPEN) && !text.contains(TAG_OPEN) {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(region) = find_fence_region(rest) {
+        out.push_str(&rest[..region.start]);
+        let body = &rest[region.body_start..region.body_end];
+        match parse_fence_json(body) {
+            Some(v) => {
+                let mut lines = Vec::new();
+                message_lines(&v, &mut lines);
+                out.push_str(&lines.join("\n"));
+            }
+            None => out.push_str(body.trim()),
+        }
+        rest = &rest[region.end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Props that say how a block looks, not what it says.
+const LOOK_KEYS: &[&str] = &[
+    "type", "name", "id", "key", "level", "variant", "style", "color", "icon", "size", "align", "width",
+    "height", "stickyCol", "className", "theme", "layout", "dataCacheKey",
+];
+
+fn message_cell(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.trim().to_string(),
+        Value::Number(n) => n.to_string(),
+        // A flag says how a block looks (striped, compact …), not what it says.
+        Value::Bool(_) | Value::Null => String::new(),
+        other => {
+            let mut s = String::new();
+            collect_text_values(other, "", "", &mut s);
+            s.trim().to_string()
+        }
+    }
+}
+
+fn message_lines(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::Array(items) => {
+            for item in items {
+                message_lines(item, out);
+            }
+        }
+        Value::Object(o) => {
+            // A component keeps what it says in `props`; a bare block says it in itself.
+            let props = o.get("props").and_then(|p| p.as_object()).unwrap_or(o);
+            // A table: its head, then a line a row.
+            if let Some(rows) = props.get("rows").and_then(|r| r.as_array()) {
+                if let Some(head) = props.get("headers").and_then(|h| h.as_array()).filter(|h| !h.is_empty()) {
+                    out.push(head.iter().map(message_cell).collect::<Vec<_>>().join(" | "));
+                }
+                for row in rows {
+                    let cells: Vec<String> = match row {
+                        Value::Array(c) => c.iter().map(message_cell).collect(),
+                        Value::Object(m) => m.values().map(message_cell).collect(),
+                        other => vec![message_cell(other)],
+                    };
+                    out.push(cells.join(" | "));
+                }
+                return;
+            }
+            // Its words on one line (heading, passage, a figure and its label), then what it holds.
+            let mut said: Vec<String> = Vec::new();
+            let mut held: Vec<&Value> = Vec::new();
+            for (k, val) in props {
+                if LOOK_KEYS.contains(&k.as_str()) {
+                    continue;
+                }
+                match val {
+                    Value::String(_) | Value::Number(_) | Value::Bool(_) => {
+                        let c = message_cell(val);
+                        if !c.is_empty() {
+                            said.push(c);
+                        }
+                    }
+                    Value::Array(_) | Value::Object(_) => held.push(val),
+                    Value::Null => {}
+                }
+            }
+            if !said.is_empty() {
+                out.push(said.join(" · "));
+            }
+            for val in held {
+                match val {
+                    // A data series (a chart's points) folds to one line; a short list is a bullet a line.
+                    Value::Array(a) if a.len() >= SERIES_MIN_ROWS && val.to_string().len() > SERIES_MAX_CHARS => {
+                        out.push(crate::i18n::t("core.render.series_folded", None, &[("n", &a.len().to_string())]));
+                    }
+                    Value::Array(a) if a.iter().all(|x| !x.is_object() && !x.is_array()) => {
+                        for x in a {
+                            let c = message_cell(x);
+                            if !c.is_empty() {
+                                out.push(format!("• {c}"));
+                            }
+                        }
+                    }
+                    other => message_lines(other, out),
+                }
+            }
+        }
+        scalar => {
+            let c = message_cell(scalar);
+            if !c.is_empty() {
+                out.push(c);
+            }
+        }
+    }
+}
+
 /// An array is a data series, not prose, when it is both long and bulky. Folding it costs nothing a
 /// reader wanted: this walk keeps strings and drops numbers, so a 63-row candle set contributed 63
 /// ISO dates and not one price — the tokens of the data without its values. The rows themselves stay
@@ -1904,5 +2026,34 @@ mod tests {
         };
         assert!(err.contains("rowsColumns"), "the error must name the next step: {err}");
         assert!(err.contains("date"), "and the fields available: {err}");
+    }
+
+    /// A webhook's reply is read in a message (Telegram), where nothing renders a block (2026-11-28: a 날씨 answer arrived as
+    /// its raw Header · Table JSON). The table comes out a line a row, its numbers kept; the prose around it untouched.
+    #[test]
+    fn a_message_gets_the_table_as_lines_with_its_numbers() {
+        let reply = "서울 기준 오늘은 맑아요.\n\n```firebat-render\n[{\"name\":\"Header\",\"props\":{\"level\":3,\"text\":\"서울 시간대별 예보 (11/28)\"},\"type\":\"component\"},{\"name\":\"Table\",\"props\":{\"headers\":[\"시각\",\"하늘\",\"기온(℃)\"],\"rows\":[[\"12시\",\"☀️ 맑음\",\"8\"],[\"13시\",\"☀️ 맑음\",9]],\"stickyCol\":null},\"type\":\"component\"}]\n```\n\n우산은 필요 없어요.";
+        let out = fence_to_message_text(reply);
+        assert_eq!(
+            out,
+            "서울 기준 오늘은 맑아요.\n\n서울 시간대별 예보 (11/28)\n시각 | 하늘 | 기온(℃)\n12시 | ☀️ 맑음 | 8\n13시 | ☀️ 맑음 | 9\n\n우산은 필요 없어요."
+        );
+        // Without a fence, nothing changes.
+        assert_eq!(fence_to_message_text("그냥 글"), "그냥 글");
+    }
+
+    /// A list is a bullet a line; a long data series (a chart's points) folds to one line, its rows not spilled into the message.
+    #[test]
+    fn a_message_gets_a_list_as_bullets_and_a_series_folded() {
+        let points: Vec<Value> = (0..20).map(|i| serde_json::json!({"date": format!("2026-11-{:02}", i + 1), "close": 1000 + i})).collect();
+        let blocks = serde_json::json!([
+            {"type": "component", "name": "List", "props": {"items": ["하나", "둘"]}},
+            {"type": "component", "name": "Chart", "props": {"title": "종가", "striped": true, "data": points}},
+        ]);
+        let out = fence_to_message_text(&format!("```firebat-render\n{blocks}\n```"));
+        assert!(out.contains("• 하나\n• 둘"), "{out}");
+        assert!(out.contains("종가"), "{out}");
+        assert!(out.contains("series_folded") || out.contains("20"), "the fold line: {out}");
+        assert!(!out.contains("2026-11-05") && !out.contains("true"), "no rows, no flags: {out}");
     }
 }

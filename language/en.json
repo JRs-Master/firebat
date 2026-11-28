@@ -85,6 +85,9 @@
     "designing": "Preparing next step…",
     "step_published": "Live"
   },
+  "render": {
+    "series_folded": "({{n}} items — see them on screen)"
+  },
   "error": {
     "module": {
       "invalid_name": "Invalid module name.",

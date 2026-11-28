@@ -85,6 +85,9 @@
     "designing": "다음 단계 준비 중이에요",
     "step_published": "발행"
   },
+  "render": {
+    "series_folded": "({{n}}개 항목 — 화면에서 보기)"
+  },
   "error": {
     "module": {
       "invalid_name": "잘못된 모듈 이름입니다.",
